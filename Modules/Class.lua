@@ -69,13 +69,10 @@ function ClassModule:OnInitialize()
             end
         end
     end
-end
 
-function ClassModule:OnEnable()
-    local p = self:_p()
-    if p.class ~= "MONK" then return end
-
-    if not hookInstalled and type(UnitFrameHealthBar_Update) == "function" then
+    -- Install the bar-learning hook now (even while disabled) so enabling the
+    -- module later shows the marker immediately, without a reload.
+    if classToken == "MONK" and not hookInstalled and type(UnitFrameHealthBar_Update) == "function" then
         local module = self
         hooksecurefunc("UnitFrameHealthBar_Update", function(statusbar, unit)
             if unit == "player" then
@@ -85,6 +82,11 @@ function ClassModule:OnEnable()
         end)
         hookInstalled = true
     end
+end
+
+function ClassModule:OnEnable()
+    local p = self:_p()
+    if p.class ~= "MONK" then return end
 
     local bus = ns.EventBus.Get()
     p.tokens["UNIT_MAXHEALTH"]           = bus:On("UNIT_MAXHEALTH",           function(_, u) if u == "player" then self:_UpdateMarker() end end)
@@ -132,7 +134,7 @@ function ClassModule:_UpdateMarker()
 
     if not p.marker then
         local m = bar:CreateTexture(nil, "OVERLAY", nil, 7)
-        m:SetWidth(4)  -- thick-ish
+        m:SetWidth(1.5)  -- thin line
         p.marker = m
     end
     local m = p.marker
