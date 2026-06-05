@@ -105,7 +105,34 @@ function SettingsWindow:Build()
         end
     end)
 
+    -- combat: auto-close while fighting, reopen after if it was open
+    local bus = ns.EventBus.Get()
+    bus:On("PLAYER_REGEN_DISABLED", function() self:_OnCombatStart() end)
+    bus:On("PLAYER_REGEN_ENABLED",  function() self:_OnCombatEnd() end)
+    -- a manual close (X / Esc) clears any pending reopen; a combat close keeps it
+    f:SetScript("OnHide", function()
+        if p.closedByCombat then p.closedByCombat = false else p.reopenKey = nil end
+    end)
+
     p.built = true
+end
+
+function SettingsWindow:_OnCombatStart()
+    local p = self:_p()
+    if p.frame and p.frame:IsShown() then
+        p.reopenKey = p.current or "modules"
+        p.closedByCombat = true
+        p.frame:Hide()  -- direct, so OnHide keeps reopenKey
+    end
+end
+
+function SettingsWindow:_OnCombatEnd()
+    local p = self:_p()
+    if p.reopenKey then
+        local key = p.reopenKey
+        p.reopenKey = nil
+        self:Show(key)
+    end
 end
 
 -- ---- pages ----------------------------------------------------------------
@@ -395,19 +422,6 @@ function SettingsWindow:_BuildAboutPage(parent)
 end
 
 -- ---- show / hide ----------------------------------------------------------
--- Open after combat ends if we tried to open during combat.
-function SettingsWindow:_QueueAfterCombat()
-    local p = self:_p()
-    if p.combatToken then return end
-    p.combatToken = ns.EventBus.Get():On("PLAYER_REGEN_ENABLED", function()
-        ns.EventBus.Get():Off("PLAYER_REGEN_ENABLED", p.combatToken)
-        p.combatToken = nil
-        local key = p.pendingOpen
-        p.pendingOpen = nil
-        if key then self:Show(key) end
-    end)
-end
-
 function SettingsWindow:Show(key)
     self:Build()
     local p = self:_p()
@@ -415,8 +429,7 @@ function SettingsWindow:Show(key)
 
     -- Defer opening until combat ends (don't pop the panel mid-fight).
     if not p.frame:IsShown() and InCombatLockdown() then
-        p.pendingOpen = key
-        self:_QueueAfterCombat()
+        p.reopenKey = key
         ns.Logger.Get():Core():Warn("In combat - the settings will open when you leave combat.")
         return
     end

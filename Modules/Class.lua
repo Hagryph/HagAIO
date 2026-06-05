@@ -125,6 +125,8 @@ function ClassModule:OnInitialize()
         end
     end
 
+    ns.SlashCommand.Get():Register("spec", function() self:_DumpSpec() end, "dump current spec (debug)")
+
     -- Install the bar-learning hook now (even while disabled) so a submodule's
     -- marker can appear immediately on enable, without a reload.
     if classToken == "MONK" and not hookInstalled and type(UnitFrameHealthBar_Update) == "function" then
@@ -242,6 +244,22 @@ end
 
 function ClassModule:OnSettingChanged()
     self:_ScheduleUpdate()
+end
+
+-- /hag spec — dump spec detection so we can tune "no specialisation".
+function ClassModule:_DumpSpec()
+    local idx = GetSpecialization and GetSpecialization()
+    self:LogInfo("level", UnitLevel("player"), "class", tostring(self:_p().class))
+    self:LogInfo("GetSpecialization() =", tostring(idx))
+    if idx then
+        local id, name, _, _, role = (GetSpecializationInfo and GetSpecializationInfo(idx))
+        self:LogInfo("GetSpecializationInfo(idx): id=", tostring(id), "name=", tostring(name), "role=", tostring(role))
+    end
+    if GetNumSpecializations then self:LogInfo("GetNumSpecializations() =", tostring(GetNumSpecializations())) end
+    if C_SpecializationInfo and C_SpecializationInfo.GetSpecialization then
+        self:LogInfo("C_SpecializationInfo.GetSpecialization() =", tostring(C_SpecializationInfo.GetSpecialization()))
+    end
+    self:LogInfo("=> currentSpecKey() =", tostring(currentSpecKey()))
 end
 
 -- ---- registration ---------------------------------------------------------
