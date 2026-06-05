@@ -76,6 +76,7 @@ local ExpelHarm = {
         end
         p.expelActive = false
         p.onCooldown = false
+        p.cdGraceUntil = nil
         if p.marker then p.marker:Hide() end
     end,
 }
@@ -110,6 +111,7 @@ function ClassModule:OnInitialize()
     p.marker = nil
     p.host = nil
     p.onCooldown = false
+    p.cdGraceUntil = nil
     p.activeSub = nil
     p.expelActive = false
     p.updateScheduled = false
@@ -272,26 +274,30 @@ function ClassModule:_UpdateMarker()
     m:Show()
 end
 
--- Hide the marker while Expel Harm is on cooldown. We read only the non-secret
--- booleans (isActive / isOnGCD), never the secret start/duration.
--- The cast gives a reliable immediate hide (covers the GCD-overlap window).
+-- Hide the marker while Expel Harm is on its real cooldown. We read only the
+-- non-secret booleans (isActive / isOnGCD), never the secret start/duration.
+-- The cast hides immediately and starts a grace window so the brief GCD that
+-- overlaps the start of the cooldown doesn't un-hide it.
 function ClassModule:_OnExpelCast()
     local p = self:_p()
     p.onCooldown = true
+    p.cdGraceUntil = GetTime() + 1.6  -- ~one GCD
     self:_ScheduleUpdate()
 end
 
--- Re-show once the real cooldown ends; also catches a reload while it's still on
--- cooldown. isActive/isOnGCD are plain booleans (the times are the secret bits).
+-- The real cooldown is active when isActive AND it's not merely the GCD. So the
+-- moment the real cooldown ends we re-show even if a GCD is still running (which
+-- is what caused the 1-2s lag). Also catches a reload mid-cooldown.
 function ClassModule:_SyncCooldown()
     local p = self:_p()
     local info = C_Spell and C_Spell.GetSpellCooldown and C_Spell.GetSpellCooldown(EXPEL_HARM)
-    local active = (info and info.isActive) or false
-    if not active then
-        if p.onCooldown then p.onCooldown = false; self:_ScheduleUpdate() end
-    elseif info and not info.isOnGCD then
-        -- a real (non-GCD) cooldown is running, e.g. after a reload mid-cooldown
-        if not p.onCooldown then p.onCooldown = true; self:_ScheduleUpdate() end
+    local realCD = (info and info.isActive and not info.isOnGCD) or false
+    if p.cdGraceUntil and GetTime() < p.cdGraceUntil then
+        realCD = true  -- just cast: stay hidden through the opening GCD overlap
+    end
+    if realCD ~= p.onCooldown then
+        p.onCooldown = realCD
+        self:_ScheduleUpdate()
     end
 end
 
