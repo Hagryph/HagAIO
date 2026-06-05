@@ -96,6 +96,7 @@ function ClassModule:OnInitialize()
     p.subTokens = {}
     p.heal = nil
     p.marker = nil
+    p.host = nil
     p.activeSub = nil
     p.expelActive = false
     p.updateScheduled = false
@@ -219,30 +220,42 @@ function ClassModule:_UpdateMarker()
         return
     end
 
+    local maxHP = UnitHealthMax("player")
+    if (issecretvalue and issecretvalue(maxHP)) or not maxHP or maxHP <= 0 then
+        if p.marker then p.marker:Hide() end
+        return  -- can't size the offset from a secret/zero max
+    end
+    local heal = p.heal
+    if not heal or heal <= 0 then if p.marker then p.marker:Hide() end return end
+
+    local fill = bar.GetStatusBarTexture and bar:GetStatusBarTexture()
+    if not fill then if p.marker then p.marker:Hide() end return end
+
+    -- Clipping host over the bar so the line never spills past the bar end
+    -- (e.g. near full health, where current + heal exceeds max).
+    if not p.host then
+        local h = CreateFrame("Frame", nil, bar)
+        h:SetAllPoints(bar)
+        if h.SetClipsChildren then h:SetClipsChildren(true) end
+        p.host = h
+    end
     if not p.marker then
-        local m = bar:CreateTexture(nil, "OVERLAY", nil, 7)
+        local m = p.host:CreateTexture(nil, "OVERLAY", nil, 7)
         m:SetWidth(1.5)  -- thin line
         p.marker = m
     end
     local m = p.marker
 
-    local maxHP = UnitHealthMax("player")
-    if (issecretvalue and issecretvalue(maxHP)) or not maxHP or maxHP <= 0 then
-        m:Hide(); return  -- can't position from a secret/zero max
-    end
-    local heal = p.heal
-    if not heal or heal <= 0 then m:Hide(); return end
-
-    local frac = 1 - heal / maxHP
-    if frac < 0 then frac = 0 elseif frac > 1 then frac = 1 end
-
     local c = self:GetSetting("expelColor") or { 1, 1, 1 }
     m:SetColorTexture(c[1], c[2], c[3], 1)
 
-    local x = frac * bar:GetWidth()
+    -- Anchor to the fill's right edge (current-health end) + the heal width, so
+    -- the line tracks the health bar automatically. We never read the secret
+    -- current health — Blizzard moves the fill texture, the line follows.
+    local offset = (heal / maxHP) * bar:GetWidth()
     m:ClearAllPoints()
-    m:SetPoint("TOP", bar, "TOPLEFT", x, 0)
-    m:SetPoint("BOTTOM", bar, "BOTTOMLEFT", x, 0)
+    m:SetPoint("TOP", fill, "TOPRIGHT", offset, 0)
+    m:SetPoint("BOTTOM", fill, "BOTTOMRIGHT", offset, 0)
     m:Show()
 end
 
