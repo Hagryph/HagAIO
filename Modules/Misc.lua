@@ -3,59 +3,76 @@ local Class = ns.Class
 local Theme = ns.Theme
 local W = ns.UI.Widgets
 
--- Modules/Travel.lua
--- Travel helpers. First feature: Flight Timers — times each flight path the
--- first time you take it (between two flight masters) and shows a countdown on
--- every later trip along the same route.
---
--- Approach (as InFlight does it): hook TakeTaxiNode for the destination, read
--- the source from the CURRENT taxi node, then poll UnitOnTaxi to find take-off
--- and landing. Durations are stored per faction + route.
+-- Modules/Misc.lua
+-- Miscellaneous helpers:
+--   * Flight Timers — time each flight path the first time you take it and show
+--     a countdown on later trips along the same route.
+--   * Sell Junk — sell grey items at a vendor, automatically on open or via a
+--     "Sell Junk" button added to the merchant window.
 
-local Travel = Class.new("Travel", ns.Module)
+local Misc = Class.new("Misc", ns.Module)
 
-local hooked = false
+local hooked = false  -- TakeTaxiNode hook installed once per session
 
 local function fmt(s)
     s = math.max(0, math.floor(s + 0.5))
     return ("%d:%02d"):format(math.floor(s / 60), s % 60)
 end
 
+-- Sell every sellable grey (Poor, quality 0) item in the bags. Returns count.
+local function sellJunk()
+    if not (C_Container and C_Container.GetContainerNumSlots and C_Container.UseContainerItem) then return 0 end
+    local count = 0
+    for bag = 0, (NUM_BAG_SLOTS or 4) do
+        for slot = 1, (C_Container.GetContainerNumSlots(bag) or 0) do
+            local info = C_Container.GetContainerItemInfo(bag, slot)
+            if info and info.quality == 0 and not info.hasNoValue then
+                C_Container.UseContainerItem(bag, slot)
+                count = count + 1
+            end
+        end
+    end
+    return count
+end
+
 -- ---- lifecycle ------------------------------------------------------------
-function Travel:OnInitialize()
+function Misc:OnInitialize()
     local p = self:_p()
     p.tokens = {}
     p.phase = nil       -- nil / "boarding" / "flying"
     p.src = nil
 end
 
-function Travel:OnEnable()
+function Misc:OnEnable()
     local p = self:_p()
     self:GetDB().flights = self:GetDB().flights or {}
-
     local bus = ns.EventBus.Get()
-    -- the source flight point is known while the taxi map is open
-    p.tokens["TAXIMAP_OPENED"] = bus:On("TAXIMAP_OPENED", function() self:_CaptureSource() end)
 
-    -- hook the destination pick once per session
+    -- flight timers
+    p.tokens["TAXIMAP_OPENED"] = bus:On("TAXIMAP_OPENED", function() self:_CaptureSource() end)
     if not hooked and type(TakeTaxiNode) == "function" then
         local module = self
         hooksecurefunc("TakeTaxiNode", function(slot) module:_OnTakeTaxi(slot) end)
         hooked = true
     end
+
+    -- sell junk
+    p.tokens["MERCHANT_SHOW"]   = bus:On("MERCHANT_SHOW",   function() self:_OnMerchantShow() end)
+    p.tokens["MERCHANT_CLOSED"] = bus:On("MERCHANT_CLOSED", function() self:_OnMerchantClosed() end)
 end
 
-function Travel:OnDisable()
+function Misc:OnDisable()
     local p = self:_p()
     local bus = ns.EventBus.Get()
     for event, token in pairs(p.tokens) do bus:Off(event, token) end
     wipe(p.tokens)
     self:_StopTicker()
     if p.frame then p.frame:Hide() end
+    if p.sellBtn then p.sellBtn:Hide() end
 end
 
--- ---- route capture --------------------------------------------------------
-function Travel:_CaptureSource()
+-- ======================= FLIGHT TIMERS =====================================
+function Misc:_CaptureSource()
     local p = self:_p()
     if not (NumTaxiNodes and TaxiNodeGetType and TaxiNodeName) then return end
     for i = 1, NumTaxiNodes() do
@@ -71,7 +88,7 @@ local function routeKey(src, dst)
     return faction .. "|" .. tostring(src) .. " @ " .. tostring(dst)
 end
 
-function Travel:_OnTakeTaxi(slot)
+function Misc:_OnTakeTaxi(slot)
     local p = self:_p()
     if not self:IsEnabled() then return end
     if TaxiNodeGetType and TaxiNodeGetType(slot) ~= "REACHABLE" then return end
@@ -85,8 +102,7 @@ function Travel:_OnTakeTaxi(slot)
     self:_StartTicker()
 end
 
--- ---- flight tracking (poll UnitOnTaxi) ------------------------------------
-function Travel:_StartTicker()
+function Misc:_StartTicker()
     local p = self:_p()
     if not p.ticker then
         local module = self
@@ -97,13 +113,13 @@ function Travel:_StartTicker()
     p.ticker:Show()
 end
 
-function Travel:_StopTicker()
+function Misc:_StopTicker()
     local p = self:_p()
     if p.ticker then p.ticker:Hide() end
     p.phase = nil
 end
 
-function Travel:_Tick(dt)
+function Misc:_Tick(dt)
     local p = self:_p()
     if p.phase == "boarding" then
         if UnitOnTaxi("player") then
@@ -118,7 +134,7 @@ function Travel:_Tick(dt)
     elseif p.phase == "flying" then
         if not UnitOnTaxi("player") then
             local dur = GetTime() - (p.startTime or GetTime())
-            if dur > 1 then self:GetDB().flights[p.route] = dur end  -- learn / refine
+            if dur > 1 then self:GetDB().flights[p.route] = dur end
             if p.frame then p.frame:Hide() end
             self:_StopTicker()
         else
@@ -128,8 +144,7 @@ function Travel:_Tick(dt)
     end
 end
 
--- ---- display --------------------------------------------------------------
-function Travel:_BuildFrame()
+function Misc:_BuildFrame()
     local p = self:_p()
     if p.frame then return end
     local f = W.Panel(UIParent, "panel", "borderStrong")
@@ -163,7 +178,7 @@ function Travel:_BuildFrame()
     p.frame = f
 end
 
-function Travel:_ShowTimer()
+function Misc:_ShowTimer()
     if not self:GetSetting("showTimer") then return end
     local p = self:_p()
     self:_BuildFrame()
@@ -172,7 +187,7 @@ function Travel:_ShowTimer()
     self:_UpdateTimer()
 end
 
-function Travel:_UpdateTimer()
+function Misc:_UpdateTimer()
     local p = self:_p()
     if not (p.frame and p.frame:IsShown() and p.startTime) then return end
     local elapsed = GetTime() - p.startTime
@@ -180,20 +195,76 @@ function Travel:_UpdateTimer()
         p.frame.time:SetText(fmt(p.known - elapsed))
         p.frame.bar:SetValue(math.min(1, elapsed / p.known))
     else
-        p.frame.time:SetText(fmt(elapsed) .. "  ...")  -- first trip: learning
+        p.frame.time:SetText(fmt(elapsed) .. "  ...")
         p.frame.bar:SetValue(0)
     end
 end
 
+-- ======================= SELL JUNK =========================================
+function Misc:_OnMerchantShow()
+    local mode = self:GetSetting("sellJunk")
+    if mode == "auto" then
+        self:_Sell()
+    elseif mode == "button" then
+        self:_BuildSellButton()
+        if self:_p().sellBtn then self:_p().sellBtn:Show() end
+    end
+end
+
+function Misc:_OnMerchantClosed()
+    if self:_p().sellBtn then self:_p().sellBtn:Hide() end
+end
+
+function Misc:_Sell()
+    local n = sellJunk()
+    if n > 0 then self:LogInfo(("sold %d junk item%s"):format(n, n == 1 and "" or "s")) end
+end
+
+function Misc:_BuildSellButton()
+    local p = self:_p()
+    if p.sellBtn or not MerchantFrame then return end
+    local b = CreateFrame("Button", nil, MerchantFrame, "BackdropTemplate")
+    W.Style(b, "panel2", "borderStrong")
+    b:SetSize(86, 22)
+    b:SetPoint("BOTTOMRIGHT", MerchantFrame, "TOPRIGHT", -2, 2)
+    b:SetFrameStrata("HIGH")
+    local fs = W.Text(b, "Sell Junk", "accent", "GameFontNormalSmall")
+    fs:SetPoint("CENTER")
+    b:SetScript("OnEnter", function()
+        b:SetBackdropColor(Theme.Unpack("panelHover")); fs:SetTextColor(Theme.Unpack("text"))
+    end)
+    b:SetScript("OnLeave", function()
+        b:SetBackdropColor(Theme.Unpack("panel2")); fs:SetTextColor(Theme.Unpack("accent"))
+    end)
+    b:SetScript("OnClick", function() self:_Sell() end)
+    p.sellBtn = b
+end
+
+function Misc:OnSettingChanged(key)
+    -- if switching away from Button mode while a vendor is open, hide the button
+    if key == "sellJunk" and self:GetSetting("sellJunk") ~= "button" then
+        if self:_p().sellBtn then self:_p().sellBtn:Hide() end
+    end
+end
+
 -- ---- registration ---------------------------------------------------------
-ns.ModuleManager.Get():Register(Travel:New("Travel", {
-    title = "Travel",
-    description = "Travel helpers, including flight-path timers.",
+ns.ModuleManager.Get():Register(Misc:New("Misc", {
+    title = "Miscellaneous",
+    description = "Flight-path timers and selling junk.",
     defaultEnabled = false,
     color = ns.Theme.hex.accent,
     settings = {
         { type = "header", text = "Flight timers" },
         { type = "toggle", key = "showTimer", label = "Show flight timer", default = true },
         { type = "note", text = "The first time you fly a route it's timed; after that a countdown is shown for it." },
+
+        { type = "header", text = "Sell Junk" },
+        { type = "select", key = "sellJunk", label = "Sell grey items", default = "off",
+          options = {
+              { value = "off",    text = "Off" },
+              { value = "button", text = "Button" },
+              { value = "auto",   text = "Auto" },
+          } },
+        { type = "note", text = "Auto sells grey items when you open a vendor. Button adds a Sell Junk button to the vendor window." },
     },
 }))
