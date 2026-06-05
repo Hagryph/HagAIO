@@ -395,10 +395,31 @@ function SettingsWindow:_BuildAboutPage(parent)
 end
 
 -- ---- show / hide ----------------------------------------------------------
+-- Open after combat ends if we tried to open during combat.
+function SettingsWindow:_QueueAfterCombat()
+    local p = self:_p()
+    if p.combatToken then return end
+    p.combatToken = ns.EventBus.Get():On("PLAYER_REGEN_ENABLED", function()
+        ns.EventBus.Get():Off("PLAYER_REGEN_ENABLED", p.combatToken)
+        p.combatToken = nil
+        local key = p.pendingOpen
+        p.pendingOpen = nil
+        if key then self:Show(key) end
+    end)
+end
+
 function SettingsWindow:Show(key)
     self:Build()
     local p = self:_p()
     key = key or p.current or "modules"
+
+    -- Defer opening until combat ends (don't pop the panel mid-fight).
+    if not p.frame:IsShown() and InCombatLockdown() then
+        p.pendingOpen = key
+        self:_QueueAfterCombat()
+        ns.Logger.Get():Core():Warn("In combat - the settings will open when you leave combat.")
+        return
+    end
 
     -- hide everything first
     for _, page in pairs(p.pages) do page:SetShown(false) end
