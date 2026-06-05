@@ -87,8 +87,10 @@ local ExpelHarm = {
     end,
 }
 
--- Brewmaster: Expel Harm + a Tiger Palm/Keg Smash energy-cost marker.
-local Brewmaster = {
+-- Expel Harm + a Tiger Palm/Keg Smash energy-cost marker. Tiger Palm is
+-- baseline, so this serves no-spec (leveling) and Brewmaster; Keg Smash adds to
+-- the cost once it's learned.
+local MonkBase = {
     settings = {
         { type = "header", text = "Expel Harm" },
         { type = "toggle", key = "expelHarm", label = "Show heal-threshold marker", default = true,
@@ -117,8 +119,8 @@ local Brewmaster = {
     end,
 }
 
-SUBMODULES.MONK["none"] = ExpelHarm
-SUBMODULES.MONK[1]      = Brewmaster
+SUBMODULES.MONK["none"] = MonkBase  -- leveling: Expel Harm + Tiger Palm
+SUBMODULES.MONK[1]      = MonkBase  -- Brewmaster (adds Keg Smash to the cost)
 
 -- "none" when the player has no specialisation, else the spec index (1-4).
 -- A spec-less character returns an out-of-range "initial" index (e.g. 5 for a
