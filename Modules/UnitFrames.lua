@@ -74,6 +74,8 @@ function UnitFrames:OnEnable()
         installed = true
     end
 
+    ns.SlashCommand.Get():Register("uf", function() self:_Diag() end, "diagnose health-bar tint")
+
     self:_ApplyNow()
 end
 
@@ -95,17 +97,42 @@ end
 -- Called by the hook after every Blizzard health-bar update. We only act on the
 -- player/target bars (other frames pass through untouched).
 function UnitFrames:_Tint(statusbar, unit)
-    if not self:IsEnabled() then return end
     if unit ~= "player" and unit ~= "target" then return end
+    local p = self:_p()
+    p.fires = (p.fires or 0) + 1
+    if not self:IsEnabled() then return end
     if not self:GetSetting(unit) then return end
-    local curve = self:_p().curve
+    local curve = p.curve
     if not (curve and statusbar and statusbar.GetStatusBarTexture) then return end
     local tex = statusbar:GetStatusBarTexture()
     if not tex then return end
     -- The colour holds secret values. SetVertexColor accepts secrets;
     -- SetStatusBarColor silently ignores them — so tint the fill texture.
     local color = UnitHealthPercent(unit, true, curve)
-    if color then tex:SetVertexColor(color:GetRGB()) end
+    if color then
+        p.applied = (p.applied or 0) + 1
+        tex:SetVertexColor(color:GetRGB())
+    end
+end
+
+-- /hag uf — report state and force the player/target bars BLUE so we can see
+-- whether the frames we colour are the ones on screen.
+function UnitFrames:_Diag()
+    self:LogInfo(("api:%s  installed:%s  enabled:%s")
+        :format(apiAvailable() and "ok" or "MISSING", tostring(installed), tostring(self:IsEnabled())))
+    for _, unit in ipairs({ "player", "target" }) do
+        local bar = resolveBar(unit)
+        local name = bar and (bar.GetName and bar:GetName() or "anon") or "NOT FOUND"
+        self:LogInfo(("%s bar: %s"):format(unit, tostring(name)))
+        if bar and bar.GetStatusBarTexture then
+            local tex = bar:GetStatusBarTexture()
+            if tex then tex:SetVertexColor(0, 0.4, 1) end  -- force blue
+        end
+    end
+    local color = apiAvailable() and self:_p().curve and UnitHealthPercent("player", true, self:_p().curve)
+    self:LogInfo(("UnitHealthPercent(player): %s"):format(color and "got colour" or "nil"))
+    self:LogInfo(("hook fired %d times, colour applied %d times"):format(self:_p().fires or 0, self:_p().applied or 0))
+    self:LogWarn("forced player/target bars BLUE — if you DON'T see blue, the on-screen bars belong to another addon")
 end
 
 -- Apply our tint to the current player/target bars directly. We must NOT call
