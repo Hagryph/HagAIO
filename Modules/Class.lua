@@ -124,14 +124,14 @@ SUBMODULES.MONK[1]      = MonkBase   -- Brewmaster: + Tiger Palm energy marker
 
 -- "none" when the player has no specialisation, else the spec index (1-4).
 -- A spec-less character returns an out-of-range "initial" index (e.g. 5 for a
--- pre-level-10 Monk) whose GetSpecializationInfo has no name.
+-- pre-level-10 Monk, which is > GetNumSpecializations). Note: GetSpecialization-
+-- Info returns name=nil even for real specs on 12.0, so we must NOT gate on the
+-- name — the in-range index is what's reliable.
 local function currentSpecKey()
     local idx = GetSpecialization and GetSpecialization()
     if not idx then return "none" end
     local num = (GetNumSpecializations and GetNumSpecializations()) or 0
     if idx < 1 or idx > num then return "none" end
-    local _, name = (GetSpecializationInfo and GetSpecializationInfo(idx))
-    if not name or name == "" then return "none" end
     return idx
 end
 
@@ -204,8 +204,6 @@ function ClassModule:OnInitialize()
         end)
         hookInstalled = true
     end
-
-    ns.SlashCommand.Get():Register("spec", function() self:_DumpSpec() end, "dump spec detection (debug)")
 
     -- power (energy) bar, for the Brewmaster Tiger Palm marker
     if classToken == "MONK" and not powerHookInstalled and type(UnitFrameManaBar_Update) == "function" then
@@ -382,26 +380,6 @@ end
 function ClassModule:OnSettingChanged()
     self:_ScheduleUpdate()
     self:_ScheduleTiger()
-end
-
--- /hag spec — dump spec detection and which submodule is active.
-function ClassModule:_DumpSpec()
-    local p = self:_p()
-    local idx = GetSpecialization and GetSpecialization()
-    self:LogInfo("level", UnitLevel("player"), "class", tostring(p.class), "enabled", tostring(self:IsEnabled()))
-    self:LogInfo("GetSpecialization() =", tostring(idx), " GetNumSpecializations() =",
-        tostring(GetNumSpecializations and GetNumSpecializations()))
-    if idx then
-        local id, name = (GetSpecializationInfo and GetSpecializationInfo(idx))
-        self:LogInfo("GetSpecializationInfo(idx): id=", tostring(id), "name=", tostring(name))
-    end
-    self:LogInfo("=> currentSpecKey() =", tostring(currentSpecKey()))
-    local activeIs = "nil"
-    if p.activeSub == ExpelHarm then activeIs = "ExpelHarm (no-spec)"
-    elseif p.activeSub == MonkBase then activeIs = "MonkBase (Brewmaster)"
-    elseif p.activeSub then activeIs = "other" end
-    self:LogInfo("active submodule =", activeIs, " expelActive=", tostring(p.expelActive),
-        "tigerActive=", tostring(p.tigerActive))
 end
 
 -- ---- Tiger Palm energy marker (Brewmaster) --------------------------------
