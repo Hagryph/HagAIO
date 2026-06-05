@@ -34,14 +34,6 @@ local function colorAt(t)  -- t: 1 -> green, 0.5 -> yellow, 0 -> red
     return CreateColor(r, g, b, 1)
 end
 
-local function resolveBar(unit)
-    local f = (unit == "player") and PlayerFrame or (unit == "target") and TargetFrame
-    if not f then return nil end
-    if f.healthbar then return f.healthbar end
-    if f.healthBar then return f.healthBar end
-    return _G[(unit == "player") and "PlayerFrameHealthBar" or "TargetFrameHealthBar"]
-end
-
 local function apiAvailable()
     return C_CurveUtil and C_CurveUtil.CreateColorCurve and UnitHealthPercent and CreateColor
 end
@@ -96,76 +88,92 @@ end
 
 -- Called by the hook after every Blizzard health-bar update. We only act on the
 -- player/target bars (other frames pass through untouched).
+-- Paint a bar's fill: desaturate the (green) atlas to greyscale so the vertex
+-- colour shows the true hue, then tint. r,g,b may be secret values.
+local function paint(statusbar, r, g, b)
+    if not (statusbar and statusbar.GetStatusBarTexture) then return end
+    local tex = statusbar:GetStatusBarTexture()
+    if not tex then return end
+    if tex.SetDesaturated then tex:SetDesaturated(true) end
+    tex:SetVertexColor(r, g, b)
+end
+
+-- Undo the tint: re-saturate and clear the vertex colour, restoring Blizzard's
+-- original atlas.
+local function unpaint(statusbar)
+    if not (statusbar and statusbar.GetStatusBarTexture) then return end
+    local tex = statusbar:GetStatusBarTexture()
+    if not tex then return end
+    if tex.SetDesaturated then tex:SetDesaturated(false) end
+    tex:SetVertexColor(1, 1, 1)
+end
+
 function UnitFrames:_Tint(statusbar, unit)
     if unit ~= "player" and unit ~= "target" then return end
     local p = self:_p()
     p.fires = (p.fires or 0) + 1
+    p.barOf = p.barOf or {}
+    p.barOf[unit] = statusbar  -- remember the REAL bar Blizzard updates
+
+    -- diagnostic window: force unmistakable blue on the real bar
+    if p.testUntil and GetTime() < p.testUntil then
+        paint(statusbar, 0.10, 0.45, 1.0)
+        return
+    end
+
     if not self:IsEnabled() then return end
     if not self:GetSetting(unit) then return end
     local curve = p.curve
-    if not (curve and statusbar and statusbar.GetStatusBarTexture) then return end
-    local tex = statusbar:GetStatusBarTexture()
-    if not tex then return end
-    -- The colour holds secret values. SetVertexColor accepts secrets;
-    -- SetStatusBarColor silently ignores them — so tint the fill texture.
-    local color = UnitHealthPercent(unit, true, curve)
+    if not curve then return end
+    local color = UnitHealthPercent(unit, true, curve)  -- holds secret values
     if color then
         p.applied = (p.applied or 0) + 1
-        tex:SetVertexColor(color:GetRGB())
+        paint(statusbar, color:GetRGB())
     end
 end
 
--- /hag uf — report state and force the player/target bars BLUE so we can see
--- whether the frames we colour are the ones on screen.
+-- /hag uf — force the real (hook) player/target bars blue for 5s.
 function UnitFrames:_Diag()
+    local p = self:_p()
     self:LogInfo(("api:%s  installed:%s  enabled:%s")
         :format(apiAvailable() and "ok" or "MISSING", tostring(installed), tostring(self:IsEnabled())))
+    p.testUntil = GetTime() + 5
     for _, unit in ipairs({ "player", "target" }) do
-        local bar = resolveBar(unit)
-        local name = bar and (bar.GetName and bar:GetName() or "anon") or "NOT FOUND"
-        self:LogInfo(("%s bar: %s"):format(unit, tostring(name)))
-        if bar and bar.GetStatusBarTexture then
-            local tex = bar:GetStatusBarTexture()
-            if tex then tex:SetVertexColor(0, 0.4, 1) end  -- force blue
-        end
+        local hooked = p.barOf and p.barOf[unit]
+        if hooked then paint(hooked, 0.10, 0.45, 1.0) end
+        self:LogInfo(("%s hookBar:%s"):format(unit, hooked and "yes" or "no"))
     end
-    local color = apiAvailable() and self:_p().curve and UnitHealthPercent("player", true, self:_p().curve)
-    self:LogInfo(("UnitHealthPercent(player): %s"):format(color and "got colour" or "nil"))
-    self:LogInfo(("hook fired %d times, colour applied %d times"):format(self:_p().fires or 0, self:_p().applied or 0))
-    self:LogWarn("forced player/target bars BLUE — if you DON'T see blue, the on-screen bars belong to another addon")
+    self:LogWarn("bars forced BLUE for 5s — do they look blue now?")
 end
 
--- Apply our tint to the current player/target bars directly. We must NOT call
--- Blizzard's UnitFrameHealthBar_Update ourselves — doing so taints its
--- execution and its internal secret-health comparison then errors. Setting the
--- colour directly involves no comparisons, so it's taint-free.
+-- Apply our tint to the bars we already know from the hook. (On first enable
+-- the hook hasn't fired yet; it will apply on the next natural update.) We must
+-- NOT call Blizzard's update ourselves — that taints its secret comparisons.
 function UnitFrames:_ApplyNow()
-    for _, unit in ipairs({ "player", "target" }) do
-        if UnitExists(unit) then
-            local bar = resolveBar(unit)
-            if bar then self:_Tint(bar, unit) end
-        end
+    local p = self:_p()
+    if not p.barOf then return end
+    for unit, bar in pairs(p.barOf) do
+        self:_Tint(bar, unit)
     end
 end
 
--- Restore Blizzard's default green directly (taint-free). The next natural
--- unit-frame update reasserts Blizzard's own colouring fully.
+-- Restore Blizzard's original atlas on the bars we tinted.
 function UnitFrames:_RestoreNow()
-    for _, unit in ipairs({ "player", "target" }) do
-        local bar = resolveBar(unit)
-        if bar and bar.SetStatusBarColor then bar:SetStatusBarColor(0, 1, 0) end
+    local p = self:_p()
+    if not p.barOf then return end
+    for _, bar in pairs(p.barOf) do
+        unpaint(bar)
     end
 end
 
 function UnitFrames:OnSettingChanged()
-    for _, unit in ipairs({ "player", "target" }) do
-        local bar = UnitExists(unit) and resolveBar(unit) or nil
-        if bar and bar.SetStatusBarColor then
-            if self:GetSetting(unit) then
-                self:_Tint(bar, unit)
-            else
-                bar:SetStatusBarColor(0, 1, 0)
-            end
+    local p = self:_p()
+    if not p.barOf then return end
+    for unit, bar in pairs(p.barOf) do
+        if self:GetSetting(unit) then
+            self:_Tint(bar, unit)
+        else
+            unpaint(bar)
         end
     end
 end
