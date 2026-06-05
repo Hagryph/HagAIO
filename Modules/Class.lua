@@ -49,7 +49,7 @@ SUBMODULES.MONK["none"] = {
         -- heal scales with spell power, so re-read it on anything that changes
         -- it: gear, level, talents, and player auras (buffs); max-HP just needs
         -- a reposition.
-        p.subTokens["UNIT_MAXHEALTH"]            = bus:On("UNIT_MAXHEALTH",            function(_, u) if u == "player" then self:_UpdateMarker() end end)
+        p.subTokens["UNIT_MAXHEALTH"]            = bus:On("UNIT_MAXHEALTH",            function(_, u) if u == "player" then self:_ScheduleUpdate() end end)
         p.subTokens["PLAYER_EQUIPMENT_CHANGED"]  = bus:On("PLAYER_EQUIPMENT_CHANGED",  function() self:_RefreshHeal() end)
         p.subTokens["PLAYER_LEVEL_UP"]           = bus:On("PLAYER_LEVEL_UP",           function() self:_RefreshHeal() end)
         p.subTokens["SPELLS_CHANGED"]            = bus:On("SPELLS_CHANGED",            function() self:_RefreshHeal() end)
@@ -92,6 +92,7 @@ function ClassModule:OnInitialize()
     p.marker = nil
     p.activeSub = nil
     p.expelActive = false
+    p.updateScheduled = false
     local className, classToken = UnitClass("player")
     p.class = classToken
 
@@ -129,9 +130,12 @@ function ClassModule:OnInitialize()
     if classToken == "MONK" and not hookInstalled and type(UnitFrameHealthBar_Update) == "function" then
         local module = self
         hooksecurefunc("UnitFrameHealthBar_Update", function(statusbar, unit)
-            if unit == "player" then
-                module:_p().bar = statusbar  -- the REAL visible bar
-                module:_UpdateMarker()
+            -- Only the real PlayerFrame bar. Other frames (pet / target-of-target)
+            -- transiently carry unit "player" during vehicle/art swaps; touching
+            -- them here can flush a pending resize that compares secret health.
+            if unit == "player" and statusbar.unitFrame == PlayerFrame then
+                module:_p().bar = statusbar
+                module:_ScheduleUpdate()
             end
         end)
         hookInstalled = true
@@ -171,6 +175,19 @@ function ClassModule:_Sync()
 end
 
 -- ---- Expel Harm marker (used by the Monk no-spec submodule) ----------------
+-- Defer + debounce marker updates to the next frame. Reading bar:GetWidth()
+-- synchronously inside Blizzard's frame update can flush a pending resize that
+-- compares secret max-health on our tainted path; next-frame avoids that.
+function ClassModule:_ScheduleUpdate()
+    local p = self:_p()
+    if p.updateScheduled then return end
+    p.updateScheduled = true
+    C_Timer.After(0, function()
+        p.updateScheduled = false
+        self:_UpdateMarker()
+    end)
+end
+
 function ClassModule:_RefreshHeal()
     local p = self:_p()
     p.heal = readExpelHarmHeal()
@@ -179,11 +196,11 @@ function ClassModule:_RefreshHeal()
         C_Timer.After(1, function()
             if p.expelActive and not p.heal then
                 p.heal = readExpelHarmHeal()
-                self:_UpdateMarker()
+                self:_ScheduleUpdate()
             end
         end)
     end
-    self:_UpdateMarker()
+    self:_ScheduleUpdate()
 end
 
 function ClassModule:_UpdateMarker()
@@ -224,7 +241,7 @@ function ClassModule:_UpdateMarker()
 end
 
 function ClassModule:OnSettingChanged()
-    self:_UpdateMarker()
+    self:_ScheduleUpdate()
 end
 
 -- ---- registration ---------------------------------------------------------
