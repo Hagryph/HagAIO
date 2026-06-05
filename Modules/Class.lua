@@ -65,7 +65,10 @@ local ExpelHarm = {
         p.onCooldown = false
         p.expelActive = true
         self:_RefreshHeal()
-        self:_SyncCooldown()
+        -- start hidden if we (re)loaded while the real cooldown is running (no
+        -- GCD is active during a loading screen, so isActive here = real CD)
+        local cd = C_Spell and C_Spell.GetSpellCooldown and C_Spell.GetSpellCooldown(EXPEL_HARM)
+        if cd and cd.isActive and not cd.isOnGCD then p.onCooldown = true; self:_ScheduleUpdate() end
     end,
     Unload = function(self)
         local p = self:_p()
@@ -76,7 +79,6 @@ local ExpelHarm = {
         end
         p.expelActive = false
         p.onCooldown = false
-        p.cdGraceUntil = nil
         if p.marker then p.marker:Hide() end
     end,
 }
@@ -111,7 +113,6 @@ function ClassModule:OnInitialize()
     p.marker = nil
     p.host = nil
     p.onCooldown = false
-    p.cdGraceUntil = nil
     p.activeSub = nil
     p.expelActive = false
     p.updateScheduled = false
@@ -274,31 +275,24 @@ function ClassModule:_UpdateMarker()
     m:Show()
 end
 
--- Hide the marker while Expel Harm is on its real cooldown. We read only the
--- non-secret booleans (isActive / isOnGCD), never the secret start/duration.
--- The cast hides immediately and starts a grace window so the brief GCD that
--- overlaps the start of the cooldown doesn't un-hide it.
+-- Hide the marker ONLY when you cast Expel Harm. A plain global cooldown or a
+-- stun must never hide it — those aren't its real cooldown.
 function ClassModule:_OnExpelCast()
     local p = self:_p()
     p.onCooldown = true
-    p.cdGraceUntil = GetTime() + 1.6  -- ~one GCD
     self:_ScheduleUpdate()
 end
 
--- The real cooldown is active when isActive AND it's not merely the GCD. So the
--- moment the real cooldown ends we re-show even if a GCD is still running (which
--- is what caused the 1-2s lag). Also catches a reload mid-cooldown.
+-- Polling only ever RE-SHOWS (never hides), so a GCD/stun can't false-hide the
+-- marker. Re-show once the spell's cooldown is fully done. isActive is a plain
+-- boolean (the times are the secret bits).
 function ClassModule:_SyncCooldown()
     local p = self:_p()
+    if not p.onCooldown then return end
     local info = C_Spell and C_Spell.GetSpellCooldown and C_Spell.GetSpellCooldown(EXPEL_HARM)
-    local realCD = (info and info.isActive and not info.isOnGCD) or false
-    if p.cdGraceUntil and GetTime() < p.cdGraceUntil then
-        realCD = true  -- just cast: stay hidden through the opening GCD overlap
-    end
-    if realCD ~= p.onCooldown then
-        p.onCooldown = realCD
-        self:_ScheduleUpdate()
-    end
+    if info and info.isActive then return end  -- still on cooldown
+    p.onCooldown = false
+    self:_ScheduleUpdate()
 end
 
 function ClassModule:OnSettingChanged()
