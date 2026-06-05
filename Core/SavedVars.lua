@@ -35,6 +35,7 @@ function SavedVars:Load()
     p.global = HagAIODB
     p.char = HagAIOCharDB
     p.global.modules = p.global.modules or {}  -- name -> bool enable state
+    p.char.modules = p.char.modules or {}      -- per-character enable state
     p.loaded = true
 end
 
@@ -42,20 +43,28 @@ function SavedVars:IsLoaded()
     return self:_p().loaded
 end
 
--- Per-module global sub-table, seeded with `defaults`.
-function SavedVars:Namespace(key, defaults)
+-- Pick the global or per-character root table.
+function SavedVars:_Root(perChar)
+    local p = self:_p()
+    return perChar and p.char or p.global
+end
+
+-- Per-module sub-table, seeded with `defaults`. Pass perChar=true to store it
+-- per character instead of account-wide.
+function SavedVars:Namespace(key, defaults, perChar)
     local p = self:_p()
     assert(p.loaded, "SavedVars:Namespace called before Load()")
-    p.global[key] = applyDefaults(p.global[key] or {}, defaults or {})
-    return p.global[key]
+    local root = self:_Root(perChar)
+    root[key] = applyDefaults(root[key] or {}, defaults or {})
+    return root[key]
 end
 
-function SavedVars:GetModuleState(name)
-    return self:_p().global.modules[name]
+function SavedVars:GetModuleState(name, perChar)
+    return self:_Root(perChar).modules[name]
 end
 
-function SavedVars:SetModuleState(name, enabled)
-    self:_p().global.modules[name] = enabled and true or false
+function SavedVars:SetModuleState(name, enabled, perChar)
+    self:_Root(perChar).modules[name] = enabled and true or false
 end
 
 function SavedVars.Get()

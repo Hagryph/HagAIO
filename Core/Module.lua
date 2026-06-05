@@ -28,6 +28,7 @@ function Module:Initialize(name, opts)
     p.title = opts.title or name
     p.description = opts.description or ""
     p.defaultEnabled = opts.defaultEnabled ~= false
+    p.perChar = opts.perChar and true or false  -- store db + enable state per character
     p.color = opts.color or ns.Theme.hex.accent  -- log/tag colour
     p.settings = opts.settings or {}
 
@@ -55,6 +56,7 @@ function Module:GetColor() return self:_p().color end
 function Module:GetSettings() return self:_p().settings end
 function Module:IsEnabled() return self:_p().enabled end
 function Module:IsDefaultEnabled() return self:_p().defaultEnabled end
+function Module:IsPerChar() return self:_p().perChar end
 function Module:GetDB() return self:_p().db end
 function Module:GetLog() return self:_p().log end
 
@@ -74,7 +76,7 @@ function Module:OnSettingChanged(key, value) end
 -- Internal: bind saved-variable namespace. Called by ModuleManager at startup.
 function Module:_BindDB()
     local p = self:_p()
-    p.db = ns.SavedVars.Get():Namespace("module_" .. p.name, p.dbDefaults)
+    p.db = ns.SavedVars.Get():Namespace("module_" .. p.name, p.dbDefaults, p.perChar)
 end
 
 -- Internal: register this module's logging channel. Called by ModuleManager.
@@ -96,7 +98,7 @@ function Module:Enable()
     if p.enabled then return end
     p.enabled = true
     if self.OnEnable then self:OnEnable() end
-    ns.SavedVars.Get():SetModuleState(p.name, true)
+    ns.SavedVars.Get():SetModuleState(p.name, true, p.perChar)
     if p.log then p.log:Success("enabled") end
 end
 
@@ -105,7 +107,7 @@ function Module:Disable()
     if not p.enabled then return end
     p.enabled = false
     if self.OnDisable then self:OnDisable() end
-    ns.SavedVars.Get():SetModuleState(p.name, false)
+    ns.SavedVars.Get():SetModuleState(p.name, false, p.perChar)
     if p.log then p.log:Info("disabled") end
 end
 

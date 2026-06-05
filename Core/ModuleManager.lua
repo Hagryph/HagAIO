@@ -53,7 +53,7 @@ function ModuleManager:_Start(module)
     module:_AttachLogger()
     module:_BindDB()
     module:OnInitialize()
-    local saved = ns.SavedVars.Get():GetModuleState(module:GetName())
+    local saved = ns.SavedVars.Get():GetModuleState(module:GetName(), module:IsPerChar())
     local shouldEnable = saved
     if shouldEnable == nil then
         shouldEnable = module:IsDefaultEnabled()

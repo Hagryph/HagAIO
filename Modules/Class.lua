@@ -168,6 +168,7 @@ ns.ModuleManager.Get():Register(ClassModule:New("Class", {
     title = "Class",
     description = "Helpers for your current class.",
     defaultEnabled = false,
+    perChar = true,  -- class differs per character, so store its state per char
     color = ns.Theme.hex.accent,
     settings = {},  -- built per class in OnInitialize
 }))
