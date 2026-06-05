@@ -74,13 +74,11 @@ function UnitFrames:OnEnable()
         installed = true
     end
 
-    self:_RefreshNow()
+    self:_ApplyNow()
 end
 
 function UnitFrames:OnDisable()
-    -- the hook is inert while disabled, so re-running the update restores
-    -- Blizzard's default colour
-    self:_RefreshNow()
+    self:_RestoreNow()
 end
 
 -- ---- colouring ------------------------------------------------------------
@@ -106,20 +104,39 @@ function UnitFrames:_Tint(statusbar, unit)
     if color then statusbar:SetStatusBarColor(color:GetRGB()) end
 end
 
--- Re-run Blizzard's update for player/target so the hook (re)applies our tint,
--- or so the default colour returns when we're disabled.
-function UnitFrames:_RefreshNow()
-    if type(UnitFrameHealthBar_Update) ~= "function" then return end
+-- Apply our tint to the current player/target bars directly. We must NOT call
+-- Blizzard's UnitFrameHealthBar_Update ourselves — doing so taints its
+-- execution and its internal secret-health comparison then errors. Setting the
+-- colour directly involves no comparisons, so it's taint-free.
+function UnitFrames:_ApplyNow()
     for _, unit in ipairs({ "player", "target" }) do
         if UnitExists(unit) then
             local bar = resolveBar(unit)
-            if bar then pcall(UnitFrameHealthBar_Update, bar, unit) end
+            if bar then self:_Tint(bar, unit) end
         end
     end
 end
 
+-- Restore Blizzard's default green directly (taint-free). The next natural
+-- unit-frame update reasserts Blizzard's own colouring fully.
+function UnitFrames:_RestoreNow()
+    for _, unit in ipairs({ "player", "target" }) do
+        local bar = resolveBar(unit)
+        if bar and bar.SetStatusBarColor then bar:SetStatusBarColor(0, 1, 0) end
+    end
+end
+
 function UnitFrames:OnSettingChanged()
-    self:_RefreshNow()
+    for _, unit in ipairs({ "player", "target" }) do
+        local bar = UnitExists(unit) and resolveBar(unit) or nil
+        if bar and bar.SetStatusBarColor then
+            if self:GetSetting(unit) then
+                self:_Tint(bar, unit)
+            else
+                bar:SetStatusBarColor(0, 1, 0)
+            end
+        end
+    end
 end
 
 -- ---- registration ---------------------------------------------------------
