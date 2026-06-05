@@ -42,6 +42,8 @@ Core/
 UI/
   Widgets.lua              Themed factory (panels, toggles, nav items, scroll)
   SettingsWindow.lua       Custom dark+blue settings menu (Modules / Log / About)
+Modules/
+  Leveling.lua             Session XP/hour tracker + XP-bar hover tooltip
 Bootstrap.lua              Startup orchestrator (ADDON_LOADED → PLAYER_LOGIN)
 deploy.ps1                 Mirror the addon into the live WoW AddOns folder
 ```

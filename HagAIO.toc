@@ -25,4 +25,5 @@ Core\SlashCommand.lua
 Core\Compartment.lua
 UI\Widgets.lua
 UI\SettingsWindow.lua
+Modules\Leveling.lua
 Bootstrap.lua
