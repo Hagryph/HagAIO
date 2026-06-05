@@ -32,24 +32,33 @@ local function apiAvailable()
     return C_CurveUtil and C_CurveUtil.CreateColorCurve and UnitHealthPercent and CreateColor
 end
 
--- Swap the fill for a flat, tintable texture once (remembering the original so
--- we can restore it on disable).
-local function ensureFlat(bar)
-    if bar.__hagFlat then return end
+-- Paint the fill colour. Two combined fixes so the hue always shows brightly:
+--   * (re)apply a flat texture every time — Blizzard re-sets the green atlas on
+--     its updates, and the atlas MULTIPLIES vertex colour (killing yellow's red
+--     channel and darkening everything).
+--   * also desaturate, so even if the flat swap is rejected we tint a greyscale
+--     bar rather than multiplying the green atlas.
+local function paint(bar, r, g, b)
+    if not bar.__hagCaptured then
+        local t = bar:GetStatusBarTexture()
+        bar.__hagAtlas = t and t.GetAtlas and t:GetAtlas() or nil
+        bar.__hagCaptured = true
+    end
+    if bar.SetStatusBarTexture then bar:SetStatusBarTexture(FLAT) end
     local tex = bar:GetStatusBarTexture()
-    bar.__hagOrigAtlas = tex and tex.GetAtlas and tex:GetAtlas() or nil
-    bar:SetStatusBarTexture(FLAT)
-    bar.__hagFlat = true
+    if not tex then return end
+    if tex.SetDesaturated then tex:SetDesaturated(true) end
+    tex:SetVertexColor(r, g, b)
 end
 
 local function restore(bar)
-    if not bar.__hagFlat then return end
+    if not bar.__hagCaptured then return end
     local tex = bar:GetStatusBarTexture()
     if tex then
+        if tex.SetDesaturated then tex:SetDesaturated(false) end
         tex:SetVertexColor(1, 1, 1)
-        if bar.__hagOrigAtlas and tex.SetAtlas then tex:SetAtlas(bar.__hagOrigAtlas) end
+        if bar.__hagAtlas and tex.SetAtlas then tex:SetAtlas(bar.__hagAtlas) end
     end
-    bar.__hagFlat = nil
 end
 
 -- The hook is global and can't be removed; install once per session.
@@ -110,11 +119,8 @@ function UnitFrames:_Color(unit)
     local bar = p.bars[unit]
     if not (bar and bar.GetStatusBarTexture and p.curve) then return end
 
-    ensureFlat(bar)
     local color = UnitHealthPercent(unit, true, p.curve)  -- holds secret values
-    if color then
-        bar:GetStatusBarTexture():SetVertexColor(color:GetRGB())
-    end
+    if color then paint(bar, color:GetRGB()) end
 end
 
 function UnitFrames:OnSettingChanged(key)
