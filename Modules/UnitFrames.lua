@@ -108,21 +108,11 @@ end
 function UnitFrames:_BuildCurve()
     local p = self:_p()
     local curve = C_CurveUtil.CreateColorCurve()
-    local style = self:GetSetting("style") or "steps"
-
-    if style == "smooth" then
-        curve:SetType((Enum.LuaCurveType and Enum.LuaCurveType.Linear) or Enum.LuaCurveType.Step)
-        curve:AddPoint(0.0, colorAt(0.0))
-        curve:AddPoint(0.5, colorAt(0.5))
-        curve:AddPoint(1.0, colorAt(1.0))
-    else
-        -- 5% bands: a flat colour per 5% of health, green at the top -> red low.
-        curve:SetType(Enum.LuaCurveType.Step)
-        for i = 0, 20 do
-            local t = i / 20
-            curve:AddPoint(t, colorAt(t))
-        end
-    end
+    -- smooth, continuous green -> yellow -> red gradient
+    curve:SetType((Enum.LuaCurveType and Enum.LuaCurveType.Linear) or Enum.LuaCurveType.Step)
+    curve:AddPoint(0.0, colorAt(0.0))
+    curve:AddPoint(0.5, colorAt(0.5))
+    curve:AddPoint(1.0, colorAt(1.0))
     p.curve = curve
 end
 
@@ -157,7 +147,6 @@ end
 
 -- React to settings changes from the auto-generated settings page.
 function UnitFrames:OnSettingChanged(key, value)
-    if key == "style" then self:_BuildCurve() end
     if (key == "player" or key == "target") and value == false then
         self:_Restore(key)
     end
@@ -174,11 +163,6 @@ ns.ModuleManager.Get():Register(UnitFrames:New("UnitFrames", {
         { type = "header", text = "Health bar tint" },
         { type = "toggle", key = "player", label = "Tint player health bar", default = true },
         { type = "toggle", key = "target", label = "Tint target health bar", default = true },
-        { type = "select", key = "style", label = "Gradient", default = "steps",
-          options = {
-              { value = "steps",  text = "5% steps" },
-              { value = "smooth", text = "Smooth" },
-          } },
         { type = "note", text = "Full health is green, fading through yellow to bright red as health drops." },
     },
 }))
