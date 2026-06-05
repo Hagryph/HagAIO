@@ -284,6 +284,19 @@ function Questing:_OnGossip()
             return
         end
     end
+
+    -- Auto-advance a lone dialogue option, but only on a pure-dialogue NPC
+    -- (no quests to accept or turn in).
+    if self:GetSetting("autoDialogue") and C_GossipInfo and C_GossipInfo.GetOptions then
+        local active = (C_GossipInfo.GetActiveQuests and C_GossipInfo.GetActiveQuests()) or {}
+        local avail  = (C_GossipInfo.GetAvailableQuests and C_GossipInfo.GetAvailableQuests()) or {}
+        if #active == 0 and #avail == 0 then
+            local options = C_GossipInfo.GetOptions()
+            if options and #options == 1 and options[1].gossipOptionID then
+                C_GossipInfo.SelectOption(options[1].gossipOptionID)
+            end
+        end
+    end
 end
 
 function Questing:_OnGreeting()
@@ -324,6 +337,8 @@ ns.ModuleManager.Get():Register(Questing:New("Questing", {
         { type = "header", text = "Quests" },
         { type = "toggle", key = "autoAccept", label = "Auto-accept quests", default = false },
         { type = "toggle", key = "autoTurnIn", label = "Auto-turn-in quests", default = false },
+        { type = "toggle", key = "autoDialogue", label = "Auto-advance single dialogue", default = false,
+          desc = "When an NPC has only one dialogue option (and no quests), pick it automatically." },
         { type = "toggle", key = "shiftPause", label = "Hold Shift to pause", default = true,
           desc = "Hold Shift while talking to an NPC to handle it yourself." },
         { type = "toggle", key = "pauseInstance", label = "Pause inside instances", default = false,
