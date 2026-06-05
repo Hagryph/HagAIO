@@ -30,7 +30,7 @@ function SlashCommand:_Dispatch(msg)
     if entry then
         entry.fn(rest)
     elseif sub == "" then
-        ns.Config.Get():Open()
+        ns.UI.SettingsWindow.Get():Toggle()
     else
         self:_PrintHelp()
     end
@@ -54,8 +54,10 @@ function SlashCommand:Activate()
     SLASH_HAGAIO2 = "/hag"
     SlashCmdList["HAGAIO"] = function(msg) self:_Dispatch(msg) end
 
-    self:Register("config", function() ns.Config.Get():Open() end,
-        "open the options panel")
+    self:Register("config", function() ns.UI.SettingsWindow.Get():Toggle() end,
+        "open the settings window")
+    self:Register("log", function() ns.UI.SettingsWindow.Get():Show("log") end,
+        "open the activity log")
     self:Register("help", function() self:_PrintHelp() end,
         "list commands")
     self:Register("modules", function()

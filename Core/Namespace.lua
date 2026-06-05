@@ -17,12 +17,14 @@ ns.version = (C_AddOns and C_AddOns.GetAddOnMetadata
 -- the shape of the namespace is documented in one place.
 ns.Class = nil          -- OOP class factory          (Core/Class.lua)
 ns.Object = nil         -- root base class             (Core/Class.lua)
+ns.Theme = nil          -- design system (LoL palette) (Core/Theme.lua)
 ns.EventBus = nil       -- event/message singleton     (Core/EventBus.lua)
 ns.SavedVars = nil      -- saved-variable manager      (Core/SavedVars.lua)
+ns.Logger = nil         -- logging service singleton   (Core/Logger.lua)
 ns.Module = nil         -- abstract feature base       (Core/Module.lua)
 ns.ModuleManager = nil  -- module registry singleton   (Core/ModuleManager.lua)
 ns.SlashCommand = nil   -- slash command router        (Core/SlashCommand.lua)
-ns.Config = nil         -- options panel singleton     (Core/Config.lua)
+ns.UI = nil             -- UI namespace (widgets+window) (UI/*.lua)
 ns.Bootstrap = nil      -- startup orchestrator        (Bootstrap.lua)
 
 -- Logger: a small static table so prints stay consistent and namespaced.

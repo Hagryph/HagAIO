@@ -32,15 +32,42 @@ HagAIO.toc                 Load manifest (file order, saved vars, Interface vers
 Core/
   Namespace.lua            Shared addon table + namespaced logger
   Class.lua                Metatable OOP system (private fields, inheritance, singletons)
+  Theme.lua                Design system — LoL "dark + blue" palette (hex + rgb)
   EventBus.lua             Singleton pub/sub over game events + custom messages
   SavedVars.lua            Default-merged, namespaced saved-variable manager
-  Module.lua               Abstract base class for feature modules (lifecycle hooks)
-  ModuleManager.lua        Singleton registry: binds db, runs lifecycle, enable/disable
+  Logger.lua               Logging service: per-module channels, history, chat echo
+  Module.lua               Abstract base class for feature modules (lifecycle + logging)
+  ModuleManager.lua        Singleton registry: binds db/logger, runs lifecycle
   SlashCommand.lua         /hagaio (/hag) router with sub-commands
-  Config.lua               Options panel via the modern Settings API
+UI/
+  Widgets.lua              Themed factory (panels, toggles, nav items, scroll)
+  SettingsWindow.lua       Custom dark+blue settings menu (Modules / Log / About)
 Bootstrap.lua              Startup orchestrator (ADDON_LOADED → PLAYER_LOGIN)
 deploy.ps1                 Mirror the addon into the live WoW AddOns folder
 ```
+
+### Logging
+
+Every module gets a colour-coded logging channel automatically. Each report is
+written to the chat frame *and* recorded in the in-game **activity log**
+(`/hag log`), tinted by level:
+
+```lua
+self:LogInfo("scanned", count, "items")   -- white
+self:LogSuccess("ready")                   -- green
+self:LogWarn("nothing to do")              -- amber
+self:LogError("missing data")              -- red
+self:LogDebug("verbose detail")            -- grey (hidden below INFO threshold)
+```
+
+Format: `HagAIO  hh:mm:ss  [Module]  message`. Chat echo and the level
+threshold are togglable in the Log page and persist.
+
+### Settings window
+
+A custom themed window (not the default Blizzard panel) ported from the LoL
+Game Helper's design — near-black blue-tinted panels, a cyan `#4ab3e6` accent,
+a left nav rail, and live pages. Movable, ESC-closable. Open with `/hag`.
 
 ### Adding a feature module
 
@@ -49,26 +76,29 @@ local addonName, ns = ...
 local MyFeature = ns.Class.new("MyFeature", ns.Module)
 
 function MyFeature:OnInitialize()
-    -- self:GetDB() is bound and ready here
+    -- self:GetDB() and self:LogInfo(...) are ready here
 end
 
-function MyFeature:OnEnable()  -- register events, create frames … end
-function MyFeature:OnDisable() -- tear them down … end
+function MyFeature:OnEnable()  self:LogInfo("watching") end
+function MyFeature:OnDisable() end
 
 ns.ModuleManager.Get():Register(MyFeature:New("MyFeature", {
     title = "My Feature",
     defaultEnabled = true,
     dbDefaults = { foo = 1 },
+    color = "4ab3e6",         -- log tag colour (optional)
 }))
 ```
 
-Add the file to `HagAIO.toc` after the `Core/` block.
+Add the file to `HagAIO.toc` after the `Core/` block. It appears in the
+settings window's Modules page with a live toggle.
 
 ## Usage
 
 | Command | Effect |
 |---|---|
-| `/hag` | Open the options panel |
+| `/hag` | Toggle the settings window |
+| `/hag log` | Open the activity log |
 | `/hag modules` | List feature modules and their on/off state |
 | `/hag help` | List all commands |
 

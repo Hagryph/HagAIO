@@ -27,10 +27,10 @@ function Bootstrap:Run()
     bus:On("ADDON_LOADED", function(_, loaded)
         if loaded ~= addonName then return end
         ns.SavedVars.Get():Load()
+        ns.Logger.Get():LoadSettings()
         ns.SlashCommand.Get():Activate()
-        ns.Config.Get():Build()
-        ns.Log.Print(("loaded v%s. Type |cffffff00/hag|r to begin.")
-            :format(tostring(ns.version)))
+        ns.Logger.Get():Core():Info(
+            ("loaded v%s — type /hag to open."):format(tostring(ns.version)))
     end)
 
     bus:On("PLAYER_LOGIN", function()

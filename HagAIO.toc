@@ -14,10 +14,13 @@
 
 Core\Namespace.lua
 Core\Class.lua
+Core\Theme.lua
 Core\EventBus.lua
 Core\SavedVars.lua
+Core\Logger.lua
 Core\Module.lua
 Core\ModuleManager.lua
 Core\SlashCommand.lua
-Core\Config.lua
+UI\Widgets.lua
+UI\SettingsWindow.lua
 Bootstrap.lua

@@ -50,6 +50,7 @@ function ModuleManager:Count()
 end
 
 function ModuleManager:_Start(module)
+    module:_AttachLogger()
     module:_BindDB()
     module:OnInitialize()
     local saved = ns.SavedVars.Get():GetModuleState(module:GetName())
