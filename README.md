@@ -43,9 +43,8 @@ UI/
   Widgets.lua              Themed factory (panels, toggles, nav items, scroll)
   SettingsWindow.lua       Custom dark+blue settings menu (Modules / Log / About)
 Modules/
-  Leveling.lua             Session XP/hour tracker + XP-bar hover tooltip
+  Questing.lua             XP/hour tooltip + auto-accept/turn-in quests
   UnitFrames.lua           Player/target health-bar tint by HP% (colour curves)
-  AutoQuest.lua            Auto-accept and auto-turn-in quests at NPCs
 Bootstrap.lua              Startup orchestrator (ADDON_LOADED → PLAYER_LOGIN)
 deploy.ps1                 Mirror the addon into the live WoW AddOns folder
 ```

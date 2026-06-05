@@ -25,7 +25,6 @@ Core\SlashCommand.lua
 Core\Compartment.lua
 UI\Widgets.lua
 UI\SettingsWindow.lua
-Modules\Leveling.lua
+Modules\Questing.lua
 Modules\UnitFrames.lua
-Modules\AutoQuest.lua
 Bootstrap.lua
