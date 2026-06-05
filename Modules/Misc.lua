@@ -263,7 +263,9 @@ function Misc:_BuildSellButton()
     local b = CreateFrame("Button", nil, MerchantFrame, "BackdropTemplate")
     W.Style(b, "panel2", "borderStrong")
     b:SetSize(86, 22)
-    b:SetPoint("BOTTOMRIGHT", MerchantFrame, "BOTTOMRIGHT", -8, 8)
+    -- just below the merchant window (its bottom-right), clear of the buyback
+    -- slot and money area
+    b:SetPoint("TOPRIGHT", MerchantFrame, "BOTTOMRIGHT", -4, -2)
     b:SetFrameStrata("HIGH")
     local fs = W.Text(b, "Sell Junk", "accent", "GameFontNormalSmall")
     fs:SetPoint("CENTER")
