@@ -17,14 +17,17 @@ local Class = ns.Class
 
 local UnitFrames = Class.new("UnitFrames", ns.Module)
 
-local FLAT = "Interface\\TargetingFrame\\UI-StatusBar"
+-- Solid 8x8 white: tints to a flat, uniform colour (the UI-StatusBar texture
+-- has a built-in light/dark split we don't want).
+local FLAT = "Interface\\Buttons\\WHITE8X8"
 
 local function buildCurve()
     local curve = C_CurveUtil.CreateColorCurve()
     curve:SetType(Enum.LuaCurveType.Linear)
-    curve:AddPoint(0.0, CreateColor(0.95, 0.13, 0.13))  -- 0%   red
-    curve:AddPoint(0.5, CreateColor(0.95, 0.82, 0.15))  -- 50%  yellow
-    curve:AddPoint(1.0, CreateColor(0.10, 0.85, 0.10))  -- 100% green
+    curve:AddPoint(0.00, CreateColor(0.90, 0.15, 0.15))  -- 0%   red
+    curve:AddPoint(0.30, CreateColor(0.90, 0.15, 0.15))  -- <=30% stays red
+    curve:AddPoint(0.55, CreateColor(0.95, 0.82, 0.15))  -- ~55% yellow
+    curve:AddPoint(1.00, CreateColor(0.20, 0.80, 0.20))  -- 100% green
     return curve
 end
 
