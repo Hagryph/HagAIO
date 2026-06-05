@@ -58,6 +58,10 @@ local ExpelHarm = {
         p.subTokens["TRAIT_CONFIG_UPDATED"]      = bus:On("TRAIT_CONFIG_UPDATED",      function() self:_RefreshHeal() end)
         p.subTokens["ACTIVE_COMBAT_CONFIG_CHANGED"] = bus:On("ACTIVE_COMBAT_CONFIG_CHANGED", function() self:_RefreshHeal() end)
         p.subTokens["UNIT_AURA"]                 = bus:On("UNIT_AURA",                 function(_, u) if u == "player" then self:_RefreshHeal() end end)
+        -- hide the marker while Expel Harm is on cooldown, driven by the cast +
+        -- a Cooldown widget so we never read the (possibly secret) cooldown time
+        p.subTokens["UNIT_SPELLCAST_SUCCEEDED"]  = bus:On("UNIT_SPELLCAST_SUCCEEDED",  function(_, u, _, spellID) if u == "player" and spellID == EXPEL_HARM then self:_OnExpelCast() end end)
+        p.onCooldown = false
         p.expelActive = true
         self:_RefreshHeal()
     end,
@@ -69,6 +73,7 @@ local ExpelHarm = {
             wipe(p.subTokens)
         end
         p.expelActive = false
+        p.onCooldown = false
         if p.marker then p.marker:Hide() end
     end,
 }
@@ -102,6 +107,8 @@ function ClassModule:OnInitialize()
     p.heal = nil
     p.marker = nil
     p.host = nil
+    p.cd = nil
+    p.onCooldown = false
     p.activeSub = nil
     p.expelActive = false
     p.updateScheduled = false
@@ -220,7 +227,7 @@ function ClassModule:_UpdateMarker()
     local bar = p.bar  -- the real bar captured from the hook
     if not bar then return end
 
-    if not (self:IsEnabled() and p.expelActive and self:GetSetting("expelHarm")) then
+    if p.onCooldown or not (self:IsEnabled() and p.expelActive and self:GetSetting("expelHarm")) then
         if p.marker then p.marker:Hide() end
         return
     end
@@ -262,6 +269,33 @@ function ClassModule:_UpdateMarker()
     m:SetPoint("TOP", fill, "TOPRIGHT", offset, 0)
     m:SetPoint("BOTTOM", fill, "BOTTOMRIGHT", offset, 0)
     m:Show()
+end
+
+-- Hide the marker for the Expel Harm cooldown. We feed the (possibly secret)
+-- cooldown straight into a Cooldown widget and let it tell us when it's done via
+-- OnCooldownDone — we never read or compare the cooldown value.
+function ClassModule:_OnExpelCast()
+    local p = self:_p()
+    if not p.cd then
+        local cd = CreateFrame("Cooldown", nil, UIParent, "CooldownFrameTemplate")
+        cd:SetSize(1, 1)
+        cd:SetPoint("CENTER")
+        cd:SetAlpha(0)
+        cd:SetDrawEdge(false)
+        cd:SetDrawSwipe(false)
+        cd:SetHideCountdownNumbers(true)
+        cd:SetScript("OnCooldownDone", function()
+            self:_p().onCooldown = false
+            self:_ScheduleUpdate()
+        end)
+        p.cd = cd
+    end
+    local info = C_Spell and C_Spell.GetSpellCooldown and C_Spell.GetSpellCooldown(EXPEL_HARM)
+    if info then
+        p.onCooldown = true
+        p.cd:SetCooldown(info.startTime, info.duration, info.modRate)
+        self:_ScheduleUpdate()  -- hide now
+    end
 end
 
 function ClassModule:OnSettingChanged()
