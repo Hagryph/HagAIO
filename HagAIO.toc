@@ -27,4 +27,5 @@ UI\Widgets.lua
 UI\SettingsWindow.lua
 Modules\Leveling.lua
 Modules\UnitFrames.lua
+Modules\AutoQuest.lua
 Bootstrap.lua
