@@ -105,28 +105,33 @@ function SettingsWindow:Build()
         end
     end)
 
-    -- combat: auto-close while fighting, reopen after if it was open
+    -- auto-close while fighting OR in Edit Mode, reopen after if it was open
+    -- (the two never overlap — Edit Mode is blocked in combat)
     local bus = ns.EventBus.Get()
-    bus:On("PLAYER_REGEN_DISABLED", function() self:_OnCombatStart() end)
-    bus:On("PLAYER_REGEN_ENABLED",  function() self:_OnCombatEnd() end)
-    -- a manual close (X / Esc) clears any pending reopen; a combat close keeps it
+    bus:On("PLAYER_REGEN_DISABLED", function() self:_Suspend() end)
+    bus:On("PLAYER_REGEN_ENABLED",  function() self:_Resume() end)
+    if EventRegistry then
+        EventRegistry:RegisterCallback("EditMode.Enter", function() self:_Suspend() end, self)
+        EventRegistry:RegisterCallback("EditMode.Exit",  function() self:_Resume() end, self)
+    end
+    -- a manual close (X / Esc) clears any pending reopen; an auto-close keeps it
     f:SetScript("OnHide", function()
-        if p.closedByCombat then p.closedByCombat = false else p.reopenKey = nil end
+        if p.autoClosed then p.autoClosed = false else p.reopenKey = nil end
     end)
 
     p.built = true
 end
 
-function SettingsWindow:_OnCombatStart()
+function SettingsWindow:_Suspend()
     local p = self:_p()
     if p.frame and p.frame:IsShown() then
         p.reopenKey = p.current or "modules"
-        p.closedByCombat = true
+        p.autoClosed = true
         p.frame:Hide()  -- direct, so OnHide keeps reopenKey
     end
 end
 
-function SettingsWindow:_OnCombatEnd()
+function SettingsWindow:_Resume()
     local p = self:_p()
     if p.reopenKey then
         local key = p.reopenKey
@@ -427,10 +432,14 @@ function SettingsWindow:Show(key)
     local p = self:_p()
     key = key or p.current or "modules"
 
-    -- Defer opening until combat ends (don't pop the panel mid-fight).
-    if not p.frame:IsShown() and InCombatLockdown() then
+    -- Defer opening during combat or Edit Mode; it opens again afterwards.
+    local editActive = EditModeManagerFrame and EditModeManagerFrame.IsEditModeActive
+        and EditModeManagerFrame:IsEditModeActive()
+    if not p.frame:IsShown() and (InCombatLockdown() or editActive) then
         p.reopenKey = key
-        ns.Logger.Get():Core():Warn("In combat - the settings will open when you leave combat.")
+        if InCombatLockdown() then
+            ns.Logger.Get():Core():Warn("In combat - the settings will open when you leave combat.")
+        end
         return
     end
 
