@@ -80,7 +80,6 @@ function UnitFrames:OnEnable()
 
     local bus = ns.EventBus.Get()
     p.tokens["UNIT_HEALTH"]            = bus:On("UNIT_HEALTH",            function(_, u) self:_Tint(u) end)
-    p.tokens["UNIT_HEALTH_FREQUENT"]  = bus:On("UNIT_HEALTH_FREQUENT",   function(_, u) self:_Tint(u) end)
     p.tokens["UNIT_MAXHEALTH"]        = bus:On("UNIT_MAXHEALTH",         function(_, u) self:_Tint(u) end)
     p.tokens["PLAYER_TARGET_CHANGED"] = bus:On("PLAYER_TARGET_CHANGED",  function() self:_HookBar("target"); self:_Tint("target") end)
     p.tokens["PLAYER_ENTERING_WORLD"] = bus:On("PLAYER_ENTERING_WORLD",  function()

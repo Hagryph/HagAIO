@@ -31,12 +31,19 @@ local function freshToken(p)
     return token
 end
 
--- Subscribe to a real game event. Returns an unsubscribe token.
+-- Subscribe to a real game event. Returns an unsubscribe token (nil if the
+-- event name is unknown/removed on this client).
 function EventBus:On(event, fn)
     local p = self:_p()
     if not p.events[event] then
+        -- RegisterEvent throws on unknown/removed events; don't let one bad
+        -- event name abort the caller's whole setup.
+        local ok = pcall(p.frame.RegisterEvent, p.frame, event)
+        if not ok then
+            ns.Log.Warn("ignoring unknown event:", event)
+            return nil
+        end
         p.events[event] = {}
-        p.frame:RegisterEvent(event)
     end
     local token = freshToken(p)
     p.events[event][token] = fn
@@ -44,6 +51,7 @@ function EventBus:On(event, fn)
 end
 
 function EventBus:Off(event, token)
+    if token == nil then return end
     local p = self:_p()
     local handlers = p.events[event]
     if not handlers then return end
