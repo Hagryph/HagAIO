@@ -175,24 +175,30 @@ function SettingsWindow:_BuildLogPage(parent)
     local title = W.Text(page, "Activity Log", "text", "GameFontNormalLarge")
     title:SetPoint("TOPLEFT", 18, -16)
 
+    -- Controls sit on the title row, vertically centred on the title, so they
+    -- never collide with the note line below.
     local clear = W.TextButton(page, "Clear")
-    clear:SetPoint("TOPRIGHT", page, "TOPRIGHT", -18, -18)
+    clear:SetPoint("RIGHT", page, "RIGHT", -18, 0)
+    clear:SetPoint("TOP", title, "TOP", 0, 3)
     clear:SetScript("OnClick", function()
         wipe(ns.Logger.Get():GetHistory())
         self:_RefreshLog()
     end)
 
     local echo = W.Toggle(page, "Echo to chat")
-    echo:SetPoint("TOPRIGHT", clear, "TOPLEFT", -120, -1)
+    echo:SetPoint("RIGHT", clear, "LEFT", -88, 0)
+    echo:SetPoint("TOP", title, "TOP", 0, 0)
     echo:SetChecked(ns.Logger.Get():GetEcho())
     echo:SetOnToggle(function(on) ns.Logger.Get():SetEcho(on) end)
 
+    -- Note pinned below the whole header band (title + controls), not chained
+    -- to the title, so the spacing is fixed regardless of font metrics.
     local note = W.Text(page, "Every module report is recorded here automatically.",
         "textDim", "GameFontHighlightSmall")
-    note:SetPoint("TOPLEFT", title, "BOTTOMLEFT", 0, -6)
+    note:SetPoint("TOPLEFT", page, "TOPLEFT", 18, -46)
 
     local div = W.Divider(page)
-    div:SetPoint("TOPLEFT", note, "BOTTOMLEFT", 0, -12)
+    div:SetPoint("TOPLEFT", note, "BOTTOMLEFT", 0, -10)
     div:SetPoint("RIGHT", page, "RIGHT", -18, 0)
 
     local sf = W.ScrollFrame(page, "HagAIOLogScroll")
