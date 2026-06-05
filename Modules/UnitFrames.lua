@@ -158,9 +158,9 @@ ns.ModuleManager.Get():Register(UnitFrames:New("UnitFrames", {
         { type = "toggle", key = "target", label = "Tint target health bar", default = true },
 
         { type = "header", text = "Colours" },
-        { type = "color", key = "startColor", label = "Low health (start)",  default = DEF_START },
-        { type = "color", key = "midColor",   label = "Mid health",          default = DEF_MID },
-        { type = "color", key = "endColor",   label = "Full health (end)",   default = DEF_END },
+        { type = "color", key = "endColor",   label = "Full health", default = DEF_END },
+        { type = "color", key = "midColor",   label = "Mid health",  default = DEF_MID },
+        { type = "color", key = "startColor", label = "Low health",  default = DEF_START },
         { type = "note", text = "Health fades from Full at 100% through Mid to Low at 30% and below." },
     },
 }))
