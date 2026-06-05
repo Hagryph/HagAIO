@@ -72,10 +72,16 @@ SUBMODULES.MONK["none"] = {
 }
 
 -- "none" when the player has no specialisation, else the spec index (1-4).
+-- A spec-less character returns an out-of-range "initial" index (e.g. 5 for a
+-- pre-level-10 Monk) whose GetSpecializationInfo has no name.
 local function currentSpecKey()
     local idx = GetSpecialization and GetSpecialization()
-    if idx and GetSpecializationInfo and GetSpecializationInfo(idx) then return idx end
-    return "none"
+    if not idx then return "none" end
+    local num = (GetNumSpecializations and GetNumSpecializations()) or 0
+    if idx < 1 or idx > num then return "none" end
+    local _, name = (GetSpecializationInfo and GetSpecializationInfo(idx))
+    if not name or name == "" then return "none" end
+    return idx
 end
 
 -- ---- lifecycle ------------------------------------------------------------
@@ -124,8 +130,6 @@ function ClassModule:OnInitialize()
             end
         end
     end
-
-    ns.SlashCommand.Get():Register("spec", function() self:_DumpSpec() end, "dump current spec (debug)")
 
     -- Install the bar-learning hook now (even while disabled) so a submodule's
     -- marker can appear immediately on enable, without a reload.
@@ -244,22 +248,6 @@ end
 
 function ClassModule:OnSettingChanged()
     self:_ScheduleUpdate()
-end
-
--- /hag spec — dump spec detection so we can tune "no specialisation".
-function ClassModule:_DumpSpec()
-    local idx = GetSpecialization and GetSpecialization()
-    self:LogInfo("level", UnitLevel("player"), "class", tostring(self:_p().class))
-    self:LogInfo("GetSpecialization() =", tostring(idx))
-    if idx then
-        local id, name, _, _, role = (GetSpecializationInfo and GetSpecializationInfo(idx))
-        self:LogInfo("GetSpecializationInfo(idx): id=", tostring(id), "name=", tostring(name), "role=", tostring(role))
-    end
-    if GetNumSpecializations then self:LogInfo("GetNumSpecializations() =", tostring(GetNumSpecializations())) end
-    if C_SpecializationInfo and C_SpecializationInfo.GetSpecialization then
-        self:LogInfo("C_SpecializationInfo.GetSpecialization() =", tostring(C_SpecializationInfo.GetSpecialization()))
-    end
-    self:LogInfo("=> currentSpecKey() =", tostring(currentSpecKey()))
 end
 
 -- ---- registration ---------------------------------------------------------
