@@ -44,6 +44,7 @@ UI/
   SettingsWindow.lua       Custom dark+blue settings menu (Modules / Log / About)
 Modules/
   Leveling.lua             Session XP/hour tracker + XP-bar hover tooltip
+  UnitFrames.lua           Player/target health-bar tint by HP% (colour curves)
 Bootstrap.lua              Startup orchestrator (ADDON_LOADED → PLAYER_LOGIN)
 deploy.ps1                 Mirror the addon into the live WoW AddOns folder
 ```
@@ -86,14 +87,26 @@ function MyFeature:OnDisable() end
 
 ns.ModuleManager.Get():Register(MyFeature:New("MyFeature", {
     title = "My Feature",
+    description = "One short line shown on the Modules page.",
     defaultEnabled = true,
-    dbDefaults = { foo = 1 },
     color = "4ab3e6",         -- log tag colour (optional)
+    settings = {              -- auto-generates this module's settings page
+        { type = "header", text = "Options" },
+        { type = "toggle", key = "foo", label = "Enable foo", default = true,
+          desc = "Optional helper line." },
+        { type = "select", key = "mode", label = "Mode", default = "a",
+          options = { { value = "a", text = "A" }, { value = "b", text = "B" } } },
+    },
 }))
+
+-- read/write settings (bound to saved vars):  self:GetSetting("foo")
+-- react to changes:  function MyFeature:OnSettingChanged(key, value) ... end
 ```
 
-Add the file to `HagAIO.toc` after the `Core/` block. It appears in the
-settings window's Modules page with a live toggle.
+Add the file to `HagAIO.toc` after the `Modules/` block. It appears on the
+settings window's **Modules** page (name + short description + toggle), and its
+**settings schema auto-generates a dedicated settings page** (open via the row's
+`Settings >` button).
 
 ## Usage
 

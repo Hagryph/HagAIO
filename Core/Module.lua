@@ -10,16 +10,38 @@ local Module = Class.new("Module")
 
 -- Constructor. Subclasses that need their own constructor should override
 -- Initialize and call Module.Initialize(self, name, opts) first.
---   opts = { title = string, defaultEnabled = bool, dbDefaults = table,
---            color = "RRGGBB" }
+--   opts = { title = string, description = string, defaultEnabled = bool,
+--            color = "RRGGBB", dbDefaults = table,
+--            settings = { <schema entries> } }
+--
+-- Each settings schema entry drives one auto-generated control on the module's
+-- settings page (and seeds its saved-var default):
+--   { type = "header", text = "..." }
+--   { type = "note",   text = "..." }
+--   { type = "toggle", key = "...", label = "...", default = bool, desc = "..." }
+--   { type = "select", key = "...", label = "...", default = "v",
+--       options = { { value = "v", text = "..." }, ... } }
 function Module:Initialize(name, opts)
     opts = opts or {}
     local p = self:_p()
     p.name = name
     p.title = opts.title or name
+    p.description = opts.description or ""
     p.defaultEnabled = opts.defaultEnabled ~= false
-    p.dbDefaults = opts.dbDefaults or {}
     p.color = opts.color or ns.Theme.hex.accent  -- log/tag colour
+    p.settings = opts.settings or {}
+
+    -- Seed saved-var defaults from the settings schema, then layer any explicit
+    -- dbDefaults on top.
+    local defaults = {}
+    for _, s in ipairs(p.settings) do
+        if s.key ~= nil and s.default ~= nil then defaults[s.key] = s.default end
+    end
+    if opts.dbDefaults then
+        for k, v in pairs(opts.dbDefaults) do defaults[k] = v end
+    end
+    p.dbDefaults = defaults
+
     p.enabled = false
     p.db = nil
     p.log = nil
@@ -28,11 +50,26 @@ end
 -- Getters (private fields are never exposed directly).
 function Module:GetName() return self:_p().name end
 function Module:GetTitle() return self:_p().title end
+function Module:GetDescription() return self:_p().description end
 function Module:GetColor() return self:_p().color end
+function Module:GetSettings() return self:_p().settings end
 function Module:IsEnabled() return self:_p().enabled end
 function Module:IsDefaultEnabled() return self:_p().defaultEnabled end
 function Module:GetDB() return self:_p().db end
 function Module:GetLog() return self:_p().log end
+
+-- Settings accessors (bound to the module's saved-var namespace).
+function Module:GetSetting(key)
+    local db = self:_p().db
+    return db and db[key]
+end
+function Module:SetSetting(key, value)
+    local p = self:_p()
+    if p.db then p.db[key] = value end
+    self:OnSettingChanged(key, value)
+end
+-- Hook: react to a setting change (no-op by default).
+function Module:OnSettingChanged(key, value) end
 
 -- Internal: bind saved-variable namespace. Called by ModuleManager at startup.
 function Module:_BindDB()

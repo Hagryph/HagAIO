@@ -15,7 +15,8 @@ local instance
 function SettingsWindow:Initialize()
     local p = self:_p()
     p.built = false
-    p.pages = {}
+    p.pages = {}          -- static pages: modules / log / about
+    p.modulePages = {}    -- name -> auto-generated module settings page
     p.nav = {}
     p.current = nil
 end
@@ -146,26 +147,141 @@ function SettingsWindow:_RefreshModules()
         return
     end
 
+    -- Each row: [toggle]  Name + short description  ............  [ Settings › ]
     local y = 0
     for module in mm:Iterate() do
         local row = CreateFrame("Frame", nil, holder)
         row:SetPoint("TOPLEFT", 2, y)
         row:SetPoint("RIGHT", holder, "RIGHT", -2, 0)
-        row:SetHeight(28)
+        row:SetHeight(44)
 
         local toggle = W.Toggle(row, nil)
-        toggle:SetPoint("LEFT", 0, 0)
+        toggle:SetPoint("TOPLEFT", 0, -4)
         toggle:SetChecked(module:IsEnabled())
         toggle:SetOnToggle(function(on)
             if on then module:Enable() else module:Disable() end
         end)
 
-        local name = W.Text(row, module:GetTitle(), "text", "GameFontHighlight")
-        name:SetPoint("LEFT", toggle, "RIGHT", 10, 0)
+        local name = W.Text(row, module:GetTitle(), "text", "GameFontNormal")
+        name:SetPoint("TOPLEFT", toggle, "TOPRIGHT", 12, 2)
+
+        local settings = W.TextButton(row, "Settings >")
+        settings:SetPoint("RIGHT", row, "RIGHT", -4, 0)
+        settings:SetScript("OnClick", function() self:Show("module:" .. module:GetName()) end)
+
+        local desc = W.Text(row, module:GetDescription(), "textDim", "GameFontHighlightSmall")
+        desc:SetPoint("TOPLEFT", name, "BOTTOMLEFT", 0, -3)
+        desc:SetPoint("RIGHT", settings, "LEFT", -10, 0)
+        desc:SetJustifyH("LEFT")
 
         p.moduleRows[#p.moduleRows + 1] = row
-        y = y - 32
+        y = y - 48
     end
+end
+
+-- Lazily build a module's auto-generated settings page from its schema.
+function SettingsWindow:_EnsureModulePage(name)
+    local p = self:_p()
+    if p.modulePages[name] then return p.modulePages[name] end
+    local module = ns.ModuleManager.Get():GetModule(name)
+    if not module then return nil end
+
+    local page = CreateFrame("Frame", nil, p.content)
+    page:SetAllPoints()
+
+    local back = W.TextButton(page, "< Modules")
+    back:SetPoint("TOPLEFT", 16, -14)
+    back:SetScript("OnClick", function() self:Show("modules") end)
+
+    local title = W.Text(page, module:GetTitle(), "text", "GameFontNormalLarge")
+    title:SetPoint("TOPLEFT", back, "BOTTOMLEFT", 0, -8)
+
+    -- enable toggle on the header row
+    local enable = W.Toggle(page, "Enabled")
+    enable:SetPoint("TOPRIGHT", page, "TOPRIGHT", -84, -16)
+    enable:SetChecked(module:IsEnabled())
+    enable:SetOnToggle(function(on)
+        if on then module:Enable() else module:Disable() end
+    end)
+
+    local desc = W.Text(page, module:GetDescription(), "textDim", "GameFontHighlightSmall")
+    desc:SetPoint("TOPLEFT", title, "BOTTOMLEFT", 0, -6)
+    desc:SetPoint("RIGHT", page, "RIGHT", -18, 0)
+    desc:SetJustifyH("LEFT")
+
+    local div = W.Divider(page)
+    div:SetPoint("TOPLEFT", desc, "BOTTOMLEFT", 0, -12)
+    div:SetPoint("RIGHT", page, "RIGHT", -18, 0)
+
+    local sf = W.ScrollFrame(page, "HagAIOModule" .. name:gsub("%s", "") .. "Scroll")
+    sf:SetPoint("TOPLEFT", div, "BOTTOMLEFT", 0, -8)
+    sf:SetPoint("BOTTOMRIGHT", page, "BOTTOMRIGHT", -30, 14)
+
+    self:_BuildModuleControls(sf, module)
+
+    page.enableToggle = enable
+    p.modulePages[name] = page
+    return page
+end
+
+-- Generate controls into a module page's scroll content from its schema.
+function SettingsWindow:_BuildModuleControls(sf, module)
+    local content = sf.content
+    local width = sf:GetWidth()
+    if not width or width < 1 then width = 420 end
+    content:SetWidth(width)
+
+    local schema = module:GetSettings()
+    if #schema == 0 then
+        local none = W.Text(content, "This module has no options.", "textFaint", "GameFontHighlightSmall")
+        none:SetPoint("TOPLEFT", 4, -4)
+        content:SetHeight(30)
+        return
+    end
+
+    local y = -4
+    for _, s in ipairs(schema) do
+        if s.type == "header" then
+            local h = W.SectionLabel(content, s.text)
+            h:SetPoint("TOPLEFT", 4, y - 6)
+            y = y - 28
+
+        elseif s.type == "note" then
+            local n = W.Text(content, s.text, "textDim", "GameFontHighlightSmall")
+            n:SetPoint("TOPLEFT", 4, y)
+            n:SetWidth(width - 16)
+            n:SetJustifyH("LEFT")
+            y = y - (n:GetStringHeight() + 12)
+
+        elseif s.type == "toggle" then
+            local t = W.Toggle(content, s.label)
+            t:SetPoint("TOPLEFT", 6, y)
+            t:SetChecked(module:GetSetting(s.key) and true or false)
+            t:SetOnToggle(function(on) module:SetSetting(s.key, on) end)
+            y = y - 26
+            if s.desc then
+                local d = W.Text(content, s.desc, "textFaint", "GameFontHighlightSmall")
+                d:SetPoint("TOPLEFT", 30, y)
+                d:SetWidth(width - 40)
+                d:SetJustifyH("LEFT")
+                y = y - (d:GetStringHeight() + 8)
+            else
+                y = y - 6
+            end
+
+        elseif s.type == "select" then
+            local lbl = W.Text(content, s.label, "text", "GameFontHighlight")
+            lbl:SetPoint("TOPLEFT", 6, y)
+            y = y - 20
+            local seg = W.Segmented(content, s.options)
+            seg:SetPoint("TOPLEFT", 6, y)
+            seg:SetValue(module:GetSetting(s.key))
+            seg:SetOnChange(function(v) module:SetSetting(s.key, v) end)
+            y = y - 34
+        end
+    end
+
+    content:SetHeight(math.max(30, -y + 8))
 end
 
 function SettingsWindow:_BuildLogPage(parent)
@@ -273,8 +389,30 @@ function SettingsWindow:Show(key)
     self:Build()
     local p = self:_p()
     key = key or p.current or "modules"
-    for k, page in pairs(p.pages) do page:SetShown(k == key) end
-    for k, item in pairs(p.nav) do item:SetActive(k == key) end
+
+    -- hide everything first
+    for _, page in pairs(p.pages) do page:SetShown(false) end
+    for _, page in pairs(p.modulePages) do page:SetShown(false) end
+
+    local navKey = key
+    local moduleName = key:match("^module:(.+)$")
+    if moduleName then
+        local page = self:_EnsureModulePage(moduleName)
+        if page then
+            if page.enableToggle then
+                page.enableToggle:SetChecked(ns.ModuleManager.Get():GetModule(moduleName):IsEnabled())
+            end
+            page:Show()
+        else
+            key, navKey = "modules", "modules"
+            p.pages.modules:Show()
+        end
+        navKey = "modules"  -- a module page is a sub-page of Modules
+    elseif p.pages[key] then
+        p.pages[key]:Show()
+    end
+
+    for k, item in pairs(p.nav) do item:SetActive(k == navKey) end
     p.current = key
 
     if key == "modules" then self:_RefreshModules() end

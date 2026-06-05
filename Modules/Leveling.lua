@@ -63,7 +63,7 @@ function Leveling:OnEnable()
     -- tokens keyed by event name so OnDisable can unsubscribe cleanly
     local bus = ns.EventBus.Get()
     p.tokens["PLAYER_XP_UPDATE"]      = bus:On("PLAYER_XP_UPDATE",      function() self:_OnXP() end)
-    p.tokens["PLAYER_LEVEL_UP"]       = bus:On("PLAYER_LEVEL_UP",       function() self:_Snapshot() end)
+    p.tokens["PLAYER_LEVEL_UP"]       = bus:On("PLAYER_LEVEL_UP",       function() self:_OnLevelUp() end)
     p.tokens["PLAYER_ENTERING_WORLD"] = bus:On("PLAYER_ENTERING_WORLD", function() self:_Snapshot() end)
 
     self:_EnsureOverlay()
@@ -90,6 +90,15 @@ function Leveling:_Snapshot()
     p.lastLevel = UnitLevel("player")
     p.lastXP = UnitXP("player")
     p.lastMax = UnitXPMax("player")
+end
+
+function Leveling:_OnLevelUp()
+    self:_Snapshot()
+    if self:GetSetting("echoLevelUp") then
+        local _, _, _, _, _, _, perHour = self:_Stats()
+        self:LogSuccess(("ding! L%d — %s XP/hr this session")
+            :format(UnitLevel("player"), perHour > 0 and commafy(perHour) or "—"))
+    end
 end
 
 function Leveling:_OnXP()
@@ -134,6 +143,10 @@ end
 function Leveling:_ShowTooltip()
     local p = self:_p()
     if not p.overlay then return end
+    if not self:GetSetting("showTooltip") then
+        if GameTooltip:IsOwned(p.overlay) then GameTooltip:Hide() end
+        return
+    end
     local tt = GameTooltip
     tt:SetOwner(p.overlay, "ANCHOR_TOP")
     tt:ClearLines()
@@ -216,7 +229,17 @@ end
 
 -- Register with the manager so it appears in the settings window's Modules page.
 ns.ModuleManager.Get():Register(Leveling:New("Leveling", {
-    title = "Leveling (XP / hour)",
+    title = "Leveling",
+    description = "Session XP per hour, with a hover tooltip on the XP bar.",
     defaultEnabled = true,
     color = ns.Theme.hex.gold,
+    settings = {
+        { type = "header", text = "Tooltip" },
+        { type = "toggle", key = "showTooltip", label = "Show tooltip on the XP bar",
+          default = true,
+          desc = "Hover the XP bar for current/max XP, session XP per hour and time to level." },
+        { type = "toggle", key = "echoLevelUp", label = "Announce XP/hour on level-up",
+          default = false,
+          desc = "Print the session rate to chat each time you ding." },
+    },
 }))

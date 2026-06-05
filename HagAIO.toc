@@ -26,4 +26,5 @@ Core\Compartment.lua
 UI\Widgets.lua
 UI\SettingsWindow.lua
 Modules\Leveling.lua
+Modules\UnitFrames.lua
 Bootstrap.lua

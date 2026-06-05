@@ -157,6 +157,59 @@ function Widgets.NavItem(parent, text)
     return b
 end
 
+-- Segmented selector (LoL "view-switch"): a row of option buttons, active one
+-- accent-highlighted. options = { { value = v, text = "..." }, ... }.
+-- Methods: :SetValue(v) :GetValue() :SetOnChange(fn).
+function Widgets.Segmented(parent, options)
+    local c = CreateFrame("Frame", nil, parent, "BackdropTemplate")
+    Widgets.Style(c, "panel2", "border")
+    c:SetHeight(24)
+
+    local btns, value, onChange = {}, nil, nil
+    local function render()
+        for _, e in ipairs(btns) do
+            if e.value == value then
+                e.bg:Show(); e.fs:SetTextColor(Theme.Unpack("accent"))
+            else
+                e.bg:Hide(); e.fs:SetTextColor(Theme.Unpack("textDim"))
+            end
+        end
+    end
+
+    local x = 2
+    for _, opt in ipairs(options) do
+        local b = CreateFrame("Button", nil, c)
+        local fs = Widgets.Text(b, opt.text, "textDim", "GameFontNormalSmall")
+        fs:SetPoint("CENTER")
+        local w = math.max(46, fs:GetStringWidth() + 18)
+        b:SetSize(w, 20)
+        b:SetPoint("LEFT", x, 0)
+
+        local bg = b:CreateTexture(nil, "BACKGROUND")
+        bg:SetAllPoints()
+        bg:SetColorTexture(Theme.Unpack("accentSoft"))
+        bg:Hide()
+
+        b.bg, b.fs, b.value = bg, fs, opt.value
+        b:SetScript("OnClick", function()
+            value = opt.value; render()
+            if onChange then onChange(value) end
+        end)
+        b:SetScript("OnEnter", function() if opt.value ~= value then fs:SetTextColor(Theme.Unpack("text")) end end)
+        b:SetScript("OnLeave", render)
+
+        btns[#btns + 1] = b
+        x = x + w + 2
+    end
+    c:SetWidth(x)
+
+    c.SetValue    = function(_, v) value = v; render() end
+    c.GetValue    = function() return value end
+    c.SetOnChange = function(_, fn) onChange = fn end
+    render()
+    return c
+end
+
 -- Named scroll frame (template needs a name for its $parentScrollBar).
 function Widgets.ScrollFrame(parent, name)
     local sf = CreateFrame("ScrollFrame", name, parent, "UIPanelScrollFrameTemplate")
