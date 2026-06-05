@@ -49,8 +49,9 @@ local KEG_SMASH  = 121253
 -- ===========================================================================
 local SUBMODULES = { MONK = {} }
 
--- Expel Harm is a baseline Monk ability (no-spec + Brewmaster).
-local ExpelHarm = {
+-- Base: the no-specialisation submodule, providing the Expel Harm marker that
+-- every Monk has. Other specs extend it.
+local Base = {
     settings = {
         { type = "header", text = "Expel Harm" },
         { type = "toggle", key = "expelHarm", label = "Show heal-threshold marker", default = true,
@@ -87,10 +88,8 @@ local ExpelHarm = {
     end,
 }
 
--- Expel Harm + a Tiger Palm/Keg Smash energy-cost marker. Tiger Palm is
--- baseline, so this serves no-spec (leveling) and Brewmaster; Keg Smash adds to
--- the cost once it's learned.
-local MonkBase = {
+-- Brewmaster: extends Base with a Tiger Palm/Keg Smash energy-cost marker.
+local Brewmaster = {
     settings = {
         { type = "header", text = "Expel Harm" },
         { type = "toggle", key = "expelHarm", label = "Show heal-threshold marker", default = true,
@@ -102,7 +101,7 @@ local MonkBase = {
         { type = "color", key = "tigerColor", label = "Marker colour", default = { 1, 1, 1 } },
     },
     Load = function(self)
-        ExpelHarm.Load(self)
+        Base.Load(self)
         local p = self:_p()
         p.tigerActive = true
         self:_Sub("UNIT_MAXPOWER",        function(_, u) if u == "player" then self:_ScheduleTiger() end end)
@@ -112,15 +111,15 @@ local MonkBase = {
         self:_ScheduleTiger()
     end,
     Unload = function(self)
-        ExpelHarm.Unload(self)  -- _UnloadSubs() removes every sub, incl. tiger's
+        Base.Unload(self)  -- _UnloadSubs() removes every sub, incl. tiger's
         local p = self:_p()
         p.tigerActive = false
         if p.tigerMarker then p.tigerMarker:Hide() end
     end,
 }
 
-SUBMODULES.MONK["none"] = ExpelHarm  -- no specialisation: Expel Harm only
-SUBMODULES.MONK[1]      = MonkBase   -- Brewmaster: + Tiger Palm energy marker
+SUBMODULES.MONK["none"] = Base        -- no specialisation
+SUBMODULES.MONK[1]      = Brewmaster  -- + Tiger Palm energy marker
 
 -- "none" when the player has no specialisation, else the spec index (1-4).
 -- A spec-less character returns an out-of-range "initial" index (e.g. 5 for a
