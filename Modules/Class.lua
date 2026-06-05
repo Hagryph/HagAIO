@@ -34,8 +34,10 @@ local hookInstalled = false
 -- ===========================================================================
 local SUBMODULES = { MONK = {} }
 
-SUBMODULES.MONK["none"] = {
-    description = "Monk (no specialisation) — Expel Harm heal-threshold marker.",
+-- Expel Harm is a baseline Monk ability, so the same submodule serves the
+-- no-spec state and the specs that have it (Brewmaster for now).
+local ExpelHarm = {
+    description = "Expel Harm heal-threshold marker on your health bar.",
     settings = {
         { type = "header", text = "Expel Harm" },
         { type = "toggle", key = "expelHarm", label = "Show heal-threshold marker", default = true,
@@ -70,6 +72,9 @@ SUBMODULES.MONK["none"] = {
         if p.marker then p.marker:Hide() end
     end,
 }
+
+SUBMODULES.MONK["none"] = ExpelHarm
+SUBMODULES.MONK[1]      = ExpelHarm  -- Brewmaster
 
 -- "none" when the player has no specialisation, else the spec index (1-4).
 -- A spec-less character returns an out-of-range "initial" index (e.g. 5 for a
