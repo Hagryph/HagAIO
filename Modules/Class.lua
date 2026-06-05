@@ -41,7 +41,7 @@ function ClassModule:OnInitialize()
             { type = "header", text = "Expel Harm" },
             { type = "toggle", key = "expelHarm", label = "Show heal-threshold marker", default = true,
               desc = "A line on your health bar marking where Expel Harm would heal you to full." },
-            { type = "color", key = "expelColor", label = "Marker colour", default = { 0.29, 0.70, 0.90 } },
+            { type = "color", key = "expelColor", label = "Marker colour", default = { 1, 1, 1 } },
         }
     else
         p.description = ("No helpers for %s yet."):format(className or "your class")
@@ -52,6 +52,10 @@ function ClassModule:OnInitialize()
 
     -- Seed defaults for the dynamic schema (dbDefaults was applied before this).
     local db = self:GetDB()
+    -- migrate the old cyan marker default to the new white default
+    if db and type(db.expelColor) == "table" and db.expelColor[1] == 0.29 then
+        db.expelColor = nil
+    end
     if db then
         for _, s in ipairs(p.settings) do
             if s.key ~= nil and s.default ~= nil and db[s.key] == nil then
@@ -128,7 +132,7 @@ function ClassModule:_UpdateMarker()
 
     if not p.marker then
         local m = bar:CreateTexture(nil, "OVERLAY", nil, 7)
-        m:SetWidth(2)
+        m:SetWidth(6)  -- thick
         p.marker = m
     end
     local m = p.marker
@@ -143,7 +147,7 @@ function ClassModule:_UpdateMarker()
     local frac = 1 - heal / maxHP
     if frac < 0 then frac = 0 elseif frac > 1 then frac = 1 end
 
-    local c = self:GetSetting("expelColor") or { 0.29, 0.70, 0.90 }
+    local c = self:GetSetting("expelColor") or { 1, 1, 1 }
     m:SetColorTexture(c[1], c[2], c[3], 1)
 
     local x = frac * bar:GetWidth()
