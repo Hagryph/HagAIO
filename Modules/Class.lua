@@ -2,13 +2,14 @@ local addonName, ns = ...
 local Class = ns.Class
 
 -- Modules/Class.lua
--- Class-specific helpers for whatever class the player is on. The settings page
--- is built per class (and, later, per specialisation). For now only the Monk
--- "no specialisation" helper exists: an Expel Harm heal-threshold marker.
+-- Class-specific helpers, organised as submodules: one per specialisation, plus
+-- a "no specialisation" submodule, per class. The active submodule is chosen by
+-- the player's CURRENT spec and swapped on spec change (the old one is fully
+-- unloaded first). We never fall back to the no-spec submodule while a spec is
+-- active — no-spec is only for characters with no specialisation.
 --
--- Expel Harm heals you for an amount shown in its spell description (it scales
--- with spell power). The marker is a vertical line on your health bar at
--- (max HP - heal): drop to/below it and one Expel Harm tops you off.
+-- Implemented so far: Monk, no specialisation -> Expel Harm heal-threshold
+-- marker (a line on the health bar at maxHP - heal).
 
 local ClassModule = Class.new("Class", ns.Module)
 
@@ -23,36 +24,89 @@ local function readExpelHarmHeal()
     return tonumber((n:gsub(",", "")))
 end
 
--- the hook is global; install once per session
+-- the bar-learning hook is global; install once per session
 local hookInstalled = false
 
+-- ===========================================================================
+-- Submodule registry: SUBMODULES[classToken][specKey] where specKey is "none"
+-- (no specialisation) or a spec index (1-4). A submodule is:
+--   { description, settings, Load(self), Unload(self) }   (self = ClassModule)
+-- ===========================================================================
+local SUBMODULES = { MONK = {} }
+
+SUBMODULES.MONK["none"] = {
+    description = "Monk (no specialisation) — Expel Harm heal-threshold marker.",
+    settings = {
+        { type = "header", text = "Expel Harm" },
+        { type = "toggle", key = "expelHarm", label = "Show heal-threshold marker", default = true,
+          desc = "A line on your health bar marking where Expel Harm would heal you to full." },
+        { type = "color", key = "expelColor", label = "Marker colour", default = { 1, 1, 1 } },
+    },
+    Load = function(self)
+        local p = self:_p()
+        local bus = ns.EventBus.Get()
+        p.subTokens = {}
+        -- heal scales with spell power, so re-read it on anything that changes
+        -- it: gear, level, talents, and player auras (buffs); max-HP just needs
+        -- a reposition.
+        p.subTokens["UNIT_MAXHEALTH"]            = bus:On("UNIT_MAXHEALTH",            function(_, u) if u == "player" then self:_UpdateMarker() end end)
+        p.subTokens["PLAYER_EQUIPMENT_CHANGED"]  = bus:On("PLAYER_EQUIPMENT_CHANGED",  function() self:_RefreshHeal() end)
+        p.subTokens["PLAYER_LEVEL_UP"]           = bus:On("PLAYER_LEVEL_UP",           function() self:_RefreshHeal() end)
+        p.subTokens["SPELLS_CHANGED"]            = bus:On("SPELLS_CHANGED",            function() self:_RefreshHeal() end)
+        p.subTokens["TRAIT_CONFIG_UPDATED"]      = bus:On("TRAIT_CONFIG_UPDATED",      function() self:_RefreshHeal() end)
+        p.subTokens["ACTIVE_COMBAT_CONFIG_CHANGED"] = bus:On("ACTIVE_COMBAT_CONFIG_CHANGED", function() self:_RefreshHeal() end)
+        p.subTokens["UNIT_AURA"]                 = bus:On("UNIT_AURA",                 function(_, u) if u == "player" then self:_RefreshHeal() end end)
+        p.expelActive = true
+        self:_RefreshHeal()
+    end,
+    Unload = function(self)
+        local p = self:_p()
+        local bus = ns.EventBus.Get()
+        if p.subTokens then
+            for event, token in pairs(p.subTokens) do bus:Off(event, token) end
+            wipe(p.subTokens)
+        end
+        p.expelActive = false
+        if p.marker then p.marker:Hide() end
+    end,
+}
+
+-- "none" when the player has no specialisation, else the spec index (1-4).
+local function currentSpecKey()
+    local idx = GetSpecialization and GetSpecialization()
+    if idx and GetSpecializationInfo and GetSpecializationInfo(idx) then return idx end
+    return "none"
+end
+
 -- ---- lifecycle ------------------------------------------------------------
+function ClassModule:_Submodule()
+    local reg = SUBMODULES[self:_p().class]
+    return reg and reg[currentSpecKey()] or nil
+end
+
 function ClassModule:OnInitialize()
     local p = self:_p()
     p.tokens = {}
+    p.subTokens = {}
     p.heal = nil
     p.marker = nil
+    p.activeSub = nil
+    p.expelActive = false
     local className, classToken = UnitClass("player")
     p.class = classToken
 
-    if classToken == "MONK" then
-        p.description = "Monk helpers — an Expel Harm heal-threshold marker on your health bar."
-        p.settings = {
-            { type = "header", text = "Expel Harm" },
-            { type = "toggle", key = "expelHarm", label = "Show heal-threshold marker", default = true,
-              desc = "A line on your health bar marking where Expel Harm would heal you to full." },
-            { type = "color", key = "expelColor", label = "Marker colour", default = { 1, 1, 1 } },
-        }
+    -- Settings reflect the submodule for the player's CURRENT spec (at login).
+    local sub = self:_Submodule()
+    if sub then
+        p.description = sub.description or ((className or "Class") .. " helpers.")
+        p.settings = sub.settings or {}
     else
-        p.description = ("No helpers for %s yet."):format(className or "your class")
-        p.settings = {
-            { type = "note", text = "Class helpers are added per class. There's nothing for your class yet." },
-        }
+        p.description = ("No helpers for your %s specialisation yet."):format(className or "class")
+        p.settings = { { type = "note", text = "Nothing for your current specialisation yet." } }
     end
 
-    -- Seed defaults for the dynamic schema (dbDefaults was applied before this).
-    local db = self:GetDB()
     -- migrate the old cyan marker default to the new white default
+    local db = self:GetDB()
     if db and type(db.expelColor) == "table" and db.expelColor[1] == 0.29 then
         db.expelColor = nil
     end
@@ -70,8 +124,8 @@ function ClassModule:OnInitialize()
         end
     end
 
-    -- Install the bar-learning hook now (even while disabled) so enabling the
-    -- module later shows the marker immediately, without a reload.
+    -- Install the bar-learning hook now (even while disabled) so a submodule's
+    -- marker can appear immediately on enable, without a reload.
     if classToken == "MONK" and not hookInstalled and type(UnitFrameHealthBar_Update) == "function" then
         local module = self
         hooksecurefunc("UnitFrameHealthBar_Update", function(statusbar, unit)
@@ -86,25 +140,14 @@ end
 
 function ClassModule:OnEnable()
     local p = self:_p()
-    if p.class ~= "MONK" then return end
+    if not SUBMODULES[p.class] then return end  -- no helpers for this class yet
 
-    -- heal scales with spell power, so re-read it on anything that can change
-    -- it: gear, level, talents (TRAIT_CONFIG_UPDATED), spec; max-HP change just
-    -- needs a reposition.
+    -- Module-level: watch for spec changes to swap submodules.
     local bus = ns.EventBus.Get()
-    p.tokens["UNIT_MAXHEALTH"]                    = bus:On("UNIT_MAXHEALTH",                    function(_, u) if u == "player" then self:_UpdateMarker() end end)
-    p.tokens["PLAYER_EQUIPMENT_CHANGED"]          = bus:On("PLAYER_EQUIPMENT_CHANGED",          function() self:_RefreshHeal() end)
-    p.tokens["PLAYER_LEVEL_UP"]                   = bus:On("PLAYER_LEVEL_UP",                   function() self:_RefreshHeal() end)
-    p.tokens["SPELLS_CHANGED"]                    = bus:On("SPELLS_CHANGED",                    function() self:_RefreshHeal() end)
-    p.tokens["TRAIT_CONFIG_UPDATED"]              = bus:On("TRAIT_CONFIG_UPDATED",              function() self:_RefreshHeal() end)
-    p.tokens["ACTIVE_COMBAT_CONFIG_CHANGED"]      = bus:On("ACTIVE_COMBAT_CONFIG_CHANGED",      function() self:_RefreshHeal() end)
-    p.tokens["PLAYER_ENTERING_WORLD"]             = bus:On("PLAYER_ENTERING_WORLD",             function() self:_RefreshHeal() end)
-    -- spell-power buffs change the heal; refresh on every player aura (no
-    -- throttle, so a buff is never skipped). Spec changes are irrelevant here:
-    -- Expel Harm is part of the no-spec submodule, shared by all specs.
-    p.tokens["UNIT_AURA"]                         = bus:On("UNIT_AURA",                         function(_, u) if u == "player" then self:_RefreshHeal() end end)
+    p.tokens["PLAYER_SPECIALIZATION_CHANGED"] = bus:On("PLAYER_SPECIALIZATION_CHANGED", function() self:_Sync() end)
+    p.tokens["PLAYER_ENTERING_WORLD"]         = bus:On("PLAYER_ENTERING_WORLD",         function() self:_Sync() end)
 
-    self:_RefreshHeal()
+    self:_Sync()
 end
 
 function ClassModule:OnDisable()
@@ -112,18 +155,30 @@ function ClassModule:OnDisable()
     local bus = ns.EventBus.Get()
     for event, token in pairs(p.tokens) do bus:Off(event, token) end
     wipe(p.tokens)
-    if p.marker then p.marker:Hide() end
+    if p.activeSub and p.activeSub.Unload then p.activeSub.Unload(self) end
+    p.activeSub = nil
 end
 
--- ---- marker ---------------------------------------------------------------
+-- Load the submodule matching the current spec, unloading the previous one.
+function ClassModule:_Sync()
+    local p = self:_p()
+    if not self:IsEnabled() then return end
+    local sub = self:_Submodule()
+    if sub == p.activeSub then return end
+    if p.activeSub and p.activeSub.Unload then p.activeSub.Unload(self) end
+    p.activeSub = sub
+    if sub and sub.Load then sub.Load(self) end
+end
+
+-- ---- Expel Harm marker (used by the Monk no-spec submodule) ----------------
 function ClassModule:_RefreshHeal()
     local p = self:_p()
     p.heal = readExpelHarmHeal()
     if not p.heal then
         -- description may not be loaded yet; retry shortly
         C_Timer.After(1, function()
-            if self:IsEnabled() and not self:_p().heal then
-                self:_p().heal = readExpelHarmHeal()
+            if p.expelActive and not p.heal then
+                p.heal = readExpelHarmHeal()
                 self:_UpdateMarker()
             end
         end)
@@ -136,7 +191,7 @@ function ClassModule:_UpdateMarker()
     local bar = p.bar  -- the real bar captured from the hook
     if not bar then return end
 
-    if not (self:IsEnabled() and self:GetSetting("expelHarm")) then
+    if not (self:IsEnabled() and p.expelActive and self:GetSetting("expelHarm")) then
         if p.marker then p.marker:Hide() end
         return
     end
@@ -177,7 +232,6 @@ ns.ModuleManager.Get():Register(ClassModule:New("Class", {
     title = "Class",
     description = "Helpers for your current class.",
     defaultEnabled = false,
-    perChar = true,  -- class differs per character, so store its state per char
-    color = ns.Theme.hex.accent,
-    settings = {},  -- built per class in OnInitialize
+    perChar = true,  -- class/spec differ per character, so store state per char
+    settings = {},   -- built per class/spec in OnInitialize
 }))
