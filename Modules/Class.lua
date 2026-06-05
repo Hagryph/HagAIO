@@ -32,20 +32,25 @@ local function expelCooldownSeconds()
     return ms / 1000
 end
 
--- the bar-learning hook is global; install once per session
-local hookInstalled = false
+-- the bar-learning hooks are global; install once per session
+local hookInstalled = false        -- health bar
+local powerHookInstalled = false   -- power (energy) bar
+
+-- Brewmaster energy spells for the Tiger Palm marker
+local TIGER_PALM = 100780
+local KEG_SMASH  = 121253
 
 -- ===========================================================================
 -- Submodule registry: SUBMODULES[classToken][specKey] where specKey is "none"
 -- (no specialisation) or a spec index (1-4). A submodule is:
---   { description, settings, Load(self), Unload(self) }   (self = ClassModule)
+--   { settings, Load(self), Unload(self) }   (self = ClassModule)
+-- Submodules register events via self:_Sub(event, fn) (removed by _UnloadSubs),
+-- so one submodule can layer several features.
 -- ===========================================================================
 local SUBMODULES = { MONK = {} }
 
--- Expel Harm is a baseline Monk ability, so the same submodule serves the
--- no-spec state and the specs that have it (Brewmaster for now).
+-- Expel Harm is a baseline Monk ability (no-spec + Brewmaster).
 local ExpelHarm = {
-    description = "Expel Harm heal-threshold marker on your health bar.",
     settings = {
         { type = "header", text = "Expel Harm" },
         { type = "toggle", key = "expelHarm", label = "Show heal-threshold marker", default = true,
@@ -54,37 +59,27 @@ local ExpelHarm = {
     },
     Load = function(self)
         local p = self:_p()
-        local bus = ns.EventBus.Get()
-        p.subTokens = {}
-        -- heal scales with spell power, so re-read it on anything that changes
-        -- it: gear, level, talents, and player auras (buffs); max-HP just needs
-        -- a reposition.
-        p.subTokens["UNIT_MAXHEALTH"]            = bus:On("UNIT_MAXHEALTH",            function(_, u) if u == "player" then self:_ScheduleUpdate() end end)
-        p.subTokens["PLAYER_EQUIPMENT_CHANGED"]  = bus:On("PLAYER_EQUIPMENT_CHANGED",  function() self:_RefreshHeal() end)
-        p.subTokens["PLAYER_LEVEL_UP"]           = bus:On("PLAYER_LEVEL_UP",           function() self:_RefreshHeal() end)
-        p.subTokens["SPELLS_CHANGED"]            = bus:On("SPELLS_CHANGED",            function() self:_RefreshHeal() end)
-        p.subTokens["TRAIT_CONFIG_UPDATED"]      = bus:On("TRAIT_CONFIG_UPDATED",      function() self:_RefreshHeal() end)
-        p.subTokens["ACTIVE_COMBAT_CONFIG_CHANGED"] = bus:On("ACTIVE_COMBAT_CONFIG_CHANGED", function() self:_RefreshHeal() end)
-        p.subTokens["UNIT_AURA"]                 = bus:On("UNIT_AURA",                 function(_, u) if u == "player" then self:_RefreshHeal() end end)
-        -- hide the marker while Expel Harm is on cooldown, driven by the cast +
-        -- a Cooldown widget so we never read the (possibly secret) cooldown time
-        p.subTokens["UNIT_SPELLCAST_SUCCEEDED"]  = bus:On("UNIT_SPELLCAST_SUCCEEDED",  function(_, u, _, spellID) if u == "player" and spellID == EXPEL_HARM then self:_OnExpelCast() end end)
-        p.subTokens["SPELL_UPDATE_COOLDOWN"]     = bus:On("SPELL_UPDATE_COOLDOWN",     function() self:_SyncCooldown() end)
+        -- heal scales with spell power, so re-read it on anything that changes it
+        self:_Sub("UNIT_MAXHEALTH",             function(_, u) if u == "player" then self:_ScheduleUpdate() end end)
+        self:_Sub("PLAYER_EQUIPMENT_CHANGED",   function() self:_RefreshHeal() end)
+        self:_Sub("PLAYER_LEVEL_UP",            function() self:_RefreshHeal() end)
+        self:_Sub("SPELLS_CHANGED",             function() self:_RefreshHeal() end)
+        self:_Sub("TRAIT_CONFIG_UPDATED",       function() self:_RefreshHeal() end)
+        self:_Sub("ACTIVE_COMBAT_CONFIG_CHANGED", function() self:_RefreshHeal() end)
+        self:_Sub("UNIT_AURA",                  function(_, u) if u == "player" then self:_RefreshHeal() end end)
+        -- hide the marker while Expel Harm is on cooldown (cast + non-secret booleans)
+        self:_Sub("UNIT_SPELLCAST_SUCCEEDED",   function(_, u, _, spellID) if u == "player" and spellID == EXPEL_HARM then self:_OnExpelCast() end end)
+        self:_Sub("SPELL_UPDATE_COOLDOWN",      function() self:_SyncCooldown() end)
         p.onCooldown = false
         p.expelActive = true
         self:_RefreshHeal()
-        -- start hidden if we (re)loaded while the real cooldown is running (no
-        -- GCD is active during a loading screen, so isActive here = real CD)
+        -- start hidden if we (re)loaded while the real cooldown is running
         local cd = C_Spell and C_Spell.GetSpellCooldown and C_Spell.GetSpellCooldown(EXPEL_HARM)
         if cd and cd.isActive and not cd.isOnGCD then p.onCooldown = true; self:_ScheduleUpdate() end
     end,
     Unload = function(self)
         local p = self:_p()
-        local bus = ns.EventBus.Get()
-        if p.subTokens then
-            for event, token in pairs(p.subTokens) do bus:Off(event, token) end
-            wipe(p.subTokens)
-        end
+        self:_UnloadSubs()
         p.expelActive = false
         p.onCooldown = false
         if p.cdTimer then p.cdTimer:Cancel(); p.cdTimer = nil end
@@ -92,8 +87,38 @@ local ExpelHarm = {
     end,
 }
 
+-- Brewmaster: Expel Harm + a Tiger Palm/Keg Smash energy-cost marker.
+local Brewmaster = {
+    settings = {
+        { type = "header", text = "Expel Harm" },
+        { type = "toggle", key = "expelHarm", label = "Show heal-threshold marker", default = true,
+          desc = "A line on your health bar marking where Expel Harm would heal you to full." },
+        { type = "color", key = "expelColor", label = "Marker colour", default = { 1, 1, 1 } },
+        { type = "header", text = "Tiger Palm" },
+        { type = "toggle", key = "tiger", label = "Show energy marker", default = true,
+          desc = "A line on the energy bar at the energy needed for Tiger Palm + Keg Smash." },
+        { type = "color", key = "tigerColor", label = "Marker colour", default = { 1, 1, 1 } },
+    },
+    Load = function(self)
+        ExpelHarm.Load(self)
+        local p = self:_p()
+        p.tigerActive = true
+        self:_Sub("UNIT_MAXPOWER",        function(_, u) if u == "player" then self:_ScheduleTiger() end end)
+        self:_Sub("UNIT_DISPLAYPOWER",    function(_, u) if u == "player" then self:_ScheduleTiger() end end)
+        self:_Sub("TRAIT_CONFIG_UPDATED", function() self:_ScheduleTiger() end)
+        self:_Sub("PLAYER_LEVEL_UP",      function() self:_ScheduleTiger() end)
+        self:_ScheduleTiger()
+    end,
+    Unload = function(self)
+        ExpelHarm.Unload(self)  -- _UnloadSubs() removes every sub, incl. tiger's
+        local p = self:_p()
+        p.tigerActive = false
+        if p.tigerMarker then p.tigerMarker:Hide() end
+    end,
+}
+
 SUBMODULES.MONK["none"] = ExpelHarm
-SUBMODULES.MONK[1]      = ExpelHarm  -- Brewmaster
+SUBMODULES.MONK[1]      = Brewmaster
 
 -- "none" when the player has no specialisation, else the spec index (1-4).
 -- A spec-less character returns an out-of-range "initial" index (e.g. 5 for a
@@ -126,6 +151,11 @@ function ClassModule:OnInitialize()
     p.activeSub = nil
     p.expelActive = false
     p.updateScheduled = false
+    p.powerBar = nil
+    p.tigerMarker = nil
+    p.tigerHost = nil
+    p.tigerActive = false
+    p.tigerScheduled = false
     local className, classToken = UnitClass("player")
     p.class = classToken
 
@@ -172,6 +202,18 @@ function ClassModule:OnInitialize()
         end)
         hookInstalled = true
     end
+
+    -- power (energy) bar, for the Brewmaster Tiger Palm marker
+    if classToken == "MONK" and not powerHookInstalled and type(UnitFrameManaBar_Update) == "function" then
+        local module = self
+        hooksecurefunc("UnitFrameManaBar_Update", function(statusbar, unit)
+            if unit == "player" and statusbar.unitFrame == PlayerFrame then
+                module:_p().powerBar = statusbar
+                if not module:_p().tigerMarker then module:_ScheduleTiger() end
+            end
+        end)
+        powerHookInstalled = true
+    end
 end
 
 function ClassModule:OnEnable()
@@ -193,6 +235,22 @@ function ClassModule:OnDisable()
     wipe(p.tokens)
     if p.activeSub and p.activeSub.Unload then p.activeSub.Unload(self) end
     p.activeSub = nil
+end
+
+-- Submodule event subscriptions (a list, so several features can share events).
+function ClassModule:_Sub(event, fn)
+    local p = self:_p()
+    p.subTokens = p.subTokens or {}
+    local token = ns.EventBus.Get():On(event, fn)
+    if token then p.subTokens[#p.subTokens + 1] = { event, token } end
+end
+
+function ClassModule:_UnloadSubs()
+    local p = self:_p()
+    if not p.subTokens then return end
+    local bus = ns.EventBus.Get()
+    for _, e in ipairs(p.subTokens) do bus:Off(e[1], e[2]) end
+    wipe(p.subTokens)
 end
 
 -- Load the submodule matching the current spec, unloading the previous one.
@@ -319,6 +377,78 @@ end
 
 function ClassModule:OnSettingChanged()
     self:_ScheduleUpdate()
+    self:_ScheduleTiger()
+end
+
+-- ---- Tiger Palm energy marker (Brewmaster) --------------------------------
+-- Combined energy cost of Tiger Palm + Keg Smash (non-secret spell data).
+function ClassModule:_TigerCost()
+    local energy = Enum and Enum.PowerType and Enum.PowerType.Energy
+    local total = 0
+    for _, id in ipairs({ TIGER_PALM, KEG_SMASH }) do
+        local costs = C_Spell and C_Spell.GetSpellPowerCost and C_Spell.GetSpellPowerCost(id)
+        if costs then
+            for _, c in ipairs(costs) do
+                if c.type == energy and c.cost and not (issecretvalue and issecretvalue(c.cost)) then
+                    total = total + c.cost
+                end
+            end
+        end
+    end
+    return total
+end
+
+function ClassModule:_ScheduleTiger()
+    local p = self:_p()
+    if p.tigerScheduled then return end
+    p.tigerScheduled = true
+    C_Timer.After(0, function() p.tigerScheduled = false; self:_UpdateTiger() end)
+end
+
+-- A fixed line on the energy bar at (Tiger Palm + Keg Smash) energy. When your
+-- energy fill reaches it you can afford both.
+function ClassModule:_UpdateTiger()
+    local p = self:_p()
+    local bar = p.powerBar
+    if not bar then return end
+
+    if not (self:IsEnabled() and p.tigerActive and self:GetSetting("tiger")) then
+        if p.tigerMarker then p.tigerMarker:Hide() end
+        return
+    end
+
+    local energy = Enum and Enum.PowerType and Enum.PowerType.Energy
+    local maxE = UnitPowerMax("player", energy)
+    if (issecretvalue and issecretvalue(maxE)) or not maxE or maxE <= 0 then
+        if p.tigerMarker then p.tigerMarker:Hide() end
+        return
+    end
+    local cost = self:_TigerCost()
+    if cost <= 0 then if p.tigerMarker then p.tigerMarker:Hide() end return end
+
+    if not p.tigerHost then
+        local h = CreateFrame("Frame", nil, bar)
+        h:SetAllPoints(bar)
+        if h.SetClipsChildren then h:SetClipsChildren(true) end
+        p.tigerHost = h
+    end
+    if not p.tigerMarker then
+        local m = p.tigerHost:CreateTexture(nil, "OVERLAY", nil, 7)
+        m:SetWidth(1.5)
+        p.tigerMarker = m
+    end
+    local m = p.tigerMarker
+
+    local c = self:GetSetting("tigerColor") or { 1, 1, 1 }
+    m:SetColorTexture(c[1], c[2], c[3], 1)
+
+    local frac = cost / maxE
+    if frac < 0 then frac = 0 elseif frac > 1 then frac = 1 end
+    local x = frac * bar:GetWidth()
+    m:ClearAllPoints()
+    m:SetPoint("TOP", bar, "TOPLEFT", x, 0)
+    m:SetPoint("BOTTOM", bar, "BOTTOMLEFT", x, 0)
+    m:Show()
 end
 
 -- ---- registration ---------------------------------------------------------
