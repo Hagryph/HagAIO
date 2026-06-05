@@ -24,6 +24,14 @@ local function readExpelHarmHeal()
     return tonumber((n:gsub(",", "")))
 end
 
+-- Base cooldown in seconds (static spell data, not the secret live remaining).
+local function expelCooldownSeconds()
+    if not GetSpellBaseCooldown then return nil end
+    local ms = GetSpellBaseCooldown(EXPEL_HARM)
+    if not ms or (issecretvalue and issecretvalue(ms)) or ms <= 0 then return nil end
+    return ms / 1000
+end
+
 -- the bar-learning hook is global; install once per session
 local hookInstalled = false
 
@@ -79,6 +87,7 @@ local ExpelHarm = {
         end
         p.expelActive = false
         p.onCooldown = false
+        if p.cdTimer then p.cdTimer:Cancel(); p.cdTimer = nil end
         if p.marker then p.marker:Hide() end
     end,
 }
@@ -113,6 +122,7 @@ function ClassModule:OnInitialize()
     p.marker = nil
     p.host = nil
     p.onCooldown = false
+    p.cdTimer = nil
     p.activeSub = nil
     p.expelActive = false
     p.updateScheduled = false
@@ -275,22 +285,35 @@ function ClassModule:_UpdateMarker()
     m:Show()
 end
 
--- Hide the marker ONLY when you cast Expel Harm. A plain global cooldown or a
--- stun must never hide it — those aren't its real cooldown.
+-- Hide the marker ONLY when you cast Expel Harm, and drive an internal timer
+-- (base cooldown) to re-show at the exact moment it ends — immune to GCD/stun,
+-- which never hide it.
 function ClassModule:_OnExpelCast()
     local p = self:_p()
     p.onCooldown = true
     self:_ScheduleUpdate()
+
+    if p.cdTimer then p.cdTimer:Cancel() end
+    local dur = expelCooldownSeconds()
+    if dur then
+        p.cdTimer = C_Timer.NewTimer(dur, function()
+            p.cdTimer = nil
+            p.onCooldown = false
+            self:_ScheduleUpdate()
+        end)
+    end
 end
 
--- Polling only ever RE-SHOWS (never hides), so a GCD/stun can't false-hide the
--- marker. Re-show once the spell's cooldown is fully done. isActive is a plain
--- boolean (the times are the secret bits).
+-- Backup re-show: if the cooldown ends early (reset / CDR) before the timer, or
+-- if we had no timer (reload mid-cooldown). Only ever shows, never hides — a GCD
+-- reports isActive=true too, so we must not hide from polling. isActive is a
+-- plain boolean (the times are the secret bits).
 function ClassModule:_SyncCooldown()
     local p = self:_p()
     if not p.onCooldown then return end
     local info = C_Spell and C_Spell.GetSpellCooldown and C_Spell.GetSpellCooldown(EXPEL_HARM)
     if info and info.isActive then return end  -- still on cooldown
+    if p.cdTimer then p.cdTimer:Cancel(); p.cdTimer = nil end
     p.onCooldown = false
     self:_ScheduleUpdate()
 end
