@@ -30,8 +30,8 @@ New-Item -ItemType Directory -Force -Path $dest | Out-Null
 
 # /MIR keeps dest an exact mirror of the addon files; exclusions keep repo
 # tooling out of the deployed copy.
-$exclDirs  = @(".git", ".github", ".claude")
-$exclFiles = @("deploy.ps1", "README.md", ".gitignore", "LICENSE", "*.zip", "*.ps1")
+$exclDirs  = @(".git", ".github", ".claude", "tools")
+$exclFiles = @("deploy.ps1", "README.md", ".gitignore", "LICENSE", "*.zip", "*.ps1", "*.py")
 
 robocopy $src $dest /MIR /XD $exclDirs /XF $exclFiles /NFL /NDL /NJH /NJS /NP | Out-Null
 

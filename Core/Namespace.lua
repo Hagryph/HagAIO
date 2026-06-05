@@ -13,6 +13,10 @@ ns.name = addonName
 ns.version = (C_AddOns and C_AddOns.GetAddOnMetadata
     and C_AddOns.GetAddOnMetadata(addonName, "Version")) or "0.0.0"
 
+-- Shared icon texture path (Media/icon.tga). Used by the addon-compartment
+-- button; also set as ## IconTexture in the .toc for the addon list.
+ns.ICON = "Interface\\AddOns\\HagAIO\\Media\\icon"
+
 -- Registry slots, populated by their respective Core files. Declared here so
 -- the shape of the namespace is documented in one place.
 ns.Class = nil          -- OOP class factory          (Core/Class.lua)
@@ -24,6 +28,7 @@ ns.Logger = nil         -- logging service singleton   (Core/Logger.lua)
 ns.Module = nil         -- abstract feature base       (Core/Module.lua)
 ns.ModuleManager = nil  -- module registry singleton   (Core/ModuleManager.lua)
 ns.SlashCommand = nil   -- slash command router        (Core/SlashCommand.lua)
+ns.Compartment = nil    -- addon-compartment button    (Core/Compartment.lua)
 ns.UI = nil             -- UI namespace (widgets+window) (UI/*.lua)
 ns.Bootstrap = nil      -- startup orchestrator        (Bootstrap.lua)
 

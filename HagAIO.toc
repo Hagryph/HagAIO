@@ -5,6 +5,7 @@
 ## Version: 0.1.0
 ## SavedVariables: HagAIODB
 ## SavedVariablesPerCharacter: HagAIOCharDB
+## IconTexture: Interface\AddOns\HagAIO\Media\icon
 ## X-Website: https://github.com/Hagryph/HagAIO
 ## X-Category: Combat
 ## AllowLoadGameType: retail
@@ -21,6 +22,7 @@ Core\Logger.lua
 Core\Module.lua
 Core\ModuleManager.lua
 Core\SlashCommand.lua
+Core\Compartment.lua
 UI\Widgets.lua
 UI\SettingsWindow.lua
 Bootstrap.lua

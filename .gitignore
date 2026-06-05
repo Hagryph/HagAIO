@@ -10,3 +10,6 @@ desktop.ini
 
 # Local-only Claude settings
 .claude/settings.local.json
+
+# generated icon previews (the .tga in Media/ is the real asset)
+tools/*.png

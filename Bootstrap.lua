@@ -35,6 +35,7 @@ function Bootstrap:Run()
 
     bus:On("PLAYER_LOGIN", function()
         ns.ModuleManager.Get():StartAll()
+        ns.Compartment.Get():Register()
     end)
 end
 

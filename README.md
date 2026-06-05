@@ -102,6 +102,18 @@ settings window's Modules page with a live toggle.
 | `/hag modules` | List feature modules and their on/off state |
 | `/hag help` | List all commands |
 
+### Minimap (addon compartment)
+
+HagAIO adds a button to the **addon compartment** — the icon hub on the minimap
+that collects many addons (not the standalone LibDBIcon button). **Left-click
+opens the settings window**; right-click jumps to the activity log.
+
+### Icon
+
+`Media/icon.tga` is the addon + compartment icon: an "AiO" wordmark (Segoe UI
+Bold, cyan→navy gradient on a blue-black panel with an accent ring), generated
+by `tools/gen_icon.py` (Pillow). Regenerate with `python tools/gen_icon.py`.
+
 ## Deploy to the game
 
 ```powershell
