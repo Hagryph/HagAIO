@@ -131,11 +131,10 @@ function ClassModule:OnInitialize()
 
     -- Settings reflect the submodule for the player's CURRENT spec (at login).
     local sub = self:_Submodule()
+    p.description = "Helpers tailored to your class and specialisation."
     if sub then
-        p.description = sub.description or ((className or "Class") .. " helpers.")
         p.settings = sub.settings or {}
     else
-        p.description = ("No helpers for your %s specialisation yet."):format(className or "class")
         p.settings = { { type = "note", text = "Nothing for your current specialisation yet." } }
     end
 
