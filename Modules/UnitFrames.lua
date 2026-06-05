@@ -99,9 +99,13 @@ function UnitFrames:_Tint(statusbar, unit)
     if unit ~= "player" and unit ~= "target" then return end
     if not self:GetSetting(unit) then return end
     local curve = self:_p().curve
-    if not (curve and statusbar and statusbar.SetStatusBarColor) then return end
-    local color = UnitHealthPercent(unit, false, curve)  -- colour holds secrets
-    if color then statusbar:SetStatusBarColor(color:GetRGB()) end
+    if not (curve and statusbar and statusbar.GetStatusBarTexture) then return end
+    local tex = statusbar:GetStatusBarTexture()
+    if not tex then return end
+    -- The colour holds secret values. SetVertexColor accepts secrets;
+    -- SetStatusBarColor silently ignores them — so tint the fill texture.
+    local color = UnitHealthPercent(unit, true, curve)
+    if color then tex:SetVertexColor(color:GetRGB()) end
 end
 
 -- Apply our tint to the current player/target bars directly. We must NOT call
