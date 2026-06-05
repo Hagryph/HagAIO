@@ -2,14 +2,14 @@ local addonName, ns = ...
 local Class = ns.Class
 
 -- Modules/UnitFrames.lua
--- Tints the player & target health bars by remaining health: the bar's normal
--- green at full HP grading through yellow to bright red when low.
+-- Tints the player & target health bars by remaining health: green at full,
+-- through yellow, to bright red when low.
 --
--- Midnight 12.0 "Secret Values": an addon may NOT read health and branch on it.
--- The sanctioned route is a Color Curve — the gradient lives in the curve, the
--- engine evaluates the (secret) health through it and hands back a colour we
--- pass straight into the widget. We re-assert our colour whenever Blizzard
--- recolours the bar (hooking SetStatusBarColor) so our tint always wins.
+-- Approach (matches how unit-frame colour addons do it): hook Blizzard's own
+-- per-update handler UnitFrameHealthBar_Update ONCE. It already runs on every
+-- health change and sets the bar colour, so we just re-set ours right after —
+-- no extra event registration, no polling. Colour comes from the Secret-Values-
+-- safe colour curve (the engine evaluates the secret health for us).
 
 local UnitFrames = Class.new("UnitFrames", ns.Module)
 
@@ -34,20 +34,11 @@ local function colorAt(t)  -- t: 1 -> green, 0.5 -> yellow, 0 -> red
     return CreateColor(r, g, b, 1)
 end
 
--- Resolve a unit's health StatusBar across retail frame layouts.
 local function resolveBar(unit)
     local f = (unit == "player") and PlayerFrame or (unit == "target") and TargetFrame
     if not f then return nil end
-    if f.healthbar then return f.healthbar end   -- alias set by UnitFrame_Initialize
+    if f.healthbar then return f.healthbar end
     if f.healthBar then return f.healthBar end
-    local content = f.PlayerFrameContent or f.TargetFrameContent
-    local main = content and (content.PlayerFrameContentMain or content.TargetFrameContentMain)
-    if main then
-        if main.HealthBarsContainer and main.HealthBarsContainer.HealthBar then
-            return main.HealthBarsContainer.HealthBar
-        end
-        if main.HealthBar then return main.HealthBar end
-    end
     return _G[(unit == "player") and "PlayerFrameHealthBar" or "TargetFrameHealthBar"]
 end
 
@@ -55,54 +46,44 @@ local function apiAvailable()
     return C_CurveUtil and C_CurveUtil.CreateColorCurve and UnitHealthPercent and CreateColor
 end
 
--- reentrancy guard: bars we're currently colouring (so our own SetStatusBarColor
--- doesn't re-trigger the hook)
-local applying = {}
+-- The hook is global and can't be removed, so install it once per session;
+-- it stays inert while the module is disabled.
+local installed = false
 
 -- ---- lifecycle ------------------------------------------------------------
 function UnitFrames:OnInitialize()
-    local p = self:_p()
-    p.curve = nil
-    p.tokens = {}
+    self:_p().curve = nil
 end
 
 function UnitFrames:OnEnable()
-    local p = self:_p()
     if not apiAvailable() then
         self:LogWarn("health-bar colouring isn't supported on this client build")
         return
     end
-
     self:_BuildCurve()
 
-    local foundPlayer = self:_HookBar("player")
-    local foundTarget = self:_HookBar("target")
-
-    local bus = ns.EventBus.Get()
-    p.tokens["UNIT_HEALTH"]            = bus:On("UNIT_HEALTH",            function(_, u) self:_Tint(u) end)
-    p.tokens["UNIT_MAXHEALTH"]        = bus:On("UNIT_MAXHEALTH",         function(_, u) self:_Tint(u) end)
-    p.tokens["PLAYER_TARGET_CHANGED"] = bus:On("PLAYER_TARGET_CHANGED",  function() self:_HookBar("target"); self:_Tint("target") end)
-    p.tokens["PLAYER_ENTERING_WORLD"] = bus:On("PLAYER_ENTERING_WORLD",  function()
-        self:_HookBar("player"); self:_HookBar("target"); self:_TintAll()
-    end)
-
-    self:_TintAll()
-
-    if not (foundPlayer or foundTarget) then
-        self:LogWarn("couldn't find the player/target health bar frames to tint")
+    if not installed then
+        if type(UnitFrameHealthBar_Update) ~= "function" then
+            self:LogWarn("couldn't hook the unit-frame health bar update")
+            return
+        end
+        local module = self
+        hooksecurefunc("UnitFrameHealthBar_Update", function(statusbar, unit)
+            module:_Tint(statusbar, unit)
+        end)
+        installed = true
     end
+
+    self:_RefreshNow()
 end
 
 function UnitFrames:OnDisable()
-    local p = self:_p()
-    local bus = ns.EventBus.Get()
-    for event, token in pairs(p.tokens) do bus:Off(event, token) end
-    wipe(p.tokens)
-    self:_Restore("player")
-    self:_Restore("target")
+    -- the hook is inert while disabled, so re-running the update restores
+    -- Blizzard's default colour
+    self:_RefreshNow()
 end
 
--- ---- curve + apply --------------------------------------------------------
+-- ---- colouring ------------------------------------------------------------
 function UnitFrames:_BuildCurve()
     local p = self:_p()
     local curve = C_CurveUtil.CreateColorCurve()
@@ -113,58 +94,32 @@ function UnitFrames:_BuildCurve()
     p.curve = curve
 end
 
--- Hook a bar so any recolour (by Blizzard) is overridden with our HP tint.
--- Returns true if the bar was found.
-function UnitFrames:_HookBar(unit)
-    local bar = resolveBar(unit)
-    if not bar then return false end
-    if not bar.__hagUFHooked then
-        bar.__hagUFHooked = true
-        local module = self
-        hooksecurefunc(bar, "SetStatusBarColor", function(b)
-            if applying[b] then return end
-            module:_Tint(unit, b)
-        end)
-    end
-    return true
-end
-
-function UnitFrames:_Tint(unit, bar)
+-- Called by the hook after every Blizzard health-bar update. We only act on the
+-- player/target bars (other frames pass through untouched).
+function UnitFrames:_Tint(statusbar, unit)
+    if not self:IsEnabled() then return end
     if unit ~= "player" and unit ~= "target" then return end
-    local p = self:_p()
-    if not (p.curve and self:IsEnabled()) then return end
     if not self:GetSetting(unit) then return end
-    if unit == "target" and not UnitExists("target") then return end
-
-    bar = bar or resolveBar(unit)
-    if not bar or not bar.SetStatusBarColor then return end
-
-    local color = UnitHealthPercent(unit, false, p.curve)  -- colour holds secrets
-    if not color then return end
-
-    applying[bar] = true
-    bar:SetStatusBarColor(color:GetRGB())
-    applying[bar] = false
+    local curve = self:_p().curve
+    if not (curve and statusbar and statusbar.SetStatusBarColor) then return end
+    local color = UnitHealthPercent(unit, false, curve)  -- colour holds secrets
+    if color then statusbar:SetStatusBarColor(color:GetRGB()) end
 end
 
-function UnitFrames:_TintAll()
-    self:_Tint("player")
-    self:_Tint("target")
-end
-
-function UnitFrames:_Restore(unit)
-    local bar = resolveBar(unit)
-    if bar and type(UnitFrameHealthBar_Update) == "function" then
-        pcall(UnitFrameHealthBar_Update, bar, unit)  -- let Blizzard recolour now
+-- Re-run Blizzard's update for player/target so the hook (re)applies our tint,
+-- or so the default colour returns when we're disabled.
+function UnitFrames:_RefreshNow()
+    if type(UnitFrameHealthBar_Update) ~= "function" then return end
+    for _, unit in ipairs({ "player", "target" }) do
+        if UnitExists(unit) then
+            local bar = resolveBar(unit)
+            if bar then pcall(UnitFrameHealthBar_Update, bar, unit) end
+        end
     end
 end
 
--- React to settings changes from the auto-generated settings page.
-function UnitFrames:OnSettingChanged(key, value)
-    if (key == "player" or key == "target") and value == false then
-        self:_Restore(key)
-    end
-    self:_TintAll()
+function UnitFrames:OnSettingChanged()
+    self:_RefreshNow()
 end
 
 -- ---- registration ---------------------------------------------------------
