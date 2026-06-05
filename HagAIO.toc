@@ -27,4 +27,5 @@ UI\Widgets.lua
 UI\SettingsWindow.lua
 Modules\Questing.lua
 Modules\UnitFrames.lua
+Modules\Class.lua
 Bootstrap.lua

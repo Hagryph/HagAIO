@@ -45,6 +45,7 @@ UI/
 Modules/
   Questing.lua             XP/hour tooltip + auto-accept/turn-in quests
   UnitFrames.lua           Player/target health-bar tint by HP% (colour curves)
+  Class.lua                Per-class helpers (Monk: Expel Harm threshold marker)
 Bootstrap.lua              Startup orchestrator (ADDON_LOADED → PLAYER_LOGIN)
 deploy.ps1                 Mirror the addon into the live WoW AddOns folder
 ```
