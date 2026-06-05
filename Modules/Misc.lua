@@ -5,18 +5,25 @@ local W = ns.UI.Widgets
 
 -- Modules/Misc.lua
 -- Miscellaneous helpers:
---   * Flight Timers — time each flight path the first time you take it and show
---     a countdown on later trips along the same route.
---   * Sell Junk — sell grey items at a vendor, automatically on open or via a
---     "Sell Junk" button added to the merchant window.
+--   * Flight Timers — time each flight path and show a countdown both while in
+--     flight and when hovering a flight point on the map. Routes are ALWAYS
+--     recorded (even with the module off) so the database keeps building.
+--   * Sell Junk — sell grey items at a vendor, automatically or via a button.
 
 local Misc = Class.new("Misc", ns.Module)
 
-local hooked = false  -- TakeTaxiNode hook installed once per session
+local taxiHooked = false  -- TakeTaxiNode hook installed once per session
 
 local function fmt(s)
-    s = math.max(0, math.floor(s + 0.5))
+    if s == nil then return "-:--" end   -- no recorded time
+    if s < 0 then s = 0 end
+    s = math.floor(s + 0.5)
     return ("%d:%02d"):format(math.floor(s / 60), s % 60)
+end
+
+local function routeKey(src, dst)
+    local faction = UnitFactionGroup("player") or "?"
+    return faction .. "|" .. tostring(src) .. " @ " .. tostring(dst)
 end
 
 -- Sell every sellable grey (Poor, quality 0) item in the bags. Returns count.
@@ -38,25 +45,24 @@ end
 -- ---- lifecycle ------------------------------------------------------------
 function Misc:OnInitialize()
     local p = self:_p()
-    p.tokens = {}
+    p.tokens = {}       -- enable-gated subscriptions (sell junk)
     p.phase = nil       -- nil / "boarding" / "flying"
     p.src = nil
+
+    -- Flight recording is ALWAYS on (builds the database even while disabled),
+    -- so set it up here rather than in OnEnable.
+    self:GetDB().flights = self:GetDB().flights or {}
+    ns.EventBus.Get():On("TAXIMAP_OPENED", function() self:_OnTaxiMap() end)
+    if not taxiHooked and type(TakeTaxiNode) == "function" then
+        local module = self
+        hooksecurefunc("TakeTaxiNode", function(slot) module:_OnTakeTaxi(slot) end)
+        taxiHooked = true
+    end
 end
 
 function Misc:OnEnable()
     local p = self:_p()
-    self:GetDB().flights = self:GetDB().flights or {}
     local bus = ns.EventBus.Get()
-
-    -- flight timers
-    p.tokens["TAXIMAP_OPENED"] = bus:On("TAXIMAP_OPENED", function() self:_CaptureSource() end)
-    if not hooked and type(TakeTaxiNode) == "function" then
-        local module = self
-        hooksecurefunc("TakeTaxiNode", function(slot) module:_OnTakeTaxi(slot) end)
-        hooked = true
-    end
-
-    -- sell junk
     p.tokens["MERCHANT_SHOW"]   = bus:On("MERCHANT_SHOW",   function() self:_OnMerchantShow() end)
     p.tokens["MERCHANT_CLOSED"] = bus:On("MERCHANT_CLOSED", function() self:_OnMerchantClosed() end)
 end
@@ -66,12 +72,16 @@ function Misc:OnDisable()
     local bus = ns.EventBus.Get()
     for event, token in pairs(p.tokens) do bus:Off(event, token) end
     wipe(p.tokens)
-    self:_StopTicker()
-    if p.frame then p.frame:Hide() end
+    if p.frame then p.frame:Hide() end   -- recording keeps running; display stops
     if p.sellBtn then p.sellBtn:Hide() end
 end
 
 -- ======================= FLIGHT TIMERS =====================================
+function Misc:_OnTaxiMap()
+    self:_CaptureSource()
+    self:_HookFlightPins()
+end
+
 function Misc:_CaptureSource()
     local p = self:_p()
     if not (NumTaxiNodes and TaxiNodeGetType and TaxiNodeName) then return end
@@ -83,14 +93,9 @@ function Misc:_CaptureSource()
     end
 end
 
-local function routeKey(src, dst)
-    local faction = UnitFactionGroup("player") or "?"
-    return faction .. "|" .. tostring(src) .. " @ " .. tostring(dst)
-end
-
+-- Record (always) when a flight is taken.
 function Misc:_OnTakeTaxi(slot)
     local p = self:_p()
-    if not self:IsEnabled() then return end
     if TaxiNodeGetType and TaxiNodeGetType(slot) ~= "REACHABLE" then return end
     local dst = TaxiNodeName and TaxiNodeName(slot)
     if not (p.src and dst) then return end
@@ -126,7 +131,7 @@ function Misc:_Tick(dt)
             p.phase = "flying"
             p.startTime = GetTime()
             p.known = self:GetDB().flights[p.route]
-            self:_ShowTimer()
+            self:_RefreshDisplay()
         elseif GetTime() - (p.boardStart or 0) > 8 then
             self:_StopTicker()  -- never took off (cancelled)
         end
@@ -134,12 +139,12 @@ function Misc:_Tick(dt)
     elseif p.phase == "flying" then
         if not UnitOnTaxi("player") then
             local dur = GetTime() - (p.startTime or GetTime())
-            if dur > 1 then self:GetDB().flights[p.route] = dur end
+            if dur > 1 then self:GetDB().flights[p.route] = dur end  -- always record
             if p.frame then p.frame:Hide() end
             self:_StopTicker()
         else
             p.acc = (p.acc or 0) + dt
-            if p.acc >= 0.1 then p.acc = 0; self:_UpdateTimer() end
+            if p.acc >= 0.1 then p.acc = 0; self:_RefreshDisplay() end
         end
     end
 end
@@ -149,7 +154,8 @@ function Misc:_BuildFrame()
     if p.frame then return end
     local f = W.Panel(UIParent, "panel", "borderStrong")
     f:SetSize(230, 42)
-    f:SetPoint("TOP", UIParent, "TOP", 0, -140)
+    -- Boss-mod "critical" spot: centre screen, a bit above the middle.
+    f:SetPoint("CENTER", UIParent, "CENTER", 0, 210)
     f:SetFrameStrata("HIGH")
 
     local dest = W.Text(f, "", "accent", "GameFontNormal")
@@ -178,26 +184,57 @@ function Misc:_BuildFrame()
     p.frame = f
 end
 
-function Misc:_ShowTimer()
-    if not self:GetSetting("showTimer") then return end
+-- Display is gated by the module + "in flight" checkbox; recording is not.
+function Misc:_RefreshDisplay()
     local p = self:_p()
+    if not (self:IsEnabled() and self:GetSetting("showInFlight")) then
+        if p.frame then p.frame:Hide() end
+        return
+    end
     self:_BuildFrame()
     p.frame.dest:SetText(p.dst or "Flight")
-    p.frame:Show()
-    self:_UpdateTimer()
-end
-
-function Misc:_UpdateTimer()
-    local p = self:_p()
-    if not (p.frame and p.frame:IsShown() and p.startTime) then return end
-    local elapsed = GetTime() - p.startTime
+    local elapsed = GetTime() - (p.startTime or GetTime())
     if p.known and p.known > 0 then
         p.frame.time:SetText(fmt(p.known - elapsed))
         p.frame.bar:SetValue(math.min(1, elapsed / p.known))
     else
-        p.frame.time:SetText(fmt(elapsed) .. "  ...")
+        p.frame.time:SetText("-:--")  -- not recorded yet
         p.frame.bar:SetValue(0)
     end
+    p.frame:Show()
+end
+
+-- ---- map hover tooltip ----------------------------------------------------
+function Misc:_HookFlightPins()
+    local module = self
+    if not (FlightMapFrame and FlightMapFrame.pinPools) then return end
+    local pool = FlightMapFrame.pinPools.FlightMap_FlightPointPinTemplate
+    if not pool or not pool.EnumerateActive then return end
+    -- pins render just after the map opens
+    C_Timer.After(0, function()
+        for pin in pool:EnumerateActive() do
+            if not pin.__hagHover then
+                pin.__hagHover = true
+                pin:HookScript("OnEnter", function(self2) module:_OnPinEnter(self2) end)
+            end
+            local d = pin.taxiNodeData
+            if d and d.state == Enum.FlightPathState.Current and d.name then
+                module:_p().src = d.name
+            end
+        end
+    end)
+end
+
+function Misc:_OnPinEnter(pin)
+    if not (self:IsEnabled() and self:GetSetting("showHover")) then return end
+    local d = pin.taxiNodeData
+    if not d or d.state ~= Enum.FlightPathState.Reachable then return end
+    local src = self:_p().src
+    if not src then return end
+    local dur = self:GetDB().flights[routeKey(src, d.name)]
+    local r, g, b = Theme.Unpack("accent")
+    GameTooltip:AddLine("Flight: " .. fmt(dur), r, g, b)  -- fmt(nil) -> "-:--"
+    GameTooltip:Show()
 end
 
 -- ======================= SELL JUNK =========================================
@@ -226,7 +263,7 @@ function Misc:_BuildSellButton()
     local b = CreateFrame("Button", nil, MerchantFrame, "BackdropTemplate")
     W.Style(b, "panel2", "borderStrong")
     b:SetSize(86, 22)
-    b:SetPoint("BOTTOMRIGHT", MerchantFrame, "TOPRIGHT", -2, 2)
+    b:SetPoint("BOTTOMRIGHT", MerchantFrame, "BOTTOMRIGHT", -8, 8)
     b:SetFrameStrata("HIGH")
     local fs = W.Text(b, "Sell Junk", "accent", "GameFontNormalSmall")
     fs:SetPoint("CENTER")
@@ -241,7 +278,6 @@ function Misc:_BuildSellButton()
 end
 
 function Misc:OnSettingChanged(key)
-    -- if switching away from Button mode while a vendor is open, hide the button
     if key == "sellJunk" and self:GetSetting("sellJunk") ~= "button" then
         if self:_p().sellBtn then self:_p().sellBtn:Hide() end
     end
@@ -255,8 +291,9 @@ ns.ModuleManager.Get():Register(Misc:New("Misc", {
     color = ns.Theme.hex.accent,
     settings = {
         { type = "header", text = "Flight timers" },
-        { type = "toggle", key = "showTimer", label = "Show flight timer", default = true },
-        { type = "note", text = "The first time you fly a route it's timed; after that a countdown is shown for it." },
+        { type = "toggle", key = "showInFlight", label = "Show timer while in flight", default = true },
+        { type = "toggle", key = "showHover", label = "Show flight time on map hover", default = true },
+        { type = "note", text = "Routes are recorded the first time you fly them (even with this module off); '-:--' means no recorded time yet." },
 
         { type = "header", text = "Sell Junk" },
         { type = "select", key = "sellJunk", label = "Sell grey items", default = "off",
