@@ -98,10 +98,11 @@ function ClassModule:OnEnable()
     p.tokens["SPELLS_CHANGED"]                    = bus:On("SPELLS_CHANGED",                    function() self:_RefreshHeal() end)
     p.tokens["TRAIT_CONFIG_UPDATED"]              = bus:On("TRAIT_CONFIG_UPDATED",              function() self:_RefreshHeal() end)
     p.tokens["ACTIVE_COMBAT_CONFIG_CHANGED"]      = bus:On("ACTIVE_COMBAT_CONFIG_CHANGED",      function() self:_RefreshHeal() end)
-    p.tokens["PLAYER_SPECIALIZATION_CHANGED"]     = bus:On("PLAYER_SPECIALIZATION_CHANGED",     function() self:_RefreshHeal() end)
     p.tokens["PLAYER_ENTERING_WORLD"]             = bus:On("PLAYER_ENTERING_WORLD",             function() self:_RefreshHeal() end)
-    -- spell-power buffs change the heal too; throttle so aura storms coalesce
-    p.tokens["UNIT_AURA"]                         = bus:On("UNIT_AURA",                         function(_, u) if u == "player" then self:_RefreshHealThrottled() end end)
+    -- spell-power buffs change the heal; refresh on every player aura (no
+    -- throttle, so a buff is never skipped). Spec changes are irrelevant here:
+    -- Expel Harm is part of the no-spec submodule, shared by all specs.
+    p.tokens["UNIT_AURA"]                         = bus:On("UNIT_AURA",                         function(_, u) if u == "player" then self:_RefreshHeal() end end)
 
     self:_RefreshHeal()
 end
@@ -115,17 +116,6 @@ function ClassModule:OnDisable()
 end
 
 -- ---- marker ---------------------------------------------------------------
--- Coalesce bursts (e.g. UNIT_AURA in combat) into one refresh per 0.2s.
-function ClassModule:_RefreshHealThrottled()
-    local p = self:_p()
-    if p.refreshPending then return end
-    p.refreshPending = true
-    C_Timer.After(0.2, function()
-        self:_p().refreshPending = false
-        if self:IsEnabled() then self:_RefreshHeal() end
-    end)
-end
-
 function ClassModule:_RefreshHeal()
     local p = self:_p()
     p.heal = readExpelHarmHeal()
