@@ -20,7 +20,7 @@ local function commafy(n)
 end
 
 local function clock(seconds)
-    if not seconds or seconds <= 0 then return "—" end
+    if not seconds or seconds <= 0 then return "-" end
     seconds = math.floor(seconds)
     local h = math.floor(seconds / 3600)
     local m = math.floor((seconds % 3600) / 60)
@@ -96,8 +96,8 @@ function Leveling:_OnLevelUp()
     self:_Snapshot()
     if self:GetSetting("echoLevelUp") then
         local _, _, _, _, _, _, perHour = self:_Stats()
-        self:LogSuccess(("ding! L%d — %s XP/hr this session")
-            :format(UnitLevel("player"), perHour > 0 and commafy(perHour) or "—"))
+        self:LogSuccess(("ding! L%d - %s XP/hr this session")
+            :format(UnitLevel("player"), perHour > 0 and commafy(perHour) or "-"))
     end
 end
 
@@ -153,7 +153,7 @@ function Leveling:_ShowTooltip()
     tt:AddLine("|cff" .. Theme.hex.accent .. "HagAIO|r  |cff" .. Theme.hex.gold .. "Leveling|r")
 
     if UnitLevel("player") >= maxLevel() or UnitXPMax("player") == 0 then
-        tt:AddLine("Max level — no experience to track.", Theme.Unpack("textDim"))
+        tt:AddLine("Max level - no experience to track.", Theme.Unpack("textDim"))
         tt:Show()
         return
     end
@@ -172,7 +172,7 @@ function Leveling:_ShowTooltip()
 
     tt:AddLine(" ")
     statLine(tt, "Session XP", commafy(sessionXP))
-    statLine(tt, "XP / hour", perHour > 0 and commafy(perHour) or "—", "win")
+    statLine(tt, "XP / hour", perHour > 0 and commafy(perHour) or "-", "win")
     statLine(tt, "Time played", clock(elapsed))
     statLine(tt, "Time to level", clock(ttl), "accent")
 
@@ -219,12 +219,12 @@ end
 function Leveling:_PrintSession()
     local cur, max, pct, remaining, rested, sessionXP, perHour, elapsed, ttl = self:_Stats()
     if UnitLevel("player") >= maxLevel() or max == 0 then
-        self:LogInfo("max level — no XP to track")
+        self:LogInfo("max level - no XP to track")
         return
     end
     self:LogInfo(("L%d  %s/%s (%.1f%%)  |  session %s  |  %s/hr  |  to level %s")
         :format(UnitLevel("player"), commafy(cur), commafy(max), pct,
-            commafy(sessionXP), perHour > 0 and commafy(perHour) or "—", clock(ttl)))
+            commafy(sessionXP), perHour > 0 and commafy(perHour) or "-", clock(ttl)))
 end
 
 -- Register with the manager so it appears in the settings window's Modules page.

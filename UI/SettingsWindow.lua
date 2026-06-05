@@ -115,7 +115,7 @@ function SettingsWindow:_BuildModulesPage(parent)
 
     local title = W.Text(page, "Feature Modules", "text", "GameFontNormalLarge")
     title:SetPoint("TOPLEFT", 18, -16)
-    local note = W.Text(page, "Toggle modules on or off — changes apply immediately and persist.",
+    local note = W.Text(page, "Toggle modules on or off. Changes apply immediately and persist.",
         "textDim", "GameFontHighlightSmall")
     note:SetPoint("TOPLEFT", title, "BOTTOMLEFT", 0, -6)
 
@@ -357,12 +357,12 @@ function SettingsWindow:_BuildAboutPage(parent)
 
     local title = W.Text(page, "HagAIO", "text", "GameFontNormalLarge")
     title:SetPoint("TOPLEFT", 18, -18)
-    local ver = W.Text(page, "Version " .. tostring(ns.version) .. "   |cff5b6473•|r   Midnight 12.0.x",
+    local ver = W.Text(page, "Version " .. tostring(ns.version) .. "   |cff5b6473|||r   Midnight 12.0.x",
         "accent", "GameFontHighlight")
     ver:SetPoint("TOPLEFT", title, "BOTTOMLEFT", 0, -8)
 
     local desc = W.Text(page,
-        "All-in-One toolkit — a modular framework that feature modules\nplug into, sharing one logger and this settings window.",
+        "All-in-One toolkit. A modular framework that feature modules\nplug into, sharing one logger and this settings window.",
         "textDim", "GameFontHighlightSmall")
     desc:SetPoint("TOPLEFT", ver, "BOTTOMLEFT", 0, -16)
     desc:SetJustifyH("LEFT")
@@ -376,7 +376,7 @@ function SettingsWindow:_BuildAboutPage(parent)
     local cmds = W.SectionLabel(page, "Commands")
     cmds:SetPoint("TOPLEFT", repo, "BOTTOMLEFT", 0, -24)
     local list = W.Text(page,
-        "/hag — open this panel\n/hag log — open the activity log\n/hag modules — list modules\n/hag help — all commands",
+        "/hag  -  open this panel\n/hag log  -  open the activity log\n/hag modules  -  list modules\n/hag help  -  all commands",
         "textDim", "GameFontHighlightSmall")
     list:SetPoint("TOPLEFT", cmds, "BOTTOMLEFT", 0, -8)
     list:SetJustifyH("LEFT")

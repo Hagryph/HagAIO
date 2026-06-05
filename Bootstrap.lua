@@ -30,7 +30,7 @@ function Bootstrap:Run()
         ns.Logger.Get():LoadSettings()
         ns.SlashCommand.Get():Activate()
         ns.Logger.Get():Core():Info(
-            ("loaded v%s — type /hag to open."):format(tostring(ns.version)))
+            ("loaded v%s - type /hag to open."):format(tostring(ns.version)))
     end)
 
     bus:On("PLAYER_LOGIN", function()

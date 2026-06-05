@@ -13,15 +13,26 @@ local Class = ns.Class
 
 local UnitFrames = Class.new("UnitFrames", ns.Module)
 
--- normal-health green -> bright red endpoints (direct RGB blend)
-local GREEN = { 0.10, 0.85, 0.10 }
-local RED   = { 0.95, 0.13, 0.13 }
+-- green (full) -> yellow (half) -> bright red (low)
+local GREEN  = { 0.10, 0.85, 0.10 }
+local YELLOW = { 0.95, 0.82, 0.15 }
+local RED    = { 0.95, 0.13, 0.13 }
 
-local function colorAt(t)  -- t = health fraction (0 = empty -> red, 1 = full -> green)
-    return CreateColor(
-        RED[1] + (GREEN[1] - RED[1]) * t,
-        RED[2] + (GREEN[2] - RED[2]) * t,
-        RED[3] + (GREEN[3] - RED[3]) * t, 1)
+local function mix(a, b, u)
+    return a[1] + (b[1] - a[1]) * u,
+           a[2] + (b[2] - a[2]) * u,
+           a[3] + (b[3] - a[3]) * u
+end
+
+-- t = health fraction: 1 -> green, 0.5 -> yellow, 0 -> red
+local function colorAt(t)
+    local r, g, b
+    if t >= 0.5 then
+        r, g, b = mix(YELLOW, GREEN, (t - 0.5) / 0.5)
+    else
+        r, g, b = mix(RED, YELLOW, t / 0.5)
+    end
+    return CreateColor(r, g, b, 1)
 end
 
 -- Resolve a unit's health StatusBar across retail frame layouts (with fallbacks
@@ -102,6 +113,7 @@ function UnitFrames:_BuildCurve()
     if style == "smooth" then
         curve:SetType((Enum.LuaCurveType and Enum.LuaCurveType.Linear) or Enum.LuaCurveType.Step)
         curve:AddPoint(0.0, colorAt(0.0))
+        curve:AddPoint(0.5, colorAt(0.5))
         curve:AddPoint(1.0, colorAt(1.0))
     else
         -- 5% bands: a flat colour per 5% of health, green at the top -> red low.
@@ -155,7 +167,7 @@ end
 -- ---- registration ---------------------------------------------------------
 ns.ModuleManager.Get():Register(UnitFrames:New("UnitFrames", {
     title = "Unit Frames",
-    description = "Tints the player and target health bars by remaining health (green → red).",
+    description = "Colours the player and target health bars by how much health is left.",
     defaultEnabled = true,
     color = ns.Theme.hex.win,
     settings = {
@@ -167,6 +179,6 @@ ns.ModuleManager.Get():Register(UnitFrames:New("UnitFrames", {
               { value = "steps",  text = "5% steps" },
               { value = "smooth", text = "Smooth" },
           } },
-        { type = "note", text = "Colour runs from the bar's normal green at full health to bright red when low. Uses Midnight's sanctioned colour-curve API (Secret-Values safe — no health values are read)." },
+        { type = "note", text = "Full health is green, fading through yellow to bright red as health drops." },
     },
 }))
