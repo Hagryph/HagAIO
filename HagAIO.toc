@@ -1,0 +1,23 @@
+## Interface: 120005
+## Title: HagAIO
+## Notes: All-in-One toolkit for World of Warcraft (Midnight)
+## Author: Hagryph
+## Version: 0.1.0
+## SavedVariables: HagAIODB
+## SavedVariablesPerCharacter: HagAIOCharDB
+## X-Website: https://github.com/Hagryph/HagAIO
+## X-Category: Combat
+## AllowLoadGameType: retail
+
+# Interface 120005 = patch 12.0.5 (current live, Midnight). Bump to 120007
+# once 12.0.7 "Revelations" goes live (2026-06-16).
+
+Core\Namespace.lua
+Core\Class.lua
+Core\EventBus.lua
+Core\SavedVars.lua
+Core\Module.lua
+Core\ModuleManager.lua
+Core\SlashCommand.lua
+Core\Config.lua
+Bootstrap.lua

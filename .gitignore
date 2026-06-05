@@ -1,0 +1,12 @@
+# Packaged builds
+*.zip
+
+# OS / editor cruft
+.DS_Store
+Thumbs.db
+desktop.ini
+*.bak
+*.swp
+
+# Local-only Claude settings
+.claude/settings.local.json
