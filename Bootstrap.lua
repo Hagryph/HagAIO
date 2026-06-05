@@ -26,7 +26,9 @@ function Bootstrap:Run()
 
     bus:On("ADDON_LOADED", function(_, loaded)
         if loaded ~= addonName then return end
-        ns.SavedVars.Get():Load()
+        local sv = ns.SavedVars.Get()
+        sv:Load()
+        self:_ApplyDefaults(sv)
         ns.Logger.Get():LoadSettings()
         ns.SlashCommand.Get():Activate()
         ns.Logger.Get():Core():Info(
@@ -37,6 +39,22 @@ function Bootstrap:Run()
         ns.ModuleManager.Get():StartAll()
         ns.Compartment.Get():Register()
     end)
+end
+
+-- One-time: start with everything off except the XP-bar tooltip. Runs once
+-- (flagged), so any later changes the player makes are kept.
+function Bootstrap:_ApplyDefaults(sv)
+    local meta = sv:Namespace("_meta", { defaultsV1 = false })
+    if meta.defaultsV1 then return end
+    meta.defaultsV1 = true
+
+    sv:SetModuleState("Questing", true)     -- keep on (hosts the XP tooltip)
+    sv:SetModuleState("UnitFrames", false)
+    sv:SetModuleState("Class", false)
+
+    local q = sv:Namespace("module_Questing", {})
+    q.autoAccept = false
+    q.autoTurnIn = false
 end
 
 function Bootstrap.Get()

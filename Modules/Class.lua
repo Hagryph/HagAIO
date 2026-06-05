@@ -132,7 +132,7 @@ function ClassModule:_UpdateMarker()
 
     if not p.marker then
         local m = bar:CreateTexture(nil, "OVERLAY", nil, 7)
-        m:SetWidth(6)  -- thick
+        m:SetWidth(4)  -- thick-ish
         p.marker = m
     end
     local m = p.marker
@@ -165,7 +165,7 @@ end
 ns.ModuleManager.Get():Register(ClassModule:New("Class", {
     title = "Class",
     description = "Helpers for your current class.",
-    defaultEnabled = true,
+    defaultEnabled = false,
     color = ns.Theme.hex.accent,
     settings = {},  -- built per class in OnInitialize
 }))

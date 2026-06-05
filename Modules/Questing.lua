@@ -322,8 +322,8 @@ ns.ModuleManager.Get():Register(Questing:New("Questing", {
           desc = "Print your session rate to chat each time you level up." },
 
         { type = "header", text = "Quests" },
-        { type = "toggle", key = "autoAccept", label = "Auto-accept quests", default = true },
-        { type = "toggle", key = "autoTurnIn", label = "Auto-turn-in quests", default = true },
+        { type = "toggle", key = "autoAccept", label = "Auto-accept quests", default = false },
+        { type = "toggle", key = "autoTurnIn", label = "Auto-turn-in quests", default = false },
         { type = "toggle", key = "shiftPause", label = "Hold Shift to pause", default = true,
           desc = "Hold Shift while talking to an NPC to handle it yourself." },
         { type = "toggle", key = "pauseInstance", label = "Pause inside instances", default = false,

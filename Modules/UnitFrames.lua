@@ -150,7 +150,7 @@ end
 ns.ModuleManager.Get():Register(UnitFrames:New("UnitFrames", {
     title = "Unit Frames",
     description = "Colours the player and target health bars by how much health is left.",
-    defaultEnabled = true,
+    defaultEnabled = false,
     color = ns.Theme.hex.win,
     settings = {
         { type = "header", text = "Health bar tint" },
