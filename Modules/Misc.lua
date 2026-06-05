@@ -295,7 +295,7 @@ ns.ModuleManager.Get():Register(Misc:New("Misc", {
         { type = "header", text = "Flight timers" },
         { type = "toggle", key = "showInFlight", label = "Show timer while in flight", default = true },
         { type = "toggle", key = "showHover", label = "Show flight time on map hover", default = true },
-        { type = "note", text = "Routes are recorded the first time you fly them (even with this module off); '-:--' means no recorded time yet." },
+        { type = "note", text = "Routes are recorded the first time you fly them; '-:--' means no recorded time yet." },
 
         { type = "header", text = "Sell Junk" },
         { type = "select", key = "sellJunk", label = "Sell grey items", default = "off",
