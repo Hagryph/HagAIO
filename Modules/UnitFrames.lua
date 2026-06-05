@@ -66,8 +66,6 @@ function UnitFrames:OnEnable()
         installed = true
     end
 
-    ns.SlashCommand.Get():Register("uf", function() self:_Diag() end, "diagnose health-bar tint")
-
     self:_ApplyNow()
 end
 
@@ -86,8 +84,6 @@ function UnitFrames:_BuildCurve()
     p.curve = curve
 end
 
--- Called by the hook after every Blizzard health-bar update. We only act on the
--- player/target bars (other frames pass through untouched).
 -- Paint a bar's fill: desaturate the (green) atlas to greyscale so the vertex
 -- colour shows the true hue, then tint. r,g,b may be secret values.
 local function paint(statusbar, r, g, b)
@@ -108,42 +104,19 @@ local function unpaint(statusbar)
     tex:SetVertexColor(1, 1, 1)
 end
 
+-- Called by the hook after every Blizzard health-bar update. Acts only on the
+-- player/target bars; other frames pass through untouched.
 function UnitFrames:_Tint(statusbar, unit)
     if unit ~= "player" and unit ~= "target" then return end
     local p = self:_p()
-    p.fires = (p.fires or 0) + 1
     p.barOf = p.barOf or {}
     p.barOf[unit] = statusbar  -- remember the REAL bar Blizzard updates
-
-    -- diagnostic window: force unmistakable blue on the real bar
-    if p.testUntil and GetTime() < p.testUntil then
-        paint(statusbar, 0.10, 0.45, 1.0)
-        return
-    end
-
     if not self:IsEnabled() then return end
     if not self:GetSetting(unit) then return end
     local curve = p.curve
     if not curve then return end
     local color = UnitHealthPercent(unit, true, curve)  -- holds secret values
-    if color then
-        p.applied = (p.applied or 0) + 1
-        paint(statusbar, color:GetRGB())
-    end
-end
-
--- /hag uf — force the real (hook) player/target bars blue for 5s.
-function UnitFrames:_Diag()
-    local p = self:_p()
-    self:LogInfo(("api:%s  installed:%s  enabled:%s")
-        :format(apiAvailable() and "ok" or "MISSING", tostring(installed), tostring(self:IsEnabled())))
-    p.testUntil = GetTime() + 5
-    for _, unit in ipairs({ "player", "target" }) do
-        local hooked = p.barOf and p.barOf[unit]
-        if hooked then paint(hooked, 0.10, 0.45, 1.0) end
-        self:LogInfo(("%s hookBar:%s"):format(unit, hooked and "yes" or "no"))
-    end
-    self:LogWarn("bars forced BLUE for 5s — do they look blue now?")
+    if color then paint(statusbar, color:GetRGB()) end
 end
 
 -- Apply our tint to the bars we already know from the hook. (On first enable
