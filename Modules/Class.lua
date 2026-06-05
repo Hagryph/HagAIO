@@ -61,9 +61,11 @@ local ExpelHarm = {
         -- hide the marker while Expel Harm is on cooldown, driven by the cast +
         -- a Cooldown widget so we never read the (possibly secret) cooldown time
         p.subTokens["UNIT_SPELLCAST_SUCCEEDED"]  = bus:On("UNIT_SPELLCAST_SUCCEEDED",  function(_, u, _, spellID) if u == "player" and spellID == EXPEL_HARM then self:_OnExpelCast() end end)
+        p.subTokens["SPELL_UPDATE_COOLDOWN"]     = bus:On("SPELL_UPDATE_COOLDOWN",     function() self:_SyncCooldown() end)
         p.onCooldown = false
         p.expelActive = true
         self:_RefreshHeal()
+        self:_SyncCooldown()
     end,
     Unload = function(self)
         local p = self:_p()
@@ -107,7 +109,6 @@ function ClassModule:OnInitialize()
     p.heal = nil
     p.marker = nil
     p.host = nil
-    p.cd = nil
     p.onCooldown = false
     p.activeSub = nil
     p.expelActive = false
@@ -271,30 +272,26 @@ function ClassModule:_UpdateMarker()
     m:Show()
 end
 
--- Hide the marker for the Expel Harm cooldown. We feed the (possibly secret)
--- cooldown straight into a Cooldown widget and let it tell us when it's done via
--- OnCooldownDone — we never read or compare the cooldown value.
+-- Hide the marker while Expel Harm is on cooldown. We read only the non-secret
+-- booleans (isActive / isOnGCD), never the secret start/duration.
+-- The cast gives a reliable immediate hide (covers the GCD-overlap window).
 function ClassModule:_OnExpelCast()
     local p = self:_p()
-    if not p.cd then
-        local cd = CreateFrame("Cooldown", nil, UIParent, "CooldownFrameTemplate")
-        cd:SetSize(1, 1)
-        cd:SetPoint("CENTER")
-        cd:SetAlpha(0)
-        cd:SetDrawEdge(false)
-        cd:SetDrawSwipe(false)
-        cd:SetHideCountdownNumbers(true)
-        cd:SetScript("OnCooldownDone", function()
-            self:_p().onCooldown = false
-            self:_ScheduleUpdate()
-        end)
-        p.cd = cd
-    end
+    p.onCooldown = true
+    self:_ScheduleUpdate()
+end
+
+-- Re-show once the real cooldown ends; also catches a reload while it's still on
+-- cooldown. isActive/isOnGCD are plain booleans (the times are the secret bits).
+function ClassModule:_SyncCooldown()
+    local p = self:_p()
     local info = C_Spell and C_Spell.GetSpellCooldown and C_Spell.GetSpellCooldown(EXPEL_HARM)
-    if info then
-        p.onCooldown = true
-        p.cd:SetCooldown(info.startTime, info.duration, info.modRate)
-        self:_ScheduleUpdate()  -- hide now
+    local active = (info and info.isActive) or false
+    if not active then
+        if p.onCooldown then p.onCooldown = false; self:_ScheduleUpdate() end
+    elseif info and not info.isOnGCD then
+        -- a real (non-GCD) cooldown is running, e.g. after a reload mid-cooldown
+        if not p.onCooldown then p.onCooldown = true; self:_ScheduleUpdate() end
     end
 end
 
