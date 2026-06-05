@@ -88,12 +88,18 @@ function ClassModule:OnEnable()
     local p = self:_p()
     if p.class ~= "MONK" then return end
 
+    -- heal scales with spell power, so re-read it on anything that can change
+    -- it: gear, level, talents (TRAIT_CONFIG_UPDATED), spec; max-HP change just
+    -- needs a reposition.
     local bus = ns.EventBus.Get()
-    p.tokens["UNIT_MAXHEALTH"]           = bus:On("UNIT_MAXHEALTH",           function(_, u) if u == "player" then self:_UpdateMarker() end end)
-    p.tokens["PLAYER_EQUIPMENT_CHANGED"] = bus:On("PLAYER_EQUIPMENT_CHANGED", function() self:_RefreshHeal() end)
-    p.tokens["SPELLS_CHANGED"]           = bus:On("SPELLS_CHANGED",           function() self:_RefreshHeal() end)
-    p.tokens["PLAYER_LEVEL_UP"]          = bus:On("PLAYER_LEVEL_UP",          function() self:_RefreshHeal() end)
-    p.tokens["PLAYER_ENTERING_WORLD"]    = bus:On("PLAYER_ENTERING_WORLD",    function() self:_RefreshHeal() end)
+    p.tokens["UNIT_MAXHEALTH"]                    = bus:On("UNIT_MAXHEALTH",                    function(_, u) if u == "player" then self:_UpdateMarker() end end)
+    p.tokens["PLAYER_EQUIPMENT_CHANGED"]          = bus:On("PLAYER_EQUIPMENT_CHANGED",          function() self:_RefreshHeal() end)
+    p.tokens["PLAYER_LEVEL_UP"]                   = bus:On("PLAYER_LEVEL_UP",                   function() self:_RefreshHeal() end)
+    p.tokens["SPELLS_CHANGED"]                    = bus:On("SPELLS_CHANGED",                    function() self:_RefreshHeal() end)
+    p.tokens["TRAIT_CONFIG_UPDATED"]              = bus:On("TRAIT_CONFIG_UPDATED",              function() self:_RefreshHeal() end)
+    p.tokens["ACTIVE_COMBAT_CONFIG_CHANGED"]      = bus:On("ACTIVE_COMBAT_CONFIG_CHANGED",      function() self:_RefreshHeal() end)
+    p.tokens["PLAYER_SPECIALIZATION_CHANGED"]     = bus:On("PLAYER_SPECIALIZATION_CHANGED",     function() self:_RefreshHeal() end)
+    p.tokens["PLAYER_ENTERING_WORLD"]             = bus:On("PLAYER_ENTERING_WORLD",             function() self:_RefreshHeal() end)
 
     self:_RefreshHeal()
 end
