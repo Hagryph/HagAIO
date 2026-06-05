@@ -119,8 +119,8 @@ local MonkBase = {
     end,
 }
 
-SUBMODULES.MONK["none"] = MonkBase  -- leveling: Expel Harm + Tiger Palm
-SUBMODULES.MONK[1]      = MonkBase  -- Brewmaster (adds Keg Smash to the cost)
+SUBMODULES.MONK["none"] = ExpelHarm  -- no specialisation: Expel Harm only
+SUBMODULES.MONK[1]      = MonkBase   -- Brewmaster: + Tiger Palm energy marker
 
 -- "none" when the player has no specialisation, else the spec index (1-4).
 -- A spec-less character returns an out-of-range "initial" index (e.g. 5 for a
@@ -204,6 +204,8 @@ function ClassModule:OnInitialize()
         end)
         hookInstalled = true
     end
+
+    ns.SlashCommand.Get():Register("spec", function() self:_DumpSpec() end, "dump spec detection (debug)")
 
     -- power (energy) bar, for the Brewmaster Tiger Palm marker
     if classToken == "MONK" and not powerHookInstalled and type(UnitFrameManaBar_Update) == "function" then
@@ -380,6 +382,26 @@ end
 function ClassModule:OnSettingChanged()
     self:_ScheduleUpdate()
     self:_ScheduleTiger()
+end
+
+-- /hag spec — dump spec detection and which submodule is active.
+function ClassModule:_DumpSpec()
+    local p = self:_p()
+    local idx = GetSpecialization and GetSpecialization()
+    self:LogInfo("level", UnitLevel("player"), "class", tostring(p.class), "enabled", tostring(self:IsEnabled()))
+    self:LogInfo("GetSpecialization() =", tostring(idx), " GetNumSpecializations() =",
+        tostring(GetNumSpecializations and GetNumSpecializations()))
+    if idx then
+        local id, name = (GetSpecializationInfo and GetSpecializationInfo(idx))
+        self:LogInfo("GetSpecializationInfo(idx): id=", tostring(id), "name=", tostring(name))
+    end
+    self:LogInfo("=> currentSpecKey() =", tostring(currentSpecKey()))
+    local activeIs = "nil"
+    if p.activeSub == ExpelHarm then activeIs = "ExpelHarm (no-spec)"
+    elseif p.activeSub == MonkBase then activeIs = "MonkBase (Brewmaster)"
+    elseif p.activeSub then activeIs = "other" end
+    self:LogInfo("active submodule =", activeIs, " expelActive=", tostring(p.expelActive),
+        "tigerActive=", tostring(p.tigerActive))
 end
 
 -- ---- Tiger Palm energy marker (Brewmaster) --------------------------------
