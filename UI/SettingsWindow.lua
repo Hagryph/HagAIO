@@ -278,6 +278,16 @@ function SettingsWindow:_BuildModuleControls(sf, module)
             seg:SetValue(module:GetSetting(s.key))
             seg:SetOnChange(function(v) module:SetSetting(s.key, v) end)
             y = y - 34
+
+        elseif s.type == "color" then
+            local lbl = W.Text(content, s.label, "text", "GameFontHighlight")
+            lbl:SetPoint("TOPLEFT", 6, y)
+            local sw = W.ColorSwatch(content)
+            sw:SetPoint("TOPRIGHT", content, "TOPRIGHT", -6, y)
+            local c = module:GetSetting(s.key) or s.default or { 1, 1, 1 }
+            sw:SetColor(c[1] or 1, c[2] or 1, c[3] or 1)
+            sw:SetOnChange(function(r, g, b) module:SetSetting(s.key, { r, g, b }) end)
+            y = y - 26
         end
     end
 

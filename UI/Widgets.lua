@@ -210,6 +210,55 @@ function Widgets.Segmented(parent, options)
     return c
 end
 
+-- Colour swatch button: shows the current colour, opens the Blizzard colour
+-- picker on click. Methods: :SetColor(r,g,b) :GetColor() :SetOnChange(fn).
+function Widgets.ColorSwatch(parent)
+    local btn = CreateFrame("Button", nil, parent, "BackdropTemplate")
+    btn:SetSize(26, 16)
+    Widgets.Style(btn, "panel2", "borderStrong")
+
+    local sw = btn:CreateTexture(nil, "ARTWORK")
+    sw:SetPoint("TOPLEFT", 2, -2)
+    sw:SetPoint("BOTTOMRIGHT", -2, 2)
+    sw:SetColorTexture(1, 1, 1)
+
+    local cr, cg, cb, onChange = 1, 1, 1, nil
+    local function set(r, g, b) cr, cg, cb = r, g, b; sw:SetColorTexture(r, g, b) end
+
+    btn:SetScript("OnEnter", function() btn:SetBackdropBorderColor(Theme.Unpack("accent")) end)
+    btn:SetScript("OnLeave", function() btn:SetBackdropBorderColor(Theme.Unpack("borderStrong")) end)
+    btn:SetScript("OnClick", function()
+        local prevR, prevG, prevB = cr, cg, cb
+        local info = {
+            hasOpacity = false,
+            r = cr, g = cg, b = cb,
+            swatchFunc = function()
+                local r, g, b = ColorPickerFrame:GetColorRGB()
+                set(r, g, b)
+                if onChange then onChange(r, g, b) end
+            end,
+            cancelFunc = function()
+                set(prevR, prevG, prevB)
+                if onChange then onChange(prevR, prevG, prevB) end
+            end,
+        }
+        if ColorPickerFrame.SetupColorPickerAndShow then
+            ColorPickerFrame:SetupColorPickerAndShow(info)
+        else  -- legacy fallback
+            ColorPickerFrame.func = info.swatchFunc
+            ColorPickerFrame.cancelFunc = info.cancelFunc
+            ColorPickerFrame.hasOpacity = false
+            ColorPickerFrame:SetColorRGB(cr, cg, cb)
+            ColorPickerFrame:Show()
+        end
+    end)
+
+    btn.SetColor    = function(_, r, g, b) set(r, g, b) end
+    btn.GetColor    = function() return cr, cg, cb end
+    btn.SetOnChange = function(_, fn) onChange = fn end
+    return btn
+end
+
 -- Named scroll frame (template needs a name for its $parentScrollBar).
 function Widgets.ScrollFrame(parent, name)
     local sf = CreateFrame("ScrollFrame", name, parent, "UIPanelScrollFrameTemplate")

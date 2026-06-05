@@ -96,6 +96,7 @@ ns.ModuleManager.Get():Register(MyFeature:New("MyFeature", {
           desc = "Optional helper line." },
         { type = "select", key = "mode", label = "Mode", default = "a",
           options = { { value = "a", text = "A" }, { value = "b", text = "B" } } },
+        { type = "color", key = "tint", label = "Tint", default = { 1, 0, 0 } },
     },
 }))
 

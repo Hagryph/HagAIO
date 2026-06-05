@@ -21,15 +21,10 @@ local UnitFrames = Class.new("UnitFrames", ns.Module)
 -- has a built-in light/dark split we don't want).
 local FLAT = "Interface\\Buttons\\WHITE8X8"
 
-local function buildCurve()
-    local curve = C_CurveUtil.CreateColorCurve()
-    curve:SetType(Enum.LuaCurveType.Linear)
-    curve:AddPoint(0.00, CreateColor(0.90, 0.15, 0.15))  -- 0%   red
-    curve:AddPoint(0.30, CreateColor(0.90, 0.15, 0.15))  -- <=30% stays red
-    curve:AddPoint(0.55, CreateColor(0.95, 0.82, 0.15))  -- ~55% yellow
-    curve:AddPoint(1.00, CreateColor(0.20, 0.80, 0.20))  -- 100% green
-    return curve
-end
+-- gradient endpoints (also the settings defaults)
+local DEF_START = { 0.90, 0.15, 0.15 }  -- low health  (red)
+local DEF_MID   = { 0.95, 0.82, 0.15 }  -- mid health  (yellow)
+local DEF_END   = { 0.20, 0.80, 0.20 }  -- full health (green)
 
 local function apiAvailable()
     return C_CurveUtil and C_CurveUtil.CreateColorCurve and UnitHealthPercent and CreateColor
@@ -81,7 +76,7 @@ function UnitFrames:OnEnable()
         return
     end
     local p = self:_p()
-    p.curve = buildCurve()
+    p.curve = self:_BuildCurve()
 
     -- Learn the real bar object per unit, and recolour after Blizzard's update.
     if not installed and type(UnitFrameHealthBar_Update) == "function" then
@@ -114,6 +109,21 @@ function UnitFrames:OnDisable()
 end
 
 -- ---- colouring ------------------------------------------------------------
+-- Build the colour curve from the configured colours: low colour at/below 30%,
+-- mid at ~55%, full colour at 100%.
+function UnitFrames:_BuildCurve()
+    local lo  = self:GetSetting("startColor") or DEF_START
+    local mid = self:GetSetting("midColor")   or DEF_MID
+    local hi  = self:GetSetting("endColor")   or DEF_END
+    local curve = C_CurveUtil.CreateColorCurve()
+    curve:SetType(Enum.LuaCurveType.Linear)
+    curve:AddPoint(0.00, CreateColor(lo[1], lo[2], lo[3]))
+    curve:AddPoint(0.30, CreateColor(lo[1], lo[2], lo[3]))
+    curve:AddPoint(0.55, CreateColor(mid[1], mid[2], mid[3]))
+    curve:AddPoint(1.00, CreateColor(hi[1], hi[2], hi[3]))
+    return curve
+end
+
 function UnitFrames:_Color(unit)
     if unit ~= "player" and unit ~= "target" then return end
     if not self:IsEnabled() or not self:GetSetting(unit) then return end
@@ -128,6 +138,9 @@ end
 
 function UnitFrames:OnSettingChanged(key)
     local p = self:_p()
+    if key == "startColor" or key == "midColor" or key == "endColor" then
+        p.curve = self:_BuildCurve()
+    end
     for unit, bar in pairs(p.bars) do
         if self:GetSetting(unit) then self:_Color(unit) else restore(bar) end
     end
@@ -143,6 +156,11 @@ ns.ModuleManager.Get():Register(UnitFrames:New("UnitFrames", {
         { type = "header", text = "Health bar tint" },
         { type = "toggle", key = "player", label = "Tint player health bar", default = true },
         { type = "toggle", key = "target", label = "Tint target health bar", default = true },
-        { type = "note", text = "Full health is green, fading through yellow to bright red as health drops." },
+
+        { type = "header", text = "Colours" },
+        { type = "color", key = "startColor", label = "Low health (start)",  default = DEF_START },
+        { type = "color", key = "midColor",   label = "Mid health",          default = DEF_MID },
+        { type = "color", key = "endColor",   label = "Full health (end)",   default = DEF_END },
+        { type = "note", text = "Health fades from Full at 100% through Mid to Low at 30% and below." },
     },
 }))
