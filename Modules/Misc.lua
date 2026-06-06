@@ -98,7 +98,8 @@ function Misc:OnDisable()
     local bus = ns.EventBus
     for event, token in pairs(p.tokens) do bus:Off(event, token) end
     wipe(p.tokens)
-    if p.frame then p.frame:Hide() end   -- recording keeps running; display stops
+    if p.ticker then p.ticker:Hide() end  -- stop OnUpdate ticks while disabled
+    if p.frame then p.frame:Hide() end    -- recording keeps running; display stops
     if p.sellBtn then p.sellBtn:Hide() end
 end
 
@@ -417,8 +418,12 @@ function Misc:_BuildFrame()
     if not p.stopHooked and MainMenuBarVehicleLeaveButton then
         p.stopHooked = true
         local module = self
+        -- hooksecurefunc cannot be undone; guard inside so disabling the module
+        -- cleanly suppresses the behaviour without needing an unhook.
         hooksecurefunc(MainMenuBarVehicleLeaveButton, "OnClicked", function()
-            if UnitOnTaxi("player") then module:_OnEarlyLanding() end
+            if UnitOnTaxi("player") and module:IsEnabled() and module:GetSetting("showInFlight") then
+                module:_OnEarlyLanding()
+            end
         end)
     end
 end
