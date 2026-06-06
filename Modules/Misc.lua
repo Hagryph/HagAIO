@@ -266,10 +266,12 @@ end
 
 -- Poll once per refresh while flying: track the closest approach to the NEXT path
 -- node; once we have clearly moved away from it, stamp that closest-approach time
--- and record the segment from the previous node as a direct flight.
+-- and record the segment from the previous node as a direct flight. Only handles
+-- INTERMEDIATE nodes (2 .. last-1) -- you don't fly past the destination, you land
+-- on it, so its final leg is timed from the dismount in _RecordFinalLeg instead.
 function Misc:_PollCrossing()
     local p = self:_p()
-    if not (p.path and p.crossIdx and p.crossIdx <= #p.path) then return end
+    if not (p.path and p.crossIdx and p.crossIdx <= #p.path - 1) then return end
     local node = p.path[p.crossIdx]
     if not (node and node.world) then          -- can't time this one; skip past it
         p.crossIdx = p.crossIdx + 1
@@ -306,8 +308,9 @@ function Misc:_RecordCross(idx, when)
     end
 end
 
--- The final leg (last node passed -> where we landed), which _PollCrossing can't
--- catch because you stop on the landing node instead of flying past it.
+-- The final leg: last node we actually passed (the before-last) -> where we
+-- landed. Timed from that node's closest approach to the DISMOUNT (`when`), since
+-- you land on the destination rather than flying past it.
 function Misc:_RecordFinalLeg(landed, when)
     local p = self:_p()
     if not p.crossTimes then return end
