@@ -92,11 +92,13 @@ function Misc:OnEnable()
     -- build + register the timer so it can be placed in Blizzard's Edit Mode
     self:_BuildFrame()
 
-    -- Redirect the Request-Stop / vehicle-leave button to our early-landing
-    -- target. Via the removable hook service so OnDisable can uninstall it.
-    if MainMenuBarVehicleLeaveButton then
+    -- Redirect on Request-Stop / early landing: hook the API itself (always
+    -- present; fires however it's triggered -- button, keybind, macro) rather than
+    -- the fragile button method. Via the removable hook service so OnDisable
+    -- uninstalls it.
+    if type(TaxiRequestEarlyLanding) == "function" then
         local module = self
-        ns.Hooks:Secure(MainMenuBarVehicleLeaveButton, "OnClicked", function()
+        ns.Hooks:Secure("TaxiRequestEarlyLanding", function()
             if UnitOnTaxi("player") and module:GetSetting("showInFlight") then
                 module:_OnEarlyLanding()
             end
@@ -468,6 +470,7 @@ function Misc:_OnEarlyLanding()
     if not landNode then return end
 
     -- Overwrite destination and recompute expected time from last-passed node.
+    self:LogInfo("early landing -> " .. tostring(landNode.name))
     p.dst = landNode.name
     local flights = self:GetDB().flights
     local lastPassT = p.crossTimes and p.crossTimes[p.crossIdx - 1]
