@@ -11,6 +11,7 @@ SUBMODULES.MONK = SUBMODULES.MONK or {}
 
 local EXPEL_HARM = 322101
 local GRACE_OF_CRANE = 388811   -- passive talent: increases healing taken
+local GIFT_OF_THE_OX = 124502   -- Brewmaster passive: spawns Healing Spheres
 local TIGER_PALM = 100780
 local KEG_SMASH  = 121253
 local SPINNING_CRANE_KICK = 101546   -- 8-yd PBAoE; efficient at 3+ targets
@@ -40,6 +41,17 @@ local function readExpelHarmHeal()
     local heal = tonumber((n:gsub(",", "")))
     if not heal then return nil end
     return math.floor(heal * healingTakenMultiplier() + 0.5)
+end
+
+-- Per-sphere heal of a Gift of the Ox Healing Sphere (Expel Harm absorbs them).
+-- Parse "heals you for N" from Gift of the Ox's description; 0 if not learned.
+-- Apply the same healing-taken bonus the tooltip leaves out (Grace of the Crane).
+local function orbHealAmount()
+    if not (IsPlayerSpell and IsPlayerSpell(GIFT_OF_THE_OX)) then return 0 end
+    local desc = C_Spell and C_Spell.GetSpellDescription and C_Spell.GetSpellDescription(GIFT_OF_THE_OX)
+    local n = desc and desc:match("heals you for%s*([%d,]+)")
+    if not n then return 0 end
+    return math.floor((tonumber((n:gsub(",", ""))) or 0) * healingTakenMultiplier() + 0.5)
 end
 
 -- ===========================================================================
@@ -96,6 +108,10 @@ local Base = {
             self:_ScheduleUpdate()
         end)
         self:_RefreshHeal()
+        -- Expel Harm also pulls in Gift of the Ox healing spheres; the absorbable
+        -- count depends on range + procs, so poll it and fold (count x per-sphere
+        -- heal) into the marker for the true heal-to amount.
+        p.orbTicker = C_Timer.NewTicker(0.1, function() self:_PollOrbs() end)
     end,
     Unload = function(self)
         local p = self:_p()
@@ -103,6 +119,7 @@ local Base = {
         p.expelActive = false
         p.onCooldown = false
         if p.expelWatch then ns.Cooldowns:Unwatch(p.expelWatch); p.expelWatch = nil end
+        if p.orbTicker then p.orbTicker:Cancel(); p.orbTicker = nil end
         if p.marker then p.marker:Hide() end
     end,
 }
@@ -181,19 +198,39 @@ function ClassModule:_ScheduleUpdate()
     end)
 end
 
+-- Re-read the (stat-dependent) base Expel Harm heal + per-sphere orb heal. The
+-- orb COUNT is read live by _PollOrbs; here we just refresh the amounts.
 function ClassModule:_RefreshHeal()
     local p = self:_p()
-    p.heal = readExpelHarmHeal()
-    if not p.heal then
+    p.baseHeal = readExpelHarmHeal()
+    p.orbHeal = orbHealAmount()
+    if not p.baseHeal then
         -- description may not be loaded yet; retry shortly
         C_Timer.After(1, function()
-            if p.expelActive and not p.heal then
-                p.heal = readExpelHarmHeal()
-                self:_ScheduleUpdate()
+            if p.expelActive and not p.baseHeal then
+                p.baseHeal = readExpelHarmHeal()
+                p.orbHeal = orbHealAmount()
+                self:_PollOrbs()
             end
         end)
     end
-    self:_ScheduleUpdate()
+    self:_PollOrbs()
+end
+
+-- p.heal = base Expel Harm heal + (live orb count x per-sphere heal). Polled every
+-- 0.1s (orb count changes with range/procs); only redraws when it actually moves.
+function ClassModule:_PollOrbs()
+    local p = self:_p()
+    if not (p.expelActive and self:IsEnabled() and self:GetSetting("expelHarm")) then return end
+    if not p.baseHeal then return end
+    local total = p.baseHeal
+    if p.orbHeal and p.orbHeal > 0 then
+        total = total + ns.ActionBars:DisplayCount(EXPEL_HARM) * p.orbHeal
+    end
+    if total ~= p.heal then
+        p.heal = total
+        self:_ScheduleUpdate()
+    end
 end
 
 function ClassModule:_UpdateMarker()

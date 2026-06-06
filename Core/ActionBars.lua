@@ -81,6 +81,17 @@ function ActionBars:FindMacro(nameOrIndex)
     return out
 end
 
+-- The count the game paints on a spell's action button (e.g. Brewmaster Gift of
+-- the Ox orbs shown on Expel Harm). 0 if the spell isn't on a bar / has no count.
+function ActionBars:DisplayCount(spellID)
+    if not (C_ActionBar and C_ActionBar.FindSpellActionButtons and C_ActionBar.GetActionDisplayCount) then
+        return 0
+    end
+    local slots = C_ActionBar.FindSpellActionButtons(spellID)
+    if slots and slots[1] then return tonumber(C_ActionBar.GetActionDisplayCount(slots[1])) or 0 end
+    return 0
+end
+
 -- Grey/un-grey a button with a reusable dark overlay (doesn't fight Blizzard's own
 -- icon desaturation/range colouring, unlike SetDesaturated).
 function ActionBars:SetGrey(button, on)
