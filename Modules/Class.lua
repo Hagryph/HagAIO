@@ -53,6 +53,7 @@ local powerHookInstalled = false   -- power (energy) bar
 -- Brewmaster energy spells for the Tiger Palm marker
 local TIGER_PALM = 100780
 local KEG_SMASH  = 121253
+local SPINNING_CRANE_KICK = 101546   -- 8-yd PBAoE; efficient at 3+ targets
 
 -- ===========================================================================
 -- Submodule registry: SUBMODULES[classToken][specKey] where specKey is "none"
@@ -115,6 +116,9 @@ local Brewmaster = {
         { type = "toggle", key = "tiger", label = "Show energy marker", default = true,
           desc = "A line on the energy bar at the energy needed for Tiger Palm + Keg Smash." },
         { type = "color", key = "tigerColor", label = "Marker colour", default = { 1, 1, 1 } },
+        { type = "header", text = "AoE helper" },
+        { type = "toggle", key = "aoeHelper", label = "Grey Tiger Palm / Spinning Crane Kick by target count", default = false,
+          desc = "In combat: greys Tiger Palm at 3+ enemies in Spinning Crane Kick range (use SCK), or greys Spinning Crane Kick below 3 (use Tiger Palm)." },
     },
     Load = function(self)
         Base.Load(self)
@@ -125,8 +129,10 @@ local Brewmaster = {
         self:_Sub("TRAIT_CONFIG_UPDATED", function() self:_ScheduleTiger() end)
         self:_Sub("PLAYER_LEVEL_UP",      function() self:_ScheduleTiger() end)
         self:_ScheduleTiger()
+        self:_LoadAoE()
     end,
     Unload = function(self)
+        self:_UnloadAoE()
         Base.Unload(self)  -- _UnloadSubs() removes every sub, incl. tiger's
         local p = self:_p()
         p.tigerActive = false
@@ -397,6 +403,80 @@ end
 function ClassModule:OnSettingChanged()
     self:_ScheduleUpdate()
     self:_ScheduleTiger()
+    self:_RefreshAoE()
+end
+
+-- ---- AoE helper: grey Tiger Palm vs Spinning Crane Kick by target count -------
+-- Uses the ActionBars service to find every button with each spell, and
+-- C_Spell.IsSpellInRange (a non-secret boolean) to count enemies in SCK range.
+function ClassModule:_LoadAoE()
+    local p = self:_p()
+    p.aoeActive = true
+    -- re-find the spell buttons whenever the bars change
+    self:_Sub("ACTIONBAR_SLOT_CHANGED", function() self:_ScanAoEButtons() end)
+    self:_Sub("ACTIONBAR_PAGE_CHANGED", function() self:_ScanAoEButtons() end)
+    self:_Sub("UPDATE_BONUS_ACTIONBAR", function() self:_ScanAoEButtons() end)
+    self:_Sub("PLAYER_ENTERING_WORLD",  function() self:_ScanAoEButtons() end)
+    -- only run the range check in combat
+    self:_Sub("PLAYER_REGEN_DISABLED",  function() self:_RefreshAoE() end)
+    self:_Sub("PLAYER_REGEN_ENABLED",   function() self:_RefreshAoE() end)
+    self:_ScanAoEButtons()
+    self:_RefreshAoE()
+end
+
+function ClassModule:_UnloadAoE()
+    local p = self:_p()
+    if p.aoeTicker then p.aoeTicker:Cancel(); p.aoeTicker = nil end
+    self:_ClearAoEGrey()
+    p.aoeActive = false
+end
+
+function ClassModule:_ScanAoEButtons()
+    local p = self:_p()
+    p.tpButtons  = ns.ActionBars:FindSpell(TIGER_PALM)
+    p.sckButtons = ns.ActionBars:FindSpell(SPINNING_CRANE_KICK)
+end
+
+-- Start/stop the in-combat ticker based on the toggle + combat state.
+function ClassModule:_RefreshAoE()
+    local p = self:_p()
+    local on = p.aoeActive and self:IsEnabled() and self:GetSetting("aoeHelper") and InCombatLockdown()
+    if on then
+        if not p.aoeTicker then
+            p.aoeTicker = C_Timer.NewTicker(0.15, function() self:_UpdateAoE() end)
+        end
+    else
+        if p.aoeTicker then p.aoeTicker:Cancel(); p.aoeTicker = nil end
+        self:_ClearAoEGrey()
+    end
+end
+
+-- Attackable enemies within Spinning Crane Kick range (8 yd), via nameplates.
+function ClassModule:_CountSCKTargets()
+    if not (C_NamePlate and C_NamePlate.GetNamePlates and C_Spell and C_Spell.IsSpellInRange) then return 0 end
+    local n = 0
+    for _, plate in ipairs(C_NamePlate.GetNamePlates()) do
+        local u = plate.namePlateUnitToken or (plate.UnitFrame and plate.UnitFrame.unit)
+        if u and UnitCanAttack("player", u) and not UnitIsDead(u)
+            and C_Spell.IsSpellInRange(SPINNING_CRANE_KICK, u) == true then
+            n = n + 1
+        end
+    end
+    return n
+end
+
+function ClassModule:_UpdateAoE()
+    local p = self:_p()
+    if not (p.aoeActive and self:GetSetting("aoeHelper")) then return self:_ClearAoEGrey() end
+    local greyTP = self:_CountSCKTargets() >= 3   -- 3+ in range: AoE -> grey Tiger Palm
+    for _, b in ipairs(p.tpButtons or {})  do ns.ActionBars:SetGrey(b, greyTP) end
+    for _, b in ipairs(p.sckButtons or {}) do ns.ActionBars:SetGrey(b, not greyTP) end
+end
+
+function ClassModule:_ClearAoEGrey()
+    local p = self:_p()
+    for _, b in ipairs(p.tpButtons or {})  do ns.ActionBars:SetGrey(b, false) end
+    for _, b in ipairs(p.sckButtons or {}) do ns.ActionBars:SetGrey(b, false) end
 end
 
 -- ---- Tiger Palm energy marker (Brewmaster) --------------------------------
