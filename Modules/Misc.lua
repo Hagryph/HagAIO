@@ -31,7 +31,7 @@ local function routeKey(a, b)
 end
 
 local ARRIVE_YARDS = 40    -- within this of a path node = we landed there
-local CROSS_MARGIN2 = 75 * 75   -- moved this many yards past the closest approach = passed it
+local CROSS_MARGIN = 75   -- moved this many (linear) yards past the closest approach = passed it
 
 -- A flight DB entry is { t = seconds, q = quality }. Quality ranks the source's
 -- precision: DIRECT (a real landing) > EST (an amalgamated estimate) > FLY (a
@@ -288,20 +288,20 @@ function Misc:_PollCrossing()
     local node = p.path[p.crossIdx]
     if not (node and node.world) then          -- can't time this one; skip past it
         p.crossIdx = p.crossIdx + 1
-        p.crossMinD2 = math.huge
+        p.crossMinDist = math.huge
         return
     end
     local px, py, pc = self:_PlayerWorld()
     if not px or pc ~= node.world.c then return end
     local dx, dy = px - node.world.x, py - node.world.y
-    local d2 = dx * dx + dy * dy
-    if d2 < (p.crossMinD2 or math.huge) then
-        p.crossMinD2 = d2
+    local dist = math.sqrt(dx * dx + dy * dy)   -- LINEAR yards (squared margin fires too early)
+    if dist < (p.crossMinDist or math.huge) then
+        p.crossMinDist = dist
         p.crossMinTime = GetTime()
-    elseif p.crossMinTime and d2 > p.crossMinD2 + CROSS_MARGIN2 then
+    elseif p.crossMinTime and dist > p.crossMinDist + CROSS_MARGIN then
         self:_RecordCross(p.crossIdx, p.crossMinTime)
         p.crossIdx = p.crossIdx + 1
-        p.crossMinD2 = math.huge
+        p.crossMinDist = math.huge
         p.crossMinTime = nil
     end
 end
@@ -378,27 +378,80 @@ function Misc:_DiagSample()
 end
 
 function Misc:_DumpFlights()
-    local L, p = ns.Log, self:_p()
+    local p = self:_p()
+    local out = {}
+    local function add(s) out[#out + 1] = s end
+
     local flights = self:GetDB().flights or {}
-    L.Print("=== flights DB ===")
+    add("=== flights DB ===")
     local n = 0
     for key, e in pairs(flights) do
         n = n + 1
-        L.Print(("  %s = %s (%s)"):format(key, fmt(storedTime(e)), QNAME[entryQ(e)] or "?"))
+        add(("  %s = %s (%s)"):format(key, fmt(storedTime(e)), QNAME[entryQ(e)] or "?"))
     end
-    L.Print(("  %d route(s)"):format(n))
+    add(("  %d route(s)"):format(n))
 
     local d = p.diag
-    L.Print("=== last flight ===")
-    if not d then L.Print("  (none this session)"); return end
-    L.Print(("  GetNumRoutes=%s  flightMapID=%s  positionMoved=%s")
-        :format(tostring(d.hops), tostring(d.flightMapID), tostring(d.moved)))
-    L.Print("  path: " .. (table.concat(d.nodes, " -> ")))
-    L.Print(("  crossings recorded: %d"):format(#d.crossings))
-    for _, c in ipairs(d.crossings) do L.Print("    " .. c) end
-    if d.finalLeg then L.Print("  finalLeg: " .. d.finalLeg) end
-    L.Print(("  samples (%d):"):format(#d.samples))
-    for _, s in ipairs(d.samples) do L.Print("    " .. s) end
+    add("=== last flight ===")
+    if not d then
+        add("  (none this session)")
+    else
+        add(("  GetNumRoutes=%s  flightMapID=%s  positionMoved=%s")
+            :format(tostring(d.hops), tostring(d.flightMapID), tostring(d.moved)))
+        add("  path: " .. table.concat(d.nodes, " -> "))
+        add(("  crossings recorded: %d"):format(#d.crossings))
+        for _, c in ipairs(d.crossings) do add("    " .. c) end
+        if d.finalLeg then add("  finalLeg: " .. d.finalLeg) end
+        add(("  samples (%d):"):format(#d.samples))
+        for _, s in ipairs(d.samples) do add("    " .. s) end
+    end
+
+    self:_ShowCopyText(table.concat(out, "\n"))
+end
+
+-- Show a selectable text box (WoW has no clipboard API) -- focused + select-all,
+-- so the user just presses Ctrl+C. Reused frame.
+function Misc:_ShowCopyText(text)
+    local p = self:_p()
+    local f = p.copyFrame
+    if not f then
+        f = CreateFrame("Frame", "HagAIOCopyFrame", UIParent, "BackdropTemplate")
+        W.Style(f, "bg1", "borderStrong")
+        f:SetSize(560, 420)
+        f:SetPoint("CENTER")
+        f:SetFrameStrata("DIALOG")
+        f:EnableMouse(true)
+        f:SetMovable(true)
+        f:RegisterForDrag("LeftButton")
+        f:SetScript("OnDragStart", f.StartMoving)
+        f:SetScript("OnDragStop", f.StopMovingOrSizing)
+        tinsert(UISpecialFrames, "HagAIOCopyFrame")  -- ESC closes
+
+        local title = W.Text(f, "Flights debug -- Ctrl+C to copy", "accent", "GameFontNormal")
+        title:SetPoint("TOPLEFT", 14, -12)
+        local close = W.TextButton(f, "Close")
+        close:SetPoint("TOPRIGHT", -12, -10)
+        close:SetScript("OnClick", function() f:Hide() end)
+
+        local scroll = CreateFrame("ScrollFrame", "HagAIOCopyScroll", f, "UIPanelScrollFrameTemplate")
+        scroll:SetPoint("TOPLEFT", 14, -40)
+        scroll:SetPoint("BOTTOMRIGHT", -32, 14)
+
+        local eb = CreateFrame("EditBox", nil, scroll)
+        eb:SetMultiLine(true)
+        eb:SetFontObject("ChatFontNormal")
+        eb:SetWidth(500)
+        eb:SetAutoFocus(false)
+        eb:SetScript("OnEscapePressed", function() f:Hide() end)
+        scroll:SetScrollChild(eb)
+        f.eb = eb
+        p.copyFrame = f
+    end
+    f.eb:SetText(text)
+    f.eb:SetCursorPosition(0)
+    f.eb:HighlightText()
+    f.eb:SetFocus()
+    f:Show()
 end
 
 function Misc:_Tick(dt)
@@ -410,7 +463,7 @@ function Misc:_Tick(dt)
             -- crossing state: we're at the source node (1) on lift-off
             p.crossTimes = { [1] = p.startTime }
             p.crossIdx = 2
-            p.crossMinD2 = math.huge
+            p.crossMinDist = math.huge
             p.crossMinTime = nil
             p.diagAcc = 0
             if p.diag then p.diag.t0 = p.startTime end
