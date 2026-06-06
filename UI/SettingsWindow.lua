@@ -84,8 +84,8 @@ function SettingsWindow:Build()
 
     -- nav items
     local defs = {
-        { key = "modules", text = "Modules" },
         { key = "general", text = "General" },
+        { key = "modules", text = "Modules" },
         { key = "log",     text = "Log" },
         { key = "about",   text = "About" },
     }
@@ -230,8 +230,7 @@ function SettingsWindow:_BuildGeneralPage(parent)
     local icons = W.SectionLabel(page, "Icons")
     icons:SetPoint("TOPLEFT", div, "BOTTOMLEFT", 4, -16)
 
-    local reloadFlag = "  |cff" .. Theme.hex.warn .. "(reload to remove)|r"
-    local comp = W.Toggle(page, "Compartment icon" .. reloadFlag)
+    local comp = W.Toggle(page, W.FlagReload("Compartment icon"))
     comp:SetPoint("TOPLEFT", icons, "BOTTOMLEFT", 2, -12)
     comp:SetChecked(ns.Compartment:IsShown())
     comp:SetOnToggle(function(on)
@@ -330,7 +329,7 @@ function SettingsWindow:_BuildModuleControls(sf, module)
             y = y - (n:GetStringHeight() + 12)
 
         elseif s.type == "toggle" then
-            local t = W.Toggle(content, s.label)
+            local t = W.Toggle(content, s.reload and W.FlagReload(s.label) or s.label)
             t:SetPoint("TOPLEFT", 6, y)
             t:SetChecked(module:GetSetting(s.key) and true or false)
             t:SetOnToggle(function(on) module:SetSetting(s.key, on) end)
@@ -346,7 +345,7 @@ function SettingsWindow:_BuildModuleControls(sf, module)
             end
 
         elseif s.type == "select" then
-            local lbl = W.Text(content, s.label, "text", "GameFontHighlight")
+            local lbl = W.Text(content, s.reload and W.FlagReload(s.label) or s.label, "text", "GameFontHighlight")
             lbl:SetPoint("TOPLEFT", 6, y)
             y = y - 20
             local seg = W.Segmented(content, s.options)

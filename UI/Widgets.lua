@@ -9,6 +9,11 @@ local Theme = ns.Theme
 ns.UI = ns.UI or {}
 local Widgets = {}
 
+-- Shared "needs a /reload to apply" flag, appended to an option's label so the
+-- marker looks the same everywhere it's used.
+Widgets.RELOAD_FLAG = "  |cff" .. Theme.hex.warn .. "(reload)|r"
+function Widgets.FlagReload(label) return label .. Widgets.RELOAD_FLAG end
+
 -- Apply a solid themed backdrop + colours to a BackdropTemplate frame.
 function Widgets.Style(frame, bgKey, borderKey, edgeSize)
     frame:SetBackdrop(Theme.Backdrop(edgeSize or 1))

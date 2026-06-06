@@ -103,7 +103,10 @@ end
 function Misc:_OnTakeTaxi(slot)
     local p = self:_p()
     if TaxiNodeGetType and TaxiNodeGetType(slot) ~= "REACHABLE" then return end
-    local dst = TaxiNodeName and TaxiNodeName(slot)
+    -- Use the FLIGHT-MAP node name (matched by slotIndex) so the recorded key
+    -- matches the one the map-hover tooltip builds; TaxiNodeName(slot) can return
+    -- a differently-formatted name and would never match on lookup.
+    local dst = (p.nodeNames and p.nodeNames[slot]) or (TaxiNodeName and TaxiNodeName(slot))
     if not (p.src and dst) then return end
 
     p.dst = dst
@@ -232,14 +235,17 @@ function Misc:_HookFlightPins()
     if not pool or not pool.EnumerateActive then return end
     -- pins render just after the map opens
     C_Timer.After(0, function()
+        local p = module:_p()
+        p.nodeNames = {}   -- slotIndex -> flight-map node name
         for pin in pool:EnumerateActive() do
             if not pin.__hagHover then
                 pin.__hagHover = true
                 pin:HookScript("OnEnter", function(self2) module:_OnPinEnter(self2) end)
             end
             local d = pin.taxiNodeData
-            if d and d.state == Enum.FlightPathState.Current and d.name then
-                module:_p().src = d.name
+            if d and d.name then
+                if d.slotIndex then p.nodeNames[d.slotIndex] = d.name end
+                if d.state == Enum.FlightPathState.Current then p.src = d.name end
             end
         end
     end)
