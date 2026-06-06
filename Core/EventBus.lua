@@ -7,7 +7,6 @@ local Class = ns.Class
 -- create their own frames or collide on OnEvent handlers.
 
 local EventBus = Class.new("EventBus")
-local instance
 
 function EventBus:Initialize()
     local p = self:_p()
@@ -79,11 +78,6 @@ function EventBus:Emit(message, ...)
     for _, fn in pairs(handlers) do
         fn(message, ...)
     end
-end
-
-function EventBus.Get()
-    if not instance then instance = EventBus:New() end
-    return instance
 end
 
 ns.EventBus = EventBus

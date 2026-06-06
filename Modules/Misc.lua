@@ -52,7 +52,7 @@ function Misc:OnInitialize()
     -- Flight recording is ALWAYS on (builds the database even while disabled),
     -- so set it up here rather than in OnEnable.
     self:GetDB().flights = self:GetDB().flights or {}
-    ns.EventBus.Get():On("TAXIMAP_OPENED", function() self:_OnTaxiMap() end)
+    ns.EventBus:On("TAXIMAP_OPENED", function() self:_OnTaxiMap() end)
     if not taxiHooked and type(TakeTaxiNode) == "function" then
         local module = self
         hooksecurefunc("TakeTaxiNode", function(slot) module:_OnTakeTaxi(slot) end)
@@ -61,7 +61,7 @@ function Misc:OnInitialize()
 
     -- /hag flights -- dump the recorded route table for debugging
     if ns.SlashCommand then
-        ns.SlashCommand.Get():Register("flights", function() self:_DumpFlights() end,
+        ns.SlashCommand:Register("flights", function() self:_DumpFlights() end,
             "list recorded flight times")
     end
 end
@@ -81,7 +81,7 @@ end
 
 function Misc:OnEnable()
     local p = self:_p()
-    local bus = ns.EventBus.Get()
+    local bus = ns.EventBus
     p.tokens["MERCHANT_SHOW"]   = bus:On("MERCHANT_SHOW",   function() self:_OnMerchantShow() end)
     p.tokens["MERCHANT_CLOSED"] = bus:On("MERCHANT_CLOSED", function() self:_OnMerchantClosed() end)
     -- build + register the timer so it can be placed in Blizzard's Edit Mode
@@ -90,7 +90,7 @@ end
 
 function Misc:OnDisable()
     local p = self:_p()
-    local bus = ns.EventBus.Get()
+    local bus = ns.EventBus
     for event, token in pairs(p.tokens) do bus:Off(event, token) end
     wipe(p.tokens)
     if p.frame then p.frame:Hide() end   -- recording keeps running; display stops
@@ -204,7 +204,7 @@ function Misc:_BuildFrame()
 
     -- register with the shared Edit Mode framework (drag, snap, persistence).
     -- The default spot is the boss-mod "critical" position (centre, above mid).
-    ns.EditMode.Get():Register(f, {
+    ns.EditMode:Register(f, {
         key = "flightTimer",
         label = "Flight Timer",
         default = { point = "CENTER", x = 0, y = 210 },
@@ -319,7 +319,7 @@ function Misc:OnSettingChanged(key)
 end
 
 -- ---- registration ---------------------------------------------------------
-ns.ModuleManager.Get():Register(Misc:New("Misc", {
+ns.ModuleManager:Register(Misc:New("Misc", {
     title = "Miscellaneous",
     description = "Flight-path timers and selling junk.",
     defaultEnabled = false,

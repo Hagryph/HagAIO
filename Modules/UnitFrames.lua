@@ -91,7 +91,7 @@ function UnitFrames:OnEnable()
     end
 
     -- Drive recolouring on health changes (the example's UNIT_HEALTH approach).
-    local bus = ns.EventBus.Get()
+    local bus = ns.EventBus
     p.tokens["UNIT_HEALTH"]            = bus:On("UNIT_HEALTH",           function(_, u) self:_Color(u) end)
     p.tokens["UNIT_MAXHEALTH"]        = bus:On("UNIT_MAXHEALTH",        function(_, u) self:_Color(u) end)
     p.tokens["PLAYER_TARGET_CHANGED"] = bus:On("PLAYER_TARGET_CHANGED", function() self:_Color("target") end)
@@ -102,7 +102,7 @@ end
 
 function UnitFrames:OnDisable()
     local p = self:_p()
-    local bus = ns.EventBus.Get()
+    local bus = ns.EventBus
     for event, token in pairs(p.tokens) do bus:Off(event, token) end
     wipe(p.tokens)
     for _, bar in pairs(p.bars) do restore(bar) end
@@ -147,7 +147,7 @@ function UnitFrames:OnSettingChanged(key)
 end
 
 -- ---- registration ---------------------------------------------------------
-ns.ModuleManager.Get():Register(UnitFrames:New("UnitFrames", {
+ns.ModuleManager:Register(UnitFrames:New("UnitFrames", {
     title = "Unit Frames",
     description = "Colours the player and target health bars by how much health is left.",
     defaultEnabled = false,

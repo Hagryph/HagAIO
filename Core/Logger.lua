@@ -55,7 +55,6 @@ ns.LogChannel = Channel
 
 -- ---- Logger: the singleton service ----------------------------------------
 local Logger = Class.new("Logger")
-local instance
 
 local PREFIX = "|cff" .. Theme.hex.accent .. "HagAIO|r"
 
@@ -72,7 +71,7 @@ end
 
 -- Pull persisted prefs once SavedVariables are available.
 function Logger:LoadSettings()
-    local db = ns.SavedVars.Get():Namespace("logger", {
+    local db = ns.SavedVars:Namespace("logger", {
         minLevel = LEVELS.INFO.order,
         echo = true,
         keep = 500,
@@ -146,14 +145,9 @@ function Logger:Record(channel, level, text)
     end
 
     if ns.EventBus then
-        ns.EventBus.Get():Emit("LOG_ADDED", entry)
+        ns.EventBus:Emit("LOG_ADDED", entry)
     end
     return entry
-end
-
-function Logger.Get()
-    if not instance then instance = Logger:New() end
-    return instance
 end
 
 ns.Logger = Logger

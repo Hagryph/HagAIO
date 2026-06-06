@@ -10,7 +10,6 @@ local W = ns.UI.Widgets
 -- About. Styled to match the LoL Game Helper desktop app.
 
 local SettingsWindow = Class.new("SettingsWindow")
-local instance
 
 function SettingsWindow:Initialize()
     local p = self:_p()
@@ -99,7 +98,7 @@ function SettingsWindow:Build()
     end
 
     -- live log updates while the Log page is open
-    ns.EventBus.Get():Subscribe("LOG_ADDED", function()
+    ns.EventBus:Subscribe("LOG_ADDED", function()
         if p.frame:IsShown() and p.current == "log" then
             self:_RefreshLog()
         end
@@ -107,7 +106,7 @@ function SettingsWindow:Build()
 
     -- auto-close while fighting OR in Edit Mode, reopen after if it was open
     -- (the two never overlap — Edit Mode is blocked in combat)
-    local bus = ns.EventBus.Get()
+    local bus = ns.EventBus
     bus:On("PLAYER_REGEN_DISABLED", function() self:_Suspend() end)
     bus:On("PLAYER_REGEN_ENABLED",  function() self:_Resume() end)
     if EventRegistry then
@@ -171,7 +170,7 @@ function SettingsWindow:_RefreshModules()
     for _, r in ipairs(p.moduleRows) do r:Hide() end
     wipe(p.moduleRows)
 
-    local mm = ns.ModuleManager.Get()
+    local mm = ns.ModuleManager
     if mm:Count() == 0 then
         local empty = W.Text(holder, "No feature modules registered yet.", "textFaint", "GameFontHighlight")
         empty:SetPoint("TOPLEFT", 2, -2)
@@ -215,7 +214,7 @@ end
 function SettingsWindow:_EnsureModulePage(name)
     local p = self:_p()
     if p.modulePages[name] then return p.modulePages[name] end
-    local module = ns.ModuleManager.Get():GetModule(name)
+    local module = ns.ModuleManager:GetModule(name)
     if not module then return nil end
 
     local page = CreateFrame("Frame", nil, p.content)
@@ -339,15 +338,15 @@ function SettingsWindow:_BuildLogPage(parent)
     clear:SetPoint("RIGHT", page, "RIGHT", -18, 0)
     clear:SetPoint("TOP", title, "TOP", 0, 3)
     clear:SetScript("OnClick", function()
-        wipe(ns.Logger.Get():GetHistory())
+        wipe(ns.Logger:GetHistory())
         self:_RefreshLog()
     end)
 
     local echo = W.Toggle(page, "Echo to chat")
     echo:SetPoint("RIGHT", clear, "LEFT", -88, 0)
     echo:SetPoint("TOP", title, "TOP", 0, 0)
-    echo:SetChecked(ns.Logger.Get():GetEcho())
-    echo:SetOnToggle(function(on) ns.Logger.Get():SetEcho(on) end)
+    echo:SetChecked(ns.Logger:GetEcho())
+    echo:SetOnToggle(function(on) ns.Logger:SetEcho(on) end)
 
     -- Note pinned below the whole header band (title + controls), not chained
     -- to the title, so the spacing is fixed regardless of font metrics.
@@ -379,7 +378,7 @@ end
 function SettingsWindow:_RefreshLog()
     local p = self:_p()
     if not p.logFS then return end
-    local h = ns.Logger.Get():GetHistory()
+    local h = ns.Logger:GetHistory()
 
     local lines, startIdx = {}, math.max(1, #h - 200)
     for i = startIdx, #h do lines[#lines + 1] = h[i].line end
@@ -438,7 +437,7 @@ function SettingsWindow:Show(key)
     if not p.frame:IsShown() and (InCombatLockdown() or editActive) then
         p.reopenKey = key
         if InCombatLockdown() then
-            ns.Logger.Get():Core():Warn("In combat - the settings will open when you leave combat.")
+            ns.Logger:Core():Warn("In combat - the settings will open when you leave combat.")
         end
         return
     end
@@ -453,7 +452,7 @@ function SettingsWindow:Show(key)
         local page = self:_EnsureModulePage(moduleName)
         if page then
             if page.enableToggle then
-                page.enableToggle:SetChecked(ns.ModuleManager.Get():GetModule(moduleName):IsEnabled())
+                page.enableToggle:SetChecked(ns.ModuleManager:GetModule(moduleName):IsEnabled())
             end
             page:Show()
         else
@@ -486,11 +485,6 @@ function SettingsWindow:Toggle()
     self:Build()
     local p = self:_p()
     if p.frame:IsShown() then self:Hide() else self:Show(p.current or "modules") end
-end
-
-function SettingsWindow.Get()
-    if not instance then instance = SettingsWindow:New() end
-    return instance
 end
 
 ns.UI.SettingsWindow = SettingsWindow

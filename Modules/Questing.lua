@@ -60,7 +60,7 @@ end
 
 function Questing:OnEnable()
     local p = self:_p()
-    local bus = ns.EventBus.Get()
+    local bus = ns.EventBus
 
     -- experience tracking
     self:_Snapshot()
@@ -71,7 +71,7 @@ function Questing:OnEnable()
     p.tokens["PLAYER_ENTERING_WORLD"] = bus:On("PLAYER_ENTERING_WORLD", function() self:_Snapshot() end)
     self:_EnsureOverlay()
     if p.overlay then p.overlay:Show() end
-    ns.SlashCommand.Get():Register("xp", function() self:_PrintSession() end, "session XP / hour")
+    ns.SlashCommand:Register("xp", function() self:_PrintSession() end, "session XP / hour")
 
     -- quest automation
     p.tokens["GOSSIP_SHOW"]    = bus:On("GOSSIP_SHOW",    function() self:_OnGossip() end)
@@ -83,7 +83,7 @@ end
 
 function Questing:OnDisable()
     local p = self:_p()
-    local bus = ns.EventBus.Get()
+    local bus = ns.EventBus
     for event, token in pairs(p.tokens) do bus:Off(event, token) end
     wipe(p.tokens)
     wipe(p.skipTurnIn)
@@ -322,7 +322,7 @@ function Questing:_OnGreeting()
 end
 
 -- ---- registration ---------------------------------------------------------
-ns.ModuleManager.Get():Register(Questing:New("Questing", {
+ns.ModuleManager:Register(Questing:New("Questing", {
     title = "Questing",
     description = "XP-per-hour tracking, plus auto-accepting and turning in quests.",
     defaultEnabled = true,

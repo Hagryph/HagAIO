@@ -7,7 +7,6 @@ local Class = ns.Class
 -- so persistence is uniform and collision-free.
 
 local SavedVars = Class.new("SavedVars")
-local instance
 
 -- Recursively seed missing keys from `defaults` without clobbering saved data.
 local function applyDefaults(target, defaults)
@@ -65,11 +64,6 @@ end
 
 function SavedVars:SetModuleState(name, enabled, perChar)
     self:_Root(perChar).modules[name] = enabled and true or false
-end
-
-function SavedVars.Get()
-    if not instance then instance = SavedVars:New() end
-    return instance
 end
 
 ns.SavedVars = SavedVars

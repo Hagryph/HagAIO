@@ -8,7 +8,6 @@ local Class = ns.Class
 -- immediately so load order is irrelevant.
 
 local ModuleManager = Class.new("ModuleManager")
-local instance
 
 function ModuleManager:Initialize()
     local p = self:_p()
@@ -29,7 +28,7 @@ function ModuleManager:Register(module)
     return module
 end
 
--- Instance lookup (distinct from the static .Get() singleton accessor).
+-- Look up a registered module instance by name.
 function ModuleManager:GetModule(name)
     return self:_p().modules[name]
 end
@@ -53,7 +52,7 @@ function ModuleManager:_Start(module)
     module:_AttachLogger()
     module:_BindDB()
     module:OnInitialize()
-    local saved = ns.SavedVars.Get():GetModuleState(module:GetName(), module:IsPerChar())
+    local saved = ns.SavedVars:GetModuleState(module:GetName(), module:IsPerChar())
     local shouldEnable = saved
     if shouldEnable == nil then
         shouldEnable = module:IsDefaultEnabled()
@@ -71,11 +70,6 @@ function ModuleManager:StartAll()
     for _, name in ipairs(p.order) do
         self:_Start(p.modules[name])
     end
-end
-
-function ModuleManager.Get()
-    if not instance then instance = ModuleManager:New() end
-    return instance
 end
 
 ns.ModuleManager = ModuleManager

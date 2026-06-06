@@ -9,7 +9,6 @@ local Class = ns.Class
 -- minimap button (LibDBIcon) — it's an entry in the compartment menu.
 
 local Compartment = Class.new("Compartment")
-local instance
 
 function Compartment:Initialize()
     self:_p().registered = false
@@ -44,20 +43,15 @@ function Compartment:Register()
     })
 
     p.registered = true
-    ns.Logger.Get():Core():Debug("addon compartment button registered")
+    ns.Logger:Core():Debug("addon compartment button registered")
 end
 
 function Compartment:OnClick(button)
     if button == "RightButton" then
-        ns.UI.SettingsWindow.Get():Show("log")
+        ns.UI.SettingsWindow:Show("log")
     else  -- LeftButton (and any other) opens the settings window
-        ns.UI.SettingsWindow.Get():Toggle()
+        ns.UI.SettingsWindow:Toggle()
     end
-end
-
-function Compartment.Get()
-    if not instance then instance = Compartment:New() end
-    return instance
 end
 
 ns.Compartment = Compartment

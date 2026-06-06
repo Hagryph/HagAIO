@@ -222,7 +222,7 @@ function ClassModule:OnEnable()
     if not SUBMODULES[p.class] then return end  -- no helpers for this class yet
 
     -- Module-level: watch for spec changes to swap submodules.
-    local bus = ns.EventBus.Get()
+    local bus = ns.EventBus
     p.tokens["PLAYER_SPECIALIZATION_CHANGED"] = bus:On("PLAYER_SPECIALIZATION_CHANGED", function() self:_Sync() end)
     p.tokens["PLAYER_ENTERING_WORLD"]         = bus:On("PLAYER_ENTERING_WORLD",         function() self:_Sync() end)
 
@@ -231,7 +231,7 @@ end
 
 function ClassModule:OnDisable()
     local p = self:_p()
-    local bus = ns.EventBus.Get()
+    local bus = ns.EventBus
     for event, token in pairs(p.tokens) do bus:Off(event, token) end
     wipe(p.tokens)
     if p.activeSub and p.activeSub.Unload then p.activeSub.Unload(self) end
@@ -242,14 +242,14 @@ end
 function ClassModule:_Sub(event, fn)
     local p = self:_p()
     p.subTokens = p.subTokens or {}
-    local token = ns.EventBus.Get():On(event, fn)
+    local token = ns.EventBus:On(event, fn)
     if token then p.subTokens[#p.subTokens + 1] = { event, token } end
 end
 
 function ClassModule:_UnloadSubs()
     local p = self:_p()
     if not p.subTokens then return end
-    local bus = ns.EventBus.Get()
+    local bus = ns.EventBus
     for _, e in ipairs(p.subTokens) do bus:Off(e[1], e[2]) end
     wipe(p.subTokens)
 end
@@ -453,7 +453,7 @@ function ClassModule:_UpdateTiger()
 end
 
 -- ---- registration ---------------------------------------------------------
-ns.ModuleManager.Get():Register(ClassModule:New("Class", {
+ns.ModuleManager:Register(ClassModule:New("Class", {
     title = "Class",
     description = "Helpers for your current class.",
     defaultEnabled = false,

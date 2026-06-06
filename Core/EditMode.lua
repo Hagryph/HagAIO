@@ -8,7 +8,7 @@ local Class = ns.Class
 -- each other / the screen centre. Positions persist account-wide.
 --
 -- Usage:
---   ns.EditMode.Get():Register(frame, {
+--   ns.EditMode:Register(frame, {
 --       key = "flightTimer",                         -- unique persistence key
 --       label = "Flight Timer",                      -- shown in Edit Mode (opt)
 --       default = { point = "CENTER", x = 0, y = 0 },
@@ -18,7 +18,6 @@ local Class = ns.Class
 --   })
 
 local EditMode = Class.new("EditMode")
-local instance
 
 local SNAP = 10  -- snap threshold in pixels
 local function round(n) return math.floor(n + 0.5) end
@@ -33,7 +32,7 @@ end
 function EditMode:IsEditing() return self:_p().editing end
 
 function EditMode:_Positions()
-    return ns.SavedVars.Get():Namespace("editmode", { positions = {} }).positions
+    return ns.SavedVars:Namespace("editmode", { positions = {} }).positions
 end
 
 -- Anchor a registered frame from its saved (or default) CENTER offset.
@@ -163,11 +162,6 @@ function EditMode:_OnExit()
         if reg.onExit then reg.onExit(reg.frame) end
         if not reg.wasShown then reg.frame:Hide() end
     end
-end
-
-function EditMode.Get()
-    if not instance then instance = EditMode:New() end
-    return instance
 end
 
 ns.EditMode = EditMode

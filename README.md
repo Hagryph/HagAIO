@@ -23,9 +23,14 @@ end-user features are bundled yet — the foundation is here to build them on.
 ## Architecture
 
 Everything lives inside an OOP structure — there is no loose top-level logic (the lone
-exception is the single `Bootstrap.Get():Run()` entry point). Encapsulation is real:
-each instance's fields are held in a private side-table reached only through the
-inherited `:_p()` accessor.
+exception is the single `Initializer:New():Run()` entry point in `Core/Init.lua`).
+Encapsulation is real: each instance's fields are held in a private side-table reached
+only through the inherited `:_p()` accessor.
+
+Service singletons are **not** lazy `.Get()` accessors. `Core/Init.lua` constructs each
+one once, in dependency order, and stores the instance on `ns` (so call sites use
+`ns.EventBus`, `ns.Logger`, … directly). It loads after the UI layer but before the
+feature modules, so `ns.ModuleManager` already exists when each module registers itself.
 
 ```
 HagAIO.toc                 Load manifest (file order, saved vars, Interface version)
@@ -41,6 +46,7 @@ Core/
   SlashCommand.lua         /hagaio (/hag) router with sub-commands
   Compartment.lua          Addon-compartment (minimap hub) button
   EditMode.lua             Framework: register a frame for Blizzard Edit Mode (drag + grid/element snap)
+  Init.lua                 Core initializer: builds singletons in order + wires startup (ADDON_LOADED → PLAYER_LOGIN)
 UI/
   Widgets.lua              Themed factory (panels, toggles, nav items, scroll)
   SettingsWindow.lua       Custom dark+blue settings menu (Modules / Log / About)
@@ -49,7 +55,6 @@ Modules/
   UnitFrames.lua           Player/target health-bar tint by HP% (colour curves)
   Class.lua                Per-class helpers (Monk: Expel Harm threshold marker)
   Misc.lua                 Miscellaneous: flight-path timers, sell junk
-Bootstrap.lua              Startup orchestrator (ADDON_LOADED → PLAYER_LOGIN)
 deploy.ps1                 Mirror the addon into the live WoW AddOns folder
 ```
 

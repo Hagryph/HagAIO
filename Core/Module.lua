@@ -76,13 +76,13 @@ function Module:OnSettingChanged(key, value) end
 -- Internal: bind saved-variable namespace. Called by ModuleManager at startup.
 function Module:_BindDB()
     local p = self:_p()
-    p.db = ns.SavedVars.Get():Namespace("module_" .. p.name, p.dbDefaults, p.perChar)
+    p.db = ns.SavedVars:Namespace("module_" .. p.name, p.dbDefaults, p.perChar)
 end
 
 -- Internal: register this module's logging channel. Called by ModuleManager.
 function Module:_AttachLogger()
     local p = self:_p()
-    p.log = ns.Logger.Get():Register(p.name, p.color)
+    p.log = ns.Logger:Register(p.name, p.color)
 end
 
 -- Convenience report methods (route through the shared Logger so each report
@@ -98,7 +98,7 @@ function Module:Enable()
     if p.enabled then return end
     p.enabled = true
     if self.OnEnable then self:OnEnable() end
-    ns.SavedVars.Get():SetModuleState(p.name, true, p.perChar)
+    ns.SavedVars:SetModuleState(p.name, true, p.perChar)
     if p.log then p.log:Success("enabled") end
 end
 
@@ -107,7 +107,7 @@ function Module:Disable()
     if not p.enabled then return end
     p.enabled = false
     if self.OnDisable then self:OnDisable() end
-    ns.SavedVars.Get():SetModuleState(p.name, false, p.perChar)
+    ns.SavedVars:SetModuleState(p.name, false, p.perChar)
     if p.log then p.log:Info("disabled") end
 end
 

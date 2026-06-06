@@ -29,8 +29,14 @@ ns.Module = nil         -- abstract feature base       (Core/Module.lua)
 ns.ModuleManager = nil  -- module registry singleton   (Core/ModuleManager.lua)
 ns.SlashCommand = nil   -- slash command router        (Core/SlashCommand.lua)
 ns.Compartment = nil    -- addon-compartment button    (Core/Compartment.lua)
+ns.EditMode = nil       -- Edit Mode framework         (Core/EditMode.lua)
 ns.UI = nil             -- UI namespace (widgets+window) (UI/*.lua)
-ns.Bootstrap = nil      -- startup orchestrator        (Bootstrap.lua)
+ns.Initializer = nil    -- startup orchestrator        (Core/Init.lua)
+
+-- NOTE: the singleton slots above (EventBus, SavedVars, Logger, ModuleManager,
+-- SlashCommand, Compartment, EditMode, UI.SettingsWindow) start as the CLASS at
+-- file load and are replaced with their sole INSTANCE by Core/Init.lua. There is
+-- no `.Get()` accessor — call sites use e.g. `ns.EventBus` directly.
 
 -- Logger: a small static table so prints stay consistent and namespaced.
 local Log = {}

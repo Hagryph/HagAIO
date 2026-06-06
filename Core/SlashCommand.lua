@@ -6,7 +6,6 @@ local Class = ns.Class
 -- registered as { fn, help } entries; an empty command opens the options panel.
 
 local SlashCommand = Class.new("SlashCommand")
-local instance
 
 function SlashCommand:Initialize()
     local p = self:_p()
@@ -30,7 +29,7 @@ function SlashCommand:_Dispatch(msg)
     if entry then
         entry.fn(rest)
     elseif sub == "" then
-        ns.UI.SettingsWindow.Get():Toggle()
+        ns.UI.SettingsWindow:Toggle()
     else
         self:_PrintHelp()
     end
@@ -54,14 +53,14 @@ function SlashCommand:Activate()
     SLASH_HAGAIO2 = "/hag"
     SlashCmdList["HAGAIO"] = function(msg) self:_Dispatch(msg) end
 
-    self:Register("config", function() ns.UI.SettingsWindow.Get():Toggle() end,
+    self:Register("config", function() ns.UI.SettingsWindow:Toggle() end,
         "open the settings window")
-    self:Register("log", function() ns.UI.SettingsWindow.Get():Show("log") end,
+    self:Register("log", function() ns.UI.SettingsWindow:Show("log") end,
         "open the activity log")
     self:Register("help", function() self:_PrintHelp() end,
         "list commands")
     self:Register("modules", function()
-        local mm = ns.ModuleManager.Get()
+        local mm = ns.ModuleManager
         if mm:Count() == 0 then
             ns.Log.Print("no feature modules registered yet.")
             return
@@ -73,11 +72,6 @@ function SlashCommand:Activate()
                 m:IsEnabled() and "|cff44ff44on|r" or "|cffff4444off|r"))
         end
     end, "list feature modules and their state")
-end
-
-function SlashCommand.Get()
-    if not instance then instance = SlashCommand:New() end
-    return instance
 end
 
 ns.SlashCommand = SlashCommand

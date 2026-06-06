@@ -26,8 +26,11 @@ Core\Compartment.lua
 Core\EditMode.lua
 UI\Widgets.lua
 UI\SettingsWindow.lua
+# Core initializer: builds all service singletons in order, then wires startup.
+# Loads AFTER the UI but BEFORE the modules (so ModuleManager exists when each
+# module registers itself at load).
+Core\Init.lua
 Modules\Questing.lua
 Modules\UnitFrames.lua
 Modules\Class.lua
 Modules\Misc.lua
-Bootstrap.lua
