@@ -72,4 +72,35 @@ function ModuleManager:StartAll()
     end
 end
 
+-- Called on PLAYER_LOGOUT (reload OR exit). Runs each module's optional
+-- OnShutdown cleanup so nothing leaks across a reload (e.g. a module playing a
+-- sound). Does NOT change persisted enable state.
+function ModuleManager:Shutdown()
+    local p = self:_p()
+    for _, name in ipairs(p.order) do
+        local m = p.modules[name]
+        if m.OnShutdown then pcall(function() m:OnShutdown() end) end
+    end
+end
+
+-- Right-click context menu shared by the compartment + minimap buttons: a
+-- checkbox per module (toggles enable) then a divider and "Open Menu".
+function ModuleManager:OpenContextMenu(owner)
+    if not (MenuUtil and MenuUtil.CreateContextMenu) then
+        ns.UI.SettingsWindow:Toggle()  -- no menu API; just open settings
+        return
+    end
+    local mm = self
+    MenuUtil.CreateContextMenu(owner, function(_, root)
+        root:CreateTitle("HagAIO")
+        for module in mm:Iterate() do
+            root:CreateCheckbox(module:GetTitle(),
+                function() return module:IsEnabled() end,
+                function() module:Toggle() end)
+        end
+        root:CreateDivider()
+        root:CreateButton("Open Menu", function() ns.UI.SettingsWindow:Show("modules") end)
+    end)
+end
+
 ns.ModuleManager = ModuleManager

@@ -230,7 +230,8 @@ function SettingsWindow:_BuildGeneralPage(parent)
     local icons = W.SectionLabel(page, "Icons")
     icons:SetPoint("TOPLEFT", div, "BOTTOMLEFT", 4, -16)
 
-    local comp = W.Toggle(page, "Compartment icon")
+    local reloadFlag = "  |cff" .. Theme.hex.warn .. "(reload to remove)|r"
+    local comp = W.Toggle(page, "Compartment icon" .. reloadFlag)
     comp:SetPoint("TOPLEFT", icons, "BOTTOMLEFT", 2, -12)
     comp:SetChecked(ns.Compartment:IsShown())
     comp:SetOnToggle(function(on)

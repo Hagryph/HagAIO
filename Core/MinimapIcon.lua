@@ -84,7 +84,7 @@ end
 
 function MinimapIcon:_OnClick(btn)
     if btn == "RightButton" then
-        ns.UI.SettingsWindow:Show("log")
+        ns.ModuleManager:OpenContextMenu(self:_p().button)
     else
         ns.UI.SettingsWindow:Toggle()
     end
@@ -94,7 +94,7 @@ function MinimapIcon:_OnEnter(b)
     GameTooltip:SetOwner(b, "ANCHOR_LEFT")
     GameTooltip:AddLine("|cff4ab3e6HagAIO|r")
     GameTooltip:AddLine("Left-click: open settings", 0.85, 0.87, 0.91)
-    GameTooltip:AddLine("Right-click: activity log", 0.55, 0.58, 0.64)
+    GameTooltip:AddLine("Right-click: enable/disable modules", 0.55, 0.58, 0.64)
     GameTooltip:AddLine("Drag: move around the minimap", 0.55, 0.58, 0.64)
     GameTooltip:Show()
 end

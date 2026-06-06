@@ -48,15 +48,15 @@ function Compartment:Register()
         icon = ns.ICON,
         notCheckable = true,
         registerForAnyClick = true,  -- so right-click also reaches func
-        func = function(_, menuInputData)
+        func = function(btn, menuInputData)
             local button = (menuInputData and menuInputData.buttonName) or "LeftButton"
-            self:OnClick(button)
+            self:OnClick(button, btn)
         end,
         funcOnEnter = function(button)
             GameTooltip:SetOwner(button, "ANCHOR_LEFT")
             GameTooltip:AddLine("|cff4ab3e6HagAIO|r")
             GameTooltip:AddLine("Left-click: open settings", 0.85, 0.87, 0.91)
-            GameTooltip:AddLine("Right-click: activity log", 0.55, 0.58, 0.64)
+            GameTooltip:AddLine("Right-click: enable/disable modules", 0.55, 0.58, 0.64)
             GameTooltip:Show()
         end,
         funcOnLeave = function()
@@ -68,9 +68,9 @@ function Compartment:Register()
     ns.Logger:Core():Debug("addon compartment button registered")
 end
 
-function Compartment:OnClick(button)
+function Compartment:OnClick(button, owner)
     if button == "RightButton" then
-        ns.UI.SettingsWindow:Show("log")
+        ns.ModuleManager:OpenContextMenu(owner or AddonCompartmentFrame)
     else  -- LeftButton (and any other) opens the settings window
         ns.UI.SettingsWindow:Toggle()
     end

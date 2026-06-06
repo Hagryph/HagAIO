@@ -95,6 +95,11 @@ end
 function MyFeature:OnEnable()  self:LogInfo("watching") end
 function MyFeature:OnDisable() end
 
+-- Optional: cleanup on /reload or logout (PLAYER_LOGOUT). Use this to stop
+-- anything that would leak across a reload — e.g. a playing sound. Does NOT
+-- change the module's persisted on/off state.
+function MyFeature:OnShutdown() end
+
 ns.ModuleManager.Get():Register(MyFeature:New("MyFeature", {
     title = "My Feature",
     description = "One short line shown on the Modules page.",

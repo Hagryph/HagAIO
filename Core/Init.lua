@@ -15,6 +15,7 @@ local Class = ns.Class
 --   ADDON_LOADED(HagAIO) -> load saved vars, apply one-time defaults,
 --                           load logger prefs, activate slash commands
 --   PLAYER_LOGIN         -> start all registered modules, add compartment button
+--   PLAYER_LOGOUT        -> shut down services + modules (cleanup before reload)
 --
 -- The single :Run() call at the end is the only top-level statement in the addon.
 
@@ -36,6 +37,25 @@ function Initializer:_BuildServices()
     ns.Compartment       = ns.Compartment:New()
     ns.MinimapIcon       = ns.MinimapIcon:New()
     ns.UI.SettingsWindow = ns.UI.SettingsWindow:New()
+
+    -- Build-order list, walked in REVERSE on shutdown.
+    self:_p().services = {
+        ns.SavedVars, ns.EventBus, ns.Logger, ns.ModuleManager,
+        ns.SlashCommand, ns.EditMode, ns.Compartment, ns.MinimapIcon,
+        ns.UI.SettingsWindow,
+    }
+end
+
+-- PLAYER_LOGOUT fires on both /reload and a full logout/exit. Run each service's
+-- optional :Shutdown() (and, via ModuleManager:Shutdown, each module's
+-- OnShutdown) in reverse build order so cleanup happens before the services they
+-- depend on. Guarded — a service/module without the hook is simply skipped.
+function Initializer:_Shutdown()
+    local services = self:_p().services or {}
+    for i = #services, 1, -1 do
+        local s = services[i]
+        if s and s.Shutdown then pcall(function() s:Shutdown() end) end
+    end
 end
 
 function Initializer:Run()
@@ -63,6 +83,8 @@ function Initializer:Run()
         ns.Compartment:Register()
         ns.MinimapIcon:Refresh()
     end)
+
+    bus:On("PLAYER_LOGOUT", function() self:_Shutdown() end)
 end
 
 -- One-time: start with everything off except the XP-bar tooltip. Runs once
