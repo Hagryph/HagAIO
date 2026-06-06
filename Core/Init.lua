@@ -34,6 +34,7 @@ function Initializer:_BuildServices()
     ns.SlashCommand      = ns.SlashCommand:New()
     ns.EditMode          = ns.EditMode:New()
     ns.Compartment       = ns.Compartment:New()
+    ns.MinimapIcon       = ns.MinimapIcon:New()
     ns.UI.SettingsWindow = ns.UI.SettingsWindow:New()
 end
 
@@ -60,6 +61,7 @@ function Initializer:Run()
     bus:On("PLAYER_LOGIN", function()
         ns.ModuleManager:StartAll()
         ns.Compartment:Register()
+        ns.MinimapIcon:Refresh()
     end)
 end
 

@@ -14,9 +14,31 @@ function Compartment:Initialize()
     self:_p().registered = false
 end
 
+-- Account-wide visibility setting (default on).
+function Compartment:_DB()
+    return ns.SavedVars:Namespace("compartment", { shown = true })
+end
+
+function Compartment:IsShown()
+    return self:_DB().shown ~= false
+end
+
+-- Toggle the compartment icon. Adding it takes effect immediately; the
+-- compartment API has no unregister, so REMOVING it only applies after /reload.
+-- Returns true if a /reload is needed to reflect the change.
+function Compartment:SetShown(on)
+    self:_DB().shown = on and true or false
+    if on then
+        self:Register()
+        return false
+    end
+    return self:_p().registered  -- already added this session -> needs reload to hide
+end
+
 function Compartment:Register()
     local p = self:_p()
     if p.registered then return end
+    if not self:IsShown() then return end  -- honour the visibility setting
     if not (AddonCompartmentFrame and AddonCompartmentFrame.RegisterAddon) then
         return  -- compartment unavailable on this client; skip silently
     end

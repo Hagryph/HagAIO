@@ -78,12 +78,14 @@ function SettingsWindow:Build()
 
     -- pages
     p.pages.modules = self:_BuildModulesPage(content)
+    p.pages.general = self:_BuildGeneralPage(content)
     p.pages.log     = self:_BuildLogPage(content)
     p.pages.about   = self:_BuildAboutPage(content)
 
     -- nav items
     local defs = {
         { key = "modules", text = "Modules" },
+        { key = "general", text = "General" },
         { key = "log",     text = "Log" },
         { key = "about",   text = "About" },
     }
@@ -208,6 +210,48 @@ function SettingsWindow:_RefreshModules()
         p.moduleRows[#p.moduleRows + 1] = row
         y = y - 48
     end
+end
+
+-- Static "General" page: addon-wide options (currently the icon toggles).
+function SettingsWindow:_BuildGeneralPage(parent)
+    local page = CreateFrame("Frame", nil, parent)
+    page:SetAllPoints()
+
+    local title = W.Text(page, "General", "text", "GameFontNormalLarge")
+    title:SetPoint("TOPLEFT", 18, -16)
+    local note = W.Text(page, "Addon-wide options.", "textDim", "GameFontHighlightSmall")
+    note:SetPoint("TOPLEFT", title, "BOTTOMLEFT", 0, -6)
+
+    local div = W.Divider(page)
+    div:SetPoint("TOPLEFT", note, "BOTTOMLEFT", 0, -12)
+    div:SetPoint("RIGHT", page, "RIGHT", -18, 0)
+
+    -- Icons section
+    local icons = W.SectionLabel(page, "Icons")
+    icons:SetPoint("TOPLEFT", div, "BOTTOMLEFT", 4, -16)
+
+    local comp = W.Toggle(page, "Compartment icon")
+    comp:SetPoint("TOPLEFT", icons, "BOTTOMLEFT", 2, -12)
+    comp:SetChecked(ns.Compartment:IsShown())
+    comp:SetOnToggle(function(on)
+        local needsReload = ns.Compartment:SetShown(on)
+        if needsReload then
+            ns.Logger:Core():Warn("Reload your UI (/reload) to remove the compartment icon.")
+        end
+    end)
+    local compDesc = W.Text(page, "Shows HagAIO in the minimap's addon-compartment menu.",
+        "textFaint", "GameFontHighlightSmall")
+    compDesc:SetPoint("TOPLEFT", comp, "BOTTOMLEFT", 26, -2)
+
+    local mini = W.Toggle(page, "Minimap icon")
+    mini:SetPoint("TOPLEFT", compDesc, "BOTTOMLEFT", -26, -14)
+    mini:SetChecked(ns.MinimapIcon:IsShown())
+    mini:SetOnToggle(function(on) ns.MinimapIcon:SetShown(on) end)
+    local miniDesc = W.Text(page, "Adds a draggable button on the minimap edge.",
+        "textFaint", "GameFontHighlightSmall")
+    miniDesc:SetPoint("TOPLEFT", mini, "BOTTOMLEFT", 26, -2)
+
+    return page
 end
 
 -- Lazily build a module's auto-generated settings page from its schema.

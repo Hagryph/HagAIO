@@ -21,9 +21,13 @@ local function fmt(s)
     return ("%d:%02d"):format(math.floor(s / 60), s % 60)
 end
 
-local function routeKey(src, dst)
+-- Bi-directional route key: the two endpoints are sorted so a flight recorded
+-- in one direction also serves the return trip (the timer is symmetric).
+local function routeKey(a, b)
     local faction = UnitFactionGroup("player") or "?"
-    return faction .. "|" .. tostring(src) .. " @ " .. tostring(dst)
+    a, b = tostring(a), tostring(b)
+    if a > b then a, b = b, a end
+    return faction .. "|" .. a .. " <-> " .. b
 end
 
 -- Sell every sellable grey (Poor, quality 0) item in the bags. Returns count.
@@ -58,25 +62,6 @@ function Misc:OnInitialize()
         hooksecurefunc("TakeTaxiNode", function(slot) module:_OnTakeTaxi(slot) end)
         taxiHooked = true
     end
-
-    -- /hag flights -- dump the recorded route table for debugging
-    if ns.SlashCommand then
-        ns.SlashCommand:Register("flights", function() self:_DumpFlights() end,
-            "list recorded flight times")
-    end
-end
-
-function Misc:_DumpFlights()
-    local flights = self:GetDB().flights or {}
-    local n, src = 0, self:_p().src
-    ns.Log.Print(("flights: faction=%s, last source=%s"):format(
-        tostring(UnitFactionGroup("player")), tostring(src)))
-    for key, dur in pairs(flights) do
-        n = n + 1
-        ns.Log.Print(("  [%s] = %s (%.1fs)"):format(key, fmt(dur), dur))
-    end
-    if n == 0 then ns.Log.Print("  (empty - no routes recorded yet)") end
-    ns.Log.Print(("  %d route(s) total"):format(n))
 end
 
 function Misc:OnEnable()
@@ -160,7 +145,9 @@ function Misc:_Tick(dt)
     elseif p.phase == "flying" then
         if not UnitOnTaxi("player") then
             local dur = GetTime() - (p.startTime or GetTime())
-            if dur > 1 then self:GetDB().flights[p.route] = dur end  -- always record
+            -- Always overwrite: re-records the route every flight, so changed
+            -- flight-master routes or flight speed are picked up automatically.
+            if dur > 1 then self:GetDB().flights[p.route] = dur end
             if p.frame then p.frame:Hide() end
             self:_StopTicker()
         else
