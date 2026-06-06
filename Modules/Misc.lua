@@ -152,24 +152,20 @@ function Misc:_StopTicker()
 end
 
 -- Write rules for the flight DB:
---   direct measurement  -> always replaces a stored ESTIMATE (even < 5s);
---                          once a direct time exists, only a >=5s change updates it.
---   estimate            -> fills an empty slot / refreshes another estimate (>=5s),
---                          but NEVER overwrites a measured direct time.
+--   direct over estimate -> always replaces it (even < 5s);
+--   everything else (direct over direct, estimate over direct, estimate over
+--                    estimate) -> only when the time changed by >= 5s.
+-- The entry's `est` flag tracks the current value's source.
 function Misc:_Store(key, seconds, est)
     local flights = self:GetDB().flights
     local cur = flights[key]
     if type(cur) == "number" then cur = { t = cur, est = false }; flights[key] = cur end
     if not cur then
         flights[key] = { t = seconds, est = est and true or false }
-    elseif est then
-        if cur.est and math.abs(seconds - cur.t) >= 5 then cur.t = seconds end
-    else
-        if cur.est then
-            cur.t, cur.est = seconds, false           -- direct always beats an estimate
-        elseif math.abs(seconds - cur.t) >= 5 then
-            cur.t = seconds                            -- +/-5s rule, direct over direct
-        end
+    elseif (not est) and cur.est then
+        cur.t, cur.est = seconds, false                      -- direct always beats an estimate
+    elseif math.abs(seconds - cur.t) >= 5 then
+        cur.t, cur.est = seconds, est and true or false      -- +/-5s rule for everything else
     end
 end
 
@@ -353,14 +349,12 @@ function Misc:_EstimateRoute(destSlot, destName)
     for i = 1, hops + 1 do if not nodes[i] then return nil end end
 
     -- DP over the ordered path: cheapest known sum from node 1 to each node,
-    -- using any MEASURED DIRECT sub-segment (never another estimate, so errors
-    -- don't compound).
+    -- using whatever sub-segment is available (direct OR a stored estimate).
     local flights = self:GetDB().flights
     local best = { [1] = 0 }
     for j = 2, hops + 1 do
         for i = 1, j - 1 do
-            local e = flights[routeKey(nodes[i], nodes[j])]
-            local seg = best[i] and not isEstimate(e) and storedTime(e)
+            local seg = best[i] and storedTime(flights[routeKey(nodes[i], nodes[j])])
             if seg then
                 local t = best[i] + seg
                 if not best[j] or t < best[j] then best[j] = t end
