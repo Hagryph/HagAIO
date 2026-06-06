@@ -32,7 +32,8 @@ end
 
 -- A flight DB entry is { t = seconds, est = bool }; legacy entries are a plain
 -- number, always read as a measured direct time.
-local ARRIVE_YARDS = 40   -- within this of a path node = we landed there
+local ARRIVE_YARDS = 40    -- within this of a path node = we landed there
+local CROSS_MARGIN2 = 75 * 75   -- moved this many yards past the closest approach = passed it
 
 local function storedTime(e)
     if type(e) == "number" then return e end
@@ -127,7 +128,7 @@ function Misc:_OnTakeTaxi(slot)
     -- resolve the expected time NOW, while the flight map (taxi data) is still
     -- open -- GetNumRoutes/TaxiGetNodeSlot stop working once it closes.
     p.known = (self:_RouteTime(p.route, slot, dst))
-    p.routeStops = self:_BuildRouteStops(slot, dst)  -- path nodes, for stop detection
+    p.path = self:_BuildPath(slot, dst)   -- ordered nodes (+world pos) for timing/landing
     p.phase = "boarding"
     p.boardStart = GetTime()
     self:_StartTicker()
@@ -180,54 +181,127 @@ function Misc:_RouteTime(key, slot, name)
     return storedTime(entry), entry ~= nil   -- stored estimate (or nil -> "-:--")
 end
 
--- The flight points along this route (intermediate hops + destination), each
--- with its map position. Built at take-off (taxi data is dead once the map
--- closes); used on landing to detect which node a stopped flight ended at.
-function Misc:_BuildRouteStops(destSlot, destName)
+-- Ordered nodes the taxi flies through (source ... destination), each tagged with
+-- its WORLD position (continent + yards). Built at take-off while the taxi data
+-- is still live; used both to detect where a stopped flight ended and to time the
+-- closest approach to each node mid-flight.
+function Misc:_BuildPath(destSlot, destName)
     local p = self:_p()
-    local stops = {}
-    if not p.nodePos then return stops end
-    if GetNumRoutes and TaxiGetNodeSlot then
-        local hops = GetNumRoutes(destSlot) or 0
-        for h = 2, hops do
-            local s = TaxiGetNodeSlot(destSlot, h, true)
-            local nm = s and p.nodeNames and p.nodeNames[s]
-            if nm and p.nodePos[s] then stops[#stops + 1] = { name = nm, pos = p.nodePos[s] } end
+    local function nodeAt(slot, name)
+        local mp = slot and p.nodePos and p.nodePos[slot]
+        local world
+        if mp and p.flightMapID and C_Map and C_Map.GetWorldPosFromMapPos and CreateVector2D then
+            local c, w = C_Map.GetWorldPosFromMapPos(p.flightMapID, CreateVector2D(mp.x, mp.y))
+            if c and w then world = { c = c, x = w.x, y = w.y } end
         end
+        return { name = name, world = world }
     end
-    if p.nodePos[destSlot] then stops[#stops + 1] = { name = destName, pos = p.nodePos[destSlot] } end
-    return stops
+
+    local path = {}
+    local hops = (GetNumRoutes and GetNumRoutes(destSlot)) or 0
+    if hops >= 1 and TaxiGetNodeSlot then
+        for h = 1, hops do
+            local s = TaxiGetNodeSlot(destSlot, h, true)
+            path[h] = nodeAt(s, s and p.nodeNames and p.nodeNames[s])
+        end
+        path[hops + 1] = nodeAt(destSlot, destName)
+    else
+        path[1] = nodeAt(nil, p.src)
+        path[2] = nodeAt(destSlot, destName)
+    end
+    path[1].name = p.src or path[1].name   -- node 1 is authoritatively the source
+    return path
 end
 
--- Which flight point on the planned route did we actually land at? Retail's
--- mid-flight stop drops you at a node ON the path, so the elapsed time is a valid
--- direct flight from the source to THAT node. Returns its name (the target on a
--- completed flight, or an earlier node on a stopped one), or nil if we ended up
--- nowhere near a route node -- i.e. we were ported off the path, so discard.
--- Undeterminable position -> assume the target (don't drop good data).
+-- Player position in WORLD coordinates: x, y, continentID (or nil if unavailable).
+function Misc:_PlayerWorld()
+    if not (C_Map and C_Map.GetBestMapForUnit and C_Map.GetPlayerMapPosition
+        and C_Map.GetWorldPosFromMapPos) then return nil end
+    local m = C_Map.GetBestMapForUnit("player")
+    local pos = m and C_Map.GetPlayerMapPosition(m, "player")
+    if not pos then return nil end
+    local c, w = C_Map.GetWorldPosFromMapPos(m, pos)
+    if not (c and w) then return nil end
+    return w.x, w.y, c
+end
+
+-- Which path node are we standing at? Nearest within ARRIVE_YARDS. Returns its
+-- name (the target on a full flight, an earlier node on a stopped one), nil if we
+-- are near none (ported off the path), or the target if position is unmeasurable.
 function Misc:_LandedNode()
     local p = self:_p()
-    if not (p.routeStops and #p.routeStops > 0) then return p.dst end
-    if not (p.dstMapID and C_Map and C_Map.GetWorldPosFromMapPos and C_Map.GetBestMapForUnit
-        and C_Map.GetPlayerMapPosition and CreateVector2D) then
-        return p.dst
-    end
-    local pmap = C_Map.GetBestMapForUnit("player")
-    local ppos = pmap and C_Map.GetPlayerMapPosition(pmap, "player")
-    if not ppos then return p.dst end
-    local pc, pw = C_Map.GetWorldPosFromMapPos(pmap, ppos)
-    if not (pc and pw) then return p.dst end
-
-    local bestName, bestD2 = nil, ARRIVE_YARDS * ARRIVE_YARDS
-    for _, stop in ipairs(p.routeStops) do
-        local sc, sw = C_Map.GetWorldPosFromMapPos(p.dstMapID, CreateVector2D(stop.pos.x, stop.pos.y))
-        if sc == pc and sw then
-            local dx, dy = pw.x - sw.x, pw.y - sw.y
+    if not (p.path and #p.path > 0) then return p.dst end
+    local px, py, pc = self:_PlayerWorld()
+    if not px then return p.dst end
+    local bestName, bestD2, comparable = nil, ARRIVE_YARDS * ARRIVE_YARDS, false
+    for _, node in ipairs(p.path) do
+        if node.world and node.world.c == pc then
+            comparable = true
+            local dx, dy = px - node.world.x, py - node.world.y
             local d2 = dx * dx + dy * dy
-            if d2 <= bestD2 then bestD2, bestName = d2, stop.name end
+            if d2 <= bestD2 then bestD2, bestName = d2, node.name end
         end
     end
-    return bestName   -- nil => ported off the path => don't record
+    if not comparable then return p.dst end   -- couldn't measure -> assume target
+    return bestName                            -- nil => near no node => ported
+end
+
+-- Poll once per refresh while flying: track the closest approach to the NEXT path
+-- node; once we have clearly moved away from it, stamp that closest-approach time
+-- and record the segment from the previous node as a direct flight.
+function Misc:_PollCrossing()
+    local p = self:_p()
+    if not (p.path and p.crossIdx and p.crossIdx <= #p.path) then return end
+    local node = p.path[p.crossIdx]
+    if not (node and node.world) then          -- can't time this one; skip past it
+        p.crossIdx = p.crossIdx + 1
+        p.crossMinD2 = math.huge
+        return
+    end
+    local px, py, pc = self:_PlayerWorld()
+    if not px or pc ~= node.world.c then return end
+    local dx, dy = px - node.world.x, py - node.world.y
+    local d2 = dx * dx + dy * dy
+    if d2 < (p.crossMinD2 or math.huge) then
+        p.crossMinD2 = d2
+        p.crossMinTime = GetTime()
+    elseif p.crossMinTime and d2 > p.crossMinD2 + CROSS_MARGIN2 then
+        self:_RecordCross(p.crossIdx, p.crossMinTime)
+        p.crossIdx = p.crossIdx + 1
+        p.crossMinD2 = math.huge
+        p.crossMinTime = nil
+    end
+end
+
+-- Stamp node `idx`'s crossing time and store the segment from the previous
+-- stamped node as a direct flight.
+function Misc:_RecordCross(idx, when)
+    local p = self:_p()
+    p.crossTimes = p.crossTimes or {}
+    p.crossTimes[idx] = when
+    local prevT = p.crossTimes[idx - 1]
+    local a = p.path[idx - 1] and p.path[idx - 1].name
+    local b = p.path[idx] and p.path[idx].name
+    if prevT and a and b then
+        local seg = when - prevT
+        if seg > 1 then self:_Store(routeKey(a, b), seg, false) end
+    end
+end
+
+-- The final leg (last node passed -> where we landed), which _PollCrossing can't
+-- catch because you stop on the landing node instead of flying past it.
+function Misc:_RecordFinalLeg(landed, when)
+    local p = self:_p()
+    if not p.crossTimes then return end
+    local maxIdx, maxTime = 1, p.crossTimes[1]
+    for i, t in pairs(p.crossTimes) do
+        if i > maxIdx then maxIdx, maxTime = i, t end
+    end
+    local fromName = p.path and p.path[maxIdx] and p.path[maxIdx].name
+    if fromName and maxTime and fromName ~= landed then
+        local seg = when - maxTime
+        if seg > 1 then self:_Store(routeKey(fromName, landed), seg, false) end
+    end
 end
 
 function Misc:_Tick(dt)
@@ -236,6 +310,11 @@ function Misc:_Tick(dt)
         if UnitOnTaxi("player") then
             p.phase = "flying"
             p.startTime = GetTime()
+            -- crossing state: we're at the source node (1) on lift-off
+            p.crossTimes = { [1] = p.startTime }
+            p.crossIdx = 2
+            p.crossMinD2 = math.huge
+            p.crossMinTime = nil
             -- p.known was resolved at take-off (recorded time or multi-hop estimate)
             self:_RefreshDisplay()
         elseif GetTime() - (p.boardStart or 0) > 8 then
@@ -244,19 +323,25 @@ function Misc:_Tick(dt)
 
     elseif p.phase == "flying" then
         if not UnitOnTaxi("player") then
-            local dur = GetTime() - (p.startTime or GetTime())
+            local now = GetTime()
+            local dur = now - (p.startTime or now)
             -- Record against the node we ACTUALLY landed at: the target on a full
             -- flight, or an earlier path node if the flight was stopped. nil means
             -- we were ported off the path, so nothing is recorded.
             local landed = self:_LandedNode()
             if dur > 1 and landed then
-                self:_Store(routeKey(p.src, landed), dur, false)
+                self:_Store(routeKey(p.src, landed), dur, false)  -- full source -> landed
+                self:_RecordFinalLeg(landed, now)                 -- last per-node segment
             end
             if p.frame then p.frame:Hide() end
             self:_StopTicker()
         else
             p.acc = (p.acc or 0) + dt
-            if p.acc >= 0.1 then p.acc = 0; self:_RefreshDisplay() end
+            if p.acc >= 0.1 then
+                p.acc = 0
+                self:_PollCrossing()     -- closest-approach segment timing
+                self:_RefreshDisplay()
+            end
         end
     end
 end
