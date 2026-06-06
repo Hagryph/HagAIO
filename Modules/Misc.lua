@@ -30,6 +30,18 @@ local function routeKey(a, b)
     return faction .. "|" .. a .. " <-> " .. b
 end
 
+-- A flight DB entry is { t = seconds, est = bool }; legacy entries are a plain
+-- number, always read as a measured direct time.
+local ARRIVE_YARDS = 40   -- within this of the target = "we made it" (else dropped)
+
+local function storedTime(e)
+    if type(e) == "number" then return e end
+    return e and e.t
+end
+local function isEstimate(e)
+    return type(e) == "table" and e.est == true
+end
+
 -- Sell every sellable grey (Poor, quality 0) item in the bags. Returns count.
 local function sellJunk()
     if not (C_Container and C_Container.GetContainerNumSlots and C_Container.UseContainerItem) then return 0 end
@@ -111,7 +123,12 @@ function Misc:_OnTakeTaxi(slot)
 
     p.dst = dst
     p.dstSlot = slot          -- kept for a multi-hop estimate if unrecorded
+    p.dstPos = p.nodePos and p.nodePos[slot]   -- target position, for arrival check
+    p.dstMapID = p.flightMapID
     p.route = routeKey(p.src, dst)
+    -- resolve the expected time NOW, while the flight map (taxi data) is still
+    -- open -- GetNumRoutes/TaxiGetNodeSlot stop working once it closes.
+    p.known = (self:_RouteTime(p.route, slot, dst))
     p.phase = "boarding"
     p.boardStart = GetTime()
     self:_StartTicker()
@@ -134,14 +151,68 @@ function Misc:_StopTicker()
     p.phase = nil
 end
 
+-- Write rules for the flight DB:
+--   direct measurement  -> always replaces a stored ESTIMATE (even < 5s);
+--                          once a direct time exists, only a >=5s change updates it.
+--   estimate            -> fills an empty slot / refreshes another estimate (>=5s),
+--                          but NEVER overwrites a measured direct time.
+function Misc:_Store(key, seconds, est)
+    local flights = self:GetDB().flights
+    local cur = flights[key]
+    if type(cur) == "number" then cur = { t = cur, est = false }; flights[key] = cur end
+    if not cur then
+        flights[key] = { t = seconds, est = est and true or false }
+    elseif est then
+        if cur.est and math.abs(seconds - cur.t) >= 5 then cur.t = seconds end
+    else
+        if cur.est then
+            cur.t, cur.est = seconds, false           -- direct always beats an estimate
+        elseif math.abs(seconds - cur.t) >= 5 then
+            cur.t = seconds                            -- +/-5s rule, direct over direct
+        end
+    end
+end
+
+-- Best known time for a route as (seconds, isEstimate). A measured direct wins;
+-- otherwise compute a multi-hop estimate, persist it, and return it.
+function Misc:_RouteTime(key, slot, name)
+    local entry = self:GetDB().flights[key]
+    if entry and not isEstimate(entry) then
+        return storedTime(entry), false
+    end
+    local est = self:_EstimateRoute(slot, name)
+    if est then self:_Store(key, est, true); return est, true end
+    return storedTime(entry), entry ~= nil   -- stored estimate (or nil -> "-:--")
+end
+
+-- Did we actually reach the target? Compare the player's world position to the
+-- destination flight point's: different continent, or > ARRIVE_YARDS away, means
+-- the flight was cut short (hearth / port). Undeterminable -> assume arrived so
+-- good data isn't dropped.
+function Misc:_Arrived()
+    local p = self:_p()
+    if not (p.dstPos and p.dstMapID and C_Map and C_Map.GetWorldPosFromMapPos
+        and C_Map.GetBestMapForUnit and C_Map.GetPlayerMapPosition and CreateVector2D) then
+        return true
+    end
+    local destC, destW = C_Map.GetWorldPosFromMapPos(p.dstMapID, CreateVector2D(p.dstPos.x, p.dstPos.y))
+    local pmap = C_Map.GetBestMapForUnit("player")
+    local ppos = pmap and C_Map.GetPlayerMapPosition(pmap, "player")
+    if not (destC and destW and ppos) then return true end
+    local playerC, playerW = C_Map.GetWorldPosFromMapPos(pmap, ppos)
+    if not (playerC and playerW) then return true end
+    if playerC ~= destC then return false end          -- different continent
+    local dx, dy = playerW.x - destW.x, playerW.y - destW.y
+    return (dx * dx + dy * dy) <= (ARRIVE_YARDS * ARRIVE_YARDS)
+end
+
 function Misc:_Tick(dt)
     local p = self:_p()
     if p.phase == "boarding" then
         if UnitOnTaxi("player") then
             p.phase = "flying"
             p.startTime = GetTime()
-            -- prefer the recorded time; otherwise a summed multi-hop estimate
-            p.known = self:GetDB().flights[p.route] or self:_EstimateRoute(p.dstSlot, p.dst)
+            -- p.known was resolved at take-off (recorded time or multi-hop estimate)
             self:_RefreshDisplay()
         elseif GetTime() - (p.boardStart or 0) > 8 then
             self:_StopTicker()  -- never took off (cancelled)
@@ -150,15 +221,10 @@ function Misc:_Tick(dt)
     elseif p.phase == "flying" then
         if not UnitOnTaxi("player") then
             local dur = GetTime() - (p.startTime or GetTime())
-            -- Overwrite every flight so changed routes / flight speed are picked
-            -- up automatically -- EXCEPT a time far shorter than an existing
-            -- record, which almost always means an interrupted flight (hearthed
-            -- or ported mid-air); recording that would poison the database.
-            if dur > 1 then
-                local old = self:GetDB().flights[p.route]
-                if not (old and dur < old * 0.6) then
-                    self:GetDB().flights[p.route] = dur
-                end
+            -- Record the measured total only if we actually arrived at the target
+            -- (else it was an interrupted flight: hearthed / ported mid-air).
+            if dur > 1 and self:_Arrived() then
+                self:_Store(p.route, dur, false)
             end
             if p.frame then p.frame:Hide() end
             self:_StopTicker()
@@ -246,14 +312,22 @@ function Misc:_HookFlightPins()
     C_Timer.After(0, function()
         local p = module:_p()
         p.nodeNames = {}   -- slotIndex -> flight-map node name
+        p.nodePos = {}     -- slotIndex -> { x, y } on the flight map
+        p.flightMapID = FlightMapFrame.GetMapID and FlightMapFrame:GetMapID()
         for pin in pool:EnumerateActive() do
             if not pin.__hagHover then
                 pin.__hagHover = true
                 pin:HookScript("OnEnter", function(self2) module:_OnPinEnter(self2) end)
             end
             local d = pin.taxiNodeData
-            if d and d.name then
-                if d.slotIndex then p.nodeNames[d.slotIndex] = d.name end
+            if d and d.name and d.slotIndex then
+                p.nodeNames[d.slotIndex] = d.name
+                local pos = d.position
+                if pos then
+                    local x, y
+                    if pos.GetXY then x, y = pos:GetXY() else x, y = pos.x, pos.y end
+                    if x and y then p.nodePos[d.slotIndex] = { x = x, y = y } end
+                end
                 if d.state == Enum.FlightPathState.Current then p.src = d.name end
             end
         end
@@ -279,12 +353,14 @@ function Misc:_EstimateRoute(destSlot, destName)
     for i = 1, hops + 1 do if not nodes[i] then return nil end end
 
     -- DP over the ordered path: cheapest known sum from node 1 to each node,
-    -- using any known sub-segment (a direct record between two nodes on the path).
+    -- using any MEASURED DIRECT sub-segment (never another estimate, so errors
+    -- don't compound).
     local flights = self:GetDB().flights
     local best = { [1] = 0 }
     for j = 2, hops + 1 do
         for i = 1, j - 1 do
-            local seg = best[i] and flights[routeKey(nodes[i], nodes[j])]
+            local e = flights[routeKey(nodes[i], nodes[j])]
+            local seg = best[i] and not isEstimate(e) and storedTime(e)
             if seg then
                 local t = best[i] + seg
                 if not best[j] or t < best[j] then best[j] = t end
@@ -301,12 +377,7 @@ function Misc:_OnPinEnter(pin)
     local src = self:_p().src
     if not src then return end
 
-    local dur = self:GetDB().flights[routeKey(src, d.name)]
-    local estimated = false
-    if not dur then
-        dur = self:_EstimateRoute(d.slotIndex, d.name)
-        estimated = dur ~= nil
-    end
+    local dur, estimated = self:_RouteTime(routeKey(src, d.name), d.slotIndex, d.name)
 
     local r, g, b = Theme.Unpack("accent")
     local prefix = estimated and "Flight: ~" or "Flight: "  -- "~" = summed estimate
