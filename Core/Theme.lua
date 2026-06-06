@@ -25,6 +25,7 @@ Theme.hex = {
     loss      = "e0556b",
     neutral   = "8a93a3",
     gold      = "e0b34a",
+    class     = "b483e0",  -- Class module tag (distinct from accent/win/gold + log levels)
 }
 
 -- {r, g, b, a} in 0..1 (hex values above converted).
@@ -46,6 +47,7 @@ Theme.rgb = {
     text         = { 0.906, 0.925, 0.953, 1.00 },  -- #e7ecf3
     textDim      = { 0.541, 0.576, 0.639, 1.00 },  -- #8a93a3
     textFaint    = { 0.357, 0.392, 0.451, 1.00 },  -- #5b6473
+    class        = { 0.706, 0.514, 0.878, 1.00 },  -- #b483e0
 }
 
 -- Flat 8x8 white texture: tinted to any colour for solid fills + hairline

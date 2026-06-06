@@ -258,9 +258,22 @@ function Widgets.ColorSwatch(parent)
         end
     end)
 
+    -- Inline reset: a small button left of the swatch that restores the default colour.
+    -- Hidden until SetDefault gives it one. Fires onChange so the setting persists + applies.
+    local dr, dg, db
+    local reset = Widgets.TextButton(btn, "Reset")
+    reset:SetPoint("RIGHT", btn, "LEFT", -8, 0)
+    reset:Hide()
+    reset:SetScript("OnClick", function()
+        if not dr then return end
+        set(dr, dg, db)
+        if onChange then onChange(dr, dg, db) end
+    end)
+
     btn.SetColor    = function(_, r, g, b) set(r, g, b) end
     btn.GetColor    = function() return cr, cg, cb end
     btn.SetOnChange = function(_, fn) onChange = fn end
+    btn.SetDefault  = function(_, r, g, b) dr, dg, db = r, g, b; reset:SetShown(r ~= nil) end
     return btn
 end
 

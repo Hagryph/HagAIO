@@ -379,6 +379,7 @@ function SettingsWindow:_BuildModuleControls(sf, module)
             local c = module:GetSetting(s.key) or s.default or { 1, 1, 1 }
             sw:SetColor(c[1] or 1, c[2] or 1, c[3] or 1)
             sw:SetOnChange(function(r, g, b) module:SetSetting(s.key, { r, g, b }) end)
+            if s.default then sw:SetDefault(s.default[1], s.default[2], s.default[3]) end
             y = y - 26
         end
     end
