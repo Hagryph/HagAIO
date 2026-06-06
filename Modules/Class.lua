@@ -41,14 +41,18 @@ function ClassModule:OnInitialize()
     p.subTokens = {}
     local _, classToken = UnitClass("player")
     p.class = classToken
-
-    -- Settings reflect the submodule for the player's CURRENT spec (at login).
-    local sub = self:_Submodule()
     p.description = "Helpers tailored to your class and specialisation."
+    self:_BuildSettings()
+end
+
+-- (Re)build the settings schema from the current spec's submodule and seed any
+-- missing saved-var defaults. Called at init and on every spec change.
+function ClassModule:_BuildSettings()
+    local p = self:_p()
+    local sub = self:_Submodule()
     p.settings = (sub and sub.settings)
         or { { type = "note", text = "Nothing for your current specialisation yet." } }
 
-    -- Seed saved-var defaults for the current submodule's settings.
     local db = self:GetDB()
     if db then
         for _, s in ipairs(p.settings) do
@@ -116,6 +120,11 @@ function ClassModule:_Sync()
     if p.activeSub and p.activeSub.Unload then p.activeSub.Unload(self) end
     p.activeSub = sub
     if sub and sub.Load then sub.Load(self) end
+    -- spec changed: rebuild the schema and refresh the settings page in place
+    self:_BuildSettings()
+    if ns.UI and ns.UI.SettingsWindow and ns.UI.SettingsWindow.InvalidateModule then
+        ns.UI.SettingsWindow:InvalidateModule(self:GetName())
+    end
 end
 
 -- ---- registration ---------------------------------------------------------

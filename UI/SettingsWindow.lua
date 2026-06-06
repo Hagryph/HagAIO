@@ -256,6 +256,21 @@ function SettingsWindow:_BuildGeneralPage(parent)
     return page
 end
 
+-- Drop a module's cached settings page so it rebuilds from the CURRENT schema
+-- (e.g. a module changed its settings dynamically, like a Monk spec swap). If the
+-- page is on screen, rebuild and re-show it immediately.
+function SettingsWindow:InvalidateModule(name)
+    local p = self:_p()
+    if not p.built then return end
+    local page = p.modulePages[name]
+    if not page then return end
+    page:Hide()
+    p.modulePages[name] = nil
+    if p.frame and p.frame:IsShown() and p.current == ("module:" .. name) then
+        self:Show("module:" .. name)
+    end
+end
+
 -- Lazily build a module's auto-generated settings page from its schema.
 function SettingsWindow:_EnsureModulePage(name)
     local p = self:_p()

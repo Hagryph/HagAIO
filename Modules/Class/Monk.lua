@@ -75,10 +75,11 @@ local Base = {
             end)
             hookInstalled = true
         end
-        -- one-time /hag aoe debug command
+        -- one-time debug commands
         if not aoeCmdDone and ns.SlashCommand then
             aoeCmdDone = true
             ns.SlashCommand:Register("aoe", function() self:_DumpAoE() end, "debug the AoE greying helper")
+            ns.SlashCommand:Register("npdist", function() self:_DumpNpDist() end, "debug enemy nameplate range brackets")
         end
         -- migrate the old cyan marker default to the new white default
         local db = self:GetDB()
@@ -333,6 +334,29 @@ function ClassModule:_DumpAoE()
         end
     end
     L.Print(("nameplates total=%d attackable=%d inRange(TP)=%d"):format(total, attackable, inRange))
+end
+
+-- Per enemy nameplate, show IsSpellInRange for several known-range spells to
+-- bracket the distance (there is no native exact-yardage API for enemies).
+function ClassModule:_DumpNpDist()
+    local L = ns.Log
+    local probes = {
+        { TIGER_PALM, "TP~5" },
+        { SPINNING_CRANE_KICK, "SCK(self)" },
+        { 115078, "Paralysis~20" },
+        { 115546, "Provoke~30" },
+        { 117952, "CrackleJade~40" },
+    }
+    L.Print("=== nameplate range brackets ===")
+    local rangeFn = C_Spell and C_Spell.IsSpellInRange
+    if not rangeFn then L.Print("  IsSpellInRange unavailable"); return end
+    ns.Nameplates:EachEnemy(function(u)
+        local parts = {}
+        for _, pr in ipairs(probes) do
+            parts[#parts + 1] = pr[2] .. "=" .. tostring(rangeFn(pr[1], u))
+        end
+        L.Print(("  %s: %s"):format(tostring(UnitName(u)), table.concat(parts, "  ")))
+    end)
 end
 
 -- ---- Tiger Palm energy marker (Brewmaster) --------------------------------

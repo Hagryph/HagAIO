@@ -63,9 +63,11 @@ function Cooldowns:Watch(spellID, onChange)
         if u == "player" and sid == spellID then self:_Start(w) end
     end)
     w.pollTok = bus:On("SPELL_UPDATE_COOLDOWN", function() self:_Poll(w) end)
-    -- started mid-cooldown (e.g. reloaded while it's running, not just a GCD)
+    -- Reloaded mid-cooldown (not just a GCD): the real remaining is secret, so we
+    -- can't run a precise internal timer -- just mark it on cooldown and let the
+    -- SPELL_UPDATE_COOLDOWN poll flip it OFF when the cooldown actually ends.
     local active, onGCD = isActive(spellID)
-    if active and not onGCD then self:_Start(w) end
+    if active and not onGCD then self:_Set(w, true) end
     return w
 end
 
