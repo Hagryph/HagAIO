@@ -32,7 +32,7 @@ end
 
 -- A flight DB entry is { t = seconds, est = bool }; legacy entries are a plain
 -- number, always read as a measured direct time.
-local ARRIVE_YARDS = 40   -- within this of the target = "we made it" (else dropped)
+local ARRIVE_YARDS = 40   -- within this of a path node = we landed there
 
 local function storedTime(e)
     if type(e) == "number" then return e end
@@ -122,13 +122,12 @@ function Misc:_OnTakeTaxi(slot)
     if not (p.src and dst) then return end
 
     p.dst = dst
-    p.dstSlot = slot          -- kept for a multi-hop estimate if unrecorded
-    p.dstPos = p.nodePos and p.nodePos[slot]   -- target position, for arrival check
     p.dstMapID = p.flightMapID
     p.route = routeKey(p.src, dst)
     -- resolve the expected time NOW, while the flight map (taxi data) is still
     -- open -- GetNumRoutes/TaxiGetNodeSlot stop working once it closes.
     p.known = (self:_RouteTime(p.route, slot, dst))
+    p.routeStops = self:_BuildRouteStops(slot, dst)  -- path nodes, for stop detection
     p.phase = "boarding"
     p.boardStart = GetTime()
     self:_StartTicker()
@@ -181,25 +180,54 @@ function Misc:_RouteTime(key, slot, name)
     return storedTime(entry), entry ~= nil   -- stored estimate (or nil -> "-:--")
 end
 
--- Did we actually reach the target? Compare the player's world position to the
--- destination flight point's: different continent, or > ARRIVE_YARDS away, means
--- the flight was cut short (hearth / port). Undeterminable -> assume arrived so
--- good data isn't dropped.
-function Misc:_Arrived()
+-- The flight points along this route (intermediate hops + destination), each
+-- with its map position. Built at take-off (taxi data is dead once the map
+-- closes); used on landing to detect which node a stopped flight ended at.
+function Misc:_BuildRouteStops(destSlot, destName)
     local p = self:_p()
-    if not (p.dstPos and p.dstMapID and C_Map and C_Map.GetWorldPosFromMapPos
-        and C_Map.GetBestMapForUnit and C_Map.GetPlayerMapPosition and CreateVector2D) then
-        return true
+    local stops = {}
+    if not p.nodePos then return stops end
+    if GetNumRoutes and TaxiGetNodeSlot then
+        local hops = GetNumRoutes(destSlot) or 0
+        for h = 2, hops do
+            local s = TaxiGetNodeSlot(destSlot, h, true)
+            local nm = s and p.nodeNames and p.nodeNames[s]
+            if nm and p.nodePos[s] then stops[#stops + 1] = { name = nm, pos = p.nodePos[s] } end
+        end
     end
-    local destC, destW = C_Map.GetWorldPosFromMapPos(p.dstMapID, CreateVector2D(p.dstPos.x, p.dstPos.y))
+    if p.nodePos[destSlot] then stops[#stops + 1] = { name = destName, pos = p.nodePos[destSlot] } end
+    return stops
+end
+
+-- Which flight point on the planned route did we actually land at? Retail's
+-- mid-flight stop drops you at a node ON the path, so the elapsed time is a valid
+-- direct flight from the source to THAT node. Returns its name (the target on a
+-- completed flight, or an earlier node on a stopped one), or nil if we ended up
+-- nowhere near a route node -- i.e. we were ported off the path, so discard.
+-- Undeterminable position -> assume the target (don't drop good data).
+function Misc:_LandedNode()
+    local p = self:_p()
+    if not (p.routeStops and #p.routeStops > 0) then return p.dst end
+    if not (p.dstMapID and C_Map and C_Map.GetWorldPosFromMapPos and C_Map.GetBestMapForUnit
+        and C_Map.GetPlayerMapPosition and CreateVector2D) then
+        return p.dst
+    end
     local pmap = C_Map.GetBestMapForUnit("player")
     local ppos = pmap and C_Map.GetPlayerMapPosition(pmap, "player")
-    if not (destC and destW and ppos) then return true end
-    local playerC, playerW = C_Map.GetWorldPosFromMapPos(pmap, ppos)
-    if not (playerC and playerW) then return true end
-    if playerC ~= destC then return false end          -- different continent
-    local dx, dy = playerW.x - destW.x, playerW.y - destW.y
-    return (dx * dx + dy * dy) <= (ARRIVE_YARDS * ARRIVE_YARDS)
+    if not ppos then return p.dst end
+    local pc, pw = C_Map.GetWorldPosFromMapPos(pmap, ppos)
+    if not (pc and pw) then return p.dst end
+
+    local bestName, bestD2 = nil, ARRIVE_YARDS * ARRIVE_YARDS
+    for _, stop in ipairs(p.routeStops) do
+        local sc, sw = C_Map.GetWorldPosFromMapPos(p.dstMapID, CreateVector2D(stop.pos.x, stop.pos.y))
+        if sc == pc and sw then
+            local dx, dy = pw.x - sw.x, pw.y - sw.y
+            local d2 = dx * dx + dy * dy
+            if d2 <= bestD2 then bestD2, bestName = d2, stop.name end
+        end
+    end
+    return bestName   -- nil => ported off the path => don't record
 end
 
 function Misc:_Tick(dt)
@@ -217,10 +245,12 @@ function Misc:_Tick(dt)
     elseif p.phase == "flying" then
         if not UnitOnTaxi("player") then
             local dur = GetTime() - (p.startTime or GetTime())
-            -- Record the measured total only if we actually arrived at the target
-            -- (else it was an interrupted flight: hearthed / ported mid-air).
-            if dur > 1 and self:_Arrived() then
-                self:_Store(p.route, dur, false)
+            -- Record against the node we ACTUALLY landed at: the target on a full
+            -- flight, or an earlier path node if the flight was stopped. nil means
+            -- we were ported off the path, so nothing is recorded.
+            local landed = self:_LandedNode()
+            if dur > 1 and landed then
+                self:_Store(routeKey(p.src, landed), dur, false)
             end
             if p.frame then p.frame:Hide() end
             self:_StopTicker()
