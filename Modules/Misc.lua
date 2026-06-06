@@ -13,7 +13,6 @@ local W = ns.UI.Widgets
 local Misc = Class.new("Misc", ns.Module)
 
 local taxiHooked = false       -- TakeTaxiNode hook installed once per session
-local editRegistered = false   -- Edit Mode callbacks registered once per session
 
 local function fmt(s)
     if s == nil then return "-:--" end   -- no recorded time
@@ -59,14 +58,6 @@ function Misc:OnInitialize()
         hooksecurefunc("TakeTaxiNode", function(slot) module:_OnTakeTaxi(slot) end)
         taxiHooked = true
     end
-
-    -- let the player position the flight timer via Blizzard's Edit Mode
-    if not editRegistered and EventRegistry then
-        editRegistered = true
-        local module = self
-        EventRegistry:RegisterCallback("EditMode.Enter", function() module:_OnEditMode(true) end, module)
-        EventRegistry:RegisterCallback("EditMode.Exit",  function() module:_OnEditMode(false) end, module)
-    end
 end
 
 function Misc:OnEnable()
@@ -74,6 +65,8 @@ function Misc:OnEnable()
     local bus = ns.EventBus.Get()
     p.tokens["MERCHANT_SHOW"]   = bus:On("MERCHANT_SHOW",   function() self:_OnMerchantShow() end)
     p.tokens["MERCHANT_CLOSED"] = bus:On("MERCHANT_CLOSED", function() self:_OnMerchantClosed() end)
+    -- build + register the timer so it can be placed in Blizzard's Edit Mode
+    self:_BuildFrame()
 end
 
 function Misc:OnDisable()
@@ -165,13 +158,6 @@ function Misc:_BuildFrame()
     f:SetSize(230, 42)
     f:SetFrameStrata("HIGH")
 
-    -- movable via Edit Mode
-    f:SetMovable(true)
-    f:SetClampedToScreen(true)
-    f:RegisterForDrag("LeftButton")
-    f:SetScript("OnDragStart", function() if self:_p().editing then f:StartMoving() end end)
-    f:SetScript("OnDragStop", function() f:StopMovingOrSizing(); self:_SavePosition() end)
-
     local dest = W.Text(f, "", "accent", "GameFontNormal")
     dest:SetPoint("TOPLEFT", 12, -8)
     dest:SetPoint("RIGHT", f, "RIGHT", -70, 0)
@@ -196,47 +182,20 @@ function Misc:_BuildFrame()
     f.dest, f.time, f.bar = dest, time, bar
     f:Hide()
     p.frame = f
-    self:_ApplyPosition()
-end
 
--- Saved position (or the default boss-mod "critical" spot, centre + above mid).
-function Misc:_ApplyPosition()
-    local p = self:_p()
-    if not p.frame then return end
-    local db = self:GetDB()
-    p.frame:ClearAllPoints()
-    if db.flightLeft and db.flightBottom then
-        p.frame:SetPoint("BOTTOMLEFT", UIParent, "BOTTOMLEFT", db.flightLeft, db.flightBottom)
-    else
-        p.frame:SetPoint("CENTER", UIParent, "CENTER", 0, 210)
-    end
-end
-
-function Misc:_SavePosition()
-    local p = self:_p()
-    if not p.frame then return end
-    local db = self:GetDB()
-    db.flightLeft = p.frame:GetLeft()
-    db.flightBottom = p.frame:GetBottom()
-    self:_ApplyPosition()
-end
-
--- Edit Mode: show a draggable preview so the player can place the timer.
-function Misc:_OnEditMode(active)
-    local p = self:_p()
-    p.editing = active
-    if active then
-        if not (self:IsEnabled() and self:GetSetting("showInFlight")) then return end
-        self:_BuildFrame()
-        p.frame:EnableMouse(true)
-        p.frame.dest:SetText("Flight Timer")
-        p.frame.time:SetText("1:23")
-        p.frame.bar:SetValue(0.5)
-        p.frame:Show()
-    elseif p.frame then
-        p.frame:EnableMouse(false)
-        if p.phase ~= "flying" then p.frame:Hide() end
-    end
+    -- register with the shared Edit Mode framework (drag, snap, persistence).
+    -- The default spot is the boss-mod "critical" position (centre, above mid).
+    ns.EditMode.Get():Register(f, {
+        key = "flightTimer",
+        label = "Flight Timer",
+        default = { point = "CENTER", x = 0, y = 210 },
+        active = function() return self:IsEnabled() and self:GetSetting("showInFlight") end,
+        onEnter = function(frame)
+            frame.dest:SetText("Flight Timer")
+            frame.time:SetText("1:23")
+            frame.bar:SetValue(0.5)
+        end,
+    })
 end
 
 -- Display is gated by the module + "in flight" checkbox; recording is not.
