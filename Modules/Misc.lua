@@ -406,7 +406,10 @@ function Misc:_DumpFlights()
         for _, s in ipairs(d.samples) do add("    " .. s) end
     end
 
-    self:_ShowCopyText(table.concat(out, "\n"))
+    -- route keys contain a literal "|" (faction separator) which the EditBox eats
+    -- as a colour code (e.g. "|R" swallowed the R) -- show it as "/" instead.
+    local text = table.concat(out, "\n"):gsub("|", "/")
+    self:_ShowCopyText(text)
 end
 
 -- Show a selectable text box (WoW has no clipboard API) -- focused + select-all,
