@@ -14,14 +14,28 @@ local Class = ns.Class
 local ClassModule = Class.new("Class", ns.Module)
 
 local EXPEL_HARM = 322101
+local GRACE_OF_CRANE = 388811   -- passive talent: increases healing taken
 
--- Parse "healing for N" out of the spell description (enUS). Returns a number.
+-- Extra healing-taken multiplier from talents the spell tooltip doesn't fold in.
+-- Grace of the Crane raises all healing taken by a flat % -- read that % from its
+-- own description so it tracks tuning (defaults to 4%). 1.0 when not talented.
+local function healingTakenMultiplier()
+    if not (IsPlayerSpell and IsPlayerSpell(GRACE_OF_CRANE)) then return 1 end
+    local desc = C_Spell and C_Spell.GetSpellDescription and C_Spell.GetSpellDescription(GRACE_OF_CRANE)
+    local pct = tonumber(desc and desc:match("by%s*(%d+)%%")) or 4
+    return 1 + pct / 100
+end
+
+-- Parse "healing for N" out of the spell description (enUS), then apply any
+-- healing-taken talent bonus the tooltip leaves out. Returns a number.
 local function readExpelHarmHeal()
     local desc = C_Spell and C_Spell.GetSpellDescription and C_Spell.GetSpellDescription(EXPEL_HARM)
     if not desc or desc == "" then return nil end
     local n = desc:match("healing for%s*([%d,]+)")
     if not n then return nil end
-    return tonumber((n:gsub(",", "")))
+    local heal = tonumber((n:gsub(",", "")))
+    if not heal then return nil end
+    return math.floor(heal * healingTakenMultiplier() + 0.5)
 end
 
 -- Base cooldown in seconds (static spell data, not the secret live remaining).
