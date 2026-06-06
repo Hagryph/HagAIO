@@ -38,7 +38,6 @@ local CROSS_MARGIN = 75   -- moved this many (linear) yards past the closest app
 -- mid-flight closest-approach guess). Legacy entries: a plain number = DIRECT, an
 -- old { t, est } = EST if est else DIRECT.
 local Q_DIRECT, Q_EST, Q_FLY = 3, 2, 1
-local QNAME = { [Q_DIRECT] = "direct", [Q_EST] = "est", [Q_FLY] = "fly" }
 
 local function storedTime(e)
     if type(e) == "number" then return e end
@@ -84,10 +83,12 @@ function Misc:OnInitialize()
         taxiHooked = true
     end
 
-    -- /hag flights -- dump the route DB + last-flight segment-timing diagnostics
-    if ns.SlashCommand then
-        ns.SlashCommand:Register("flights", function() self:_DumpFlights() end,
-            "dump recorded flight times + last-flight debug")
+    -- One-time cleanup: estimates are no longer persisted (they're computed fresh
+    -- on hover / at take-off), so purge any that were saved before. Safe to remove
+    -- this block after one reload.
+    local flights = self:GetDB().flights
+    for key, e in pairs(flights) do
+        if entryQ(e) == Q_EST then flights[key] = nil end
     end
 end
 
@@ -143,14 +144,6 @@ function Misc:_OnTakeTaxi(slot)
     -- open -- GetNumRoutes/TaxiGetNodeSlot stop working once it closes.
     p.known = (self:_RouteTime(p.route, slot, dst))
     p.path = self:_BuildPath(slot, dst)   -- ordered nodes (+world pos) for timing/landing
-    -- diagnostics for /hag flights
-    local nodes = {}
-    for i, n in ipairs(p.path) do nodes[i] = (n.name or "?") .. (n.world and "" or "[noPos]") end
-    p.diag = {
-        hops = (GetNumRoutes and GetNumRoutes(slot)) or "nil",
-        flightMapID = p.flightMapID or "nil",
-        nodes = nodes, samples = {}, crossings = {}, moved = false,
-    }
     p.phase = "boarding"
     p.boardStart = GetTime()
     self:_StartTicker()
@@ -208,10 +201,12 @@ function Misc:_RouteTime(key, slot, name)
     if entry and entryQ(entry) == Q_DIRECT then
         return storedTime(entry), false   -- a real direct: exact
     end
-    -- otherwise build the best amalgamated estimate (prefers direct sub-segments)
+    -- otherwise compute the best amalgamated estimate FRESH (prefers direct
+    -- sub-segments). Estimates are never persisted -- they would only stale/
+    -- compound real measurements -- so this is computed on every hover/take-off.
     local est = self:_EstimateRoute(slot, name)
-    if est then self:_Store(key, est, true); return est, true end
-    return storedTime(entry), entry ~= nil   -- fall back to stored est/fly (or nil)
+    if est then return est, true end
+    return storedTime(entry), entry ~= nil   -- fall back to a stored fly time (or nil)
 end
 
 -- Ordered nodes the taxi flies through (source ... destination), each tagged with
@@ -318,10 +313,6 @@ function Misc:_RecordCross(idx, when)
     if prevT and a and b then
         local seg = when - prevT
         if seg > 1 then self:_StoreIfNew(routeKey(a, b), seg) end  -- fill-only
-        if p.diag then
-            p.diag.crossings[#p.diag.crossings + 1] =
-                ("%s -> %s = %s"):format(tostring(a), tostring(b), fmt(seg))
-        end
     end
 end
 
@@ -338,123 +329,7 @@ function Misc:_RecordFinalLeg(landed, when)
     if fromName and maxTime and fromName ~= landed then
         local seg = when - maxTime
         if seg > 1 then self:_StoreIfNew(routeKey(fromName, landed), seg) end  -- fill-only
-        if p.diag then
-            p.diag.finalLeg = ("%s -> %s = %s"):format(tostring(fromName), tostring(landed), fmt(seg))
-        end
     end
-end
-
--- Diagnostic sample (~1/sec while flying): player world position, current node
--- being timed, and distance to it. Reveals whether GetPlayerMapPosition updates
--- mid-flight, whether continents match, and whether we close on each node.
-function Misc:_DiagSample()
-    local p = self:_p()
-    if not p.diag then return end
-    p.diagAcc = (p.diagAcc or 0) + 0.1
-    if p.diagAcc < 1 then return end
-    p.diagAcc = 0
-    if #p.diag.samples >= 90 then return end
-
-    local px, py, pc = self:_PlayerWorld()
-    if px and p.diag.lastPx and (math.abs(px - p.diag.lastPx) > 1 or math.abs(py - p.diag.lastPy) > 1) then
-        p.diag.moved = true
-    end
-    p.diag.lastPx, p.diag.lastPy = px, py
-
-    local idx = p.crossIdx
-    local node = p.path and idx and p.path[idx]
-    local dist, why = "?", ""
-    if not px then why = "(playerpos nil)"
-    elseif not (node and node.world) then why = "(node noPos)"
-    elseif pc ~= node.world.c then why = "(diff continent)"
-    else
-        local dx, dy = px - node.world.x, py - node.world.y
-        dist = ("%.0f"):format(math.sqrt(dx * dx + dy * dy))
-    end
-    local elapsed = GetTime() - (p.diag.t0 or GetTime())
-    local pstr = px and ("(%.0f,%.0f)@%s"):format(px, py, tostring(pc)) or "nil"
-    p.diag.samples[#p.diag.samples + 1] =
-        ("%4.0fs idx=%s p=%s d=%s %s"):format(elapsed, tostring(idx), pstr, dist, why)
-end
-
-function Misc:_DumpFlights()
-    local p = self:_p()
-    local out = {}
-    local function add(s) out[#out + 1] = s end
-
-    local flights = self:GetDB().flights or {}
-    add("=== flights DB ===")
-    local n = 0
-    for key, e in pairs(flights) do
-        n = n + 1
-        add(("  %s = %s (%s)"):format(key, fmt(storedTime(e)), QNAME[entryQ(e)] or "?"))
-    end
-    add(("  %d route(s)"):format(n))
-
-    local d = p.diag
-    add("=== last flight ===")
-    if not d then
-        add("  (none this session)")
-    else
-        add(("  GetNumRoutes=%s  flightMapID=%s  positionMoved=%s")
-            :format(tostring(d.hops), tostring(d.flightMapID), tostring(d.moved)))
-        add("  path: " .. table.concat(d.nodes, " -> "))
-        add(("  crossings recorded: %d"):format(#d.crossings))
-        for _, c in ipairs(d.crossings) do add("    " .. c) end
-        if d.finalLeg then add("  finalLeg: " .. d.finalLeg) end
-        add(("  samples (%d):"):format(#d.samples))
-        for _, s in ipairs(d.samples) do add("    " .. s) end
-    end
-
-    -- route keys contain a literal "|" (faction separator) which the EditBox eats
-    -- as a colour code (e.g. "|R" swallowed the R) -- show it as "/" instead.
-    local text = table.concat(out, "\n"):gsub("|", "/")
-    self:_ShowCopyText(text)
-end
-
--- Show a selectable text box (WoW has no clipboard API) -- focused + select-all,
--- so the user just presses Ctrl+C. Reused frame.
-function Misc:_ShowCopyText(text)
-    local p = self:_p()
-    local f = p.copyFrame
-    if not f then
-        f = CreateFrame("Frame", "HagAIOCopyFrame", UIParent, "BackdropTemplate")
-        W.Style(f, "bg1", "borderStrong")
-        f:SetSize(560, 420)
-        f:SetPoint("CENTER")
-        f:SetFrameStrata("DIALOG")
-        f:EnableMouse(true)
-        f:SetMovable(true)
-        f:RegisterForDrag("LeftButton")
-        f:SetScript("OnDragStart", f.StartMoving)
-        f:SetScript("OnDragStop", f.StopMovingOrSizing)
-        tinsert(UISpecialFrames, "HagAIOCopyFrame")  -- ESC closes
-
-        local title = W.Text(f, "Flights debug -- Ctrl+C to copy", "accent", "GameFontNormal")
-        title:SetPoint("TOPLEFT", 14, -12)
-        local close = W.TextButton(f, "Close")
-        close:SetPoint("TOPRIGHT", -12, -10)
-        close:SetScript("OnClick", function() f:Hide() end)
-
-        local scroll = CreateFrame("ScrollFrame", "HagAIOCopyScroll", f, "UIPanelScrollFrameTemplate")
-        scroll:SetPoint("TOPLEFT", 14, -40)
-        scroll:SetPoint("BOTTOMRIGHT", -32, 14)
-
-        local eb = CreateFrame("EditBox", nil, scroll)
-        eb:SetMultiLine(true)
-        eb:SetFontObject("ChatFontNormal")
-        eb:SetWidth(500)
-        eb:SetAutoFocus(false)
-        eb:SetScript("OnEscapePressed", function() f:Hide() end)
-        scroll:SetScrollChild(eb)
-        f.eb = eb
-        p.copyFrame = f
-    end
-    f.eb:SetText(text)
-    f.eb:SetCursorPosition(0)
-    f.eb:HighlightText()
-    f.eb:SetFocus()
-    f:Show()
 end
 
 function Misc:_Tick(dt)
@@ -468,8 +343,6 @@ function Misc:_Tick(dt)
             p.crossIdx = 2
             p.crossMinDist = math.huge
             p.crossMinTime = nil
-            p.diagAcc = 0
-            if p.diag then p.diag.t0 = p.startTime end
             -- p.known was resolved at take-off (recorded time or multi-hop estimate)
             self:_RefreshDisplay()
         elseif GetTime() - (p.boardStart or 0) > 8 then
@@ -495,7 +368,6 @@ function Misc:_Tick(dt)
             if p.acc >= 0.1 then
                 p.acc = 0
                 self:_PollCrossing()     -- closest-approach segment timing
-                self:_DiagSample()
                 self:_RefreshDisplay()
             end
         end
