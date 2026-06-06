@@ -46,6 +46,7 @@ Core/
   SlashCommand.lua         /hagaio (/hag) router with sub-commands
   Compartment.lua          Addon-compartment (minimap hub) button (toggle in General)
   MinimapIcon.lua          Standalone draggable minimap button (no LibDBIcon; default off)
+  Hooks.lua                Removable secure-hook service (hooksecurefunc with Unhook/UnhookAll)
   EditMode.lua             Framework: register a frame for Blizzard Edit Mode (drag + grid/element snap)
   Init.lua                 Core initializer: builds singletons in order + wires startup (ADDON_LOADED → PLAYER_LOGIN)
 UI/
