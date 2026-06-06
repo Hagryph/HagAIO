@@ -75,6 +75,12 @@ function Misc:OnInitialize()
         hooksecurefunc("TakeTaxiNode", function(slot) module:_OnTakeTaxi(slot) end)
         taxiHooked = true
     end
+
+    -- /hag flights -- dump the route DB + last-flight segment-timing diagnostics
+    if ns.SlashCommand then
+        ns.SlashCommand:Register("flights", function() self:_DumpFlights() end,
+            "dump recorded flight times + last-flight debug")
+    end
 end
 
 function Misc:OnEnable()
@@ -129,6 +135,14 @@ function Misc:_OnTakeTaxi(slot)
     -- open -- GetNumRoutes/TaxiGetNodeSlot stop working once it closes.
     p.known = (self:_RouteTime(p.route, slot, dst))
     p.path = self:_BuildPath(slot, dst)   -- ordered nodes (+world pos) for timing/landing
+    -- diagnostics for /hag flights
+    local nodes = {}
+    for i, n in ipairs(p.path) do nodes[i] = (n.name or "?") .. (n.world and "" or "[noPos]") end
+    p.diag = {
+        hops = (GetNumRoutes and GetNumRoutes(slot)) or "nil",
+        flightMapID = p.flightMapID or "nil",
+        nodes = nodes, samples = {}, crossings = {}, moved = false,
+    }
     p.phase = "boarding"
     p.boardStart = GetTime()
     self:_StartTicker()
@@ -293,6 +307,10 @@ function Misc:_RecordCross(idx, when)
     if prevT and a and b then
         local seg = when - prevT
         if seg > 1 then self:_StoreIfNew(routeKey(a, b), seg) end  -- fill-only
+        if p.diag then
+            p.diag.crossings[#p.diag.crossings + 1] =
+                ("%s -> %s = %s"):format(tostring(a), tostring(b), fmt(seg))
+        end
     end
 end
 
@@ -309,7 +327,67 @@ function Misc:_RecordFinalLeg(landed, when)
     if fromName and maxTime and fromName ~= landed then
         local seg = when - maxTime
         if seg > 1 then self:_StoreIfNew(routeKey(fromName, landed), seg) end  -- fill-only
+        if p.diag then
+            p.diag.finalLeg = ("%s -> %s = %s"):format(tostring(fromName), tostring(landed), fmt(seg))
+        end
     end
+end
+
+-- Diagnostic sample (~1/sec while flying): player world position, current node
+-- being timed, and distance to it. Reveals whether GetPlayerMapPosition updates
+-- mid-flight, whether continents match, and whether we close on each node.
+function Misc:_DiagSample()
+    local p = self:_p()
+    if not p.diag then return end
+    p.diagAcc = (p.diagAcc or 0) + 0.1
+    if p.diagAcc < 1 then return end
+    p.diagAcc = 0
+    if #p.diag.samples >= 90 then return end
+
+    local px, py, pc = self:_PlayerWorld()
+    if px and p.diag.lastPx and (math.abs(px - p.diag.lastPx) > 1 or math.abs(py - p.diag.lastPy) > 1) then
+        p.diag.moved = true
+    end
+    p.diag.lastPx, p.diag.lastPy = px, py
+
+    local idx = p.crossIdx
+    local node = p.path and idx and p.path[idx]
+    local dist, why = "?", ""
+    if not px then why = "(playerpos nil)"
+    elseif not (node and node.world) then why = "(node noPos)"
+    elseif pc ~= node.world.c then why = "(diff continent)"
+    else
+        local dx, dy = px - node.world.x, py - node.world.y
+        dist = ("%.0f"):format(math.sqrt(dx * dx + dy * dy))
+    end
+    local elapsed = GetTime() - (p.diag.t0 or GetTime())
+    local pstr = px and ("(%.0f,%.0f)@%s"):format(px, py, tostring(pc)) or "nil"
+    p.diag.samples[#p.diag.samples + 1] =
+        ("%4.0fs idx=%s p=%s d=%s %s"):format(elapsed, tostring(idx), pstr, dist, why)
+end
+
+function Misc:_DumpFlights()
+    local L, p = ns.Log, self:_p()
+    local flights = self:GetDB().flights or {}
+    L.Print("=== flights DB ===")
+    local n = 0
+    for key, e in pairs(flights) do
+        n = n + 1
+        L.Print(("  %s = %s (%s)"):format(key, fmt(storedTime(e)), isEstimate(e) and "est" or "direct"))
+    end
+    L.Print(("  %d route(s)"):format(n))
+
+    local d = p.diag
+    L.Print("=== last flight ===")
+    if not d then L.Print("  (none this session)"); return end
+    L.Print(("  GetNumRoutes=%s  flightMapID=%s  positionMoved=%s")
+        :format(tostring(d.hops), tostring(d.flightMapID), tostring(d.moved)))
+    L.Print("  path: " .. (table.concat(d.nodes, " -> ")))
+    L.Print(("  crossings recorded: %d"):format(#d.crossings))
+    for _, c in ipairs(d.crossings) do L.Print("    " .. c) end
+    if d.finalLeg then L.Print("  finalLeg: " .. d.finalLeg) end
+    L.Print(("  samples (%d):"):format(#d.samples))
+    for _, s in ipairs(d.samples) do L.Print("    " .. s) end
 end
 
 function Misc:_Tick(dt)
@@ -323,6 +401,8 @@ function Misc:_Tick(dt)
             p.crossIdx = 2
             p.crossMinD2 = math.huge
             p.crossMinTime = nil
+            p.diagAcc = 0
+            if p.diag then p.diag.t0 = p.startTime end
             -- p.known was resolved at take-off (recorded time or multi-hop estimate)
             self:_RefreshDisplay()
         elseif GetTime() - (p.boardStart or 0) > 8 then
@@ -348,6 +428,7 @@ function Misc:_Tick(dt)
             if p.acc >= 0.1 then
                 p.acc = 0
                 self:_PollCrossing()     -- closest-approach segment timing
+                self:_DiagSample()
                 self:_RefreshDisplay()
             end
         end
