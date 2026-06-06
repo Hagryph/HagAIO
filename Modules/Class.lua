@@ -70,7 +70,8 @@ local Base = {
         { type = "header", text = "Expel Harm" },
         { type = "toggle", key = "expelHarm", label = "Show heal-threshold marker", default = true,
           desc = "A line on your health bar marking where Expel Harm would heal you to full." },
-        { type = "color", key = "expelColor", label = "Marker colour", default = { 1, 1, 1 } },
+        { type = "color", key = "expelColor", label = "Ready colour", default = { 1, 1, 1 } },
+        { type = "color", key = "expelInactiveColor", label = "On-cooldown colour", default = { 1, 0, 0 } },
     },
     Load = function(self)
         local p = self:_p()
@@ -82,13 +83,13 @@ local Base = {
         self:_Sub("TRAIT_CONFIG_UPDATED",       function() self:_RefreshHeal() end)
         self:_Sub("ACTIVE_COMBAT_CONFIG_CHANGED", function() self:_RefreshHeal() end)
         self:_Sub("UNIT_AURA",                  function(_, u) if u == "player" then self:_RefreshHeal() end end)
-        -- hide the marker while Expel Harm is on cooldown (cast + non-secret booleans)
+        -- recolour the marker (ready <-> on-cooldown) via cast + non-secret booleans
         self:_Sub("UNIT_SPELLCAST_SUCCEEDED",   function(_, u, _, spellID) if u == "player" and spellID == EXPEL_HARM then self:_OnExpelCast() end end)
         self:_Sub("SPELL_UPDATE_COOLDOWN",      function() self:_SyncCooldown() end)
         p.onCooldown = false
         p.expelActive = true
         self:_RefreshHeal()
-        -- start hidden if we (re)loaded while the real cooldown is running
+        -- start in the on-cooldown colour if we (re)loaded while it's running
         local cd = C_Spell and C_Spell.GetSpellCooldown and C_Spell.GetSpellCooldown(EXPEL_HARM)
         if cd and cd.isActive and not cd.isOnGCD then p.onCooldown = true; self:_ScheduleUpdate() end
     end,
@@ -108,7 +109,8 @@ local Brewmaster = {
         { type = "header", text = "Expel Harm" },
         { type = "toggle", key = "expelHarm", label = "Show heal-threshold marker", default = true,
           desc = "A line on your health bar marking where Expel Harm would heal you to full." },
-        { type = "color", key = "expelColor", label = "Marker colour", default = { 1, 1, 1 } },
+        { type = "color", key = "expelColor", label = "Ready colour", default = { 1, 1, 1 } },
+        { type = "color", key = "expelInactiveColor", label = "On-cooldown colour", default = { 1, 0, 0 } },
         { type = "header", text = "Tiger Palm" },
         { type = "toggle", key = "tiger", label = "Show energy marker", default = true,
           desc = "A line on the energy bar at the energy needed for Tiger Palm + Keg Smash." },
@@ -313,7 +315,7 @@ function ClassModule:_UpdateMarker()
     local bar = p.bar  -- the real bar captured from the hook
     if not bar then return end
 
-    if p.onCooldown or not (self:IsEnabled() and p.expelActive and self:GetSetting("expelHarm")) then
+    if not (self:IsEnabled() and p.expelActive and self:GetSetting("expelHarm")) then
         if p.marker then p.marker:Hide() end
         return
     end
@@ -344,7 +346,9 @@ function ClassModule:_UpdateMarker()
     end
     local m = p.marker
 
-    local c = self:GetSetting("expelColor") or { 1, 1, 1 }
+    -- ready -> the normal colour; on cooldown -> the inactive (default red) colour
+    local c = p.onCooldown and (self:GetSetting("expelInactiveColor") or { 1, 0, 0 })
+        or (self:GetSetting("expelColor") or { 1, 1, 1 })
     m:SetColorTexture(c[1], c[2], c[3], 1)
 
     -- Anchor to the fill's right edge (current-health end) + the heal width, so
@@ -357,9 +361,9 @@ function ClassModule:_UpdateMarker()
     m:Show()
 end
 
--- Hide the marker ONLY when you cast Expel Harm, and drive an internal timer
--- (base cooldown) to re-show at the exact moment it ends — immune to GCD/stun,
--- which never hide it.
+-- Flip to the on-cooldown colour ONLY when you cast Expel Harm, and drive an
+-- internal timer (base cooldown) to flip back to ready at the exact moment it ends
+-- — immune to GCD/stun, which never put it on cooldown.
 function ClassModule:_OnExpelCast()
     local p = self:_p()
     p.onCooldown = true
@@ -376,10 +380,10 @@ function ClassModule:_OnExpelCast()
     end
 end
 
--- Backup re-show: if the cooldown ends early (reset / CDR) before the timer, or
--- if we had no timer (reload mid-cooldown). Only ever shows, never hides — a GCD
--- reports isActive=true too, so we must not hide from polling. isActive is a
--- plain boolean (the times are the secret bits).
+-- Backup flip-to-ready: if the cooldown ends early (reset / CDR) before the timer,
+-- or if we had no timer (reload mid-cooldown). Only ever flips back to ready, never
+-- to on-cooldown — a GCD reports isActive=true too, so we must not flip from polling.
+-- isActive is a plain boolean (the times are the secret bits).
 function ClassModule:_SyncCooldown()
     local p = self:_p()
     if not p.onCooldown then return end
