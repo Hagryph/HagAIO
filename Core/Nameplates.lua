@@ -38,4 +38,22 @@ function Nameplates:CountInSpellRange(spellID)
     return n
 end
 
+-- Number of enemy nameplates in range of a harm ITEM (C_Item.IsItemInRange -- the
+-- ONLY way to range-check a fixed yardage in combat; works for items whose data is
+-- cached, no ownership needed). Falls back to `fallbackSpellID` per unit if the
+-- item gives no range data (nil).
+function Nameplates:CountInItemRange(itemID, fallbackSpellID)
+    local itemFn = C_Item and C_Item.IsItemInRange
+    local spellFn = C_Spell and C_Spell.IsSpellInRange
+    local n = 0
+    self:EachEnemy(function(u)
+        local r = itemFn and itemFn(itemID, u)
+        if r == nil and fallbackSpellID and spellFn then
+            r = spellFn(fallbackSpellID, u) == true
+        end
+        if r == true then n = n + 1 end
+    end)
+    return n
+end
+
 ns.Nameplates = Nameplates
