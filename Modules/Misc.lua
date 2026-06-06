@@ -371,27 +371,17 @@ function Misc:_BuildFrame()
     local p = self:_p()
     if p.frame then return end
     local f = W.Panel(UIParent, "panel", "borderStrong")
-    f:SetSize(230, 52)
+    f:SetSize(230, 42)
     f:SetFrameStrata("HIGH")
 
     local dest = W.Text(f, "", "accent", "GameFontNormal")
-    dest:SetPoint("TOPLEFT", 12, -7)
+    dest:SetPoint("TOPLEFT", 12, -8)
     dest:SetPoint("RIGHT", f, "RIGHT", -70, 0)
     dest:SetJustifyH("LEFT")
     dest:SetWordWrap(false)
 
     local time = W.Text(f, "", "text", "GameFontNormal")
-    time:SetPoint("TOPRIGHT", -12, -7)
-
-    -- second row: where an early-landing ("Request Stop") would drop you, and when
-    local nextName = W.Text(f, "", "textDim", "GameFontNormalSmall")
-    nextName:SetPoint("TOPLEFT", dest, "BOTTOMLEFT", 0, -3)
-    nextName:SetPoint("RIGHT", f, "RIGHT", -70, 0)
-    nextName:SetJustifyH("LEFT")
-    nextName:SetWordWrap(false)
-
-    local nextTime = W.Text(f, "", "textDim", "GameFontNormalSmall")
-    nextTime:SetPoint("TOPRIGHT", time, "BOTTOMRIGHT", 0, -3)
+    time:SetPoint("TOPRIGHT", -12, -8)
 
     local bar = CreateFrame("StatusBar", nil, f)
     bar:SetPoint("BOTTOMLEFT", 12, 9)
@@ -406,12 +396,9 @@ function Misc:_BuildFrame()
     bg:SetColorTexture(Theme.Unpack("bg0"))
 
     f.dest, f.time, f.bar = dest, time, bar
-    f.nextName, f.nextTime = nextName, nextTime
     f:Hide()
     p.frame = f
 
-    -- register with the shared Edit Mode framework (drag, snap, persistence).
-    -- The default spot is the boss-mod "critical" position (centre, above mid).
     ns.EditMode:Register(f, {
         key = "flightTimer",
         label = "Flight Timer",
@@ -420,11 +407,20 @@ function Misc:_BuildFrame()
         onEnter = function(frame)
             frame.dest:SetText("Flight Timer")
             frame.time:SetText("1:23")
-            frame.nextName:SetText("Stop: Next Flight Point")
-            frame.nextTime:SetText("0:21")
             frame.bar:SetValue(0.5)
         end,
     })
+
+    -- Hook the Request-Stop / vehicle-leave button (MainMenuBarVehicleLeaveButton).
+    -- When the player clicks it mid-flight, TaxiRequestEarlyLanding() fires and we
+    -- overwrite our destination + countdown to the node they'll actually land at.
+    if not p.stopHooked and MainMenuBarVehicleLeaveButton then
+        p.stopHooked = true
+        local module = self
+        hooksecurefunc(MainMenuBarVehicleLeaveButton, "OnClicked", function()
+            if UnitOnTaxi("player") then module:_OnEarlyLanding() end
+        end)
+    end
 end
 
 -- Display is gated by the module + "in flight" checkbox; recording is not.
@@ -441,29 +437,22 @@ function Misc:_RefreshDisplay()
         p.frame.time:SetText(fmt(p.known - elapsed))
         p.frame.bar:SetValue(math.min(1, elapsed / p.known))
     else
-        p.frame.time:SetText("-:--")  -- not recorded yet
+        p.frame.time:SetText("-:--")
         p.frame.bar:SetValue(0)
     end
-
-    -- next-stop line (where an early landing would drop you)
-    local stopName, stopEta = self:_NextStop()
-    p.frame.nextName:SetText(stopName and ("Stop: " .. stopName) or "")
-    p.frame.nextTime:SetText(stopName and (stopEta and fmt(stopEta) or "-:--") or "")
-
     p.frame:Show()
 end
 
--- Where an early-landing ("Request Stop") would drop you, and the ETA. It's the
--- next flight point ahead -- but if we're basically already on the immediate next
--- node, an early stop overshoots to the following one, so we skip to it. Returns
--- (name, etaSeconds) or nil when the next stop is just the final destination (the
--- main countdown already covers that). eta is nil if the segment time is unknown.
-function Misc:_NextStop()
+-- Called when the player clicks Request Stop (TaxiRequestEarlyLanding). Figures
+-- out the node they'll actually land at and overwrites the display so the
+-- countdown tracks THAT rather than the original final destination.
+function Misc:_OnEarlyLanding()
     local p = self:_p()
-    if not (p.path and p.crossIdx and p.crossTimes and p.crossIdx <= #p.path) then return nil end
+    if not (p.path and p.crossIdx) then return end
     local idx = p.crossIdx
 
-    -- already past the immediate next node's closest approach? -> overshoot to next
+    -- If we're already past the closest approach to the immediate next node, an
+    -- early stop overshoots to the one after it.
     local node = p.path[idx]
     if node and node.world and p.crossMinDist and p.path[idx + 1] then
         local px, py, pc = self:_PlayerWorld()
@@ -472,16 +461,29 @@ function Misc:_NextStop()
             if math.sqrt(dx * dx + dy * dy) > p.crossMinDist + 30 then idx = idx + 1 end
         end
     end
-    if idx >= #p.path then return nil end   -- next stop is the destination itself
 
-    -- ETA: walk segment times forward from the last node we passed
+    local landNode = p.path[idx]
+    if not landNode then return end
+
+    -- Overwrite destination and recompute expected time from last-passed node.
+    p.dst = landNode.name
     local flights = self:GetDB().flights
-    local arr = p.crossTimes[p.crossIdx - 1]
+    local lastPassT = p.crossTimes and p.crossTimes[p.crossIdx - 1]
+    local segTotal = 0
     for i = p.crossIdx, idx do
-        local seg = arr and storedTime(flights[routeKey(p.path[i - 1].name, p.path[i].name)])
-        arr = seg and (arr + seg) or nil
+        local seg = storedTime(flights[routeKey(p.path[i - 1].name, p.path[i].name)])
+        if not seg then segTotal = nil; break end
+        segTotal = segTotal + seg
     end
-    return p.path[idx].name, arr and math.max(0, arr - GetTime())
+    -- p.known = time elapsed since liftoff when we last passed a node + the
+    -- remaining segment time to the early stop.
+    if segTotal and lastPassT then
+        local passedElapsed = lastPassT - (p.startTime or lastPassT)
+        p.known = passedElapsed + segTotal
+    else
+        p.known = nil
+    end
+    self:_RefreshDisplay()
 end
 
 -- ---- map hover tooltip ----------------------------------------------------
