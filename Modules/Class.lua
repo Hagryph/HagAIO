@@ -237,6 +237,43 @@ function ClassModule:OnInitialize()
         end)
         powerHookInstalled = true
     end
+
+    -- /hag aoe -- debug the AoE greying helper
+    if ns.SlashCommand then
+        ns.SlashCommand:Register("aoe", function() self:_DumpAoE() end, "debug the AoE greying helper")
+    end
+end
+
+function ClassModule:_DumpAoE()
+    local L, p = ns.Log, self:_p()
+    L.Print("=== AoE helper ===")
+    L.Print(("enabled=%s setting=%s active=%s combat=%s ticker=%s"):format(
+        tostring(self:IsEnabled()), tostring(self:GetSetting("aoeHelper")),
+        tostring(p.aoeActive), tostring(InCombatLockdown()), tostring(p.aoeTicker ~= nil)))
+
+    local tp  = ns.ActionBars and ns.ActionBars:FindSpell(TIGER_PALM) or {}
+    local sck = ns.ActionBars and ns.ActionBars:FindSpell(SPINNING_CRANE_KICK) or {}
+    L.Print(("Tiger Palm buttons=%d   SCK buttons=%d"):format(#tp, #sck))
+
+    local rangeFn = C_Spell and C_Spell.IsSpellInRange
+    L.Print(("IsSpellInRange present=%s"):format(tostring(rangeFn ~= nil)))
+    if rangeFn then
+        L.Print(("  SCK vs target = %s   TP vs target = %s"):format(
+            tostring(rangeFn(SPINNING_CRANE_KICK, "target")), tostring(rangeFn(TIGER_PALM, "target"))))
+    end
+
+    local plates = C_NamePlate and C_NamePlate.GetNamePlates and C_NamePlate.GetNamePlates() or {}
+    local total, attackable, inRange = #plates, 0, 0
+    for _, plate in ipairs(plates) do
+        local u = plate.namePlateUnitToken or (plate.UnitFrame and plate.UnitFrame.unit)
+        if u and UnitCanAttack("player", u) and not UnitIsDead(u) then
+            attackable = attackable + 1
+            local r = rangeFn and rangeFn(SPINNING_CRANE_KICK, u)
+            if r == true then inRange = inRange + 1 end
+            L.Print(("  %s sck-range=%s"):format(tostring(UnitName(u)), tostring(r)))
+        end
+    end
+    L.Print(("nameplates total=%d attackable=%d inSCKrange=%d"):format(total, attackable, inRange))
 end
 
 function ClassModule:OnEnable()
