@@ -169,6 +169,14 @@ function Misc:_Store(key, seconds, est)
     end
 end
 
+-- Fill-only write for fly-over (closest-approach) segment times: these are less
+-- reliable than a real landing, so they ONLY populate an empty slot and never
+-- overwrite an existing direct OR estimate.
+function Misc:_StoreIfNew(key, seconds)
+    local flights = self:GetDB().flights
+    if flights[key] == nil then flights[key] = { t = seconds, est = false } end
+end
+
 -- Best known time for a route as (seconds, isEstimate). A measured direct wins;
 -- otherwise compute a multi-hop estimate, persist it, and return it.
 function Misc:_RouteTime(key, slot, name)
@@ -284,7 +292,7 @@ function Misc:_RecordCross(idx, when)
     local b = p.path[idx] and p.path[idx].name
     if prevT and a and b then
         local seg = when - prevT
-        if seg > 1 then self:_Store(routeKey(a, b), seg, false) end
+        if seg > 1 then self:_StoreIfNew(routeKey(a, b), seg) end  -- fill-only
     end
 end
 
@@ -300,7 +308,7 @@ function Misc:_RecordFinalLeg(landed, when)
     local fromName = p.path and p.path[maxIdx] and p.path[maxIdx].name
     if fromName and maxTime and fromName ~= landed then
         local seg = when - maxTime
-        if seg > 1 then self:_Store(routeKey(fromName, landed), seg, false) end
+        if seg > 1 then self:_StoreIfNew(routeKey(fromName, landed), seg) end  -- fill-only
     end
 end
 
