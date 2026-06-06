@@ -16,10 +16,9 @@ local KEG_SMASH  = 121253
 local SPINNING_CRANE_KICK = 101546   -- 8-yd PBAoE; efficient at 3+ targets
 local SCK_RADIUS = 8                  -- yards; the Range service resolves the checker
 
--- bar-learning hooks + debug command are global; install once per session
+-- bar-learning hooks are global; install once per session
 local hookInstalled = false
 local powerHookInstalled = false
-local aoeCmdDone = false
 
 -- ---- spell-data helpers ---------------------------------------------------
 -- Grace of the Crane raises all healing taken by a flat % the Expel Harm tooltip
@@ -75,12 +74,6 @@ local Base = {
                 end
             end)
             hookInstalled = true
-        end
-        -- one-time debug commands
-        if not aoeCmdDone and ns.SlashCommand then
-            aoeCmdDone = true
-            ns.SlashCommand:Register("aoe", function() self:_DumpAoE() end, "debug the AoE greying helper")
-            ns.SlashCommand:Register("npdist", function() self:_DumpNpDist() end, "debug enemy nameplate range brackets")
         end
         -- migrate the old cyan marker default to the new white default
         local db = self:GetDB()
@@ -306,62 +299,6 @@ function ClassModule:_ClearAoEGrey()
     local p = self:_p()
     for _, b in ipairs(p.tpButtons or {})  do ns.ActionBars:SetGrey(b, false) end
     for _, b in ipairs(p.sckButtons or {}) do ns.ActionBars:SetGrey(b, false) end
-end
-
-function ClassModule:_DumpAoE()
-    local L, p = ns.Log, self:_p()
-    L.Print("=== AoE helper ===")
-    L.Print(("enabled=%s setting=%s active=%s combat=%s ticker=%s"):format(
-        tostring(self:IsEnabled()), tostring(self:GetSetting("aoeHelper")),
-        tostring(p.aoeActive), tostring(InCombatLockdown()), tostring(p.aoeTicker ~= nil)))
-
-    local tp  = ns.ActionBars and ns.ActionBars:FindSpell(TIGER_PALM) or {}
-    local sck = ns.ActionBars and ns.ActionBars:FindSpell(SPINNING_CRANE_KICK) or {}
-    L.Print(("Tiger Palm buttons=%d   SCK buttons=%d"):format(#tp, #sck))
-
-    local rangeFn = C_Spell and C_Spell.IsSpellInRange
-    L.Print(("IsSpellInRange present=%s"):format(tostring(rangeFn ~= nil)))
-    if rangeFn then
-        L.Print(("  SCK vs target = %s   TP vs target = %s"):format(
-            tostring(rangeFn(SPINNING_CRANE_KICK, "target")), tostring(rangeFn(TIGER_PALM, "target"))))
-    end
-
-    local plates = C_NamePlate and C_NamePlate.GetNamePlates and C_NamePlate.GetNamePlates() or {}
-    local total, attackable, inRange = #plates, 0, 0
-    for _, plate in ipairs(plates) do
-        local u = plate.namePlateUnitToken or (plate.UnitFrame and plate.UnitFrame.unit)
-        if u and UnitCanAttack("player", u) and not UnitIsDead(u) then
-            attackable = attackable + 1
-            local r = rangeFn and rangeFn(TIGER_PALM, u)   -- probe with TP (SCK is nil)
-            if r == true then inRange = inRange + 1 end
-            L.Print(("  %s tp-range=%s"):format(tostring(UnitName(u)), tostring(r)))
-        end
-    end
-    L.Print(("nameplates total=%d attackable=%d inRange(TP)=%d"):format(total, attackable, inRange))
-end
-
--- Per enemy nameplate, show IsSpellInRange for several known-range spells to
--- bracket the distance (there is no native exact-yardage API for enemies).
-function ClassModule:_DumpNpDist()
-    local L = ns.Log
-    local probes = {
-        { TIGER_PALM, "TP~5" },
-        { SPINNING_CRANE_KICK, "SCK(self)" },
-        { 115078, "Paralysis~20" },
-        { 115546, "Provoke~30" },
-        { 117952, "CrackleJade~40" },
-    }
-    L.Print("=== nameplate range brackets ===")
-    local rangeFn = C_Spell and C_Spell.IsSpellInRange
-    if not rangeFn then L.Print("  IsSpellInRange unavailable"); return end
-    ns.Range:EachEnemy(function(u)
-        local parts = {}
-        for _, pr in ipairs(probes) do
-            parts[#parts + 1] = pr[2] .. "=" .. tostring(rangeFn(pr[1], u))
-        end
-        parts[#parts + 1] = "8yd=" .. tostring(ns.Range:UnitInRange(u, 8))
-        L.Print(("  %s: %s"):format(tostring(UnitName(u)), table.concat(parts, "  ")))
-    end)
 end
 
 -- ---- Tiger Palm energy marker (Brewmaster) --------------------------------
