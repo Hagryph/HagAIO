@@ -48,6 +48,8 @@ Core/
   MinimapIcon.lua          Standalone draggable minimap button (no LibDBIcon; default off)
   Hooks.lua                Removable secure-hook service (hooksecurefunc with Unhook/UnhookAll)
   ActionBars.lua           Find action buttons by spell/macro + grey-overlay helper
+  Nameplates.lua           Enemy-nameplate iteration + in-range counts
+  Cooldowns.lua            Secret-safe spell cooldown watcher (cast + base-CD timer)
   EditMode.lua             Framework: register a frame for Blizzard Edit Mode (drag + grid/element snap)
   Init.lua                 Core initializer: builds singletons in order + wires startup (ADDON_LOADED → PLAYER_LOGIN)
 UI/
