@@ -11,7 +11,8 @@ SUBMODULES.MONK = SUBMODULES.MONK or {}
 
 local EXPEL_HARM = 322101
 local GRACE_OF_CRANE = 388811   -- passive talent: increases healing taken
-local GIFT_OF_THE_OX = 124502   -- Brewmaster passive: spawns Healing Spheres
+local GIFT_OF_THE_OX = 124502    -- Brewmaster talent: spheres on damage taken
+local SPIRIT_OF_THE_OX = 400629  -- Brewmaster talent: spheres from Blackout Kick
 local TIGER_PALM = 100780
 local KEG_SMASH  = 121253
 local SPINNING_CRANE_KICK = 101546   -- 8-yd PBAoE; efficient at 3+ targets
@@ -43,12 +44,16 @@ local function readExpelHarmHeal()
     return math.floor(heal * healingTakenMultiplier() + 0.5)
 end
 
--- Per-sphere heal of a Gift of the Ox Healing Sphere (Expel Harm absorbs them).
--- Parse "heals you for N" from Gift of the Ox's description; 0 if not learned.
+-- Per-sphere heal of a Healing Sphere (Expel Harm absorbs them). Only when one of
+-- the sphere-generating talents is chosen (Gift of the Ox / Spirit of the Ox --
+-- both Brewmaster). Parse "heals you for N" from whichever is learned; 0 otherwise.
 -- Apply the same healing-taken bonus the tooltip leaves out (Grace of the Crane).
 local function orbHealAmount()
-    if not (IsPlayerSpell and IsPlayerSpell(GIFT_OF_THE_OX)) then return 0 end
-    local desc = C_Spell and C_Spell.GetSpellDescription and C_Spell.GetSpellDescription(GIFT_OF_THE_OX)
+    if not IsPlayerSpell then return 0 end
+    local id = (IsPlayerSpell(GIFT_OF_THE_OX) and GIFT_OF_THE_OX)
+        or (IsPlayerSpell(SPIRIT_OF_THE_OX) and SPIRIT_OF_THE_OX)
+    if not id then return 0 end
+    local desc = C_Spell and C_Spell.GetSpellDescription and C_Spell.GetSpellDescription(id)
     local n = desc and desc:match("heals you for%s*([%d,]+)")
     if not n then return 0 end
     return math.floor((tonumber((n:gsub(",", ""))) or 0) * healingTakenMultiplier() + 0.5)
@@ -108,10 +113,6 @@ local Base = {
             self:_ScheduleUpdate()
         end)
         self:_RefreshHeal()
-        -- Expel Harm also pulls in Gift of the Ox healing spheres; the absorbable
-        -- count depends on range + procs, so poll it and fold (count x per-sphere
-        -- heal) into the marker for the true heal-to amount.
-        p.orbTicker = C_Timer.NewTicker(0.1, function() self:_PollOrbs() end)
     end,
     Unload = function(self)
         local p = self:_p()
@@ -119,7 +120,6 @@ local Base = {
         p.expelActive = false
         p.onCooldown = false
         if p.expelWatch then ns.Cooldowns:Unwatch(p.expelWatch); p.expelWatch = nil end
-        if p.orbTicker then p.orbTicker:Cancel(); p.orbTicker = nil end
         if p.marker then p.marker:Hide() end
     end,
 }
@@ -167,11 +167,17 @@ local Brewmaster = {
         self:_Sub("PLAYER_LEVEL_UP",      function() self:_ScheduleTiger() end)
         self:_ScheduleTiger()
         self:_LoadAoE()
+
+        -- Brewmaster only: Expel Harm absorbs Gift of the Ox / Spirit of the Ox
+        -- healing spheres. The absorbable count is range/proc dependent, so poll it
+        -- and fold (count x per-sphere heal) into the Expel Harm marker.
+        p.orbTicker = C_Timer.NewTicker(0.1, function() self:_PollOrbs() end)
     end,
     Unload = function(self)
         self:_UnloadAoE()
-        Base.Unload(self)  -- _UnloadSubs() removes every sub, incl. tiger's
         local p = self:_p()
+        if p.orbTicker then p.orbTicker:Cancel(); p.orbTicker = nil end
+        Base.Unload(self)  -- _UnloadSubs() removes every sub, incl. tiger's
         p.tigerActive = false
         if p.tigerMarker then p.tigerMarker:Hide() end
     end,
