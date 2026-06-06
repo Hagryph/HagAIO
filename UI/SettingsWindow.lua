@@ -137,7 +137,9 @@ function SettingsWindow:_Resume()
     if p.reopenKey then
         local key = p.reopenKey
         p.reopenKey = nil
-        self:Show(key)
+        -- defer a frame: on EditMode.Exit, IsEditModeActive() can still be true,
+        -- which would make Show() re-defer and never reopen.
+        C_Timer.After(0, function() self:Show(key) end)
     end
 end
 

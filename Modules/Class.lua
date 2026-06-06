@@ -268,12 +268,12 @@ function ClassModule:_DumpAoE()
         local u = plate.namePlateUnitToken or (plate.UnitFrame and plate.UnitFrame.unit)
         if u and UnitCanAttack("player", u) and not UnitIsDead(u) then
             attackable = attackable + 1
-            local r = rangeFn and rangeFn(SPINNING_CRANE_KICK, u)
+            local r = rangeFn and rangeFn(TIGER_PALM, u)   -- probe with TP (SCK is nil)
             if r == true then inRange = inRange + 1 end
-            L.Print(("  %s sck-range=%s"):format(tostring(UnitName(u)), tostring(r)))
+            L.Print(("  %s tp-range=%s"):format(tostring(UnitName(u)), tostring(r)))
         end
     end
-    L.Print(("nameplates total=%d attackable=%d inSCKrange=%d"):format(total, attackable, inRange))
+    L.Print(("nameplates total=%d attackable=%d inRange(TP)=%d"):format(total, attackable, inRange))
 end
 
 function ClassModule:OnEnable()
@@ -488,14 +488,19 @@ function ClassModule:_RefreshAoE()
     end
 end
 
--- Attackable enemies within Spinning Crane Kick range (8 yd), via nameplates.
-function ClassModule:_CountSCKTargets()
+-- Attackable enemies in melee/AoE range, via nameplates.
+-- NOTE: Spinning Crane Kick is self-cast (no target), so C_Spell.IsSpellInRange(SCK)
+-- returns nil -- you can't range-check it directly. The standard workaround (what
+-- LibRangeCheck does too) is to probe with a TARGETED harm spell of similar range;
+-- Tiger Palm (targeted melee) returns a real boolean, so we count with it. It's a
+-- touch tighter than SCK's 8 yd, which only ever under-counts -- fine for "3+".
+function ClassModule:_CountAoETargets()
     if not (C_NamePlate and C_NamePlate.GetNamePlates and C_Spell and C_Spell.IsSpellInRange) then return 0 end
     local n = 0
     for _, plate in ipairs(C_NamePlate.GetNamePlates()) do
         local u = plate.namePlateUnitToken or (plate.UnitFrame and plate.UnitFrame.unit)
         if u and UnitCanAttack("player", u) and not UnitIsDead(u)
-            and C_Spell.IsSpellInRange(SPINNING_CRANE_KICK, u) == true then
+            and C_Spell.IsSpellInRange(TIGER_PALM, u) == true then
             n = n + 1
         end
     end
@@ -505,7 +510,7 @@ end
 function ClassModule:_UpdateAoE()
     local p = self:_p()
     if not (p.aoeActive and self:GetSetting("aoeHelper")) then return self:_ClearAoEGrey() end
-    local greyTP = self:_CountSCKTargets() >= 3   -- 3+ in range: AoE -> grey Tiger Palm
+    local greyTP = self:_CountAoETargets() >= 3   -- 3+ in range: AoE -> grey Tiger Palm
     for _, b in ipairs(p.tpButtons or {})  do ns.ActionBars:SetGrey(b, greyTP) end
     for _, b in ipairs(p.sckButtons or {}) do ns.ActionBars:SetGrey(b, not greyTP) end
 end
