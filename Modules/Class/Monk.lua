@@ -42,14 +42,6 @@ local function readExpelHarmHeal()
     return math.floor(heal * healingTakenMultiplier() + 0.5)
 end
 
--- Base cooldown in seconds (static spell data, not the secret live remaining).
-local function expelCooldownSeconds()
-    if not GetSpellBaseCooldown then return nil end
-    local ms = GetSpellBaseCooldown(EXPEL_HARM)
-    if not ms or (issecretvalue and issecretvalue(ms)) or ms <= 0 then return nil end
-    return ms / 1000
-end
-
 -- ===========================================================================
 -- Submodules
 -- ===========================================================================
@@ -100,22 +92,22 @@ local Base = {
         self:_Sub("TRAIT_CONFIG_UPDATED",       function() self:_RefreshHeal() end)
         self:_Sub("ACTIVE_COMBAT_CONFIG_CHANGED", function() self:_RefreshHeal() end)
         self:_Sub("UNIT_AURA",                  function(_, u) if u == "player" then self:_RefreshHeal() end end)
-        -- recolour the marker (ready <-> on-cooldown) via cast + non-secret booleans
-        self:_Sub("UNIT_SPELLCAST_SUCCEEDED",   function(_, u, _, spellID) if u == "player" and spellID == EXPEL_HARM then self:_OnExpelCast() end end)
-        self:_Sub("SPELL_UPDATE_COOLDOWN",      function() self:_SyncCooldown() end)
         p.onCooldown = false
         p.expelActive = true
+        -- recolour the marker (ready <-> on-cooldown) via the secret-safe Cooldowns
+        -- service (cast + non-secret booleans + base-cooldown timer).
+        p.expelWatch = ns.Cooldowns:Watch(EXPEL_HARM, function(onCD)
+            p.onCooldown = onCD
+            self:_ScheduleUpdate()
+        end)
         self:_RefreshHeal()
-        -- start in the on-cooldown colour if we (re)loaded while it's running
-        local cd = C_Spell and C_Spell.GetSpellCooldown and C_Spell.GetSpellCooldown(EXPEL_HARM)
-        if cd and cd.isActive and not cd.isOnGCD then p.onCooldown = true; self:_ScheduleUpdate() end
     end,
     Unload = function(self)
         local p = self:_p()
         self:_UnloadSubs()
         p.expelActive = false
         p.onCooldown = false
-        if p.cdTimer then p.cdTimer:Cancel(); p.cdTimer = nil end
+        if p.expelWatch then ns.Cooldowns:Unwatch(p.expelWatch); p.expelWatch = nil end
         if p.marker then p.marker:Hide() end
     end,
 }
@@ -139,7 +131,7 @@ local Brewmaster = {
     OnSettingChanged = function(self)
         self:_ScheduleUpdate()
         self:_ScheduleTiger()
-        self:_RefreshAoE()
+        self:_UpdateAoE()  -- self-gates; clears the greying immediately if toggled off
     end,
     Load = function(self)
         Base.Load(self)
@@ -260,40 +252,12 @@ function ClassModule:_UpdateMarker()
     m:Show()
 end
 
--- Flip to the on-cooldown colour ONLY when you cast Expel Harm, and drive an
--- internal timer (base cooldown) to flip back to ready at the exact moment it ends
--- — immune to GCD/stun, which never put it on cooldown.
-function ClassModule:_OnExpelCast()
-    local p = self:_p()
-    p.onCooldown = true
-    self:_ScheduleUpdate()
-
-    if p.cdTimer then p.cdTimer:Cancel() end
-    local dur = expelCooldownSeconds()
-    if dur then
-        p.cdTimer = C_Timer.NewTimer(dur, function()
-            p.cdTimer = nil
-            p.onCooldown = false
-            self:_ScheduleUpdate()
-        end)
-    end
-end
-
--- Backup flip-to-ready: if the cooldown ends early (reset / CDR) before the timer,
--- or if we had no timer (reload mid-cooldown). Only ever flips back to ready, never
--- to on-cooldown — a GCD reports isActive=true too, so we must not flip from polling.
--- isActive is a plain boolean (the times are the secret bits).
-function ClassModule:_SyncCooldown()
-    local p = self:_p()
-    if not p.onCooldown then return end
-    local info = C_Spell and C_Spell.GetSpellCooldown and C_Spell.GetSpellCooldown(EXPEL_HARM)
-    if info and info.isActive then return end  -- still on cooldown
-    if p.cdTimer then p.cdTimer:Cancel(); p.cdTimer = nil end
-    p.onCooldown = false
-    self:_ScheduleUpdate()
-end
-
 -- ---- AoE helper: grey Tiger Palm vs Spinning Crane Kick by target count -------
+-- NOTE on range: Spinning Crane Kick is self-cast (no target) so
+-- C_Spell.IsSpellInRange(SCK) is nil -- it can't be range-checked. There is also
+-- no 8-yd targetable Monk harm spell and CheckInteractDistance is forbidden in
+-- combat, so we probe with Tiger Palm (targeted melee, ~5 yd) via the Nameplates
+-- service. That's a touch tighter than SCK's 8 yd, which only ever under-counts.
 function ClassModule:_LoadAoE()
     local p = self:_p()
     p.aoeActive = true
@@ -302,11 +266,12 @@ function ClassModule:_LoadAoE()
     self:_Sub("ACTIONBAR_PAGE_CHANGED", function() self:_ScanAoEButtons() end)
     self:_Sub("UPDATE_BONUS_ACTIONBAR", function() self:_ScanAoEButtons() end)
     self:_Sub("PLAYER_ENTERING_WORLD",  function() self:_ScanAoEButtons() end)
-    -- only run the range check in combat
-    self:_Sub("PLAYER_REGEN_DISABLED",  function() self:_RefreshAoE() end)
-    self:_Sub("PLAYER_REGEN_ENABLED",   function() self:_RefreshAoE() end)
     self:_ScanAoEButtons()
-    self:_RefreshAoE()
+    -- one always-on throttled ticker that self-gates on combat + the toggle
+    -- (avoids races starting/stopping it on combat events).
+    if not p.aoeTicker then
+        p.aoeTicker = C_Timer.NewTicker(0.15, function() self:_UpdateAoE() end)
+    end
 end
 
 function ClassModule:_UnloadAoE()
@@ -322,43 +287,12 @@ function ClassModule:_ScanAoEButtons()
     p.sckButtons = ns.ActionBars:FindSpell(SPINNING_CRANE_KICK)
 end
 
--- Start/stop the in-combat ticker based on the toggle + combat state.
-function ClassModule:_RefreshAoE()
-    local p = self:_p()
-    local on = p.aoeActive and self:IsEnabled() and self:GetSetting("aoeHelper") and InCombatLockdown()
-    if on then
-        if not p.aoeTicker then
-            p.aoeTicker = C_Timer.NewTicker(0.15, function() self:_UpdateAoE() end)
-        end
-    else
-        if p.aoeTicker then p.aoeTicker:Cancel(); p.aoeTicker = nil end
-        self:_ClearAoEGrey()
-    end
-end
-
--- Attackable enemies in melee/AoE range, via nameplates.
--- NOTE: Spinning Crane Kick is self-cast (no target), so C_Spell.IsSpellInRange(SCK)
--- returns nil -- you can't range-check it directly. The standard workaround (what
--- LibRangeCheck does too) is to probe with a TARGETED harm spell of similar range;
--- Tiger Palm (targeted melee) returns a real boolean, so we count with it. It's a
--- touch tighter than SCK's 8 yd, which only ever under-counts -- fine for "3+".
-function ClassModule:_CountAoETargets()
-    if not (C_NamePlate and C_NamePlate.GetNamePlates and C_Spell and C_Spell.IsSpellInRange) then return 0 end
-    local n = 0
-    for _, plate in ipairs(C_NamePlate.GetNamePlates()) do
-        local u = plate.namePlateUnitToken or (plate.UnitFrame and plate.UnitFrame.unit)
-        if u and UnitCanAttack("player", u) and not UnitIsDead(u)
-            and C_Spell.IsSpellInRange(TIGER_PALM, u) == true then
-            n = n + 1
-        end
-    end
-    return n
-end
-
 function ClassModule:_UpdateAoE()
     local p = self:_p()
-    if not (p.aoeActive and self:GetSetting("aoeHelper")) then return self:_ClearAoEGrey() end
-    local greyTP = self:_CountAoETargets() >= 3   -- 3+ in range: AoE -> grey Tiger Palm
+    if not (p.aoeActive and self:IsEnabled() and self:GetSetting("aoeHelper") and InCombatLockdown()) then
+        return self:_ClearAoEGrey()
+    end
+    local greyTP = ns.Nameplates:CountInSpellRange(TIGER_PALM) >= 3  -- 3+: AoE -> grey TP
     for _, b in ipairs(p.tpButtons or {})  do ns.ActionBars:SetGrey(b, greyTP) end
     for _, b in ipairs(p.sckButtons or {}) do ns.ActionBars:SetGrey(b, not greyTP) end
 end
