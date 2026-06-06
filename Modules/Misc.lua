@@ -110,6 +110,7 @@ function Misc:_OnTakeTaxi(slot)
     if not (p.src and dst) then return end
 
     p.dst = dst
+    p.dstSlot = slot          -- kept for a multi-hop estimate if unrecorded
     p.route = routeKey(p.src, dst)
     p.phase = "boarding"
     p.boardStart = GetTime()
@@ -139,7 +140,8 @@ function Misc:_Tick(dt)
         if UnitOnTaxi("player") then
             p.phase = "flying"
             p.startTime = GetTime()
-            p.known = self:GetDB().flights[p.route]
+            -- prefer the recorded time; otherwise a summed multi-hop estimate
+            p.known = self:GetDB().flights[p.route] or self:_EstimateRoute(p.dstSlot, p.dst)
             self:_RefreshDisplay()
         elseif GetTime() - (p.boardStart or 0) > 8 then
             self:_StopTicker()  -- never took off (cancelled)
@@ -148,9 +150,16 @@ function Misc:_Tick(dt)
     elseif p.phase == "flying" then
         if not UnitOnTaxi("player") then
             local dur = GetTime() - (p.startTime or GetTime())
-            -- Always overwrite: re-records the route every flight, so changed
-            -- flight-master routes or flight speed are picked up automatically.
-            if dur > 1 then self:GetDB().flights[p.route] = dur end
+            -- Overwrite every flight so changed routes / flight speed are picked
+            -- up automatically -- EXCEPT a time far shorter than an existing
+            -- record, which almost always means an interrupted flight (hearthed
+            -- or ported mid-air); recording that would poison the database.
+            if dur > 1 then
+                local old = self:GetDB().flights[p.route]
+                if not (old and dur < old * 0.6) then
+                    self:GetDB().flights[p.route] = dur
+                end
+            end
             if p.frame then p.frame:Hide() end
             self:_StopTicker()
         else
@@ -251,15 +260,57 @@ function Misc:_HookFlightPins()
     end)
 end
 
+-- Estimate an unrecorded multi-hop route by summing known stop-to-stop segment
+-- times along the path the taxi actually flies (GetNumRoutes / TaxiGetNodeSlot),
+-- the way InFlight does it. Returns seconds, or nil if the chain can't be
+-- completed from known segments. Uses flight-map names to stay key-consistent.
+function Misc:_EstimateRoute(destSlot, destName)
+    if not (destSlot and GetNumRoutes and TaxiGetNodeSlot) then return nil end
+    local p = self:_p()
+    local hops = GetNumRoutes(destSlot)
+    if not hops or hops < 2 then return nil end  -- a direct hop has nothing to sum
+
+    -- ordered node names along the route: [1] = source ... [hops+1] = destination
+    local nodes = { [1] = p.src, [hops + 1] = destName }
+    for h = 2, hops do
+        local s = TaxiGetNodeSlot(destSlot, h, true)
+        nodes[h] = s and p.nodeNames and p.nodeNames[s]
+    end
+    for i = 1, hops + 1 do if not nodes[i] then return nil end end
+
+    -- DP over the ordered path: cheapest known sum from node 1 to each node,
+    -- using any known sub-segment (a direct record between two nodes on the path).
+    local flights = self:GetDB().flights
+    local best = { [1] = 0 }
+    for j = 2, hops + 1 do
+        for i = 1, j - 1 do
+            local seg = best[i] and flights[routeKey(nodes[i], nodes[j])]
+            if seg then
+                local t = best[i] + seg
+                if not best[j] or t < best[j] then best[j] = t end
+            end
+        end
+    end
+    return best[hops + 1]
+end
+
 function Misc:_OnPinEnter(pin)
     if not (self:IsEnabled() and self:GetSetting("showHover")) then return end
     local d = pin.taxiNodeData
     if not d or d.state ~= Enum.FlightPathState.Reachable then return end
     local src = self:_p().src
     if not src then return end
+
     local dur = self:GetDB().flights[routeKey(src, d.name)]
+    local estimated = false
+    if not dur then
+        dur = self:_EstimateRoute(d.slotIndex, d.name)
+        estimated = dur ~= nil
+    end
+
     local r, g, b = Theme.Unpack("accent")
-    GameTooltip:AddLine("Flight: " .. fmt(dur), r, g, b)  -- fmt(nil) -> "-:--"
+    local prefix = estimated and "Flight: ~" or "Flight: "  -- "~" = summed estimate
+    GameTooltip:AddLine(prefix .. fmt(dur), r, g, b)  -- fmt(nil) -> "-:--"
     GameTooltip:Show()
 end
 
