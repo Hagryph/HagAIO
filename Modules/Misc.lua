@@ -470,7 +470,6 @@ function Misc:_OnEarlyLanding()
     if not landNode then return end
 
     -- Overwrite destination and recompute expected time from last-passed node.
-    self:LogInfo("early landing -> " .. tostring(landNode.name))
     p.dst = landNode.name
     local flights = self:GetDB().flights
     local lastPassT = p.crossTimes and p.crossTimes[p.crossIdx - 1]
