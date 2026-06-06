@@ -91,6 +91,17 @@ function Misc:OnEnable()
     p.tokens["MERCHANT_CLOSED"] = bus:On("MERCHANT_CLOSED", function() self:_OnMerchantClosed() end)
     -- build + register the timer so it can be placed in Blizzard's Edit Mode
     self:_BuildFrame()
+
+    -- Redirect the Request-Stop / vehicle-leave button to our early-landing
+    -- target. Via the removable hook service so OnDisable can uninstall it.
+    if MainMenuBarVehicleLeaveButton then
+        local module = self
+        ns.Hooks:Secure(MainMenuBarVehicleLeaveButton, "OnClicked", function()
+            if UnitOnTaxi("player") and module:GetSetting("showInFlight") then
+                module:_OnEarlyLanding()
+            end
+        end, self)
+    end
 end
 
 function Misc:OnDisable()
@@ -98,6 +109,7 @@ function Misc:OnDisable()
     local bus = ns.EventBus
     for event, token in pairs(p.tokens) do bus:Off(event, token) end
     wipe(p.tokens)
+    ns.Hooks:UnhookAll(self)              -- remove the early-landing redirect
     if p.ticker then p.ticker:Hide() end  -- stop OnUpdate ticks while disabled
     if p.frame then p.frame:Hide() end    -- recording keeps running; display stops
     if p.sellBtn then p.sellBtn:Hide() end
@@ -411,21 +423,6 @@ function Misc:_BuildFrame()
             frame.bar:SetValue(0.5)
         end,
     })
-
-    -- Hook the Request-Stop / vehicle-leave button (MainMenuBarVehicleLeaveButton).
-    -- When the player clicks it mid-flight, TaxiRequestEarlyLanding() fires and we
-    -- overwrite our destination + countdown to the node they'll actually land at.
-    if not p.stopHooked and MainMenuBarVehicleLeaveButton then
-        p.stopHooked = true
-        local module = self
-        -- hooksecurefunc cannot be undone; guard inside so disabling the module
-        -- cleanly suppresses the behaviour without needing an unhook.
-        hooksecurefunc(MainMenuBarVehicleLeaveButton, "OnClicked", function()
-            if UnitOnTaxi("player") and module:IsEnabled() and module:GetSetting("showInFlight") then
-                module:_OnEarlyLanding()
-            end
-        end)
-    end
 end
 
 -- Display is gated by the module + "in flight" checkbox; recording is not.

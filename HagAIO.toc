@@ -24,6 +24,7 @@ Core\ModuleManager.lua
 Core\SlashCommand.lua
 Core\Compartment.lua
 Core\MinimapIcon.lua
+Core\Hooks.lua
 Core\EditMode.lua
 UI\Widgets.lua
 UI\SettingsWindow.lua

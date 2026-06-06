@@ -33,6 +33,7 @@ function Initializer:_BuildServices()
     ns.Logger            = ns.Logger:New()           -- uses SavedVars/EventBus at runtime
     ns.ModuleManager     = ns.ModuleManager:New()    -- modules register into this at load
     ns.SlashCommand      = ns.SlashCommand:New()
+    ns.Hooks             = ns.Hooks:New()           -- removable secure-hook service
     ns.EditMode          = ns.EditMode:New()
     ns.Compartment       = ns.Compartment:New()
     ns.MinimapIcon       = ns.MinimapIcon:New()
@@ -41,7 +42,7 @@ function Initializer:_BuildServices()
     -- Build-order list, walked in REVERSE on shutdown.
     self:_p().services = {
         ns.SavedVars, ns.EventBus, ns.Logger, ns.ModuleManager,
-        ns.SlashCommand, ns.EditMode, ns.Compartment, ns.MinimapIcon,
+        ns.SlashCommand, ns.Hooks, ns.EditMode, ns.Compartment, ns.MinimapIcon,
         ns.UI.SettingsWindow,
     }
 end
