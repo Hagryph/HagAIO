@@ -56,7 +56,8 @@ UI/
 Modules/
   Questing.lua             XP/hour tooltip + auto-accept/turn-in quests
   UnitFrames.lua           Player/target health-bar tint by HP% (colour curves)
-  Class.lua                Per-class helpers (Monk: Expel Harm threshold marker)
+  Class.lua                Per-class helpers — generic core (spec submodule registry)
+  Class/Monk.lua           Monk class file (Expel Harm marker, Tiger Palm, AoE helper)
   Misc.lua                 Miscellaneous: flight-path timers, sell junk
 deploy.ps1                 Mirror the addon into the live WoW AddOns folder
 ```
