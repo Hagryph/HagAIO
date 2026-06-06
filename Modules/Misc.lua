@@ -58,6 +58,25 @@ function Misc:OnInitialize()
         hooksecurefunc("TakeTaxiNode", function(slot) module:_OnTakeTaxi(slot) end)
         taxiHooked = true
     end
+
+    -- /hag flights -- dump the recorded route table for debugging
+    if ns.SlashCommand then
+        ns.SlashCommand.Get():Register("flights", function() self:_DumpFlights() end,
+            "list recorded flight times")
+    end
+end
+
+function Misc:_DumpFlights()
+    local flights = self:GetDB().flights or {}
+    local n, src = 0, self:_p().src
+    ns.Log.Print(("flights: faction=%s, last source=%s"):format(
+        tostring(UnitFactionGroup("player")), tostring(src)))
+    for key, dur in pairs(flights) do
+        n = n + 1
+        ns.Log.Print(("  [%s] = %s (%.1fs)"):format(key, fmt(dur), dur))
+    end
+    if n == 0 then ns.Log.Print("  (empty - no routes recorded yet)") end
+    ns.Log.Print(("  %d route(s) total"):format(n))
 end
 
 function Misc:OnEnable()
