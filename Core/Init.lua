@@ -37,6 +37,7 @@ function Initializer:_BuildServices()
     ns.ActionBars        = ns.ActionBars:New()      -- find/annotate action buttons
     ns.Range             = ns.Range:New()           -- enemies-in-range by yardage
     ns.Cooldowns         = ns.Cooldowns:New()       -- secret-safe cooldown watcher
+    ns.Secrets           = ns.Secrets:New()         -- 12.0 Secret Value helpers
     ns.EditMode          = ns.EditMode:New()
     ns.Compartment       = ns.Compartment:New()
     ns.MinimapIcon       = ns.MinimapIcon:New()
@@ -46,7 +47,7 @@ function Initializer:_BuildServices()
     self:_p().services = {
         ns.SavedVars, ns.EventBus, ns.Logger, ns.ModuleManager,
         ns.SlashCommand, ns.Hooks, ns.ActionBars, ns.Range, ns.Cooldowns,
-        ns.EditMode, ns.Compartment, ns.MinimapIcon,
+        ns.Secrets, ns.EditMode, ns.Compartment, ns.MinimapIcon,
         ns.UI.SettingsWindow,
     }
 end

@@ -50,6 +50,7 @@ Core/
   ActionBars.lua           Find action buttons by spell/macro + grey-overlay helper
   Range.lua                Enemies-in-range by yardage (C_Item.IsItemInRange brackets)
   Cooldowns.lua            Secret-safe spell cooldown watcher (cast + base-CD timer)
+  Secrets.lua              12.0 Secret Value helpers (Is / Number / Restricted / Text)
   EditMode.lua             Framework: register a frame for Blizzard Edit Mode (drag + grid/element snap)
   Init.lua                 Core initializer: builds singletons in order + wires startup (ADDON_LOADED → PLAYER_LOGIN)
 UI/
