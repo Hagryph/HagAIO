@@ -36,4 +36,5 @@ Core\Init.lua
 Modules\Questing.lua
 Modules\UnitFrames.lua
 Modules\Class.lua
+Modules\Class\Monk.lua
 Modules\Misc.lua

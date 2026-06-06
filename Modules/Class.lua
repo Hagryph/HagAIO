@@ -2,152 +2,25 @@ local addonName, ns = ...
 local Class = ns.Class
 
 -- Modules/Class.lua
--- Class-specific helpers, organised as submodules: one per specialisation, plus
--- a "no specialisation" submodule, per class. The active submodule is chosen by
--- the player's CURRENT spec and swapped on spec change (the old one is fully
--- unloaded first). We never fall back to the no-spec submodule while a spec is
--- active — no-spec is only for characters with no specialisation.
+-- Generic class-helper module. The real, class-specific logic lives in per-class
+-- files (Modules/Class/<Class>.lua) that add methods to ns.ClassModule and
+-- register their spec submodules into ns.ClassSubmodules[CLASS_TOKEN][specKey],
+-- where specKey is "none" (no specialisation) or a spec index 1-4.
 --
--- Implemented so far: Monk, no specialisation -> Expel Harm heal-threshold
--- marker (a line on the health bar at maxHP - heal).
+-- The active submodule follows the player's CURRENT spec and is swapped on spec
+-- change (the old one fully unloaded first); we never fall back to the no-spec
+-- submodule while a spec is active. A submodule is:
+--   { settings, Load(self), Unload(self), OnSettingChanged(self)? }
+-- with self = the ClassModule instance (state via self:_p(), events via self:_Sub).
 
 local ClassModule = Class.new("Class", ns.Module)
-
-local EXPEL_HARM = 322101
-local GRACE_OF_CRANE = 388811   -- passive talent: increases healing taken
-
--- Extra healing-taken multiplier from talents the spell tooltip doesn't fold in.
--- Grace of the Crane raises all healing taken by a flat % -- read that % from its
--- own description so it tracks tuning (defaults to 4%). 1.0 when not talented.
-local function healingTakenMultiplier()
-    if not (IsPlayerSpell and IsPlayerSpell(GRACE_OF_CRANE)) then return 1 end
-    local desc = C_Spell and C_Spell.GetSpellDescription and C_Spell.GetSpellDescription(GRACE_OF_CRANE)
-    local pct = tonumber(desc and desc:match("by%s*(%d+)%%")) or 4
-    return 1 + pct / 100
-end
-
--- Parse "healing for N" out of the spell description (enUS), then apply any
--- healing-taken talent bonus the tooltip leaves out. Returns a number.
-local function readExpelHarmHeal()
-    local desc = C_Spell and C_Spell.GetSpellDescription and C_Spell.GetSpellDescription(EXPEL_HARM)
-    if not desc or desc == "" then return nil end
-    local n = desc:match("healing for%s*([%d,]+)")
-    if not n then return nil end
-    local heal = tonumber((n:gsub(",", "")))
-    if not heal then return nil end
-    return math.floor(heal * healingTakenMultiplier() + 0.5)
-end
-
--- Base cooldown in seconds (static spell data, not the secret live remaining).
-local function expelCooldownSeconds()
-    if not GetSpellBaseCooldown then return nil end
-    local ms = GetSpellBaseCooldown(EXPEL_HARM)
-    if not ms or (issecretvalue and issecretvalue(ms)) or ms <= 0 then return nil end
-    return ms / 1000
-end
-
--- the bar-learning hooks are global; install once per session
-local hookInstalled = false        -- health bar
-local powerHookInstalled = false   -- power (energy) bar
-
--- Brewmaster energy spells for the Tiger Palm marker
-local TIGER_PALM = 100780
-local KEG_SMASH  = 121253
-local SPINNING_CRANE_KICK = 101546   -- 8-yd PBAoE; efficient at 3+ targets
-
--- ===========================================================================
--- Submodule registry: SUBMODULES[classToken][specKey] where specKey is "none"
--- (no specialisation) or a spec index (1-4). A submodule is:
---   { settings, Load(self), Unload(self) }   (self = ClassModule)
--- Submodules register events via self:_Sub(event, fn) (removed by _UnloadSubs),
--- so one submodule can layer several features.
--- ===========================================================================
-local SUBMODULES = { MONK = {} }
-
--- Base: the no-specialisation submodule, providing the Expel Harm marker that
--- every Monk has. Other specs extend it.
-local Base = {
-    settings = {
-        { type = "header", text = "Expel Harm" },
-        { type = "toggle", key = "expelHarm", label = "Show heal-threshold marker", default = true,
-          desc = "A line on your health bar marking where Expel Harm would heal you to full." },
-        { type = "color", key = "expelColor", label = "Ready colour", default = { 1, 1, 1 } },
-        { type = "color", key = "expelInactiveColor", label = "On-cooldown colour", default = { 1, 0, 0 } },
-    },
-    Load = function(self)
-        local p = self:_p()
-        -- heal scales with spell power, so re-read it on anything that changes it
-        self:_Sub("UNIT_MAXHEALTH",             function(_, u) if u == "player" then self:_ScheduleUpdate() end end)
-        self:_Sub("PLAYER_EQUIPMENT_CHANGED",   function() self:_RefreshHeal() end)
-        self:_Sub("PLAYER_LEVEL_UP",            function() self:_RefreshHeal() end)
-        self:_Sub("SPELLS_CHANGED",             function() self:_RefreshHeal() end)
-        self:_Sub("TRAIT_CONFIG_UPDATED",       function() self:_RefreshHeal() end)
-        self:_Sub("ACTIVE_COMBAT_CONFIG_CHANGED", function() self:_RefreshHeal() end)
-        self:_Sub("UNIT_AURA",                  function(_, u) if u == "player" then self:_RefreshHeal() end end)
-        -- recolour the marker (ready <-> on-cooldown) via cast + non-secret booleans
-        self:_Sub("UNIT_SPELLCAST_SUCCEEDED",   function(_, u, _, spellID) if u == "player" and spellID == EXPEL_HARM then self:_OnExpelCast() end end)
-        self:_Sub("SPELL_UPDATE_COOLDOWN",      function() self:_SyncCooldown() end)
-        p.onCooldown = false
-        p.expelActive = true
-        self:_RefreshHeal()
-        -- start in the on-cooldown colour if we (re)loaded while it's running
-        local cd = C_Spell and C_Spell.GetSpellCooldown and C_Spell.GetSpellCooldown(EXPEL_HARM)
-        if cd and cd.isActive and not cd.isOnGCD then p.onCooldown = true; self:_ScheduleUpdate() end
-    end,
-    Unload = function(self)
-        local p = self:_p()
-        self:_UnloadSubs()
-        p.expelActive = false
-        p.onCooldown = false
-        if p.cdTimer then p.cdTimer:Cancel(); p.cdTimer = nil end
-        if p.marker then p.marker:Hide() end
-    end,
-}
-
--- Brewmaster: extends Base with a Tiger Palm/Keg Smash energy-cost marker.
-local Brewmaster = {
-    settings = {
-        { type = "header", text = "Expel Harm" },
-        { type = "toggle", key = "expelHarm", label = "Show heal-threshold marker", default = true,
-          desc = "A line on your health bar marking where Expel Harm would heal you to full." },
-        { type = "color", key = "expelColor", label = "Ready colour", default = { 1, 1, 1 } },
-        { type = "color", key = "expelInactiveColor", label = "On-cooldown colour", default = { 1, 0, 0 } },
-        { type = "header", text = "Tiger Palm" },
-        { type = "toggle", key = "tiger", label = "Show energy marker", default = true,
-          desc = "A line on the energy bar at the energy needed for Tiger Palm + Keg Smash." },
-        { type = "color", key = "tigerColor", label = "Marker colour", default = { 1, 1, 1 } },
-        { type = "header", text = "AoE helper" },
-        { type = "toggle", key = "aoeHelper", label = "Grey Tiger Palm / Spinning Crane Kick by target count", default = false,
-          desc = "In combat: greys Tiger Palm at 3+ enemies in Spinning Crane Kick range (use SCK), or greys Spinning Crane Kick below 3 (use Tiger Palm)." },
-    },
-    Load = function(self)
-        Base.Load(self)
-        local p = self:_p()
-        p.tigerActive = true
-        self:_Sub("UNIT_MAXPOWER",        function(_, u) if u == "player" then self:_ScheduleTiger() end end)
-        self:_Sub("UNIT_DISPLAYPOWER",    function(_, u) if u == "player" then self:_ScheduleTiger() end end)
-        self:_Sub("TRAIT_CONFIG_UPDATED", function() self:_ScheduleTiger() end)
-        self:_Sub("PLAYER_LEVEL_UP",      function() self:_ScheduleTiger() end)
-        self:_ScheduleTiger()
-        self:_LoadAoE()
-    end,
-    Unload = function(self)
-        self:_UnloadAoE()
-        Base.Unload(self)  -- _UnloadSubs() removes every sub, incl. tiger's
-        local p = self:_p()
-        p.tigerActive = false
-        if p.tigerMarker then p.tigerMarker:Hide() end
-    end,
-}
-
-SUBMODULES.MONK["none"] = Base        -- no specialisation
-SUBMODULES.MONK[1]      = Brewmaster  -- + Tiger Palm energy marker
+ns.ClassModule = ClassModule       -- per-class files add their methods here
+ns.ClassSubmodules = {}            -- [CLASS_TOKEN] = { ["none"] = sub, [1] = sub, ... }
 
 -- "none" when the player has no specialisation, else the spec index (1-4).
 -- A spec-less character returns an out-of-range "initial" index (e.g. 5 for a
--- pre-level-10 Monk, which is > GetNumSpecializations). Note: GetSpecialization-
--- Info returns name=nil even for real specs on 12.0, so we must NOT gate on the
--- name — the in-range index is what's reliable.
+-- pre-level-10 Monk, > GetNumSpecializations). NOTE: GetSpecializationInfo returns
+-- name=nil even for real specs on 12.0, so gate on the in-range index only.
 local function currentSpecKey()
     local idx = GetSpecialization and GetSpecialization()
     if not idx then return "none" end
@@ -156,46 +29,27 @@ local function currentSpecKey()
     return idx
 end
 
--- ---- lifecycle ------------------------------------------------------------
 function ClassModule:_Submodule()
-    local reg = SUBMODULES[self:_p().class]
+    local reg = ns.ClassSubmodules[self:_p().class]
     return reg and reg[currentSpecKey()] or nil
 end
 
+-- ---- lifecycle ------------------------------------------------------------
 function ClassModule:OnInitialize()
     local p = self:_p()
     p.tokens = {}
     p.subTokens = {}
-    p.heal = nil
-    p.marker = nil
-    p.host = nil
-    p.onCooldown = false
-    p.cdTimer = nil
-    p.activeSub = nil
-    p.expelActive = false
-    p.updateScheduled = false
-    p.powerBar = nil
-    p.tigerMarker = nil
-    p.tigerHost = nil
-    p.tigerActive = false
-    p.tigerScheduled = false
-    local className, classToken = UnitClass("player")
+    local _, classToken = UnitClass("player")
     p.class = classToken
 
     -- Settings reflect the submodule for the player's CURRENT spec (at login).
     local sub = self:_Submodule()
     p.description = "Helpers tailored to your class and specialisation."
-    if sub then
-        p.settings = sub.settings or {}
-    else
-        p.settings = { { type = "note", text = "Nothing for your current specialisation yet." } }
-    end
+    p.settings = (sub and sub.settings)
+        or { { type = "note", text = "Nothing for your current specialisation yet." } }
 
-    -- migrate the old cyan marker default to the new white default
+    -- Seed saved-var defaults for the current submodule's settings.
     local db = self:GetDB()
-    if db and type(db.expelColor) == "table" and db.expelColor[1] == 0.29 then
-        db.expelColor = nil
-    end
     if db then
         for _, s in ipairs(p.settings) do
             if s.key ~= nil and s.default ~= nil and db[s.key] == nil then
@@ -209,82 +63,16 @@ function ClassModule:OnInitialize()
             end
         end
     end
-
-    -- Install the bar-learning hook now (even while disabled) so a submodule's
-    -- marker can appear immediately on enable, without a reload.
-    if classToken == "MONK" and not hookInstalled and type(UnitFrameHealthBar_Update) == "function" then
-        local module = self
-        hooksecurefunc("UnitFrameHealthBar_Update", function(statusbar, unit)
-            -- Only the real PlayerFrame bar. Other frames (pet / target-of-target)
-            -- transiently carry unit "player" during vehicle/art swaps; touching
-            -- them here can flush a pending resize that compares secret health.
-            if unit == "player" and statusbar.unitFrame == PlayerFrame then
-                module:_p().bar = statusbar
-                module:_ScheduleUpdate()
-            end
-        end)
-        hookInstalled = true
-    end
-
-    -- power (energy) bar, for the Brewmaster Tiger Palm marker
-    if classToken == "MONK" and not powerHookInstalled and type(UnitFrameManaBar_Update) == "function" then
-        local module = self
-        hooksecurefunc("UnitFrameManaBar_Update", function(statusbar, unit)
-            if unit == "player" and statusbar.unitFrame == PlayerFrame then
-                module:_p().powerBar = statusbar
-                if not module:_p().tigerMarker then module:_ScheduleTiger() end
-            end
-        end)
-        powerHookInstalled = true
-    end
-
-    -- /hag aoe -- debug the AoE greying helper
-    if ns.SlashCommand then
-        ns.SlashCommand:Register("aoe", function() self:_DumpAoE() end, "debug the AoE greying helper")
-    end
-end
-
-function ClassModule:_DumpAoE()
-    local L, p = ns.Log, self:_p()
-    L.Print("=== AoE helper ===")
-    L.Print(("enabled=%s setting=%s active=%s combat=%s ticker=%s"):format(
-        tostring(self:IsEnabled()), tostring(self:GetSetting("aoeHelper")),
-        tostring(p.aoeActive), tostring(InCombatLockdown()), tostring(p.aoeTicker ~= nil)))
-
-    local tp  = ns.ActionBars and ns.ActionBars:FindSpell(TIGER_PALM) or {}
-    local sck = ns.ActionBars and ns.ActionBars:FindSpell(SPINNING_CRANE_KICK) or {}
-    L.Print(("Tiger Palm buttons=%d   SCK buttons=%d"):format(#tp, #sck))
-
-    local rangeFn = C_Spell and C_Spell.IsSpellInRange
-    L.Print(("IsSpellInRange present=%s"):format(tostring(rangeFn ~= nil)))
-    if rangeFn then
-        L.Print(("  SCK vs target = %s   TP vs target = %s"):format(
-            tostring(rangeFn(SPINNING_CRANE_KICK, "target")), tostring(rangeFn(TIGER_PALM, "target"))))
-    end
-
-    local plates = C_NamePlate and C_NamePlate.GetNamePlates and C_NamePlate.GetNamePlates() or {}
-    local total, attackable, inRange = #plates, 0, 0
-    for _, plate in ipairs(plates) do
-        local u = plate.namePlateUnitToken or (plate.UnitFrame and plate.UnitFrame.unit)
-        if u and UnitCanAttack("player", u) and not UnitIsDead(u) then
-            attackable = attackable + 1
-            local r = rangeFn and rangeFn(TIGER_PALM, u)   -- probe with TP (SCK is nil)
-            if r == true then inRange = inRange + 1 end
-            L.Print(("  %s tp-range=%s"):format(tostring(UnitName(u)), tostring(r)))
-        end
-    end
-    L.Print(("nameplates total=%d attackable=%d inRange(TP)=%d"):format(total, attackable, inRange))
 end
 
 function ClassModule:OnEnable()
     local p = self:_p()
-    if not SUBMODULES[p.class] then return end  -- no helpers for this class yet
+    if not ns.ClassSubmodules[p.class] then return end  -- no helpers for this class yet
 
-    -- Module-level: watch for spec changes to swap submodules.
+    -- Watch for spec changes to swap submodules.
     local bus = ns.EventBus
     p.tokens["PLAYER_SPECIALIZATION_CHANGED"] = bus:On("PLAYER_SPECIALIZATION_CHANGED", function() self:_Sync() end)
     p.tokens["PLAYER_ENTERING_WORLD"]         = bus:On("PLAYER_ENTERING_WORLD",         function() self:_Sync() end)
-
     self:_Sync()
 end
 
@@ -295,6 +83,12 @@ function ClassModule:OnDisable()
     wipe(p.tokens)
     if p.activeSub and p.activeSub.Unload then p.activeSub.Unload(self) end
     p.activeSub = nil
+end
+
+-- Forward to the active submodule (the class file decides what to refresh).
+function ClassModule:OnSettingChanged()
+    local sub = self:_p().activeSub
+    if sub and sub.OnSettingChanged then sub.OnSettingChanged(self) end
 end
 
 -- Submodule event subscriptions (a list, so several features can share events).
@@ -322,274 +116,6 @@ function ClassModule:_Sync()
     if p.activeSub and p.activeSub.Unload then p.activeSub.Unload(self) end
     p.activeSub = sub
     if sub and sub.Load then sub.Load(self) end
-end
-
--- ---- Expel Harm marker (used by the Monk no-spec submodule) ----------------
--- Defer + debounce marker updates to the next frame. Reading bar:GetWidth()
--- synchronously inside Blizzard's frame update can flush a pending resize that
--- compares secret max-health on our tainted path; next-frame avoids that.
-function ClassModule:_ScheduleUpdate()
-    local p = self:_p()
-    if p.updateScheduled then return end
-    p.updateScheduled = true
-    C_Timer.After(0, function()
-        p.updateScheduled = false
-        self:_UpdateMarker()
-    end)
-end
-
-function ClassModule:_RefreshHeal()
-    local p = self:_p()
-    p.heal = readExpelHarmHeal()
-    if not p.heal then
-        -- description may not be loaded yet; retry shortly
-        C_Timer.After(1, function()
-            if p.expelActive and not p.heal then
-                p.heal = readExpelHarmHeal()
-                self:_ScheduleUpdate()
-            end
-        end)
-    end
-    self:_ScheduleUpdate()
-end
-
-function ClassModule:_UpdateMarker()
-    local p = self:_p()
-    local bar = p.bar  -- the real bar captured from the hook
-    if not bar then return end
-
-    if not (self:IsEnabled() and p.expelActive and self:GetSetting("expelHarm")) then
-        if p.marker then p.marker:Hide() end
-        return
-    end
-
-    local maxHP = UnitHealthMax("player")
-    if (issecretvalue and issecretvalue(maxHP)) or not maxHP or maxHP <= 0 then
-        if p.marker then p.marker:Hide() end
-        return  -- can't size the offset from a secret/zero max
-    end
-    local heal = p.heal
-    if not heal or heal <= 0 then if p.marker then p.marker:Hide() end return end
-
-    local fill = bar.GetStatusBarTexture and bar:GetStatusBarTexture()
-    if not fill then if p.marker then p.marker:Hide() end return end
-
-    -- Clipping host over the bar so the line never spills past the bar end
-    -- (e.g. near full health, where current + heal exceeds max).
-    if not p.host then
-        local h = CreateFrame("Frame", nil, bar)
-        h:SetAllPoints(bar)
-        if h.SetClipsChildren then h:SetClipsChildren(true) end
-        p.host = h
-    end
-    if not p.marker then
-        local m = p.host:CreateTexture(nil, "OVERLAY", nil, 7)
-        m:SetWidth(1.5)  -- thin line
-        p.marker = m
-    end
-    local m = p.marker
-
-    -- ready -> the normal colour; on cooldown -> the inactive (default red) colour
-    local c = p.onCooldown and (self:GetSetting("expelInactiveColor") or { 1, 0, 0 })
-        or (self:GetSetting("expelColor") or { 1, 1, 1 })
-    m:SetColorTexture(c[1], c[2], c[3], 1)
-
-    -- Anchor to the fill's right edge (current-health end) + the heal width, so
-    -- the line tracks the health bar automatically. We never read the secret
-    -- current health — Blizzard moves the fill texture, the line follows.
-    local offset = (heal / maxHP) * bar:GetWidth()
-    m:ClearAllPoints()
-    m:SetPoint("TOP", fill, "TOPRIGHT", offset, 0)
-    m:SetPoint("BOTTOM", fill, "BOTTOMRIGHT", offset, 0)
-    m:Show()
-end
-
--- Flip to the on-cooldown colour ONLY when you cast Expel Harm, and drive an
--- internal timer (base cooldown) to flip back to ready at the exact moment it ends
--- — immune to GCD/stun, which never put it on cooldown.
-function ClassModule:_OnExpelCast()
-    local p = self:_p()
-    p.onCooldown = true
-    self:_ScheduleUpdate()
-
-    if p.cdTimer then p.cdTimer:Cancel() end
-    local dur = expelCooldownSeconds()
-    if dur then
-        p.cdTimer = C_Timer.NewTimer(dur, function()
-            p.cdTimer = nil
-            p.onCooldown = false
-            self:_ScheduleUpdate()
-        end)
-    end
-end
-
--- Backup flip-to-ready: if the cooldown ends early (reset / CDR) before the timer,
--- or if we had no timer (reload mid-cooldown). Only ever flips back to ready, never
--- to on-cooldown — a GCD reports isActive=true too, so we must not flip from polling.
--- isActive is a plain boolean (the times are the secret bits).
-function ClassModule:_SyncCooldown()
-    local p = self:_p()
-    if not p.onCooldown then return end
-    local info = C_Spell and C_Spell.GetSpellCooldown and C_Spell.GetSpellCooldown(EXPEL_HARM)
-    if info and info.isActive then return end  -- still on cooldown
-    if p.cdTimer then p.cdTimer:Cancel(); p.cdTimer = nil end
-    p.onCooldown = false
-    self:_ScheduleUpdate()
-end
-
-function ClassModule:OnSettingChanged()
-    self:_ScheduleUpdate()
-    self:_ScheduleTiger()
-    self:_RefreshAoE()
-end
-
--- ---- AoE helper: grey Tiger Palm vs Spinning Crane Kick by target count -------
--- Uses the ActionBars service to find every button with each spell, and
--- C_Spell.IsSpellInRange (a non-secret boolean) to count enemies in SCK range.
-function ClassModule:_LoadAoE()
-    local p = self:_p()
-    p.aoeActive = true
-    -- re-find the spell buttons whenever the bars change
-    self:_Sub("ACTIONBAR_SLOT_CHANGED", function() self:_ScanAoEButtons() end)
-    self:_Sub("ACTIONBAR_PAGE_CHANGED", function() self:_ScanAoEButtons() end)
-    self:_Sub("UPDATE_BONUS_ACTIONBAR", function() self:_ScanAoEButtons() end)
-    self:_Sub("PLAYER_ENTERING_WORLD",  function() self:_ScanAoEButtons() end)
-    -- only run the range check in combat
-    self:_Sub("PLAYER_REGEN_DISABLED",  function() self:_RefreshAoE() end)
-    self:_Sub("PLAYER_REGEN_ENABLED",   function() self:_RefreshAoE() end)
-    self:_ScanAoEButtons()
-    self:_RefreshAoE()
-end
-
-function ClassModule:_UnloadAoE()
-    local p = self:_p()
-    if p.aoeTicker then p.aoeTicker:Cancel(); p.aoeTicker = nil end
-    self:_ClearAoEGrey()
-    p.aoeActive = false
-end
-
-function ClassModule:_ScanAoEButtons()
-    local p = self:_p()
-    p.tpButtons  = ns.ActionBars:FindSpell(TIGER_PALM)
-    p.sckButtons = ns.ActionBars:FindSpell(SPINNING_CRANE_KICK)
-end
-
--- Start/stop the in-combat ticker based on the toggle + combat state.
-function ClassModule:_RefreshAoE()
-    local p = self:_p()
-    local on = p.aoeActive and self:IsEnabled() and self:GetSetting("aoeHelper") and InCombatLockdown()
-    if on then
-        if not p.aoeTicker then
-            p.aoeTicker = C_Timer.NewTicker(0.15, function() self:_UpdateAoE() end)
-        end
-    else
-        if p.aoeTicker then p.aoeTicker:Cancel(); p.aoeTicker = nil end
-        self:_ClearAoEGrey()
-    end
-end
-
--- Attackable enemies in melee/AoE range, via nameplates.
--- NOTE: Spinning Crane Kick is self-cast (no target), so C_Spell.IsSpellInRange(SCK)
--- returns nil -- you can't range-check it directly. The standard workaround (what
--- LibRangeCheck does too) is to probe with a TARGETED harm spell of similar range;
--- Tiger Palm (targeted melee) returns a real boolean, so we count with it. It's a
--- touch tighter than SCK's 8 yd, which only ever under-counts -- fine for "3+".
-function ClassModule:_CountAoETargets()
-    if not (C_NamePlate and C_NamePlate.GetNamePlates and C_Spell and C_Spell.IsSpellInRange) then return 0 end
-    local n = 0
-    for _, plate in ipairs(C_NamePlate.GetNamePlates()) do
-        local u = plate.namePlateUnitToken or (plate.UnitFrame and plate.UnitFrame.unit)
-        if u and UnitCanAttack("player", u) and not UnitIsDead(u)
-            and C_Spell.IsSpellInRange(TIGER_PALM, u) == true then
-            n = n + 1
-        end
-    end
-    return n
-end
-
-function ClassModule:_UpdateAoE()
-    local p = self:_p()
-    if not (p.aoeActive and self:GetSetting("aoeHelper")) then return self:_ClearAoEGrey() end
-    local greyTP = self:_CountAoETargets() >= 3   -- 3+ in range: AoE -> grey Tiger Palm
-    for _, b in ipairs(p.tpButtons or {})  do ns.ActionBars:SetGrey(b, greyTP) end
-    for _, b in ipairs(p.sckButtons or {}) do ns.ActionBars:SetGrey(b, not greyTP) end
-end
-
-function ClassModule:_ClearAoEGrey()
-    local p = self:_p()
-    for _, b in ipairs(p.tpButtons or {})  do ns.ActionBars:SetGrey(b, false) end
-    for _, b in ipairs(p.sckButtons or {}) do ns.ActionBars:SetGrey(b, false) end
-end
-
--- ---- Tiger Palm energy marker (Brewmaster) --------------------------------
--- Combined energy cost of Tiger Palm + Keg Smash (non-secret spell data).
-function ClassModule:_TigerCost()
-    local energy = Enum and Enum.PowerType and Enum.PowerType.Energy
-    local total = 0
-    for _, id in ipairs({ TIGER_PALM, KEG_SMASH }) do
-        local costs = C_Spell and C_Spell.GetSpellPowerCost and C_Spell.GetSpellPowerCost(id)
-        if costs then
-            for _, c in ipairs(costs) do
-                if c.type == energy and c.cost and not (issecretvalue and issecretvalue(c.cost)) then
-                    total = total + c.cost
-                end
-            end
-        end
-    end
-    return total
-end
-
-function ClassModule:_ScheduleTiger()
-    local p = self:_p()
-    if p.tigerScheduled then return end
-    p.tigerScheduled = true
-    C_Timer.After(0, function() p.tigerScheduled = false; self:_UpdateTiger() end)
-end
-
--- A fixed line on the energy bar at (Tiger Palm + Keg Smash) energy. When your
--- energy fill reaches it you can afford both.
-function ClassModule:_UpdateTiger()
-    local p = self:_p()
-    local bar = p.powerBar
-    if not bar then return end
-
-    if not (self:IsEnabled() and p.tigerActive and self:GetSetting("tiger")) then
-        if p.tigerMarker then p.tigerMarker:Hide() end
-        return
-    end
-
-    local energy = Enum and Enum.PowerType and Enum.PowerType.Energy
-    local maxE = UnitPowerMax("player", energy)
-    if (issecretvalue and issecretvalue(maxE)) or not maxE or maxE <= 0 then
-        if p.tigerMarker then p.tigerMarker:Hide() end
-        return
-    end
-    local cost = self:_TigerCost()
-    if cost <= 0 then if p.tigerMarker then p.tigerMarker:Hide() end return end
-
-    if not p.tigerHost then
-        local h = CreateFrame("Frame", nil, bar)
-        h:SetAllPoints(bar)
-        if h.SetClipsChildren then h:SetClipsChildren(true) end
-        p.tigerHost = h
-    end
-    if not p.tigerMarker then
-        local m = p.tigerHost:CreateTexture(nil, "OVERLAY", nil, 7)
-        m:SetWidth(1.5)
-        p.tigerMarker = m
-    end
-    local m = p.tigerMarker
-
-    local c = self:GetSetting("tigerColor") or { 1, 1, 1 }
-    m:SetColorTexture(c[1], c[2], c[3], 1)
-
-    local frac = cost / maxE
-    if frac < 0 then frac = 0 elseif frac > 1 then frac = 1 end
-    local x = frac * bar:GetWidth()
-    m:ClearAllPoints()
-    m:SetPoint("TOP", bar, "TOPLEFT", x, 0)
-    m:SetPoint("BOTTOM", bar, "BOTTOMLEFT", x, 0)
-    m:Show()
 end
 
 -- ---- registration ---------------------------------------------------------
