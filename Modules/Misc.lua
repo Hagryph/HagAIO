@@ -30,17 +30,25 @@ local function routeKey(a, b)
     return faction .. "|" .. a .. " <-> " .. b
 end
 
--- A flight DB entry is { t = seconds, est = bool }; legacy entries are a plain
--- number, always read as a measured direct time.
 local ARRIVE_YARDS = 40    -- within this of a path node = we landed there
 local CROSS_MARGIN2 = 75 * 75   -- moved this many yards past the closest approach = passed it
+
+-- A flight DB entry is { t = seconds, q = quality }. Quality ranks the source's
+-- precision: DIRECT (a real landing) > EST (an amalgamated estimate) > FLY (a
+-- mid-flight closest-approach guess). Legacy entries: a plain number = DIRECT, an
+-- old { t, est } = EST if est else DIRECT.
+local Q_DIRECT, Q_EST, Q_FLY = 3, 2, 1
+local QNAME = { [Q_DIRECT] = "direct", [Q_EST] = "est", [Q_FLY] = "fly" }
 
 local function storedTime(e)
     if type(e) == "number" then return e end
     return e and e.t
 end
-local function isEstimate(e)
-    return type(e) == "table" and e.est == true
+local function entryQ(e)
+    if e == nil then return nil end
+    if type(e) ~= "table" then return Q_DIRECT end   -- legacy number
+    if e.q then return e.q end
+    return e.est and Q_EST or Q_DIRECT               -- migrate old est flag
 end
 
 -- Sell every sellable grey (Poor, quality 0) item in the bags. Returns count.
@@ -165,42 +173,45 @@ function Misc:_StopTicker()
     p.phase = nil
 end
 
--- Write rules for the flight DB:
---   direct over estimate -> always replaces it (even < 5s);
---   everything else (direct over direct, estimate over direct, estimate over
---                    estimate) -> only when the time changed by >= 5s.
--- The entry's `est` flag tracks the current value's source.
+-- Write rules for direct (landing) and estimate writes:
+--   a real DIRECT always replaces a lower-quality entry (even < 5s);
+--   otherwise (same quality, or estimate vs direct) -> only when the time
+--   changed by >= 5s. The entry's quality tracks the new value's source.
 function Misc:_Store(key, seconds, est)
     local flights = self:GetDB().flights
+    local q = est and Q_EST or Q_DIRECT
     local cur = flights[key]
-    if type(cur) == "number" then cur = { t = cur, est = false }; flights[key] = cur end
-    if not cur then
-        flights[key] = { t = seconds, est = est and true or false }
-    elseif (not est) and cur.est then
-        cur.t, cur.est = seconds, false                      -- direct always beats an estimate
+    if cur == nil then
+        flights[key] = { t = seconds, q = q }
+        return
+    end
+    local curQ = entryQ(cur)
+    if type(cur) ~= "table" then cur = { t = storedTime(cur), q = curQ }; flights[key] = cur end
+    if q == Q_DIRECT and curQ < Q_DIRECT then
+        cur.t, cur.q = seconds, q                       -- a real direct beats lower quality
     elseif math.abs(seconds - cur.t) >= 5 then
-        cur.t, cur.est = seconds, est and true or false      -- +/-5s rule for everything else
+        cur.t, cur.q = seconds, q                        -- +/-5s rule otherwise
     end
 end
 
--- Fill-only write for fly-over (closest-approach) segment times: these are less
--- reliable than a real landing, so they ONLY populate an empty slot and never
--- overwrite an existing direct OR estimate.
+-- Fill-only write for fly-over (closest-approach) segment times: the lowest
+-- quality tier, so it ONLY populates an empty slot and never overwrites anything.
 function Misc:_StoreIfNew(key, seconds)
     local flights = self:GetDB().flights
-    if flights[key] == nil then flights[key] = { t = seconds, est = false } end
+    if flights[key] == nil then flights[key] = { t = seconds, q = Q_FLY } end
 end
 
 -- Best known time for a route as (seconds, isEstimate). A measured direct wins;
 -- otherwise compute a multi-hop estimate, persist it, and return it.
 function Misc:_RouteTime(key, slot, name)
     local entry = self:GetDB().flights[key]
-    if entry and not isEstimate(entry) then
-        return storedTime(entry), false
+    if entry and entryQ(entry) == Q_DIRECT then
+        return storedTime(entry), false   -- a real direct: exact
     end
+    -- otherwise build the best amalgamated estimate (prefers direct sub-segments)
     local est = self:_EstimateRoute(slot, name)
     if est then self:_Store(key, est, true); return est, true end
-    return storedTime(entry), entry ~= nil   -- stored estimate (or nil -> "-:--")
+    return storedTime(entry), entry ~= nil   -- fall back to stored est/fly (or nil)
 end
 
 -- Ordered nodes the taxi flies through (source ... destination), each tagged with
@@ -373,7 +384,7 @@ function Misc:_DumpFlights()
     local n = 0
     for key, e in pairs(flights) do
         n = n + 1
-        L.Print(("  %s = %s (%s)"):format(key, fmt(storedTime(e)), isEstimate(e) and "est" or "direct"))
+        L.Print(("  %s = %s (%s)"):format(key, fmt(storedTime(e)), QNAME[entryQ(e)] or "?"))
     end
     L.Print(("  %d route(s)"):format(n))
 
@@ -552,20 +563,29 @@ function Misc:_EstimateRoute(destSlot, destName)
     end
     for i = 1, hops + 1 do if not nodes[i] then return nil end end
 
-    -- DP over the ordered path: cheapest known sum from node 1 to each node,
-    -- using whatever sub-segment is available (direct OR a stored estimate).
+    -- DP over the ordered path: reach node 1 -> each node using whatever known
+    -- sub-segments exist, but MINIMISE total imprecision (penalty per segment:
+    -- direct 0, estimate 1, fly-over 2). This takes the most precise parts where
+    -- they exist and fills the gaps with lower-quality data -- so a single
+    -- fly-over spanning the whole route loses to a chain of directs covering it.
     local flights = self:GetDB().flights
-    local best = { [1] = 0 }
+    local pen, time = { [1] = 0 }, { [1] = 0 }
     for j = 2, hops + 1 do
         for i = 1, j - 1 do
-            local seg = best[i] and storedTime(flights[routeKey(nodes[i], nodes[j])])
-            if seg then
-                local t = best[i] + seg
-                if not best[j] or t < best[j] then best[j] = t end
+            if pen[i] ~= nil then
+                local e = flights[routeKey(nodes[i], nodes[j])]
+                local q = entryQ(e)
+                if q then
+                    local cand = pen[i] + (Q_DIRECT - q)   -- 0 / 1 / 2 per segment
+                    if pen[j] == nil or cand < pen[j] then
+                        pen[j] = cand
+                        time[j] = time[i] + storedTime(e)
+                    end
+                end
             end
         end
     end
-    return best[hops + 1]
+    return time[hops + 1]   -- nil if the chain can't be completed
 end
 
 function Misc:_OnPinEnter(pin)
