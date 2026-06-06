@@ -32,6 +32,7 @@ end
 
 local ARRIVE_YARDS = 40    -- within this of a path node = we landed there
 local CROSS_MARGIN = 75   -- moved this many (linear) yards past the closest approach = passed it
+local LAND_LEAD = 60      -- too close to a node to land there -> an early stop overshoots it
 
 -- A flight DB entry is { t = seconds, q = quality }. Only measurements are stored:
 -- DIRECT (a real landing) > FLY (a mid-flight closest-approach guess). Estimates
@@ -151,6 +152,7 @@ function Misc:_OnTakeTaxi(slot)
     -- open -- GetNumRoutes/TaxiGetNodeSlot stop working once it closes.
     p.known = (self:_RouteTime(p.route, slot, dst))
     p.path = self:_BuildPath(slot, dst)   -- ordered nodes (+world pos) for timing/landing
+    p.earlyLanding = false                -- reset any prior Request-Stop redirect
     p.phase = "boarding"
     p.boardStart = GetTime()
     self:_StartTicker()
@@ -171,6 +173,7 @@ function Misc:_StopTicker()
     local p = self:_p()
     if p.ticker then p.ticker:Hide() end
     p.phase = nil
+    p.earlyLanding = false
 end
 
 -- A measured DIRECT (landing) write:
@@ -375,7 +378,8 @@ function Misc:_Tick(dt)
             p.acc = (p.acc or 0) + dt
             if p.acc >= 0.1 then
                 p.acc = 0
-                self:_PollCrossing()     -- closest-approach segment timing
+                self:_PollCrossing()       -- closest-approach segment timing
+                self:_UpdateEarlyTarget()  -- re-track an early-stop target as we go
                 self:_RefreshDisplay()
             end
         end
@@ -447,30 +451,43 @@ function Misc:_RefreshDisplay()
     p.frame:Show()
 end
 
--- Called when the player clicks Request Stop (TaxiRequestEarlyLanding). Figures
--- out the node they'll actually land at and overwrites the display so the
--- countdown tracks THAT rather than the original final destination.
+-- The player clicked Request Stop (TaxiRequestEarlyLanding). Enter early-landing
+-- mode; the target is then re-evaluated every tick (the flight may pass the node
+-- we guessed and continue to the next), until we actually land.
 function Misc:_OnEarlyLanding()
     local p = self:_p()
     if not (p.path and p.crossIdx) then return end
+    p.earlyLanding = true
+    self:_UpdateEarlyTarget()
+    self:_RefreshDisplay()
+end
+
+-- Pick the node an early stop will actually drop us at, and overwrite the
+-- destination + countdown. The stop overshoots the immediate next node if we're
+-- already past its closest approach OR too close to it to decelerate and land
+-- (LAND_LEAD). Re-runs each tick so it self-corrects as we pass un-landable nodes.
+function Misc:_UpdateEarlyTarget()
+    local p = self:_p()
+    if not (p.earlyLanding and p.path and p.crossIdx) then return end
     local idx = p.crossIdx
 
-    -- If we're already past the closest approach to the immediate next node, an
-    -- early stop overshoots to the one after it.
     local node = p.path[idx]
-    if node and node.world and p.crossMinDist and p.path[idx + 1] then
+    if node and node.world and p.path[idx + 1] then
         local px, py, pc = self:_PlayerWorld()
         if px and pc == node.world.c then
             local dx, dy = px - node.world.x, py - node.world.y
-            if math.sqrt(dx * dx + dy * dy) > p.crossMinDist + 30 then idx = idx + 1 end
+            local dist = math.sqrt(dx * dx + dy * dy)
+            if dist < LAND_LEAD or (p.crossMinDist and dist > p.crossMinDist + 30) then
+                idx = idx + 1
+            end
         end
     end
 
     local landNode = p.path[idx]
     if not landNode then return end
-
-    -- Overwrite destination and recompute expected time from last-passed node.
     p.dst = landNode.name
+
+    -- p.known = elapsed at the last node we passed + the segment time to the stop.
     local flights = self:GetDB().flights
     local lastPassT = p.crossTimes and p.crossTimes[p.crossIdx - 1]
     local segTotal = 0
@@ -479,15 +496,11 @@ function Misc:_OnEarlyLanding()
         if not seg then segTotal = nil; break end
         segTotal = segTotal + seg
     end
-    -- p.known = time elapsed since liftoff when we last passed a node + the
-    -- remaining segment time to the early stop.
     if segTotal and lastPassT then
-        local passedElapsed = lastPassT - (p.startTime or lastPassT)
-        p.known = passedElapsed + segTotal
+        p.known = (lastPassT - (p.startTime or lastPassT)) + segTotal
     else
         p.known = nil
     end
-    self:_RefreshDisplay()
 end
 
 -- ---- map hover tooltip ----------------------------------------------------
