@@ -26,7 +26,7 @@ Core\Compartment.lua
 Core\MinimapIcon.lua
 Core\Hooks.lua
 Core\ActionBars.lua
-Core\Nameplates.lua
+Core\Range.lua
 Core\Cooldowns.lua
 Core\EditMode.lua
 UI\Widgets.lua

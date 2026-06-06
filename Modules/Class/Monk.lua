@@ -14,9 +14,7 @@ local GRACE_OF_CRANE = 388811   -- passive talent: increases healing taken
 local TIGER_PALM = 100780
 local KEG_SMASH  = 121253
 local SPINNING_CRANE_KICK = 101546   -- 8-yd PBAoE; efficient at 3+ targets
--- 8-yd harm item (from LibRangeCheck's 8yd bracket) -- C_Item.IsItemInRange gives a
--- real 8-yd check in combat, which IsSpellInRange can't for self-cast SCK.
-local RANGE_ITEM_8YD = 33278   -- Burning Torch
+local SCK_RADIUS = 8                  -- yards; the Range service resolves the checker
 
 -- bar-learning hooks + debug command are global; install once per session
 local hookInstalled = false
@@ -265,8 +263,8 @@ end
 function ClassModule:_LoadAoE()
     local p = self:_p()
     p.aoeActive = true
-    -- cache the 8-yd range item's data so C_Item.IsItemInRange works
-    if C_Item and C_Item.RequestLoadItemDataByID then C_Item.RequestLoadItemDataByID(RANGE_ITEM_8YD) end
+    -- prime the 8-yd checker (the Range service caches the item data)
+    ns.Range:UnitInRange("player", SCK_RADIUS)
     -- re-find the spell buttons whenever the bars change
     self:_Sub("ACTIONBAR_SLOT_CHANGED", function() self:_ScanAoEButtons() end)
     self:_Sub("ACTIONBAR_PAGE_CHANGED", function() self:_ScanAoEButtons() end)
@@ -298,8 +296,8 @@ function ClassModule:_UpdateAoE()
     if not (p.aoeActive and self:IsEnabled() and self:GetSetting("aoeHelper") and InCombatLockdown()) then
         return self:_ClearAoEGrey()
     end
-    -- 8-yd item range (real SCK radius), falling back to Tiger Palm ~5yd
-    local greyTP = ns.Nameplates:CountInItemRange(RANGE_ITEM_8YD, TIGER_PALM) >= 3  -- 3+: AoE -> grey TP
+    -- enemies within SCK's 8 yd (Range uses the item check; TP ~5yd is the fallback)
+    local greyTP = ns.Range:CountEnemies(SCK_RADIUS, TIGER_PALM) >= 3  -- 3+: AoE -> grey TP
     for _, b in ipairs(p.tpButtons or {})  do ns.ActionBars:SetGrey(b, greyTP) end
     for _, b in ipairs(p.sckButtons or {}) do ns.ActionBars:SetGrey(b, not greyTP) end
 end
@@ -356,16 +354,12 @@ function ClassModule:_DumpNpDist()
     L.Print("=== nameplate range brackets ===")
     local rangeFn = C_Spell and C_Spell.IsSpellInRange
     if not rangeFn then L.Print("  IsSpellInRange unavailable"); return end
-    local itemFn = C_Item and C_Item.IsItemInRange
-    local itemName = (C_Item and C_Item.GetItemNameByID and C_Item.GetItemNameByID(RANGE_ITEM_8YD)) or RANGE_ITEM_8YD
-    L.Print(("  8yd item probe: %s (cached=%s)"):format(tostring(itemName),
-        tostring(C_Item and C_Item.GetItemInfo and C_Item.GetItemInfo(RANGE_ITEM_8YD) ~= nil)))
-    ns.Nameplates:EachEnemy(function(u)
+    ns.Range:EachEnemy(function(u)
         local parts = {}
         for _, pr in ipairs(probes) do
             parts[#parts + 1] = pr[2] .. "=" .. tostring(rangeFn(pr[1], u))
         end
-        parts[#parts + 1] = "ITEM8=" .. tostring(itemFn and itemFn(RANGE_ITEM_8YD, u))
+        parts[#parts + 1] = "8yd=" .. tostring(ns.Range:UnitInRange(u, 8))
         L.Print(("  %s: %s"):format(tostring(UnitName(u)), table.concat(parts, "  ")))
     end)
 end

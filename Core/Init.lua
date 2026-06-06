@@ -35,7 +35,7 @@ function Initializer:_BuildServices()
     ns.SlashCommand      = ns.SlashCommand:New()
     ns.Hooks             = ns.Hooks:New()           -- removable secure-hook service
     ns.ActionBars        = ns.ActionBars:New()      -- find/annotate action buttons
-    ns.Nameplates        = ns.Nameplates:New()      -- enemy nameplate range counts
+    ns.Range             = ns.Range:New()           -- enemies-in-range by yardage
     ns.Cooldowns         = ns.Cooldowns:New()       -- secret-safe cooldown watcher
     ns.EditMode          = ns.EditMode:New()
     ns.Compartment       = ns.Compartment:New()
@@ -45,7 +45,7 @@ function Initializer:_BuildServices()
     -- Build-order list, walked in REVERSE on shutdown.
     self:_p().services = {
         ns.SavedVars, ns.EventBus, ns.Logger, ns.ModuleManager,
-        ns.SlashCommand, ns.Hooks, ns.ActionBars, ns.Nameplates, ns.Cooldowns,
+        ns.SlashCommand, ns.Hooks, ns.ActionBars, ns.Range, ns.Cooldowns,
         ns.EditMode, ns.Compartment, ns.MinimapIcon,
         ns.UI.SettingsWindow,
     }
