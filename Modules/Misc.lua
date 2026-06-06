@@ -451,39 +451,40 @@ function Misc:_RefreshDisplay()
     p.frame:Show()
 end
 
--- The player clicked Request Stop (TaxiRequestEarlyLanding). Enter early-landing
--- mode; the target is then re-evaluated every tick (the flight may pass the node
--- we guessed and continue to the next), until we actually land.
+-- The player clicked Request Stop (TaxiRequestEarlyLanding). Commit an early-stop
+-- target: the next node ahead, or the one after if we're too close to it to
+-- decelerate and land (on top of a node). It then re-tracks every tick.
 function Misc:_OnEarlyLanding()
     local p = self:_p()
     if not (p.path and p.crossIdx) then return end
     p.earlyLanding = true
-    self:_UpdateEarlyTarget()
-    self:_RefreshDisplay()
-end
 
--- Pick the node an early stop will actually drop us at, and overwrite the
--- destination + countdown. The stop overshoots the immediate next node if we're
--- already past its closest approach OR too close to it to decelerate and land
--- (LAND_LEAD). Re-runs each tick so it self-corrects as we pass un-landable nodes.
-function Misc:_UpdateEarlyTarget()
-    local p = self:_p()
-    if not (p.earlyLanding and p.path and p.crossIdx) then return end
     local idx = p.crossIdx
-
     local node = p.path[idx]
     if node and node.world and p.path[idx + 1] then
         local px, py, pc = self:_PlayerWorld()
         if px and pc == node.world.c then
             local dx, dy = px - node.world.x, py - node.world.y
-            local dist = math.sqrt(dx * dx + dy * dy)
-            if dist < LAND_LEAD or (p.crossMinDist and dist > p.crossMinDist + 30) then
-                idx = idx + 1
-            end
+            if math.sqrt(dx * dx + dy * dy) < LAND_LEAD then idx = idx + 1 end
         end
     end
+    p.earlyIdx = idx
 
-    local landNode = p.path[idx]
+    self:_UpdateEarlyTarget()
+    self:_RefreshDisplay()
+end
+
+-- Re-track the committed early-stop target: if we've flown PAST it (the flight
+-- couldn't land there and carried on), advance to the next node. Overwrites the
+-- destination + countdown to the current target.
+function Misc:_UpdateEarlyTarget()
+    local p = self:_p()
+    if not (p.earlyLanding and p.path and p.earlyIdx) then return end
+
+    -- past our target? (crossIdx is the next-node-ahead tracker) -> move it forward
+    if p.crossIdx and p.crossIdx > p.earlyIdx then p.earlyIdx = p.crossIdx end
+
+    local landNode = p.path[p.earlyIdx]
     if not landNode then return end
     p.dst = landNode.name
 
@@ -491,7 +492,7 @@ function Misc:_UpdateEarlyTarget()
     local flights = self:GetDB().flights
     local lastPassT = p.crossTimes and p.crossTimes[p.crossIdx - 1]
     local segTotal = 0
-    for i = p.crossIdx, idx do
+    for i = p.crossIdx, p.earlyIdx do
         local seg = storedTime(flights[routeKey(p.path[i - 1].name, p.path[i].name)])
         if not seg then segTotal = nil; break end
         segTotal = segTotal + seg
