@@ -33,11 +33,11 @@ end
 local ARRIVE_YARDS = 40    -- within this of a path node = we landed there
 local CROSS_MARGIN = 75   -- moved this many (linear) yards past the closest approach = passed it
 
--- A flight DB entry is { t = seconds, q = quality }. Quality ranks the source's
--- precision: DIRECT (a real landing) > EST (an amalgamated estimate) > FLY (a
--- mid-flight closest-approach guess). Legacy entries: a plain number = DIRECT, an
--- old { t, est } = EST if est else DIRECT.
-local Q_DIRECT, Q_EST, Q_FLY = 3, 2, 1
+-- A flight DB entry is { t = seconds, q = quality }. Only measurements are stored:
+-- DIRECT (a real landing) > FLY (a mid-flight closest-approach guess). Estimates
+-- are computed fresh and never persisted. Legacy: a plain number = DIRECT; an old
+-- { t, est = true } (a saved estimate, no longer produced) is treated as FLY.
+local Q_DIRECT, Q_FLY = 2, 1
 
 local function storedTime(e)
     if type(e) == "number" then return e end
@@ -47,7 +47,7 @@ local function entryQ(e)
     if e == nil then return nil end
     if type(e) ~= "table" then return Q_DIRECT end   -- legacy number
     if e.q then return e.q end
-    return e.est and Q_EST or Q_DIRECT               -- migrate old est flag
+    return e.est and Q_FLY or Q_DIRECT               -- legacy saved estimate -> fly
 end
 
 -- Sell every sellable grey (Poor, quality 0) item in the bags. Returns count.
@@ -81,14 +81,6 @@ function Misc:OnInitialize()
         local module = self
         hooksecurefunc("TakeTaxiNode", function(slot) module:_OnTakeTaxi(slot) end)
         taxiHooked = true
-    end
-
-    -- One-time cleanup: estimates are no longer persisted (they're computed fresh
-    -- on hover / at take-off), so purge any that were saved before. Safe to remove
-    -- this block after one reload.
-    local flights = self:GetDB().flights
-    for key, e in pairs(flights) do
-        if entryQ(e) == Q_EST then flights[key] = nil end
     end
 end
 
@@ -166,24 +158,22 @@ function Misc:_StopTicker()
     p.phase = nil
 end
 
--- Write rules for direct (landing) and estimate writes:
---   a real DIRECT always replaces a lower-quality entry (even < 5s);
---   otherwise (same quality, or estimate vs direct) -> only when the time
---   changed by >= 5s. The entry's quality tracks the new value's source.
-function Misc:_Store(key, seconds, est)
+-- A measured DIRECT (landing) write:
+--   always replaces a lower-quality (fly) entry, even < 5s;
+--   direct-over-direct only when the time changed by >= 5s.
+function Misc:_Store(key, seconds)
     local flights = self:GetDB().flights
-    local q = est and Q_EST or Q_DIRECT
     local cur = flights[key]
     if cur == nil then
-        flights[key] = { t = seconds, q = q }
+        flights[key] = { t = seconds, q = Q_DIRECT }
         return
     end
     local curQ = entryQ(cur)
     if type(cur) ~= "table" then cur = { t = storedTime(cur), q = curQ }; flights[key] = cur end
-    if q == Q_DIRECT and curQ < Q_DIRECT then
-        cur.t, cur.q = seconds, q                       -- a real direct beats lower quality
+    if curQ < Q_DIRECT then
+        cur.t, cur.q = seconds, Q_DIRECT                  -- direct beats a fly entry
     elseif math.abs(seconds - cur.t) >= 5 then
-        cur.t, cur.q = seconds, q                        -- +/-5s rule otherwise
+        cur.t = seconds                                   -- +/-5s, direct over direct
     end
 end
 
@@ -358,7 +348,7 @@ function Misc:_Tick(dt)
             -- we were ported off the path, so nothing is recorded.
             local landed = self:_LandedNode()
             if dur > 1 and landed then
-                self:_Store(routeKey(p.src, landed), dur, false)  -- full source -> landed
+                self:_Store(routeKey(p.src, landed), dur)  -- full source -> landed
                 self:_RecordFinalLeg(landed, now)                 -- last per-node segment
             end
             if p.frame then p.frame:Hide() end
@@ -493,9 +483,9 @@ function Misc:_EstimateRoute(destSlot, destName)
 
     -- DP over the ordered path: reach node 1 -> each node using whatever known
     -- sub-segments exist, but MINIMISE total imprecision (penalty per segment:
-    -- direct 0, estimate 1, fly-over 2). This takes the most precise parts where
-    -- they exist and fills the gaps with lower-quality data -- so a single
-    -- fly-over spanning the whole route loses to a chain of directs covering it.
+    -- direct 0, fly-over 1). This takes the most precise parts where they exist and
+    -- fills the gaps with fly-overs -- so a single fly-over spanning the whole route
+    -- loses to a chain of directs covering it.
     local flights = self:GetDB().flights
     local pen, time = { [1] = 0 }, { [1] = 0 }
     for j = 2, hops + 1 do
@@ -504,7 +494,7 @@ function Misc:_EstimateRoute(destSlot, destName)
                 local e = flights[routeKey(nodes[i], nodes[j])]
                 local q = entryQ(e)
                 if q then
-                    local cand = pen[i] + (Q_DIRECT - q)   -- 0 / 1 / 2 per segment
+                    local cand = pen[i] + (Q_DIRECT - q)   -- direct 0, fly 1
                     if pen[j] == nil or cand < pen[j] then
                         pen[j] = cand
                         time[j] = time[i] + storedTime(e)
