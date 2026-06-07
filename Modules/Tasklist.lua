@@ -85,6 +85,8 @@ function Tasklist:OnInitialize()
     local p = self:_p()
     p.tasks = {}          -- key -> runtime def
     p.eventTokens = {}    -- event -> EventBus token (subscribed once, shared)
+    p.eventTasks = {}     -- event -> { key -> def }: reverse index so a fire dispatches
+                          -- ONLY to interested tasks (never scan all tasks; never debounce)
     p.busTokens = {}      -- lifecycle subscriptions (combat, reset)
     -- db.state / db.tracked / db.nextId are pre-seeded from dbSchema (see registration).
 end
@@ -137,14 +139,25 @@ function Tasklist:Register(def)
     def.type = def.type or "once"
     p.tasks[def.key] = def
     self:_State(def.key)
-    for _, ev in ipairs(def.events or {}) do self:_SubscribeEvent(ev) end
+    for _, ev in ipairs(def.events or {}) do
+        self:_SubscribeEvent(ev)
+        local idx = p.eventTasks[ev]; if not idx then idx = {}; p.eventTasks[ev] = idx end
+        idx[def.key] = def
+    end
     self:_Evaluate(def)
     self:_Refresh()
     return def
 end
 
 function Tasklist:Unregister(key)
-    self:_p().tasks[key] = nil
+    local p = self:_p()
+    local def = p.tasks[key]
+    if def then
+        for _, ev in ipairs(def.events or {}) do
+            if p.eventTasks[ev] then p.eventTasks[ev][key] = nil end
+        end
+    end
+    p.tasks[key] = nil
     self:_Refresh()
 end
 
@@ -169,12 +182,15 @@ function Tasklist:_SubscribeEvent(ev)
     p.eventTokens[ev] = ns.EventBus:On(ev, function(_, ...) self:_OnEvent(ev, ...) end)
 end
 
+-- Dispatch ONE event to exactly the tasks that registered for it (reverse index), every
+-- fire -- no scan of all tasks, no debouncing (a coalesced fire could drop the state
+-- change that mattered).
 function Tasklist:_OnEvent(ev, ...)
-    for _, def in pairs(self:_p().tasks) do
+    local tasks = self:_p().eventTasks[ev]
+    if not tasks then return end
+    for _, def in pairs(tasks) do
         if not def.manual and not self:IsDone(def.key) then
-            for _, e in ipairs(def.events or {}) do
-                if e == ev then self:_Evaluate(def, ...); break end
-            end
+            self:_Evaluate(def, ...)
         end
     end
 end

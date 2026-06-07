@@ -39,10 +39,10 @@ Core\LibManager.lua
 
 # --- services (top-level Services/; each self-registers with the ServiceManager;
 #     order here is irrelevant -- the ServiceManager resolves load order from deps) ---
-# --- libs (ns.Lib: pure-logic helpers, no WoW API / deps / lifecycle; published at
-#     load by the LibManager, never started -- so they live apart from Services) ---
+# --- libs (Lib/: pure-logic, no WoW API. Most self-register with the LibManager as
+#     stateless ns.Lib singletons; Vector2D is a pure VALUE-CLASS you instantiate) ---
 Lib\FlightGraph.lua
-Lib\Geometry.lua
+Lib\Vector2D.lua
 Lib\SpellTooltipParser.lua
 Lib\CVarHelper.lua
 

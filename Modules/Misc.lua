@@ -3,6 +3,11 @@ local Class = ns.Class
 local Theme = ns.Theme
 local W = ns.UI.Widgets
 
+-- Upvalue the globals this module hits while polling a flight: a local lookup beats a
+-- global-table lookup on every tick. (Same-name locals -> no call-site churn.)
+local GetTime, C_Map, CreateVector2D = GetTime, C_Map, CreateVector2D
+local sqrt, huge = math.sqrt, math.huge
+
 -- Modules/Misc.lua
 -- Miscellaneous helpers:
 --   * Flight Timers — time each flight path and show a countdown both while in
@@ -191,20 +196,20 @@ function Misc:_OnTakeTaxi(slot)
     self:_StartTicker()
 end
 
+-- Poll at 10 Hz, not every rendered frame: take-off / landing detection and the countdown
+-- only need ~0.1s granularity, and a C_Timer ticker runs the body 10x/s instead of
+-- 60-150x/s. It's a raw C_Timer (NOT self:Every) so it survives the module being disabled
+-- -- flight recording is always on (see OnDisable).
 function Misc:_StartTicker()
     local p = self:_p()
-    if not p.ticker then
-        local module = self
-        p.ticker = CreateFrame("Frame")
-        p.acc = 0
-        p.ticker:SetScript("OnUpdate", function(_, dt) module:_Tick(dt) end)
-    end
-    p.ticker:Show()
+    if p.ticker then return end
+    local module = self
+    p.ticker = C_Timer.NewTicker(0.1, function() module:_Tick() end)
 end
 
 function Misc:_StopTicker()
     local p = self:_p()
-    if p.ticker then p.ticker:Hide() end
+    if p.ticker then p.ticker:Cancel(); p.ticker = nil end
     p.phase = nil
     p.earlyLanding = false
 end
@@ -325,23 +330,24 @@ function Misc:_LandedNode()
     if not (p.path and #p.path > 1) then return p.dst end
     local px, py, pc = self:_PlayerWorld()
     if not px then return p.dst end
-    -- Same-continent path nodes (skip node 1, the origin) become candidate points; the
-    -- pure Geometry solver finds the nearest within ARRIVE_YARDS.
-    local cands, comparable = {}, false
+    -- Same-continent path nodes (skip node 1, the origin) become candidate vectors; the
+    -- pure Vector2D solver finds the nearest within ARRIVE_YARDS. A parallel `names` list
+    -- maps the winning index back (nameless nodes are skipped so a nil name can't be
+    -- returned and misread as "ported off the path").
+    local vectors, names, comparable = {}, {}, false
     for i = 2, #p.path do
         local node = p.path[i]
         if node.world and node.world.c == pc then
             comparable = true
-            -- skip nameless nodes: Nearest could otherwise return one whose .name is nil,
-            -- which the caller reads as "ported off the path" and drops a real landing.
             if node.name then
-                cands[#cands + 1] = { x = node.world.x, y = node.world.y, name = node.name }
+                vectors[#vectors + 1] = ns.Vector2D:New(node.world.x, node.world.y)
+                names[#names + 1] = node.name
             end
         end
     end
     if not comparable then return p.dst end   -- couldn't measure -> assume target
-    local best = ns.Geometry:Nearest(px, py, cands, ARRIVE_YARDS)
-    return best and best.name                  -- nil => near no node => ported
+    local _, _, idx = ns.Vector2D:New(px, py):Nearest(vectors, ARRIVE_YARDS)
+    return idx and names[idx]                   -- nil => near no node => ported
 end
 
 -- Poll once per refresh while flying: track the closest approach to the NEXT path
@@ -355,14 +361,14 @@ function Misc:_PollCrossing()
     local node = p.path[p.crossIdx]
     if not (node and node.world) then          -- can't time this one; skip past it
         p.crossIdx = p.crossIdx + 1
-        p.crossMinDist = math.huge
+        p.crossMinDist = huge
         return
     end
     local px, py, pc = self:_PlayerWorld()
     if not px or pc ~= node.world.c then return end
     local dx, dy = px - node.world.x, py - node.world.y
-    local dist = math.sqrt(dx * dx + dy * dy)   -- LINEAR yards (squared margin fires too early)
-    if dist < (p.crossMinDist or math.huge) then
+    local dist = sqrt(dx * dx + dy * dy)   -- LINEAR yards (squared margin fires too early)
+    if dist < (p.crossMinDist or huge) then
         p.crossMinDist = dist
         p.crossMinTime = GetTime()
     elseif p.crossMinTime and dist > p.crossMinDist + CROSS_MARGIN then
@@ -438,7 +444,7 @@ function Misc:_RecordFinalLeg(landed, when)
     end
 end
 
-function Misc:_Tick(dt)
+function Misc:_Tick()
     local p = self:_p()
     if p.phase == "boarding" then
         if UnitOnTaxi("player") then
@@ -448,7 +454,7 @@ function Misc:_Tick(dt)
             p.crossTimes = { [1] = p.startTime }
             p.crossIdx = 2
             p.lastCrossIdx = 1   -- last node actually flown over (source); skips advance past
-            p.crossMinDist = math.huge
+            p.crossMinDist = huge
             p.crossMinTime = nil
             -- p.known was resolved at take-off (recorded time or multi-hop estimate)
             self:_RefreshDisplay()
@@ -473,13 +479,9 @@ function Misc:_Tick(dt)
             if p.frame then p.frame:Hide() end
             self:_StopTicker()
         else
-            p.acc = (p.acc or 0) + dt
-            if p.acc >= 0.1 then
-                p.acc = 0
-                self:_PollCrossing()       -- closest-approach segment timing
-                self:_UpdateEarlyTarget()  -- re-track an early-stop target as we go
-                self:_RefreshDisplay()
-            end
+            self:_PollCrossing()       -- closest-approach segment timing
+            self:_UpdateEarlyTarget()  -- re-track an early-stop target as we go
+            self:_RefreshDisplay()
         end
     end
 end
@@ -755,7 +757,7 @@ ns.ModuleManager:Register(Misc:New("Misc", {
     description = "Flight-path timers and selling junk.",
     defaultEnabled = false,
     color = ns.Theme.hex.grey,  -- distinct tag (accent=Core, green=UnitFrames, purple=Class, gold=Questing, red=CVars)
-    deps = { "EventBus", "EditMode" },  -- recording/timer; route + proximity solvers are pure Libs (ns.FlightGraph / ns.Geometry, always available)
+    deps = { "EventBus", "EditMode" },  -- recording/timer; route solver (ns.FlightGraph Lib) + proximity (ns.Vector2D class) are always available
     dbSchema = { flights = {} },        -- recorded route times (seeded on bind, before OnInitialize)
     settingsWatch = { sellJunk = "_OnSellJunkChanged" },
     settings = {
