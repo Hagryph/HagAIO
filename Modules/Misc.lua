@@ -83,20 +83,21 @@ local function sumLegs(legs, names)
     return total
 end
 
--- Sell every sellable grey (Poor, quality 0) item in the bags. Returns count.
+-- Sell every sellable grey (Poor, quality 0) item in the bags. Returns the number
+-- of stacks sold and a list of { link, count } descriptors of what was sold.
 local function sellJunk()
-    if not (C_Container and C_Container.GetContainerNumSlots and C_Container.UseContainerItem) then return 0 end
-    local count = 0
+    local sold = {}
+    if not (C_Container and C_Container.GetContainerNumSlots and C_Container.UseContainerItem) then return 0, sold end
     for bag = 0, (NUM_BAG_SLOTS or 4) do
         for slot = 1, (C_Container.GetContainerNumSlots(bag) or 0) do
             local info = C_Container.GetContainerItemInfo(bag, slot)
             if info and info.quality == 0 and not info.hasNoValue then
                 C_Container.UseContainerItem(bag, slot)
-                count = count + 1
+                sold[#sold + 1] = { link = info.hyperlink, count = info.stackCount or 1 }
             end
         end
     end
-    return count
+    return #sold, sold
 end
 
 -- ---- lifecycle ------------------------------------------------------------
@@ -713,8 +714,16 @@ function Misc:_OnMerchantClosed()
 end
 
 function Misc:_Sell()
-    local n = sellJunk()
-    if n > 0 then self:LogInfo(("sold %d junk item%s"):format(n, n == 1 and "" or "s")) end
+    local count, sold = sellJunk()
+    if count == 0 then return end
+    local parts = {}
+    for _, it in ipairs(sold) do
+        local link = it.link or "item"
+        parts[#parts + 1] = it.count > 1 and (link .. " x" .. it.count) or link
+    end
+    -- Echo the items sold to chat (when "Echo to Chat" is on); also recorded to the log.
+    self:LogEchoInfo(("sold %d junk item%s: %s")
+        :format(count, count == 1 and "" or "s", table.concat(parts, ", ")))
 end
 
 function Misc:_BuildSellButton()
