@@ -11,11 +11,15 @@ local Class = ns.Class
 
 local Range = Class.new("Range", ns.Service)
 
--- Upvalue ipairs + the two range-check functions (resolved ONCE -- they're stable Blizzard
--- functions hit on the combat ticker, so re-reading C_Item.IsItemInRange every call is pure
--- waste). UnitCanAttack/UnitIsDead/C_NamePlate stay GLOBAL: they're the dominant per-plate
--- cost (no real upvalue win) and the test harness swaps them per test.
+-- Upvalue everything the per-tick combat count touches -- the two range-check functions AND
+-- the per-plate UnitCanAttack/UnitIsDead/C_NamePlate -- resolved ONCE at load (stable Blizzard
+-- functions, so re-reading them every call/plate is pure waste; the per-plate ones are the
+-- biggest win). The test harness installs its stubs BEFORE loading this file (range_spec's
+-- setup(globals)), so the upvalues capture them.
 local ipairs = ipairs
+local UnitCanAttack  = UnitCanAttack
+local UnitIsDead     = UnitIsDead
+local GetNamePlates  = C_NamePlate and C_NamePlate.GetNamePlates
 local IsItemInRange  = C_Item  and C_Item.IsItemInRange
 local IsSpellInRange = C_Spell and C_Spell.IsSpellInRange
 
@@ -62,7 +66,7 @@ end
 -- Iterate attackable, alive enemy nameplate units as fn(unit). Kept for callers that
 -- want every enemy; CountEnemies has its own closure-free path below.
 function Range:EachEnemy(fn)
-    local plates = C_NamePlate and C_NamePlate.GetNamePlates and C_NamePlate.GetNamePlates()
+    local plates = GetNamePlates and GetNamePlates()
     if not plates then return end
     for _, plate in ipairs(plates) do
         local u = plate.namePlateUnitToken or (plate.UnitFrame and plate.UnitFrame.unit)
@@ -75,7 +79,7 @@ end
 -- reached (callers that only test "count >= threshold" pass the threshold). Walks the
 -- nameplates inline -- no per-call closure -- since this runs on a combat ticker.
 function Range:CountEnemies(yards, fallbackSpellID, maxNeeded)
-    local plates = C_NamePlate and C_NamePlate.GetNamePlates and C_NamePlate.GetNamePlates()
+    local plates = GetNamePlates and GetNamePlates()
     if not plates then return 0 end
     local item = self:_ItemFor(yards)
     local n = 0

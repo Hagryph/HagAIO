@@ -282,7 +282,7 @@ function CVars:_PlaceAddRow(box, y, width)
         if ns.UI.SettingsWindow then ns.UI.SettingsWindow:InvalidateModule(self:GetName()) end
     end
     add:SetScript("OnClick", submit)
-    input:SetScript("OnEnterPressed", function(self) self:ClearFocus(); submit() end)
+    input:SetScript("OnEnterPressed", function(s) s:ClearFocus(); submit() end)
 
     local hint = W.Text(box, "Type any CVar name, then Add. The field type is detected automatically.",
         "textFaint", "GameFontHighlightSmall")

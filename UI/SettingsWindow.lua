@@ -74,7 +74,9 @@ function SettingsWindow:_InvalidateGeneral()
 end
 
 -- ---- construction ---------------------------------------------------------
-function SettingsWindow:Build()
+-- Internal, idempotent lazy build (the `_` prefix marks it private, like every other
+-- builder); the public Show/Toggle/Open call it on first use.
+function SettingsWindow:_Build()
     local p = self:_p()
     if p.built then return end
 
@@ -319,7 +321,7 @@ function SettingsWindow:_BuildGeneralPage(parent)
         toggle:SetOnToggle(function(on)
             local needsReload = d.set and d.set(on)
             if needsReload and d.reloadMsg then
-                ns.Logger:Core():Warn(d.reloadMsg)
+                self:LogWarn(d.reloadMsg)
             end
         end)
         y = y - 24
@@ -364,7 +366,7 @@ function SettingsWindow:_BuildProfilesPage(parent)
         if name and name ~= "" then
             ns.Profiles:Save(name)
             input:SetText("")
-            ns.Logger:Core():Success("saved profile '" .. name .. "'")
+            self:LogSuccess("saved profile '" .. name .. "'")
             self:_RefreshProfilesPage()
         end
     end)
@@ -374,10 +376,10 @@ function SettingsWindow:_BuildProfilesPage(parent)
         ns.UI.CopyWindow:Prompt("Paste a profile string, then Import", function(text)
             local ok, res = ns.Profiles:Import(text, "Imported")
             if ok then
-                ns.Logger:Core():Success("imported as '" .. res .. "'")
+                self:LogSuccess("imported as '" .. res .. "'")
                 self:_RefreshProfilesPage()
             else
-                ns.Logger:Core():Warn("import failed: " .. tostring(res))
+                self:LogWarn("import failed: " .. tostring(res))
             end
         end)
     end)
@@ -428,15 +430,15 @@ function SettingsWindow:_BuildProfileRow(page)
         if not row.name then return end
         local str, err = ns.Profiles:Export(row.name)
         if str then ns.UI.CopyWindow:Show("Profile - " .. row.name, str)
-        else ns.Logger:Core():Warn(err or "export failed") end
+        else self:LogWarn(err or "export failed") end
     end)
     local load = W.TextButton(row, "Load")
     load:SetPoint("RIGHT", export, "LEFT", -16, 0)
     load:SetScript("OnClick", function()
         if not row.name then return end
         local ok, err = ns.Profiles:LoadProfile(row.name)
-        if ok then ns.Logger:Core():Success(("loaded '%s' -- type /reload to apply"):format(row.name))
-        else ns.Logger:Core():Warn(err or "load failed") end
+        if ok then self:LogSuccess(("loaded '%s' -- type /reload to apply"):format(row.name))
+        else self:LogWarn(err or "load failed") end
     end)
     return row
 end
@@ -750,7 +752,7 @@ end
 
 -- ---- show / hide ----------------------------------------------------------
 function SettingsWindow:Show(key)
-    self:Build()
+    self:_Build()
     local p = self:_p()
     key = key or p.current or "modules"
 
@@ -760,7 +762,7 @@ function SettingsWindow:Show(key)
     if not p.frame:IsShown() and (InCombatLockdown() or editActive) then
         p.reopenKey = key
         if InCombatLockdown() then
-            ns.Logger:Core():Warn("In combat - the settings will open when you leave combat.")
+            self:LogWarn("In combat - the settings will open when you leave combat.")
         end
         return
     end
@@ -805,7 +807,7 @@ function SettingsWindow:Hide()
 end
 
 function SettingsWindow:Toggle()
-    self:Build()
+    self:_Build()
     local p = self:_p()
     if p.frame:IsShown() then self:Hide() else self:Show(p.current or "modules") end
 end

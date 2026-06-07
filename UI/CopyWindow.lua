@@ -38,7 +38,8 @@ function CopyWindow:OnInitialize()
 end
 
 -- ---- construction ---------------------------------------------------------
-function CopyWindow:Build()
+-- Internal, idempotent lazy build (the `_` prefix marks it private); Show/Prompt call it.
+function CopyWindow:_Build()
     local p = self:_p()
     if p.built then return end
 
@@ -199,7 +200,7 @@ end
 -- title labels the contents; text is the body to copy. Large bodies are split
 -- into pages automatically; copy each page in order and concatenate to rebuild.
 function CopyWindow:Show(title, text)
-    self:Build()
+    self:_Build()
     local p = self:_p()
     if p.acceptBtn then p.acceptBtn:Hide() end   -- copy-out mode: no Import button
     p.titleText = title or "Copy"
@@ -211,7 +212,7 @@ end
 -- Paste-IN mode: an empty, editable box + an "Import" button that hands the pasted
 -- text to onAccept and closes. Reuses the same multi-line edit box.
 function CopyWindow:Prompt(title, onAccept)
-    self:Build()
+    self:_Build()
     local p = self:_p()
     if not p.acceptBtn then
         local b = W.TextButton(p.frame, "Import")

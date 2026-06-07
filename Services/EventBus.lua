@@ -66,7 +66,7 @@ function EventBus:On(event, fn)
         -- event name abort the caller's whole setup.
         local ok = pcall(p.frame.RegisterEvent, p.frame, event)
         if not ok then
-            ns.Log.Warn("ignoring unknown event:", event)
+            self:LogWarn("ignoring unknown event:", event)
             return nil
         end
     end
@@ -102,7 +102,7 @@ function EventBus:OnUnit(event, fn, ...)
     local ok = pcall(f.RegisterUnitEvent, f, event, ...)
     if not ok then
         p.unitPool[#p.unitPool + 1] = f
-        ns.Log.Warn("ignoring unknown unit event:", event)
+        self:LogWarn("ignoring unknown unit event:", event)
         return nil
     end
     f:SetScript("OnEvent", function(_, ev, ...) fn(ev, ...) end)

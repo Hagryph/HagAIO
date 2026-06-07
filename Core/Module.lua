@@ -65,6 +65,7 @@ function Module:Initialize(name, opts)
     p.commands = opts.commands                     -- declarative /hag sub-commands (see ns.Component)
     p.generalToggles = opts.generalToggles         -- declarative General-page toggles (see ns.Component)
     p.settingsWatch = opts.settingsWatch          -- declarative setting-key -> handler (see ns.Component)
+    p.publishAs = opts.publishAs                   -- optional: publish this instance at ns.<alias> (see _Publish)
 
     -- Seed saved-var defaults from the settings schema, then the declarative dbSchema
     -- (structural nested tables this module persists), then any explicit dbDefaults on
@@ -143,9 +144,19 @@ end
 -- has to know the order. (It can't move to the constructor: SavedVars aren't loaded
 -- until ADDON_LOADED, long after modules are constructed at file load.)
 function Module:_Init()
+    self:_Publish()      -- ns.<alias> first (opts.publishAs), so OnInitialize can rely on it
     self:_AttachLogger()
     self:_BindDB()
     self:OnInitialize()
+end
+
+-- Optional public alias: publish this module instance at ns.<opts.publishAs> so other code
+-- can reach it directly (e.g. ns.Tasks -> the Tasklist module, ns.Collection). Mirrors
+-- Service:_Publish; replaces hand-written `ns.X = self` in OnInitialize. The alias is
+-- declared in the module's New opts and documented in the generated Namespace.lua slot block.
+function Module:_Publish()
+    local alias = self:_p().publishAs
+    if alias then ns[alias] = self end
 end
 
 -- Internal: bind saved-variable namespace. Called by Module:_Init at startup.

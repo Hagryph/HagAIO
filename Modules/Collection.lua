@@ -36,10 +36,7 @@ local function trackMenu(owner, kind, id, name, prepend)
 end
 
 -- ---- lifecycle ------------------------------------------------------------
-function Collection:OnInitialize()
-    ns.Collection = self   -- so the ATT submodule + hooks can read state
-end
-
+-- ns.Collection is published by the Module base (opts.publishAs below); no OnInitialize needed.
 function Collection:OnEnable()
     self:_InstallHooks()
 end
@@ -51,6 +48,9 @@ function Collection:_InstallHooks()
     if C_AddOns and C_AddOns.IsAddOnLoaded and C_AddOns.IsAddOnLoaded("Blizzard_Collections") then
         self:_DoHooks()
     elseif not p.waiting then
+        -- Raw ns.EventBus:On (NOT self:On): this must outlive enable/disable -- once
+        -- Blizzard_Collections loads we hook it permanently (its hooks can't be removed),
+        -- so there's nothing to release on disable. The p.waiting latch fires it once.
         p.waiting = true
         ns.EventBus:On("ADDON_LOADED", function(_, name)
             if name == "Blizzard_Collections" then self:_DoHooks() end
@@ -131,6 +131,7 @@ ns.ModuleManager:Register(Collection:New("Collection", {
     title = "Collections",
     description = "Right-click an uncollected mount, pet, toy or heirloom to track it in your Task List.",
     defaultEnabled = true,
+    publishAs = "Collection",     -- ns.Collection for the ATT submodule + hooks
     color = ns.Theme.hex.accentDim,
     deps = { "EventBus" },        -- waits on ADDON_LOADED for Blizzard_Collections
     moduleDeps = { "Tasklist" },  -- tracking lives in the Task List

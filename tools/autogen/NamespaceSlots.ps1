@@ -56,12 +56,17 @@ function Get-PublishedServiceLibs {
                 $found += [pscustomobject]@{ Name = $m.Groups[1].Value; Path = $rel }
             }
             # Value-class libs (e.g. Format, Vector2D) publish by direct assignment rather
-            # than LibManager:Register -- catch those too, but only in Lib/ (so module
-            # aliases like ns.Tasks aren't pulled into the framework slot list).
+            # than LibManager:Register -- catch those too, but only in Lib/ (so unrelated
+            # ns.* assignments aren't pulled into the framework slot list).
             if ($rel -like 'Lib\*') {
                 foreach ($m in [regex]::Matches($code, '(?m)^ns\.(\w+)\s*=[^=]')) {
                     $found += [pscustomobject]@{ Name = $m.Groups[1].Value; Path = $rel }
                 }
+            }
+            # Module public aliases published via the declarative hook (opts.publishAs = "X",
+            # ns.Module:_Publish) -- e.g. ns.Tasks, ns.Collection.
+            foreach ($m in [regex]::Matches($code, 'publishAs\s*=\s*["''](\w+)["'']')) {
+                $found += [pscustomobject]@{ Name = $m.Groups[1].Value; Path = $rel }
             }
         }
     }

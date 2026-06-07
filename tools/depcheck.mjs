@@ -76,10 +76,13 @@ for (const path of ALL_FILES) {
     const moduleName = reg[1];
     MODULES.add(moduleName);
     // Aliases are only meaningful in a file that defines a module; map each
-    // `ns.X = self|ClassVar` publication to that module.
+    // `ns.X = self|ClassVar` publication to that module, plus the declarative publish
+    // hook `publishAs = "X"` (ns.Module:_Publish) which does the same thing.
     for (const a of code.matchAll(/\bns\.(\w+)\s*=\s*(?:self|[A-Z]\w*)\b/g)) {
       ALIASES[a[1]] = moduleName;
     }
+    const pub = code.match(/\bpublishAs\s*=\s*["'](\w+)["']/);
+    if (pub) ALIASES[pub[1]] = moduleName;
   }
 }
 
