@@ -8,6 +8,7 @@ local addonName, ns = ...
 
 local ClassModule = ns.ClassModule
 
+-- ---- tunables (spell IDs, marker colours, AoE breakpoint) -----------------
 local EXPEL_HARM = 322101
 -- Expel Harm bar colours. Ready = cyan accent (stands out against the green->yellow->red
 -- health gradient); on cooldown = white (cool, also off-gradient). Avoid green/yellow/red:
@@ -48,20 +49,20 @@ local powerHookInstalled = false
 -- Grace of the Crane raises all healing taken by a flat % the Expel Harm tooltip
 -- doesn't fold in -- read that % from its own description (defaults 4%). 1.0 when
 -- not talented.
+-- The string-parsing for these tooltip reads lives in ns.SpellTooltipParser (pure +
+-- unit-tested); the WoW-specific bits (fetching the description, talent gating, the
+-- secret-value guard) stay here.
 local function healingTakenMultiplier()
     if not (IsPlayerSpell and IsPlayerSpell(GRACE_OF_CRANE)) then return 1 end
     local desc = C_Spell and C_Spell.GetSpellDescription and C_Spell.GetSpellDescription(GRACE_OF_CRANE)
-    local pct = tonumber(desc and desc:match("by%s*(%d+)%%")) or 4
+    local pct = ns.SpellTooltipParser:Percent(desc) or 4
     return 1 + pct / 100
 end
 
 -- Parse "healing for N" out of the spell description (enUS) + the talent bonus.
 local function readExpelHarmHeal()
     local desc = C_Spell and C_Spell.GetSpellDescription and C_Spell.GetSpellDescription(EXPEL_HARM)
-    if not desc or desc == "" then return nil end
-    local n = desc:match("healing for%s*([%d,]+)")
-    if not n then return nil end
-    local heal = tonumber((n:gsub(",", "")))
+    local heal = ns.SpellTooltipParser:Heal(desc)
     if not heal then return nil end
     return math.floor(heal * healingTakenMultiplier() + 0.5)
 end
@@ -78,9 +79,9 @@ local function orbHealAmount()
         or (IsPlayerSpell(SPIRIT_OF_THE_OX) and SPIRIT_OF_THE_OX)
     if not id then return 0 end
     local desc = C_Spell and C_Spell.GetSpellDescription and C_Spell.GetSpellDescription(id)
-    local n = desc and desc:match("heals you for%s*([%d,]+)")
+    local n = ns.SpellTooltipParser:HealsYouFor(desc)
     if not n then return 0 end
-    return math.floor((tonumber((n:gsub(",", ""))) or 0) * healingTakenMultiplier() + 0.5)
+    return math.floor(n * healingTakenMultiplier() + 0.5)
 end
 
 -- The (current-stat) hit damage parsed from a spell's tooltip description: the
@@ -89,12 +90,7 @@ end
 -- compute the Tiger Palm vs Spinning Crane Kick breakpoint live from your gear.
 local function spellHitDamage(spellID)
     local desc = C_Spell and C_Spell.GetSpellDescription and C_Spell.GetSpellDescription(spellID)
-    if not desc or desc == "" then return nil end
-    local n = desc:match("dealing%s+([%d,]+)")
-        or desc:match("([%d,]+)%s+%a+%s+damage")
-        or desc:match("([%d,]+)%s+damage")
-    if not n then return nil end
-    local v = tonumber((n:gsub(",", "")))
+    local v = ns.SpellTooltipParser:Damage(desc)
     if not v or v <= 0 or (issecretvalue and issecretvalue(v)) then return nil end
     return v
 end
@@ -271,10 +267,10 @@ local function registerSpec(name, spec, specKey, serviceDeps)
 end
 -- Base: Expel Harm marker (event subs, Cooldowns watch, secret-safe paint).
 registerSpec("Monk-Base", Base, "none",
-    { "EventBus", "Cooldowns", "Secrets" })
+    { "EventBus", "Cooldowns", "Secrets", "SpellTooltipParser" })
 -- Brewmaster: all of Base + the AoE helper (Range counts, ActionBars greying).
 registerSpec("Monk-Brewmaster", Brewmaster, 1,
-    { "EventBus", "Cooldowns", "Secrets", "Range", "ActionBars" })
+    { "EventBus", "Cooldowns", "Secrets", "Range", "ActionBars", "SpellTooltipParser" })
 
 -- ===========================================================================
 -- Monk behaviour (methods on the shared ClassModule)

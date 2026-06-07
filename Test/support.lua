@@ -71,6 +71,9 @@ function M.newNs()
     local noop = function() end
     local channel = { Debug = noop, Info = noop, Success = noop, Warn = noop, Error = noop }
     ns.Logger = { Core = function() return channel end, Register = function() return channel end }
+    -- Component before Service (mirrors the .toc): Service borrows Component's shared
+    -- logging methods at load.
+    assert(loadfile("Core/Component.lua"))("HagAIO", ns)
     assert(loadfile("Core/Service.lua"))("HagAIO", ns)
     ns._captured = {}
     ns.ServiceManager = {

@@ -24,6 +24,11 @@ local function clear(t)
     for k in pairs(t) do t[k] = nil end
 end
 
+-- Account-wide keys that are NOT part of a profile's captured config: the profiles
+-- map itself and the global-profile pointer. Excluded from snapshot + apply so
+-- loading a profile never rewrites them.
+local META_KEYS = { profiles = true, globalProfile = true }
+
 function Profiles:OnInitialize() end
 
 -- The stored profiles map (account-wide), created on first use.
@@ -37,7 +42,7 @@ end
 function Profiles:Snapshot()
     local snap, g = {}, ns.SavedVars:Global()
     for k, v in pairs(g) do
-        if k ~= "profiles" then snap[k] = deepcopy(v) end
+        if not META_KEYS[k] then snap[k] = deepcopy(v) end
     end
     return snap
 end
@@ -52,6 +57,40 @@ end
 function Profiles:Has(name) return self:_Store()[name] ~= nil end
 function Profiles:Get(name) return self:_Store()[name] end
 
+-- ---- global profile -------------------------------------------------------
+-- One profile (account-wide) may be flagged GLOBAL: a character that has never
+-- loaded a profile gets it applied automatically on login. The flag is exclusive --
+-- setting it replaces any previous one -- and may be cleared (nil = no global, so a
+-- fresh character just starts from defaults).
+function Profiles:GetGlobal()
+    return ns.SavedVars:Global().globalProfile
+end
+
+function Profiles:IsGlobal(name)
+    return name ~= nil and self:GetGlobal() == name
+end
+
+-- Mark `name` as the global profile, or pass nil to clear it (no global profile).
+function Profiles:SetGlobal(name)
+    local g = ns.SavedVars:Global()
+    if name == nil then
+        g.globalProfile = nil
+        return true
+    end
+    if not self:Has(name) then return false, "no profile named '" .. tostring(name) .. "'" end
+    g.globalProfile = name
+    return true
+end
+
+-- Per-character record of the last profile applied here (account-wide profiles, but
+-- which one a given character uses is per character). nil = this character has never
+-- loaded a profile.
+function Profiles:_CharState()
+    return ns.SavedVars:Namespace("profiles", { loaded = false }, true)
+end
+
+function Profiles:GetLoaded() return self:_CharState().loaded or nil end
+
 function Profiles:Save(name)
     if type(name) ~= "string" or name == "" then return false, "a profile name is required" end
     self:_Store()[name] = self:Snapshot()
@@ -62,6 +101,7 @@ function Profiles:Delete(name)
     local store = self:_Store()
     if store[name] == nil then return false, "no profile named '" .. tostring(name) .. "'" end
     store[name] = nil
+    if self:IsGlobal(name) then self:SetGlobal(nil) end  -- don't leave a dangling global
     return true
 end
 
@@ -73,10 +113,10 @@ function Profiles:_ApplyData(snap)
     snap = ns.SavedVars:MigrateTable(deepcopy(snap))
     local g = ns.SavedVars:Global()
     for k in pairs(g) do
-        if k ~= "profiles" and snap[k] == nil then g[k] = nil end  -- drop keys the profile omits
+        if not META_KEYS[k] and snap[k] == nil then g[k] = nil end  -- drop keys the profile omits
     end
     for k, v in pairs(snap) do
-        if k ~= "profiles" then
+        if not META_KEYS[k] then
             if type(v) == "table" and type(g[k]) == "table" then
                 clear(g[k])
                 for kk, vv in pairs(v) do g[k][kk] = deepcopy(vv) end
@@ -89,10 +129,30 @@ function Profiles:_ApplyData(snap)
 end
 
 -- Load a saved profile into the live config (persists immediately; /reload applies).
+-- Records it as this character's loaded profile so the global profile won't override
+-- it on future logins.
 function Profiles:LoadProfile(name)
     local snap = self:Get(name)
     if not snap then return false, "no profile named '" .. tostring(name) .. "'" end
-    return self:_ApplyData(snap)
+    local ok, err = self:_ApplyData(snap)
+    if ok then self:_CharState().loaded = name end
+    return ok, err
+end
+
+-- On login, if this character has never loaded a profile, apply the account's global
+-- profile (if one is set + still exists). Call AFTER SavedVars load/migrate/defaults
+-- and BEFORE modules bind their namespaces, so the fresh config takes effect without a
+-- /reload. Returns the applied profile name, or nil if nothing was applied.
+function Profiles:ApplyGlobalForFreshChar()
+    local cs = self:_CharState()
+    if cs.loaded then return nil end          -- this character already uses a profile
+    local name = self:GetGlobal()
+    if not name or not self:Has(name) then return nil end
+    if self:_ApplyData(self:Get(name)) then
+        cs.loaded = name
+        return name
+    end
+    return nil
 end
 
 -- name (or nil = the live config) -> share string.

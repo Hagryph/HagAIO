@@ -54,9 +54,12 @@ function Initializer:Run()
         sv:Load()
         sv:Migrate()                 -- bring stored data up to the current schema
         self:_ApplyDefaults(sv)
+        -- A character that has never loaded a profile picks up the account's global
+        -- profile here -- before modules bind, so no /reload is needed.
+        if ns.Profiles then ns.Profiles:ApplyGlobalForFreshChar() end
         ns.Logger:LoadSettings()
         ns.SlashCommand:Activate()
-        ns.Logger:Core():Info(
+        ns.Logger:Core():EchoInfo(
             ("loaded v%s - type /hag to open."):format(tostring(ns.version)))
     end)
 

@@ -6,7 +6,8 @@
 -- Exits non-zero on any failure, so CI can gate on it.
 
 -- Add a spec here when you create one (Test/<name>_spec.lua).
-local SPECS = { "dependencygraph", "scaling", "cache", "memoize", "scheduler", "serializer", "profiles", "component" }
+local SPECS = { "dependencygraph", "scaling", "cache", "memoize", "scheduler", "serializer", "profiles", "component",
+                "flightgraph", "geometry", "spelltooltipparser", "cvarhelper", "submodulemanager" }
 
 local results = { pass = 0, fail = 0, failures = {} }
 local stack = {}

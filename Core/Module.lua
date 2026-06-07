@@ -54,14 +54,21 @@ function Module:Initialize(name, opts)
     p.addonDeps = opts.addonDeps or {}            -- external addons required to be available
     p.moduleDeps = opts.moduleDeps or {}          -- other modules that must be enabled
     p.settings = opts.settings or {}
+    ns.Component.ValidateSettings(p.settings, name)  -- fail fast on a malformed schema
     p.events = opts.events or {}                   -- declarative game-event subscriptions
     p.messages = opts.messages or {}              -- declarative custom-message subscriptions
+    p.settingsWatch = opts.settingsWatch          -- declarative setting-key -> handler (see ns.Component)
 
-    -- Seed saved-var defaults from the settings schema, then layer any explicit
-    -- dbDefaults on top.
+    -- Seed saved-var defaults from the settings schema, then the declarative dbSchema
+    -- (structural nested tables this module persists), then any explicit dbDefaults on
+    -- top. SavedVars deep-merges these on bind, so a module never has to hand-init
+    -- `db.x = db.x or {}` in OnInitialize.
     local defaults = {}
     for _, s in ipairs(p.settings) do
         if s.key ~= nil and s.default ~= nil then defaults[s.key] = s.default end
+    end
+    if opts.dbSchema then
+        for k, v in pairs(opts.dbSchema) do defaults[k] = v end
     end
     if opts.dbDefaults then
         for k, v in pairs(opts.dbDefaults) do defaults[k] = v end
@@ -98,45 +105,57 @@ function Module:IsEnabled() return self:_p().enabled end
 function Module:IsDefaultEnabled() return self:_p().defaultEnabled end
 function Module:IsPerChar() return self:_p().perChar end
 function Module:GetDB() return self:_p().db end
-function Module:GetLog() return self:_p().log end
+-- GetLog + the Log* helpers are inherited from ns.Component (shared logging surface).
 
 -- Settings live in the module's saved-var namespace (see ns.Component for the
 -- shared GetSetting/SetSetting + the HagAIO_SettingChanged broadcast).
 function Module:_SettingsDB() return self:_p().db end
 
--- Wire the declarative events/messages tables. Called by Enable; each entry is a
--- method name or a function, invoked as handler(self, name, ...).
-function Module:_WireDeclared()
-    local p = self:_p()
-    local function bind(spec)
-        if type(spec) == "string" then
-            return function(name, ...) return self[spec](self, name, ...) end
-        end
-        return function(name, ...) return spec(self, name, ...) end
+-- Turn a declarative spec (a method name or a function) into a handler invoked as
+-- handler(name, ...) -> spec(self, name, ...).
+function Module:_BindHandler(spec)
+    if type(spec) == "string" then
+        return function(name, ...) return self[spec](self, name, ...) end
     end
-    for event, spec in pairs(p.events) do self:On(event, bind(spec)) end
-    for message, spec in pairs(p.messages) do self:Subscribe(message, bind(spec)) end
+    return function(name, ...) return spec(self, name, ...) end
 end
 
--- Internal: bind saved-variable namespace. Called by ModuleManager at startup.
+-- Wire the declarative events/messages tables. Called by Enable; each entry is a
+-- method name or a function. Bound handlers are built ONCE per module and reused
+-- across enable/disable cycles (each captures only `self`, which never changes), so
+-- re-enabling doesn't churn fresh closures. The subscriptions themselves are still
+-- re-made each enable and auto-released on disable via self:On / self:Subscribe.
+function Module:_WireDeclared()
+    local p = self:_p()
+    local bound = p.boundHandlers
+    if not bound then
+        bound = {}
+        for _, spec in pairs(p.events)   do bound[spec] = bound[spec] or self:_BindHandler(spec) end
+        for _, spec in pairs(p.messages) do bound[spec] = bound[spec] or self:_BindHandler(spec) end
+        p.boundHandlers = bound
+    end
+    for event, spec   in pairs(p.events)   do self:On(event, bound[spec]) end
+    for message, spec in pairs(p.messages) do self:Subscribe(message, bound[spec]) end
+end
+
+-- Internal: the fixed one-time init sequence the ModuleManager runs for this module
+-- (on PLAYER_LOGIN, or immediately for a late registration). Logger first, then the
+-- saved-var binding, then OnInitialize -- so a subclass's OnInitialize can always
+-- rely on GetLog() and GetDB() being ready. Keeping the order here, next to the
+-- pieces it sequences, means the manager just calls one method and no module author
+-- has to know the order. (It can't move to the constructor: SavedVars aren't loaded
+-- until ADDON_LOADED, long after modules are constructed at file load.)
+function Module:_Init()
+    self:_AttachLogger()
+    self:_BindDB()
+    self:OnInitialize()
+end
+
+-- Internal: bind saved-variable namespace. Called by Module:_Init at startup.
 function Module:_BindDB()
     local p = self:_p()
     p.db = ns.SavedVars:Namespace("module_" .. p.name, p.dbDefaults, p.perChar)
 end
-
--- Internal: register this module's logging channel. Called by ModuleManager.
-function Module:_AttachLogger()
-    local p = self:_p()
-    p.log = ns.Logger:Register(p.name, p.color)
-end
-
--- Convenience report methods (route through the shared Logger so each report
--- is auto-recorded in the activity log and echoed to chat).
-function Module:LogDebug(...)   self:_p().log:Debug(...)   end
-function Module:LogInfo(...)    self:_p().log:Info(...)    end
-function Module:LogSuccess(...) self:_p().log:Success(...) end
-function Module:LogWarn(...)    self:_p().log:Warn(...)    end
-function Module:LogError(...)   self:_p().log:Error(...)   end
 
 function Module:Enable()
     local p = self:_p()

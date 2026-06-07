@@ -2,77 +2,72 @@ local addonName, ns = ...
 local Class = ns.Class
 
 -- Core/ServiceManager.lua
--- Singleton registry that owns the lifecycle of every Service. Services register
--- themselves at file load; StartAll() then orders them with the core
--- DependencyGraph (a topological sort of their declared dependencies) and runs
--- each :OnInitialize() so a service is only initialised once every service it
--- depends on is already loaded. ShutdownAll() runs :OnShutdown() in reverse.
--- One call boots the whole service layer; .toc load order no longer matters.
+-- Registry that owns the lifecycle of every Service. Services register themselves at
+-- file load; StartAll() then orders them with the core DependencyGraph (a topological
+-- sort of their declared dependencies) and runs each :_Init() (publish -> logger ->
+-- OnInitialize) so a service is only initialised once every service it depends on is
+-- already loaded. ShutdownAll() runs :OnShutdown() in reverse. One call boots the
+-- whole service layer; .toc load order no longer matters.
+--
+-- The generic registry plumbing lives in ns.Registry; this class adds the
+-- loaded-state tracking and dependency-ordered boot.
 
-local ServiceManager = Class.new("ServiceManager")
+local ServiceManager = Class.new("ServiceManager", ns.Registry)
 
 function ServiceManager:Initialize()
+    ns.Registry.Initialize(self, "service")
     local p = self:_p()
-    p.services = {}     -- name -> Service instance
-    p.order = {}        -- registration order
     p.loaded = {}       -- name -> true once OnInitialize has run
     p.startOrder = nil  -- resolved dependency order (set by StartAll)
-    p.started = false
 end
 
-function ServiceManager:Register(service)
-    local p = self:_p()
-    local name = service:GetName()
-    assert(not p.services[name], "duplicate service: " .. tostring(name))
-    p.services[name] = service
-    p.order[#p.order + 1] = name
-    if p.started then self:_Start(service) end  -- registered late -> start at once
-    return service
+-- A service registered after StartAll starts immediately (its deps are already up).
+function ServiceManager:_OnLateRegister(service)
+    self:_Start(service)
 end
 
-function ServiceManager:Get(name) return self:_p().services[name] end
 function ServiceManager:IsLoaded(name) return self:_p().loaded[name] == true end
 
--- Build a DependencyGraph of the registered services (each depends on ALL its
--- declared deps) so we can validate and order them.
+-- The dependency graph of registered services (each depends on ALL its declared
+-- deps) so we can validate and order them. Subjects are constant -- services have no
+-- online/offline predicate; only ordering + validity matter. Built + cached by
+-- ns.Registry (validated on build).
 function ServiceManager:_Graph()
-    local p = self:_p()
-    local g = ns.DependencyGraph:New()
-    for _, name in ipairs(p.order) do
-        local deps = p.services[name]:GetDeps()
-        local cond = (#deps > 0) and { all = deps } or nil
-        g:Add(name, function() return true end, cond)
-    end
-    return g
+    return self:_GetGraph(function(sm, g)
+        for s in sm:Iterate() do
+            local deps = s:GetDeps()
+            g:Add(s:GetName(), function() return true end, (#deps > 0) and { all = deps } or nil)
+        end
+    end)
 end
 
--- Initialise a single service (after its deps), publish it, attach logging.
-function ServiceManager:_Start(service)
+-- Initialise a single service (after its deps), publish it, attach logging. `ordered`
+-- is true when called from StartAll's topological pass (deps already loaded in order),
+-- so the depth-first pre-load is skipped; it only runs for a LATE registration, where
+-- there's no surrounding ordered pass to guarantee deps are up.
+function ServiceManager:_Start(service, ordered)
     local p = self:_p()
     local name = service:GetName()
     if p.loaded[name] then return end
-    for _, dep in ipairs(service:GetDeps()) do      -- depth-first safety net
-        local d = p.services[dep]
-        if d and not p.loaded[dep] then self:_Start(d) end
+    if not ordered then
+        for _, dep in ipairs(service:GetDeps()) do
+            local d = self:Get(dep)
+            if d and not p.loaded[dep] then self:_Start(d) end
+        end
     end
-    service:_Publish()
-    service:_AttachLogger()
-    service:OnInitialize()
+    service:_Init()  -- publish -> logger -> OnInitialize (sequence owned by Service:_Init)
     p.loaded[name] = true
 end
 
 -- Boot the whole service layer in dependency order. Single entry point.
 function ServiceManager:StartAll()
+    if not self:_BeginStart() then return end
     local p = self:_p()
-    if p.started then return end
-    p.started = true
 
-    local g = self:_Graph()
-    g:AssertValid("service dependencies")  -- a cycle or dangling dep is a fatal misconfiguration
-
+    local g = self:_Graph()  -- validates: a cycle or dangling dep is fatal
     p.startOrder = g:TopologicalOrder()
     for _, name in ipairs(p.startOrder) do
-        self:_Start(p.services[name])
+        self:_Start(self:Get(name), true)  -- ordered: deps already loaded, skip the pre-load loop
     end
 end
 
@@ -82,7 +77,7 @@ function ServiceManager:ShutdownAll()
     local p = self:_p()
     local order = p.startOrder or p.order
     for i = #order, 1, -1 do
-        local s = p.services[order[i]]
+        local s = self:Get(order[i])
         if s and s.OnShutdown then pcall(function() s:OnShutdown() end) end
     end
 end

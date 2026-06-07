@@ -89,7 +89,9 @@ function Questing:_OnLevelUp()
     self:_Snapshot()
     if self:GetSetting("echoLevelUp") then
         local _, _, _, _, _, _, perHour = self:_Stats()
-        self:LogSuccess(("ding! L%d - %s XP/hr this session")
+        -- Always announced to chat (even with Echo to Chat off) -- gated only by the
+        -- echoLevelUp setting above.
+        self:LogAnnounce(("ding! L%d - %s XP/hr this session")
             :format(UnitLevel("player"), perHour > 0 and commafy(perHour) or "-"))
     end
 end
@@ -224,7 +226,7 @@ end
 
 function Questing:_OnDetail()
     if not self:GetSetting("autoAccept") or self:_Paused() then return end
-    self:LogInfo("accepted:", GetTitleText())
+    self:LogEchoInfo("accepted:", GetTitleText())
     AcceptQuest()
 end
 
@@ -243,7 +245,7 @@ function Questing:_OnComplete()
         if qid then self:_p().skipTurnIn[qid] = true end
         return
     end
-    self:LogSuccess("turned in:", GetTitleText())
+    self:LogEchoSuccess("turned in:", GetTitleText())
     GetQuestReward(1)
 end
 

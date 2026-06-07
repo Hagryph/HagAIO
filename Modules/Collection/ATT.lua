@@ -101,8 +101,8 @@ sub = ns.Submodule:New("ATT", {
     onLoad = function()
         state.active = true
         hookAll()
-        if ns.Collection and ns.Collection.LogInfo then
-            ns.Collection:LogInfo("All The Things integration loaded -- Ctrl+Right-Click items in ATT to track.")
+        if ns.Collection and ns.Collection.LogEchoInfo then
+            ns.Collection:LogEchoInfo("All The Things integration loaded -- Ctrl+Right-Click items in ATT to track.")
         end
     end,
     onUnload = function()

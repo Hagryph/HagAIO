@@ -21,6 +21,13 @@ local LEVELS = {
 }
 ns.LogLevel = LEVELS
 
+-- Chat-echo policy per log line (independent of level/threshold):
+--   NEVER  : record to the log only -- the default for EVERY ordinary line.
+--   NORMAL : also echo to chat WHEN the player's "Echo to Chat" setting is on.
+--   ALWAYS : echo to chat even when "Echo to Chat" is off.
+local ECHO = { NEVER = 0, NORMAL = 1, ALWAYS = 2 }
+ns.LogEcho = ECHO
+
 -- ---- Channel: the per-module handle returned by Logger:Register -----------
 local Channel = Class.new("LogChannel")
 
@@ -42,14 +49,20 @@ local function joinArgs(...)
     return table.concat(parts, " ")
 end
 
-function Channel:Log(level, ...)
-    self:_p().logger:Record(self, level, joinArgs(...))
+function Channel:_Log(level, echo, ...)
+    self:_p().logger:Record(self, level, joinArgs(...), echo)
 end
-function Channel:Debug(...)   self:Log(LEVELS.DEBUG, ...)   end
-function Channel:Info(...)    self:Log(LEVELS.INFO, ...)    end
-function Channel:Success(...) self:Log(LEVELS.SUCCESS, ...) end
-function Channel:Warn(...)    self:Log(LEVELS.WARN, ...)    end
-function Channel:Error(...)   self:Log(LEVELS.ERROR, ...)   end
+-- Record-only helpers (never echo to chat) -- the default for all logging.
+function Channel:Debug(...)   self:_Log(LEVELS.DEBUG,   ECHO.NEVER, ...) end
+function Channel:Info(...)    self:_Log(LEVELS.INFO,    ECHO.NEVER, ...) end
+function Channel:Success(...) self:_Log(LEVELS.SUCCESS, ECHO.NEVER, ...) end
+function Channel:Warn(...)    self:_Log(LEVELS.WARN,    ECHO.NEVER, ...) end
+function Channel:Error(...)   self:_Log(LEVELS.ERROR,   ECHO.NEVER, ...) end
+-- Echo to chat WHEN "Echo to Chat" is on (e.g. welcome line, quest accept/turn-in).
+function Channel:EchoInfo(...)    self:_Log(LEVELS.INFO,    ECHO.NORMAL, ...) end
+function Channel:EchoSuccess(...) self:_Log(LEVELS.SUCCESS, ECHO.NORMAL, ...) end
+-- Echo to chat ALWAYS, even when "Echo to Chat" is off (e.g. level-up announcement).
+function Channel:Announce(...)    self:_Log(LEVELS.SUCCESS, ECHO.ALWAYS, ...) end
 
 ns.LogChannel = Channel
 
@@ -146,9 +159,11 @@ local function formatLine(e)
     return PREFIX .. "  " .. time .. "  " .. mod .. "  " .. glyph .. msg
 end
 
--- The core entry point: record (always) + echo (when enabled & above
--- threshold) + notify any live view.
-function Logger:Record(channel, level, text)
+-- The core entry point: record (always) + echo (per the line's echo policy) +
+-- notify any live view. `echo` defaults to NEVER, so a line only reaches chat if it
+-- explicitly opts in (NORMAL, gated by the "Echo to Chat" setting + level threshold)
+-- or forces it (ALWAYS).
+function Logger:Record(channel, level, text, echo)
     local p = self:_p()
     local entry = {
         time     = date("%H:%M:%S"),
@@ -176,7 +191,10 @@ function Logger:Record(channel, level, text)
         end
     end
 
-    if p.echo and level.order >= p.minLevel then
+    echo = echo or ECHO.NEVER
+    local doEcho = (echo == ECHO.ALWAYS)
+        or (echo == ECHO.NORMAL and p.echo and level.order >= p.minLevel)
+    if doEcho then
         p.frame:AddMessage(entry.line)
     end
 

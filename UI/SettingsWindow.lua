@@ -317,15 +317,18 @@ function SettingsWindow:_BuildProfilesPage(parent)
     local note = W.Text(page, "Save, switch and share full config sets. Loading a profile applies after /reload.",
         "textDim", "GameFontHighlightSmall")
     note:SetPoint("TOPLEFT", title, "BOTTOMLEFT", 0, -6)
+    local note2 = W.Text(page, "Tick Global to load that profile automatically on characters that haven't loaded one.",
+        "textDim", "GameFontHighlightSmall")
+    note2:SetPoint("TOPLEFT", note, "BOTTOMLEFT", 0, -4)
     local div = W.Divider(page)
-    div:SetPoint("TOPLEFT", note, "BOTTOMLEFT", 0, -12)
+    div:SetPoint("TOPLEFT", note2, "BOTTOMLEFT", 0, -12)
     div:SetPoint("RIGHT", page, "RIGHT", -18, 0)
 
     -- save-current row
     local saveLabel = W.Text(page, "Save current config as:", "textDim", "GameFontHighlightSmall")
-    saveLabel:SetPoint("TOPLEFT", 22, -64)
+    saveLabel:SetPoint("TOPLEFT", 22, -80)
     local input = W.Input(page, 180)
-    input:SetPoint("TOPLEFT", 20, -82)
+    input:SetPoint("TOPLEFT", 20, -98)
     local save = W.TextButton(page, "Save")
     save:SetPoint("LEFT", input, "RIGHT", 16, 0)
     save:SetScript("OnClick", function()
@@ -352,9 +355,9 @@ function SettingsWindow:_BuildProfilesPage(parent)
     end)
 
     local listLabel = W.SectionLabel(page, "Saved profiles")
-    listLabel:SetPoint("TOPLEFT", 22, -124)
+    listLabel:SetPoint("TOPLEFT", 22, -140)
     local empty = W.Text(page, "No profiles yet.", "textFaint", "GameFontHighlightSmall")
-    empty:SetPoint("TOPLEFT", 24, -150)
+    empty:SetPoint("TOPLEFT", 24, -166)
     p.profileEmpty = empty
     p.profileRows = {}
 
@@ -368,7 +371,21 @@ function SettingsWindow:_BuildProfileRow(page)
     row:SetHeight(26)
     local label = W.Text(row, "", "text", "GameFontHighlight")
     label:SetPoint("LEFT", 2, 0)
+    label:SetWidth(140)
+    label:SetJustifyH("LEFT")
+    label:SetWordWrap(false)
     row.label = label
+
+    -- Exclusive "Global" flag: ticking one profile clears any other; unticking the
+    -- current global leaves none (fresh characters then start empty).
+    local globalCheck = W.Toggle(row, "Global")
+    globalCheck:SetPoint("LEFT", 150, 0)
+    globalCheck:SetOnToggle(function(on)
+        if not row.name then return end
+        ns.Profiles:SetGlobal(on and row.name or nil)
+        self:_RefreshProfilesPage()  -- reflect exclusivity across all rows
+    end)
+    row.globalCheck = globalCheck
 
     local del = W.TextButton(row, "Delete")
     del:SetPoint("RIGHT", 0, 0)
@@ -404,7 +421,7 @@ function SettingsWindow:_RefreshProfilesPage()
     for _, row in ipairs(p.profileRows) do row:Hide() end
     local names = ns.Profiles and ns.Profiles:List() or {}
     p.profileEmpty:SetShown(#names == 0)
-    local y = -150
+    local y = -166
     for i, name in ipairs(names) do
         local row = p.profileRows[i]
         if not row then row = self:_BuildProfileRow(page); p.profileRows[i] = row end
@@ -413,6 +430,7 @@ function SettingsWindow:_RefreshProfilesPage()
         row:SetPoint("RIGHT", page, "RIGHT", -22, 0)
         row.label:SetText(name)
         row.name = name
+        row.globalCheck:SetChecked(ns.Profiles:IsGlobal(name))
         row:Show()
         y = y - 30
     end

@@ -120,11 +120,14 @@ function UnitFrames:_Color(unit)
     if color then paint(bar, color:GetRGB()) end
 end
 
-function UnitFrames:OnSettingChanged(key)
+-- Settings reactions are declared via `settingsWatch` (see registration below):
+-- a colour change rebuilds the curve; ANY change then re-applies to the live bars.
+function UnitFrames:_RebuildCurve()
+    self:_p().curve = self:_BuildCurve()
+end
+
+function UnitFrames:_ApplyColors()
     local p = self:_p()
-    if key == "startColor" or key == "midColor" or key == "endColor" then
-        p.curve = self:_BuildCurve()
-    end
     for unit, bar in pairs(p.bars) do
         if self:GetSetting(unit) then self:_Color(unit) else restore(bar) end
     end
@@ -136,6 +139,11 @@ ns.ModuleManager:Register(UnitFrames:New("UnitFrames", {
     description = "Colours the player and target health bars by how much health is left.",
     defaultEnabled = false,
     color = ns.Theme.hex.green,
+    -- Rebuild the curve when a colour changes; re-apply to the bars on any change.
+    settingsWatch = {
+        startColor = "_RebuildCurve", midColor = "_RebuildCurve", endColor = "_RebuildCurve",
+        ["*"] = "_ApplyColors",
+    },
     settings = {
         { type = "header", text = "Health bar tint" },
         { type = "toggle", key = "player", label = "Tint player health bar", default = true },

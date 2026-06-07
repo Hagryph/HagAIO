@@ -86,10 +86,7 @@ function Tasklist:OnInitialize()
     p.tasks = {}          -- key -> runtime def
     p.eventTokens = {}    -- event -> EventBus token (subscribed once, shared)
     p.busTokens = {}      -- lifecycle subscriptions (combat, reset)
-    local db = self:GetDB()
-    db.state = db.state or {}      -- key -> { done, resetAt }
-    db.tracked = db.tracked or {}  -- key -> { title, itemID, type, source }  (persistent)
-    db.nextId = db.nextId or 0     -- counter for unique manual-task keys
+    -- db.state / db.tracked / db.nextId are pre-seeded from dbSchema (see registration).
 end
 
 function Tasklist:OnEnable()
@@ -126,7 +123,6 @@ function Tasklist:OnDisable()
     if p.frame then p.frame:Hide() end
 end
 
-function Tasklist:OnSettingChanged() self:_Refresh() end
 
 -- ---- registry -------------------------------------------------------------
 function Tasklist:_State(key)
@@ -592,6 +588,14 @@ ns.ModuleManager:Register(Tasklist:New("Tasklist", {
     defaultEnabled = true,
     color = ns.Theme.hex.amber,  -- distinct tag (Core uses accent)
     deps = { "EventBus", "EditMode", "SettingsWindow" },  -- reset/encounter events, movable frame, page refresh
+    -- Persisted structure (seeded on bind, before OnInitialize):
+    dbSchema = {
+        state   = {},  -- key -> { done, resetAt }
+        tracked = {},  -- key -> { title, itemID, type, source }  (persistent)
+        nextId  = 0,   -- counter for unique manual-task keys
+    },
+    -- Any settings change just refreshes the tracker.
+    settingsWatch = { ["*"] = "_Refresh" },
     settings = {
         { type = "header", text = "Task List" },
         { type = "toggle", key = "showCompleted", label = "Show completed tasks", default = true },

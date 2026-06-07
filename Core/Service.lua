@@ -19,6 +19,17 @@ local Class = ns.Class
 
 local Service = Class.new("Service")
 
+-- Logging is shared with ns.Component (single source of truth): a service owns a
+-- Logger channel and the Log* helpers exactly like a Module. We BORROW Component's
+-- logging methods rather than subclass it -- a Service has no on/off + settings
+-- surface, so inheriting Component's resource registry / abstract _SettingsDB would be
+-- wrong. (Core/Component.lua loads before this file; see the .toc.)
+for _, m in ipairs({ "GetLog", "_AttachLogger",
+                     "LogDebug", "LogInfo", "LogSuccess", "LogWarn", "LogError",
+                     "LogEchoInfo", "LogEchoSuccess", "LogAnnounce" }) do
+    Service[m] = ns.Component[m]
+end
+
 -- opts = { deps = { "OtherService", ... }, ui = bool, color = "RRGGBB" }
 --   deps  : names of services that must be loaded before this one
 --   ui    : publish the instance at ns.UI[name] instead of ns[name]
@@ -35,27 +46,23 @@ end
 
 function Service:GetName() return self:_p().name end
 function Service:GetDeps() return self:_p().deps end
-function Service:GetLog()  return self:_p().log end
+
+-- Internal: the fixed one-time init sequence the ServiceManager runs for this
+-- service. Publish (so ns.<Name> resolves) -> attach logger -> OnInitialize, so a
+-- service's OnInitialize can rely on GetLog() and on every dependency already being
+-- published. The manager calls one method; the order lives here, next to the pieces.
+function Service:_Init()
+    self:_Publish()
+    self:_AttachLogger()
+    self:OnInitialize()
+end
 
 -- Publish this instance into the namespace so call sites reach it as ns.<Name>
--- (or ns.UI.<Name> for UI services). Called by the ServiceManager at load.
+-- (or ns.UI.<Name> for UI services). Called by Service:_Init at load.
 function Service:_Publish()
     local p = self:_p()
     if p.ui then ns.UI[p.name] = self else ns[p.name] = self end
 end
-
--- Attach this service's Logger channel (logging is a core capability every
--- service inherits, like Module).
-function Service:_AttachLogger()
-    local p = self:_p()
-    p.log = ns.Logger:Register(p.name, p.color or ns.Theme.hex.accent)
-end
-
-function Service:LogDebug(...)   self:_p().log:Debug(...)   end
-function Service:LogInfo(...)    self:_p().log:Info(...)    end
-function Service:LogSuccess(...) self:_p().log:Success(...) end
-function Service:LogWarn(...)    self:_p().log:Warn(...)    end
-function Service:LogError(...)   self:_p().log:Error(...)   end
 
 -- Lifecycle hooks (no-ops by default):
 --   OnInitialize() : set up, with every declared dependency already loaded.

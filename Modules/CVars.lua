@@ -104,9 +104,7 @@ end
 function CVars:OnInitialize()
     local p = self:_p()
     p.sections = {}
-    local db = self:GetDB()
-    db.managed = db.managed or {}   -- name -> value (account-wide, re-applied each login)
-    db.custom  = db.custom  or {}   -- name -> type, the user-added "custom" CVars
+    -- db.managed / db.custom are pre-seeded from dbSchema (see registration).
 
     -- The slash command is always available, even while disabled, for discovery.
     if ns.SlashCommand then
@@ -178,9 +176,7 @@ function CVars:_DetectType(name)
     local known = KNOWN[name]
     if known then return known.type, known.options end
     local v = C_CVar and C_CVar.GetCVar and C_CVar.GetCVar(name)
-    if v == "0" or v == "1" then return "boolean" end
-    if tonumber(v) ~= nil then return "number" end
-    return "string"
+    return ns.CVarHelper:InferType(v)   -- pure value-based inference
 end
 
 -- ---- settings page (custom builder, called by SettingsWindow) -------------
@@ -468,5 +464,10 @@ ns.ModuleManager:Register(CVars:New("CVars", {
     description = "Force useful console variables on every character. Grouped, typed controls plus custom CVars.",
     defaultEnabled = false,
     color = ns.Theme.hex.red,
-    deps = { "SlashCommand", "Dev", "SettingsWindow" },  -- /hag cvar routing + CVar enumeration + page refresh
+    deps = { "SlashCommand", "Dev", "SettingsWindow", "CVarHelper" },  -- routing + enumeration + page refresh + type inference
+    -- Persisted structure (seeded on bind, before OnInitialize):
+    dbSchema = {
+        managed = {},  -- name -> value (account-wide, re-applied each login)
+        custom  = {},  -- name -> type, the user-added "custom" CVars
+    },
 }))

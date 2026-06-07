@@ -21,9 +21,12 @@ Core\Theme.lua
 # Service/ServiceManager + ModuleManager self-instantiate at load.
 Core\DependencyGraph.lua
 Core\Logger.lua
+# Registry: shared base for the three lifecycle managers below.
+Core\Registry.lua
+# Component loads before Service: Service borrows Component's shared logging surface.
+Core\Component.lua
 Core\Service.lua
 Core\ServiceManager.lua
-Core\Component.lua
 Core\Module.lua
 Core\ModuleManager.lua
 Core\Submodule.lua
@@ -36,6 +39,11 @@ Services\Memoize.lua
 Services\Scheduler.lua
 Services\Serializer.lua
 Services\Profiles.lua
+# pure-logic helpers (no WoW API; extracted from modules so they're unit-testable)
+Services\FlightGraph.lua
+Services\Geometry.lua
+Services\SpellTooltipParser.lua
+Services\CVarHelper.lua
 Services\EventBus.lua
 Services\SavedVars.lua
 Services\SlashCommand.lua

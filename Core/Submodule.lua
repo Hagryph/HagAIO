@@ -44,7 +44,10 @@ function Submodule:Initialize(name, opts)
     p.host      = opts.host              -- context passed to onLoad/onUnload
     p.title     = opts.title             -- shown as the section label on the parent's page
     p.settings  = opts.settings or {}    -- option schema (rendered while loaded)
+    ns.Component.ValidateSettings(p.settings, name)  -- fail fast on a malformed schema
     p.onSettingChanged = opts.onSettingChanged
+    p.settingsWatch = opts.settingsWatch -- declarative setting-key -> handler (see ns.Component)
+    p.dbSchema  = opts.dbSchema          -- structural nested tables to seed in the namespace
     p.db = nil
     p.loaded = false
 end
@@ -62,6 +65,9 @@ function Submodule:_DB()
         for _, s in ipairs(p.settings) do
             if s.key ~= nil and s.default ~= nil then defaults[s.key] = s.default end
         end
+        if p.dbSchema then
+            for k, v in pairs(p.dbSchema) do defaults[k] = v end
+        end
         p.db = ns.SavedVars:Namespace("submodule_" .. p.name, defaults)
     end
     return p.db
@@ -72,6 +78,7 @@ end
 function Submodule:_SettingsDB() return self:_DB() end
 function Submodule:_SettingsOwnerId() return "sub:" .. self:_p().name end
 function Submodule:OnSettingChanged(key, value)
+    ns.Component.OnSettingChanged(self, key, value)  -- declarative settingsWatch (if any)
     local p = self:_p()
     if p.onSettingChanged then p.onSettingChanged(p.host, key, value) end
 end

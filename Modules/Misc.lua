@@ -29,6 +29,7 @@ local function dirKey(a, b)
     return faction .. "|" .. tostring(a) .. " -> " .. tostring(b)
 end
 
+-- ---- tunables (flight-path detection distances, yards) --------------------
 local ARRIVE_YARDS = 40    -- within this of a path node = we landed there
 local CROSS_MARGIN = 75   -- moved this many (linear) yards past the closest approach = passed it
 local FLYOVER_RANGE = 75  -- closest approach must be within this to count as flying OVER a node;
@@ -89,9 +90,8 @@ function Misc:OnInitialize()
     p.phase = nil       -- nil / "boarding" / "flying"
     p.src = nil
 
-    -- Flight recording is ALWAYS on (builds the database even while disabled),
-    -- so set it up here rather than in OnEnable.
-    self:GetDB().flights = self:GetDB().flights or {}
+    -- Flight recording is ALWAYS on (builds the database even while disabled).
+    -- db.flights is pre-seeded from dbSchema (see registration).
     ns.EventBus:On("TAXIMAP_OPENED", function() self:_OnTaxiMap() end)
     if not taxiHooked and type(TakeTaxiNode) == "function" then
         local module = self
@@ -301,18 +301,19 @@ function Misc:_LandedNode()
     if not (p.path and #p.path > 1) then return p.dst end
     local px, py, pc = self:_PlayerWorld()
     if not px then return p.dst end
-    local bestName, bestD2, comparable = nil, ARRIVE_YARDS * ARRIVE_YARDS, false
-    for i = 2, #p.path do                       -- skip node 1 (origin)
+    -- Same-continent path nodes (skip node 1, the origin) become candidate points; the
+    -- pure Geometry solver finds the nearest within ARRIVE_YARDS.
+    local cands, comparable = {}, false
+    for i = 2, #p.path do
         local node = p.path[i]
         if node.world and node.world.c == pc then
             comparable = true
-            local dx, dy = px - node.world.x, py - node.world.y
-            local d2 = dx * dx + dy * dy
-            if d2 <= bestD2 then bestD2, bestName = d2, node.name end
+            cands[#cands + 1] = { x = node.world.x, y = node.world.y, name = node.name }
         end
     end
     if not comparable then return p.dst end   -- couldn't measure -> assume target
-    return bestName                            -- nil => near no node => ported
+    local best = ns.Geometry:Nearest(px, py, cands, ARRIVE_YARDS)
+    return best and best.name                  -- nil => near no node => ported
 end
 
 -- Poll once per refresh while flying: track the closest approach to the NEXT path
@@ -595,25 +596,10 @@ end
 -- single fly-over loses to a chain of directs covering it. Returns seconds, or nil if the
 -- chain can't be completed. Shared by the full-route estimate and the early-stop estimate.
 function Misc:_EstimatePathNames(names)
-    local n = names and #names or 0
-    if n < 2 then return 0 end   -- nothing to sum (stop is where we already are)
     local flights = self:GetDB().flights
-    local pen, time = { [1] = 0 }, { [1] = 0 }
-    for j = 2, n do
-        for i = 1, j - 1 do
-            if pen[i] ~= nil then
-                local t, segPen = legCost(flights, names[i], names[j])
-                if segPen ~= nil then
-                    local cand = pen[i] + segPen
-                    if pen[j] == nil or cand < pen[j] then
-                        pen[j] = cand
-                        time[j] = time[i] + t
-                    end
-                end
-            end
-        end
-    end
-    return time[n]   -- nil if the chain can't be completed
+    -- value = seconds, penalty = imprecision (legCost); FlightGraph picks the
+    -- least-imprecise chain and returns its summed time.
+    return ns.FlightGraph:PathCost(names, function(a, b) return legCost(flights, a, b) end)
 end
 
 -- Estimate an unrecorded multi-hop route by summing known segments along the path the taxi
@@ -654,28 +640,9 @@ function Misc:_EstimateGraph(src, dst)
         end
     end
 
-    local pen, time, done = { [src] = 0 }, { [src] = 0 }, {}
-    while true do
-        local cur, curPen = nil, math.huge
-        for nm, pn in pairs(pen) do
-            if not done[nm] and pn < curPen then cur, curPen = nm, pn end
-        end
-        if not cur then return nil end
-        if cur == dst then return time[dst] end
-        done[cur] = true
-        for nm in pairs(nodes) do
-            if not done[nm] and nm ~= cur then
-                local t, segPen = legCost(flights, cur, nm)
-                if segPen ~= nil then
-                    local cand = curPen + segPen
-                    if pen[nm] == nil or cand < pen[nm] then
-                        pen[nm] = cand
-                        time[nm] = time[cur] + t
-                    end
-                end
-            end
-        end
-    end
+    -- Dijkstra over the learned segment graph (pure FlightGraph): minimise imprecision,
+    -- sum the times.
+    return ns.FlightGraph:GraphCost(src, dst, nodes, function(a, b) return legCost(flights, a, b) end)
 end
 
 function Misc:_OnPinEnter(pin)
@@ -735,9 +702,10 @@ function Misc:_BuildSellButton()
     p.sellBtn = b
 end
 
-function Misc:OnSettingChanged(key)
-    if key == "sellJunk" and self:GetSetting("sellJunk") ~= "button" then
-        if self:_p().sellBtn then self:_p().sellBtn:Hide() end
+-- Hide the vendor Sell Junk button when that mode is switched off (settingsWatch).
+function Misc:_OnSellJunkChanged()
+    if self:GetSetting("sellJunk") ~= "button" and self:_p().sellBtn then
+        self:_p().sellBtn:Hide()
     end
 end
 
@@ -747,7 +715,9 @@ ns.ModuleManager:Register(Misc:New("Misc", {
     description = "Flight-path timers and selling junk.",
     defaultEnabled = false,
     color = ns.Theme.hex.grey,  -- distinct tag (accent=Core, green=UnitFrames, purple=Class, gold=Questing, red=CVars)
-    deps = { "EventBus", "EditMode" },  -- always-on TAXIMAP_OPENED recording + movable in-flight timer
+    deps = { "EventBus", "EditMode", "FlightGraph", "Geometry" },  -- recording/timer + pure route + proximity solvers
+    dbSchema = { flights = {} },        -- recorded route times (seeded on bind, before OnInitialize)
+    settingsWatch = { sellJunk = "_OnSellJunkChanged" },
     settings = {
         { type = "header", text = "Flight timers" },
         { type = "toggle", key = "showInFlight", label = "Show timer while in flight", default = true },
