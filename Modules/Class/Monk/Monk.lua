@@ -13,25 +13,31 @@ local ClassModule = ns.ClassModule
 local InCombatLockdown = InCombatLockdown
 
 -- ---- tunables (spell IDs, marker colours, AoE breakpoint) -----------------
-local EXPEL_HARM = 322101
+-- Monk spell / talent IDs: a frozen set. The values feed the spell APIs and the ns.Monk
+-- surface; the enum keeps them grouped and typo-safe (an unknown member errors loudly).
+local Spell = ns.Enum.new("MonkSpell", {
+    EXPEL_HARM          = 322101,
+    GRACE_OF_CRANE      = 388811,   -- passive talent: increases healing taken
+    GIFT_OF_THE_OX      = 124502,   -- Brewmaster talent: spheres on damage taken
+    SPIRIT_OF_THE_OX    = 400629,   -- Brewmaster talent: spheres from Blackout Kick
+    TIGER_PALM          = 100780,
+    KEG_SMASH           = 121253,
+    SPINNING_CRANE_KICK = 101546,   -- 8-yd PBAoE; efficient at 3+ targets
+})
+local TIGER_COST_SPELLS = { Spell.TIGER_PALM, Spell.KEG_SMASH }  -- hoisted: no per-call table alloc
+
 -- Expel Harm bar colours. Ready = cyan accent (stands out against the green->yellow->red
 -- health gradient); on cooldown = white (cool, also off-gradient). Avoid green/yellow/red:
 -- the health bar fades through them, so those would camouflage exactly when health is low.
 local EXPEL_READY_COLOR    = { 0.29, 0.702, 0.902 }  -- #4ab3e6 cyan accent
 local EXPEL_COOLDOWN_COLOR = { 1, 1, 1 }             -- white
-local GRACE_OF_CRANE = 388811   -- passive talent: increases healing taken
-local GIFT_OF_THE_OX = 124502    -- Brewmaster talent: spheres on damage taken
-local SPIRIT_OF_THE_OX = 400629  -- Brewmaster talent: spheres from Blackout Kick
-local TIGER_PALM = 100780
-local KEG_SMASH  = 121253
-local TIGER_COST_SPELLS = { TIGER_PALM, KEG_SMASH }  -- hoisted: no per-call table alloc
-local SPINNING_CRANE_KICK = 101546   -- 8-yd PBAoE; efficient at 3+ targets
+
 local SCK_RADIUS = 8                  -- yards; the Range service resolves the checker
 -- SCK must out-damage Tiger Palm by this factor to be "worth it" -- Tiger Palm also
 -- reduces brew cooldowns, so raw damage parity isn't enough to switch off it.
 local SCK_BIAS = 1.20
 
--- Orb-count marker. C_Spell.GetSpellCastCount(EXPEL_HARM) is the absorbable Gift-of-the-Ox
+-- Orb-count marker. C_Spell.GetSpellCastCount(Spell.EXPEL_HARM) is the absorbable Gift-of-the-Ox
 -- sphere count -- a SECRET NUMBER in restricted content (M+/raid/PvP), so we can't read,
 -- compare, or do arithmetic on it, and ColorCurve:Evaluate REJECTS a secret argument in
 -- addon (tainted) code ("Secret values are only allowed during untainted execution"). The
@@ -54,15 +60,15 @@ local ORB_MAX_COUNT = 5
 -- unit-tested); the WoW-specific bits (fetching the description, talent gating, the
 -- secret-value guard) stay here.
 local function healingTakenMultiplier()
-    if not (IsPlayerSpell and IsPlayerSpell(GRACE_OF_CRANE)) then return 1 end
-    local desc = C_Spell and C_Spell.GetSpellDescription and C_Spell.GetSpellDescription(GRACE_OF_CRANE)
+    if not (IsPlayerSpell and IsPlayerSpell(Spell.GRACE_OF_CRANE)) then return 1 end
+    local desc = C_Spell and C_Spell.GetSpellDescription and C_Spell.GetSpellDescription(Spell.GRACE_OF_CRANE)
     local pct = ns.SpellTooltipParser:Percent(desc) or 4
     return 1 + pct / 100
 end
 
 -- Parse "healing for N" out of the spell description (enUS) + the talent bonus.
 local function readExpelHarmHeal()
-    local desc = C_Spell and C_Spell.GetSpellDescription and C_Spell.GetSpellDescription(EXPEL_HARM)
+    local desc = C_Spell and C_Spell.GetSpellDescription and C_Spell.GetSpellDescription(Spell.EXPEL_HARM)
     local heal = ns.SpellTooltipParser:Heal(desc)
     if not heal then return nil end
     return math.floor(heal * healingTakenMultiplier() + 0.5)
@@ -76,8 +82,8 @@ end
 -- move and only the colour ladder conveys it.
 local function orbHealAmount()
     if not IsPlayerSpell then return 0 end
-    local id = (IsPlayerSpell(GIFT_OF_THE_OX) and GIFT_OF_THE_OX)
-        or (IsPlayerSpell(SPIRIT_OF_THE_OX) and SPIRIT_OF_THE_OX)
+    local id = (IsPlayerSpell(Spell.GIFT_OF_THE_OX) and Spell.GIFT_OF_THE_OX)
+        or (IsPlayerSpell(Spell.SPIRIT_OF_THE_OX) and Spell.SPIRIT_OF_THE_OX)
     if not id then return 0 end
     local desc = C_Spell and C_Spell.GetSpellDescription and C_Spell.GetSpellDescription(id)
     local n = ns.SpellTooltipParser:HealsYouFor(desc)
@@ -116,7 +122,7 @@ ns.SubmoduleManager:Register(ns.Submodule:New("Monk", {
 -- registerSpec. A spec file defines its ns.ClassSpec subclass, sets ns.Monk.<Name> so a
 -- deeper spec can extend it, then calls ns.Monk.registerSpec to wire it as a submodule.
 ns.Monk = {
-    EXPEL_HARM           = EXPEL_HARM,
+    EXPEL_HARM           = Spell.EXPEL_HARM,
     EXPEL_READY_COLOR    = EXPEL_READY_COLOR,
     EXPEL_COOLDOWN_COLOR = EXPEL_COOLDOWN_COLOR,
 }
@@ -189,7 +195,7 @@ function ClassModule:_StartOrbPoll()
         -- Out of combat: the count is readable in the open world; stop once it hits 0.
         -- In restricted content it stays secret (Number -> nil), so keep the slow poll.
         local n = ns.Secrets and ns.Secrets:Number(
-            C_Spell and C_Spell.GetSpellCastCount and C_Spell.GetSpellCastCount(EXPEL_HARM))
+            C_Spell and C_Spell.GetSpellCastCount and C_Spell.GetSpellCastCount(Spell.EXPEL_HARM))
         if n == 0 then return end                      -- no orbs left -> stop until next combat
         C_Timer.After(0.5, poll)
     end
@@ -214,7 +220,7 @@ function ClassModule:_RefreshHeal()
     local p = self:_p()
     p.baseHeal = readExpelHarmHeal()
     p.orbHeal = orbHealAmount()
-    p.orbTalented = IsPlayerSpell and (IsPlayerSpell(GIFT_OF_THE_OX) or IsPlayerSpell(SPIRIT_OF_THE_OX)) or false
+    p.orbTalented = IsPlayerSpell and (IsPlayerSpell(Spell.GIFT_OF_THE_OX) or IsPlayerSpell(Spell.SPIRIT_OF_THE_OX)) or false
     self:_SnapshotMaxHP()
     if not p.baseHeal then
         -- description may not be loaded yet; retry shortly
@@ -298,7 +304,7 @@ function ClassModule:_DrawOrbFill(fill, maxHP, width)
     sb:SetPoint("TOPLEFT",    fill, "TOPRIGHT",    0, 0)    -- start AT current health
     sb:SetPoint("BOTTOMLEFT", fill, "BOTTOMRIGHT", 0, 0)
     sb:SetWidth(span)
-    sb:SetValue(C_Spell.GetSpellCastCount(EXPEL_HARM))     -- SECRET value -> engine fills it
+    sb:SetValue(C_Spell.GetSpellCastCount(Spell.EXPEL_HARM))     -- SECRET value -> engine fills it
     sb:Show()
     return true
 end
@@ -439,8 +445,8 @@ end
 -- tooltips; falls back to the conventional 3 if either can't be parsed.
 function ClassModule:_RefreshAoEThreshold()
     local p = self:_p()
-    local tp  = spellHitDamage(TIGER_PALM)
-    local sck = spellHitDamage(SPINNING_CRANE_KICK)
+    local tp  = spellHitDamage(Spell.TIGER_PALM)
+    local sck = spellHitDamage(Spell.SPINNING_CRANE_KICK)
     if tp and sck and sck > 0 then
         p.aoeThreshold = math.max(1, math.floor((tp * SCK_BIAS) / sck) + 1)
     else
@@ -455,8 +461,8 @@ end
 
 function ClassModule:_ScanAoEButtons()
     local p = self:_p()
-    p.tpButtons  = ns.ActionBars:FindSpell(TIGER_PALM)
-    p.sckButtons = ns.ActionBars:FindSpell(SPINNING_CRANE_KICK)
+    p.tpButtons  = ns.ActionBars:FindSpell(Spell.TIGER_PALM)
+    p.sckButtons = ns.ActionBars:FindSpell(Spell.SPINNING_CRANE_KICK)
     p.aoeGreyState = nil   -- button set may have changed -> force re-apply next update
 end
 
@@ -469,7 +475,7 @@ function ClassModule:_UpdateAoE()
     -- grey TP once that count reaches the live SCK-beats-TP breakpoint. We only test
     -- "count >= threshold", so CountEnemies early-exits at the threshold.
     local threshold = p.aoeThreshold or 3
-    local greyTP = ns.Range:CountEnemies(SCK_RADIUS, TIGER_PALM, threshold) >= threshold
+    local greyTP = ns.Range:CountEnemies(SCK_RADIUS, Spell.TIGER_PALM, threshold) >= threshold
     if greyTP == p.aoeGreyState then return end   -- unchanged -> skip the per-button work
     p.aoeGreyState = greyTP
     for _, b in ipairs(p.tpButtons or {})  do ns.ActionBars:SetGrey(b, greyTP) end
