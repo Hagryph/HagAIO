@@ -118,7 +118,9 @@ Lib/
   Format.lua               Pure time formatters -- no WoW API
   Helpers.lua              Small pure-logic helpers shared across the addon -- no WoW API, no state
   MonkMath.lua             Pure combat arithmetic for the Monk module -- no WoW API, no state
+  SlashParse.lua           Pure parsing for slash sub-command strings -- no WoW API
   SpellTooltipParser.lua   Pure parsers for the numbers embedded in a spell's description text
+  TaskRules.lua            Pure rules for the Task List -- no WoW API
   Vector2D.lua             A pure 2D vector value-TYPE (ns.Type) -- no WoW API
 Services/
   ActionBars.lua           Service for locating action buttons by what they cast and annotating them

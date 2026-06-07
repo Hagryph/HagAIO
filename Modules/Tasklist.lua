@@ -210,12 +210,13 @@ end
 -- ---- resets ---------------------------------------------------------------
 function Tasklist:_NextReset(taskType)
     local cd = C_DateAndTime
+    local secs
     if taskType == "daily" and cd and cd.GetSecondsUntilDailyReset then
-        return time() + cd.GetSecondsUntilDailyReset()
+        secs = cd.GetSecondsUntilDailyReset()
     elseif taskType == "weekly" and cd and cd.GetSecondsUntilWeeklyReset then
-        return time() + cd.GetSecondsUntilWeeklyReset()
+        secs = cd.GetSecondsUntilWeeklyReset()
     end
-    return nil
+    return ns.TaskRules:ResetAt(taskType, time(), secs)   -- pure rule (Lib/TaskRules.lua)
 end
 
 function Tasklist:_CheckResets()
@@ -295,10 +296,10 @@ function Tasklist:_RegisterTracked(key, t)
     })
 end
 
--- Stable task key for an ATT group (its key field + id, else item/name).
+-- Stable task key for an ATT group (its key field + id, else item/name). Pure rule in
+-- Lib/TaskRules.lua so the key format -- an integration contract -- is unit-tested.
 function Tasklist:ATTKey(ref)
-    local idKey = ref.key
-    return "att:" .. tostring(idKey or "g") .. ":" .. tostring((idKey and ref[idKey]) or ref.itemID or ref.text or "?")
+    return ns.TaskRules:ATTKey(ref)
 end
 
 function Tasklist:IsTrackedRef(ref)

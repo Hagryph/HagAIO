@@ -18,4 +18,12 @@ function CVarHelper:InferType(value)
     return "string"
 end
 
+-- Pick a control type for a CVar: a curated `knownEntry` ({ type =, options = }) wins;
+-- otherwise infer from the live string value. Returns (type, options) -- options is nil for
+-- an inferred type. The CVars module supplies the known entry and the live value.
+function CVarHelper:DetectType(knownEntry, liveValue)
+    if knownEntry then return knownEntry.type, knownEntry.options end
+    return self:InferType(liveValue)
+end
+
 ns.LibManager:Register(CVarHelper:New("CVarHelper"))

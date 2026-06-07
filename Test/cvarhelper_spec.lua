@@ -32,3 +32,20 @@ describe("CVarHelper:InferType", function()
         assert.are.equal("number", h:InferType("01"))   -- not exactly "0"/"1"; tonumber -> 1
     end)
 end)
+
+describe("CVarHelper:DetectType", function()
+    it("a curated known entry wins, returning its type AND options", function()
+        local h = helper()
+        local known = { type = "select", options = { "a", "b" } }
+        local t, opts = h:DetectType(known, "whatever")
+        assert.are.equal("select", t)
+        assert.are.equal("b", opts[2])
+    end)
+
+    it("falls back to value inference when there's no known entry", function()
+        local h = helper()
+        local t, opts = h:DetectType(nil, "1")
+        assert.are.equal("boolean", t)
+        assert.is_nil(opts)                              -- inferred types have no options
+    end)
+end)

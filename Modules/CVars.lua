@@ -173,10 +173,8 @@ end
 -- Work out a CVar's control type: a curated/known typing wins; otherwise infer
 -- from the current value ("0"/"1" -> boolean, numeric -> number, else text).
 function CVars:_DetectType(name)
-    local known = KNOWN[name]
-    if known then return known.type, known.options end
     local v = C_CVar and C_CVar.GetCVar and C_CVar.GetCVar(name)
-    return ns.CVarHelper:InferType(v)   -- pure value-based inference
+    return ns.CVarHelper:DetectType(KNOWN[name], v)   -- curated override else value inference
 end
 
 -- ---- settings page (custom builder, called by SettingsWindow) -------------
@@ -379,12 +377,11 @@ end
 
 -- ---- slash ----------------------------------------------------------------
 function CVars:_Slash(rest)
-    local cmd, arg = (rest or ""):match("^(%S*)%s*(.-)%s*$")
-    cmd = (cmd or ""):lower()
+    local cmd, arg = ns.SlashParse:Split(rest)   -- pure tokeniser (Lib/SlashParse.lua)
     if cmd == "dump" then
         self:_Dump(arg)
     elseif cmd == "set" then
-        local name, value = arg:match("^(%S+)%s+(.+)$")
+        local name, value = ns.SlashParse:Pair(arg)
         if name and value then
             if self:_ApplyCVar(name, value) then
                 self:LogSuccess(("globalising %s = %s"):format(name, value))
