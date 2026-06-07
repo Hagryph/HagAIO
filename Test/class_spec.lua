@@ -37,6 +37,29 @@ describe("class.super", function()
     end)
 end)
 
+describe("class options", function()
+    it("abstract: the class can't be :New()'d, but a concrete subclass can", function()
+        local ns = classNs()
+        local Base = ns.Class.new("Base", nil, { abstract = true })
+        function Base:Hi() return "hi" end
+        assert.is_false((pcall(function() return Base:New() end)))
+        local Sub = ns.Class.new("Sub", Base)              -- concrete
+        assert.are.equal("hi", Sub:New():Hi())
+    end)
+
+    it("statics: members live on the class, are inherited, and reachable from instances", function()
+        local ns = classNs()
+        local C = ns.Class.new("C", nil, {
+            statics = { MAX = 100, Make = function() return "made" end },
+        })
+        assert.are.equal(100, C.MAX)            -- static attribute on the class
+        assert.are.equal("made", C.Make())      -- static (dot-called) method
+        assert.are.equal(100, C:New().MAX)      -- visible from an instance via __index
+        local Sub = ns.Class.new("Sub", C)
+        assert.are.equal(100, Sub.MAX)          -- inherited by subclasses
+    end)
+end)
+
 describe("Loggable identity via the constructor chain", function()
     it("Module/Submodule/Service all get GetName from the shared base", function()
         local ns = S.newNs()                       -- loads Loggable -> Component -> Service

@@ -54,9 +54,14 @@ end
 -- Class factory (a static namespace table).
 local Class = {}
 
--- Create a new class `name`, optionally inheriting from `parent`
--- (defaults to Object).
-function Class.new(name, parent)
+-- Create a new class `name`, optionally inheriting from `parent` (defaults to Object).
+-- `opts` (all optional) turns on the richer constructs:
+--   abstract = true          -- the class itself can't be :New()'d (only subclasses can)
+--   statics  = { ... }       -- static members copied onto the CLASS (shared, not per-
+--                               instance): constants + dot-called methods, inherited by subs
+--   mixins   = { M1, M2 }    -- trait method tables (ns.Mixin) merged in; your own methods win
+--   implements = { I1 }      -- interfaces (ns.Interface) verified at first :New()
+function Class.new(name, parent, opts)
     parent = parent or Object
     local class = setmetatable({}, { __index = parent })
     class.__index = class
@@ -69,9 +74,45 @@ function Class.new(name, parent)
     for a in pairs(parent.__ancestors or { [parent] = true }) do ancestors[a] = true end
     class.__ancestors = ancestors
 
-    -- Instantiation entry point: MyClass:New(...).
-    function class:New(...)
-        return makeInstance(self, ...)
+    if opts then
+        -- Traits/mixins first, so a `function C:Method` defined afterwards overrides them.
+        if opts.mixins then
+            for _, mixin in ipairs(opts.mixins) do
+                for k, v in pairs(mixin) do class[k] = v end
+            end
+        end
+        if opts.statics then
+            for k, v in pairs(opts.statics) do class[k] = v end
+        end
+        if opts.abstract then class.__abstract = true end
+        if opts.implements then class.__implements = opts.implements end
+    end
+
+    -- Classes that opt into abstract/implements get a checking constructor; every other
+    -- class keeps the minimal fast path (no per-New overhead -- protects hot value types).
+    if opts and (opts.abstract or opts.implements) then
+        function class:New(...)
+            if rawget(self, "__abstract") then
+                error(("cannot instantiate abstract class '%s'"):format(self.__name), 2)
+            end
+            local impl = rawget(self, "__implements")
+            if impl then
+                self.__implements = nil   -- verify once, now every method is defined
+                for _, iface in ipairs(impl) do
+                    for _, m in ipairs(iface) do
+                        if type(self[m]) ~= "function" then
+                            error(("class '%s' is missing method '%s' required by interface '%s'"):format(
+                                self.__name, m, iface.__name or "?"), 2)
+                        end
+                    end
+                end
+            end
+            return makeInstance(self, ...)
+        end
+    else
+        function class:New(...)
+            return makeInstance(self, ...)
+        end
     end
 
     return class

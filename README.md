@@ -86,6 +86,9 @@ Core/
   Class.lua                Minimal metatable-based OOP system with true per-instance encapsulation
   Type.lua                 VALUE-TYPE factory -- a sibling of ns.Class for immutable value objects (e.g
   Enum.lua                 ENUM factory -- a sibling of ns.Class for FROZEN constant tables
+  Mixin.lua                TRAIT / MIXIN factory -- a sibling of ns.Class for SHARING method implementations across
+  Interface.lua            INTERFACE factory -- a sibling of ns.Class for CONTRACTS: a named list of method names a
+  Delegate.lua             A multicast DELEGATE / signal -- an object-owned event you Connect handlers to and Fire
   Theme.lua                Static design system ported from the LoL Game Helper desktop app's
   DependencyGraph.lua      A generic dependency forest
   Logger.lua               Central logging service
