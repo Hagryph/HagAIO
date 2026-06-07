@@ -17,12 +17,12 @@ const args = process.argv.slice(2);
 const only = args.includes("--lint") ? "lint" : args.includes("--test") ? "test" : "all";
 const sh = process.platform === "win32";  // resolve PATH-based commands via the shell on Windows
 
-// The lint gates, each a `node tools/<x>.mjs ...` invocation (same as the CI jobs).
+// The lint gates, each a `node tools/<x>.mjs ...` invocation (same as the CI jobs). The
+// namespace slot block, README, and .toc are GENERATED at deploy (tools/autogen/*.ps1),
+// not checked here -- so only the real lints (undeclared deps, dead code) remain.
 const LINT = [
-  ["depcheck",   ["tools/depcheck.mjs"]],
-  ["nscheck",    ["tools/nscheck.mjs"]],
-  ["readmetree", ["tools/gen_readme.mjs", "--check"]],
-  ["deadcode",   ["tools/deadcode.mjs"]],
+  ["depcheck", ["tools/depcheck.mjs"]],
+  ["deadcode", ["tools/deadcode.mjs"]],
 ];
 
 function run(label, cmd, cmdArgs) {

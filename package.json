@@ -9,10 +9,6 @@
     "lint": "node tools/check.mjs --lint",
     "test": "node tools/check.mjs --test",
     "depcheck": "node tools/depcheck.mjs",
-    "nscheck": "node tools/nscheck.mjs",
-    "nscheck:fix": "node tools/nscheck.mjs --fix",
-    "deadcode": "node tools/deadcode.mjs",
-    "readme": "node tools/gen_readme.mjs",
-    "readme:check": "node tools/gen_readme.mjs --check"
+    "deadcode": "node tools/deadcode.mjs"
   }
 }
