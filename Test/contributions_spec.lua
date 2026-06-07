@@ -22,32 +22,32 @@ local function rig()
     function C:_RunFoo(rest) self.lastRest = rest end
     function C:IsOn() return self.on end
     function C:SetOn(v) self.on = v; return false end
-    return C:New(), sc, sw
+    return C:New(), sc, sw, ns
 end
 
-describe("Component.BuildCommand", function()
+describe("Contributions.BuildCommand", function()
     it("binds a method-name handler to the owner, passing the slash arg", function()
-        local c = rig()
-        local fn, help = c.BuildCommand(c, { handler = "_RunFoo", help = "h" })
+        local c, _, _, ns = rig()
+        local fn, help = ns.Contributions.BuildCommand(c, { handler = "_RunFoo", help = "h" })
         assert.are.equal("h", help)
         fn("a b")
         assert.are.equal("a b", c.lastRest)
     end)
 
     it("binds a function handler to the owner", function()
-        local c = rig()
+        local c, _, _, ns = rig()
         local seen
-        local fn = c.BuildCommand(c, { handler = function(self, rest) seen = { self, rest } end })
+        local fn = ns.Contributions.BuildCommand(c, { handler = function(self, rest) seen = { self, rest } end })
         fn("x")
         assert.are.equal(c, seen[1])
         assert.are.equal("x", seen[2])
     end)
 end)
 
-describe("Component.BuildGeneralToggle", function()
+describe("Contributions.BuildGeneralToggle", function()
     it("binds method-name get/set to the owner and passes plain fields through", function()
-        local c = rig()
-        local d = c.BuildGeneralToggle(c, { label = "L", section = "S", get = "IsOn", set = "SetOn" })
+        local c, _, _, ns = rig()
+        local d = ns.Contributions.BuildGeneralToggle(c, { label = "L", section = "S", get = "IsOn", set = "SetOn" })
         assert.are.equal("L", d.label)
         assert.are.equal("S", d.section)
         assert.is_nil(d.get())     -- on is nil initially

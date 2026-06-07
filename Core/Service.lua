@@ -57,18 +57,18 @@ end
 
 -- Register declarative commands / general toggles once at init (a service has no
 -- enable/disable lifecycle, so there is no teardown -- unlike a Module). Uses the same
--- spec shapes + builders as ns.Component so both sides declare them identically. A
+-- spec shapes + builders (ns.Contributions) as a Module so both declare them identically. A
 -- service that declares commands must depend on "SlashCommand"; one that declares
 -- generalToggles must depend on "SettingsWindow", so the dependency ordering guarantees
 -- those targets are initialised before this runs.
 function Service:_WireContributions()
     local p = self:_p()
     for sub, spec in pairs(p.commands or {}) do
-        local fn, help = ns.Component.BuildCommand(self, spec)
+        local fn, help = ns.Contributions.BuildCommand(self, spec)
         ns.SlashCommand:Register(sub, fn, help)
     end
     for _, spec in ipairs(p.generalToggles or {}) do
-        ns.UI.SettingsWindow:RegisterGeneralToggle(ns.Component.BuildGeneralToggle(self, spec))
+        ns.UI.SettingsWindow:RegisterGeneralToggle(ns.Contributions.BuildGeneralToggle(self, spec))
     end
 end
 

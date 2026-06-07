@@ -13,6 +13,21 @@ local Class = ns.Class
 local ClassModule = Class.new("Class", ns.Module)
 ns.ClassModule = ClassModule       -- per-class files add their methods here
 
+-- A per-spec behaviour unit. Each spec (e.g. Monk Brewmaster) is an ns.ClassSpec subclass
+-- that configures its HOST -- the Class module instance -- when its spec becomes active:
+-- Load wires the host's events/markers, Unload tears them down, OnSettingChanged reacts to a
+-- settings change, GetSettings returns the spec's option schema (a `settings` class field).
+-- The host is stored at construction, so a spec subclass extends a base spec with real
+-- `.super` calls instead of hand-rolled `Base.Load(self)` dispatch on a plain table.
+local ClassSpec = Class.new("ClassSpec", nil, { abstract = true })
+function ClassSpec:Initialize(host) self:_p().host = host end
+function ClassSpec:Host() return self:_p().host end
+function ClassSpec:GetSettings() return self.settings or {} end
+ClassSpec.Load = Class.abstract("Load")
+ClassSpec.Unload = Class.abstract("Unload")
+function ClassSpec:OnSettingChanged() end   -- optional; a spec overrides to react
+ns.ClassSpec = ClassSpec
+
 -- "none" when the player has no specialisation, else the spec index (1-4). A spec-less
 -- character returns an out-of-range "initial" index, so gate on the in-range index only.
 local function currentSpecKey()
@@ -38,7 +53,7 @@ end
 function ClassModule:_BuildSettings()
     local p = self:_p()
     local sub = p.activeSub
-    p.settings = (sub and sub.settings)
+    p.settings = (sub and sub:GetSettings())
         or { { type = "note", text = "Nothing for your current specialisation yet." } }
 
     local db = self:_SettingsDB()
@@ -70,7 +85,7 @@ end
 function ClassModule:OnSettingChanged(key, value)
     ClassModule.super.OnSettingChanged(self, key, value)  -- inherited settingsWatch (Component)
     local sub = self:_p().activeSub
-    if sub and sub.OnSettingChanged then sub.OnSettingChanged(self, key, value) end
+    if sub then sub:OnSettingChanged(key, value) end
 end
 
 -- Spec features subscribe via self:On(event, fn, "spec") and the whole "spec" scope

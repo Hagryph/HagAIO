@@ -25,8 +25,9 @@ local Class = ns.Class
 --   }))
 
 -- Inherits ns.Component for the auto-released resource registry (self:On/Every/...
--- with named scopes) and the shared settings accessors + broadcast.
-local Submodule = Class.new("Submodule", ns.Component)
+-- with named scopes) and the shared settings accessors + broadcast; mixes in ns.Persisted
+-- for the cached lazy saved-var store (_BindStore/_Store).
+local Submodule = Class.new("Submodule", ns.Component, { mixins = { ns.Persisted } })
 
 function Submodule:Initialize(name, opts)
     opts = opts or {}
@@ -44,28 +45,22 @@ function Submodule:Initialize(name, opts)
     p.host      = opts.host              -- context passed to onLoad/onUnload
     p.title     = opts.title             -- shown as the section label on the parent's page
     p.settings  = opts.settings or {}    -- option schema (rendered while loaded)
-    ns.Component.ValidateSettings(p.settings, name)  -- fail fast on a malformed schema
+    ns.Contributions.ValidateSettings(p.settings, name)  -- fail fast on a malformed schema
     p.onSettingChanged = opts.onSettingChanged
     p.settingsWatch = opts.settingsWatch -- declarative setting-key -> handler (see ns.Component)
     p.dbSchema  = opts.dbSchema          -- structural nested tables to seed in the namespace
-    p.db = nil
+    -- Own saved-var namespace (the cached _Store from ns.Persisted), seeded with the schema
+    -- + dbSchema defaults; resolved lazily once SavedVariables load, before any page is shown.
+    self:_BindStore("submodule_" .. name, function()
+        local pp = self:_p()
+        return ns.Component.SeedDefaults(pp.settings, pp.dbSchema)
+    end)
     p.loaded = false
 end
 
 -- GetName is inherited from ns.Loggable (shared identity).
 function Submodule:GetTitle() local p = self:_p(); return p.title or p.name end
 function Submodule:GetSettings() return self:_p().settings end
-
--- Own saved-var namespace (private lazy store; the _Store convention), seeded with the
--- schema defaults -- available once SavedVariables load, well before any page is shown.
-function Submodule:_Store()
-    local p = self:_p()
-    if not p.db and ns.SavedVars and ns.SavedVars:IsLoaded() then
-        local defaults = ns.Component.SeedDefaults(p.settings, p.dbSchema)
-        p.db = ns.SavedVars:Namespace("submodule_" .. p.name, defaults)
-    end
-    return p.db
-end
 
 -- Settings hooks for ns.Component: values live in this submodule's namespace, the
 -- broadcast id is "sub:<name>", and a change forwards to the opts onSettingChanged.
@@ -109,32 +104,22 @@ function Submodule:_Refs()
     return refs
 end
 
--- Lifecycle hooks (no-ops by default). A SUBCLASS may override OnLoad/OnUnload as
--- methods; the base versions dispatch to the opts `onLoad`/`onUnload` callbacks, so the
--- declarative `ns.Submodule:New{ onLoad = ... }` form stays a thin convenience over the
--- same hook. Called by _Load/_Unload, which own the loaded-state latch.
-function Submodule:OnLoad()
-    local p = self:_p()
-    if p.onLoad then p.onLoad(p.host, self) end
-end
-
-function Submodule:OnUnload()
-    local p = self:_p()
-    if p.onUnload then p.onUnload(p.host, self) end
-end
-
+-- Lifecycle. The declarative `onLoad`/`onUnload` opts ARE the single extension point --
+-- run with (host, self) when this submodule becomes / stops being loaded. _Load/_Unload own
+-- the loaded-state latch and the auto-release of anything wired (self:On/Every/...) while
+-- loaded; submodules customise via the callbacks, not by subclassing.
 function Submodule:_Load()
     local p = self:_p()
     if p.loaded then return end
     p.loaded = true
-    self:OnLoad()
+    if p.onLoad then p.onLoad(p.host, self) end
 end
 
 function Submodule:_Unload()
     local p = self:_p()
     if not p.loaded then return end
     p.loaded = false
-    self:OnUnload()
+    if p.onUnload then p.onUnload(p.host, self) end
     self:_ReleaseAll()  -- undo any self:On / self:Every / ... registered while loaded
 end
 

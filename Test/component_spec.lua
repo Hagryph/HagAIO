@@ -82,10 +82,10 @@ describe("Component teardown", function()
     end)
 end)
 
-describe("Component.ValidateSettings", function()
+describe("Contributions.ValidateSettings", function()
     local function check(schema)
         local ns = withComponent()
-        return (pcall(ns.Component.ValidateSettings, schema, "T"))
+        return (pcall(ns.Contributions.ValidateSettings, schema, "T"))
     end
     it("accepts a well-formed schema and a nil schema", function()
         assert.is_true(check({ { type = "header", text = "H" }, { type = "toggle", key = "k", label = "L" } }))

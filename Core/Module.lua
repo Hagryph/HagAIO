@@ -59,7 +59,7 @@ function Module:Initialize(name, opts)
     p.addonDeps = opts.addonDeps or {}            -- external addons required to be available
     p.moduleDeps = opts.moduleDeps or {}          -- other modules that must be enabled
     p.settings = opts.settings or {}
-    ns.Component.ValidateSettings(p.settings, name)  -- fail fast on a malformed schema
+    ns.Contributions.ValidateSettings(p.settings, name)  -- fail fast on a malformed schema
     p.events = opts.events or {}                   -- declarative game-event subscriptions
     p.messages = opts.messages or {}              -- declarative custom-message subscriptions
     p.commands = opts.commands                     -- declarative /hag sub-commands (see ns.Component)

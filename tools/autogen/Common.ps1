@@ -11,6 +11,7 @@ $script:ScanDirs = @('Core', 'Lib', 'Services', 'UI', 'Modules')
 $script:PinnedHead = @(
     'Core\Namespace.lua', 'Core\Class.lua', 'Core\Type.lua', 'Core\Enum.lua',
     'Core\Mixin.lua', 'Core\Interface.lua', 'Core\Delegate.lua',
+    'Core\Contributions.lua', 'Core\Persisted.lua',
     'Core\Theme.lua', 'Core\DependencyGraph.lua',
     'Core\Logger.lua', 'Core\Registry.lua', 'Core\Loggable.lua', 'Core\Component.lua',
     'Core\Service.lua', 'Core\ServiceManager.lua', 'Core\Module.lua', 'Core\ModuleManager.lua',

@@ -8,18 +8,14 @@ local Class = ns.Class
 -- right-click jumps to the activity log. This is NOT the legacy standalone
 -- minimap button (LibDBIcon) — it's an entry in the compartment menu.
 
-local Compartment = Class.new("Compartment", ns.Service)
+local Compartment = Class.new("Compartment", ns.Service, { mixins = { ns.Persisted } })
 
 function Compartment:OnInitialize()
     self:_p().registered = false
+    self:_BindStore("compartment", { shown = true })  -- account-wide; cached _Store (ns.Persisted)
     ns.EventBus:On("PLAYER_LOGIN", function() self:Register() end)  -- self-apply on login
     -- Our General-page toggle is declared on registration (see below) and contributed
     -- by the Service base -- a push (icons -> window) with no cycle.
-end
-
--- Account-wide visibility setting (default on).
-function Compartment:_Store()
-    return ns.SavedVars:Namespace("compartment", { shown = true })
 end
 
 function Compartment:IsShown()

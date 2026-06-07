@@ -6,18 +6,15 @@ local Class = ns.Class
 -- icon pinned to the minimap edge at a saved angle and draggable around the rim.
 -- Default OFF. Left-click toggles the settings window; right-click opens the log.
 
-local MinimapIcon = Class.new("MinimapIcon", ns.Service)
+local MinimapIcon = Class.new("MinimapIcon", ns.Service, { mixins = { ns.Persisted } })
 
 local DEFAULT_ANGLE = 225   -- degrees, measured from the minimap centre
 
 function MinimapIcon:OnInitialize()
+    self:_BindStore("minimap", { shown = false, angle = DEFAULT_ANGLE })  -- cached _Store (ns.Persisted)
     ns.EventBus:On("PLAYER_LOGIN", function() self:Refresh() end)  -- self-apply on login
     -- Our General-page toggle is declared on registration (see below) and contributed
     -- by the Service base -- a push (icons -> window) with no cycle.
-end
-
-function MinimapIcon:_Store()
-    return ns.SavedVars:Namespace("minimap", { shown = false, angle = DEFAULT_ANGLE })
 end
 
 function MinimapIcon:IsShown()
