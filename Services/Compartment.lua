@@ -75,7 +75,7 @@ function Compartment:OnClick(button, owner)
 end
 
 ns.ServiceManager:Register(Compartment:New("Compartment", {
-    deps = { "EventBus", "SavedVars", "SettingsWindow" },
+    deps = { "EventBus", "SettingsWindow" },  -- SavedVars reached lazily via the ns.Persisted store
     generalToggles = {
         {
             section = "Icons",

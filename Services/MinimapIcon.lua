@@ -116,7 +116,7 @@ function MinimapIcon:SetShown(on)
 end
 
 ns.ServiceManager:Register(MinimapIcon:New("MinimapIcon", {
-    deps = { "EventBus", "SavedVars", "SettingsWindow" },
+    deps = { "EventBus", "SettingsWindow" },  -- SavedVars reached lazily via the ns.Persisted store
     generalToggles = {
         {
             section = "Icons",
