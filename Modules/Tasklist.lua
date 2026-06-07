@@ -407,6 +407,13 @@ function Tasklist:_BuildFrame()
     f:Hide()
 end
 
+-- Static row-button handlers: set on the pooled buttons each refresh WITHOUT allocating a
+-- fresh closure per task. They read the owning list + task key off the button (b._list/_key).
+local function rmOnEnter(b)  b.label:SetTextColor(Theme.Unpack("red")) end
+local function rmOnLeave(b)  b.label:SetTextColor(Theme.Unpack("textFaint")) end
+local function rmOnClick(b)  b._list:Remove(b._key) end
+local function manualOnClick(b) b._list:SetDone(b._key, not b._list:IsDone(b._key)) end
+
 -- Rebuild the tracker: a header bar per task type, then its objective lines,
 -- laid out top-down so the frame grows downward.
 function Tasklist:_Refresh()
@@ -454,10 +461,9 @@ function Tasklist:_Refresh()
 
     local buckets = { once = {}, daily = {}, weekly = {} }
     for key, def in pairs(p.tasks) do
-        local done = self:IsDone(key)
-        if showDone or not done then
+        if showDone or not self:IsDone(key) then
             local b = buckets[def.type] or buckets.once
-            b[#b + 1] = { def = def, done = done }
+            b[#b + 1] = def
         end
     end
 
@@ -480,7 +486,8 @@ function Tasklist:_Refresh()
         y = y - HEADER_H - 2
     end
 
-    local function objective(def, done)
+    local function objective(def)
+        local done = self:IsDone(def.key)
         local t = fs(lineFont)
         t:SetPoint("TOPLEFT", INDENT, y)
         t:SetWidth(width - INDENT - 14)
@@ -489,15 +496,16 @@ function Tasklist:_Refresh()
         if done then t:SetTextColor(0.5, 0.5, 0.5) else t:SetTextColor(0.95, 0.95, 0.95) end
         local h = t:GetStringHeight()
 
-        -- Remove (x) at the right edge
+        -- Remove (x) at the right edge. The list + key ride on the button so the OnEnter/
+        -- OnLeave/OnClick handlers can stay shared module functions (no per-task closures).
         local x = btn()
         x:SetSize(14, 14)
         x:SetPoint("TOPRIGHT", f, "TOPRIGHT", 0, y)
-        local xfs = x.label
-        xfs:SetText("x"); xfs:SetTextColor(Theme.Unpack("textFaint"))
-        x:SetScript("OnEnter", function() xfs:SetTextColor(Theme.Unpack("red")) end)
-        x:SetScript("OnLeave", function() xfs:SetTextColor(Theme.Unpack("textFaint")) end)
-        x:SetScript("OnClick", function() self:Remove(def.key) end)
+        x.label:SetText("x"); x.label:SetTextColor(Theme.Unpack("textFaint"))
+        x._list, x._key = self, def.key
+        x:SetScript("OnEnter", rmOnEnter)
+        x:SetScript("OnLeave", rmOnLeave)
+        x:SetScript("OnClick", rmOnClick)
 
         -- manual tasks: click the text to toggle done
         if def.manual then
@@ -505,7 +513,8 @@ function Tasklist:_Refresh()
             mbtn:SetPoint("TOPLEFT", t, "TOPLEFT", 0, 0)
             mbtn:SetPoint("RIGHT", x, "LEFT", -2, 0)
             mbtn:SetHeight(h + 4)
-            mbtn:SetScript("OnClick", function() self:SetDone(def.key, not done) end)
+            mbtn._list, mbtn._key = self, def.key
+            mbtn:SetScript("OnClick", manualOnClick)
         end
         y = y - (h + LINE_GAP)
     end
@@ -516,7 +525,7 @@ function Tasklist:_Refresh()
         if #list > 0 then
             any = true
             header(TYPE_LABEL[ttype])
-            for _, item in ipairs(list) do objective(item.def, item.done) end
+            for _, def in ipairs(list) do objective(def) end
             y = y - 6
         end
     end

@@ -18,7 +18,10 @@ local function setup(cd)
 end
 
 local SPELL = 42
-local function cast(frames) frames[1]:Fire("UNIT_SPELLCAST_SUCCEEDED", "player", "guid", SPELL) end
+-- UNIT_SPELLCAST_SUCCEEDED is now a unit-filtered subscription (bus:OnUnit), so Watch
+-- creates its own frame (frames[2]) -- frames[1] is the shared EventBus driver. Fire the
+-- unit frame to simulate the player's cast.
+local function cast(frames) frames[2]:Fire("UNIT_SPELLCAST_SUCCEEDED", "player", "guid", SPELL) end
 
 describe("Cooldowns", function()
     it("flips ON after a cast and OFF when the base-cooldown timer elapses", function()

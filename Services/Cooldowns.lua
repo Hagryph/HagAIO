@@ -57,9 +57,12 @@ end
 function Cooldowns:Watch(spellID, onChange)
     local bus = ns.EventBus
     local w = { spellID = spellID, onChange = onChange, onCooldown = false }
-    w.castTok = bus:On("UNIT_SPELLCAST_SUCCEEDED", function(_, u, _, sid)
-        if u == "player" and sid == spellID then self:_Start(w) end
-    end)
+    -- Filter to the PLAYER at the engine (RegisterUnitEvent) rather than the shared bus:
+    -- UNIT_SPELLCAST_SUCCEEDED fires for every visible unit (hundreds/sec in a raid), and
+    -- we only care about the player's casts. The unit is therefore always "player".
+    w.castTok = bus:OnUnit("UNIT_SPELLCAST_SUCCEEDED", function(_, _, _, sid)
+        if sid == spellID then self:_Start(w) end
+    end, "player")
     w.pollTok = bus:On("SPELL_UPDATE_COOLDOWN", function() self:_Poll(w) end)
     -- Reloaded mid-cooldown (not just a GCD): the real remaining is secret, so we
     -- can't run a precise internal timer -- just mark it on cooldown and let the
@@ -72,7 +75,7 @@ end
 function Cooldowns:Unwatch(w)
     if not w then return end
     local bus = ns.EventBus
-    bus:Off("UNIT_SPELLCAST_SUCCEEDED", w.castTok)
+    bus:OffUnit(w.castTok)
     bus:Off("SPELL_UPDATE_COOLDOWN", w.pollTok)
     if w.timer then w.timer:Cancel(); w.timer = nil end
     w.onCooldown = false

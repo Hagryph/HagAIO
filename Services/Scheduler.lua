@@ -25,13 +25,13 @@ local function pack(...) return { n = select("#", ...), ... } end
 -- ticker handle (has :Cancel() and :IsCancelled()).
 function Scheduler:Every(interval, fn, iterations)
     assert(type(fn) == "function", "Scheduler:Every needs a function")
-    return C_Timer.NewTicker(interval, function() fn() end, iterations)
+    return C_Timer.NewTicker(interval, fn, iterations)   -- fn ignores the ticker arg; no wrapper closure
 end
 
 -- One-shot timer. Returns a CANCELLABLE handle (unlike bare C_Timer.After).
 function Scheduler:After(delay, fn)
     assert(type(fn) == "function", "Scheduler:After needs a function")
-    return C_Timer.NewTimer(delay, function() fn() end)
+    return C_Timer.NewTimer(delay, fn)   -- fn ignores the timer arg; no wrapper closure
 end
 
 -- Rate-limit: the returned function runs fn immediately, then at most once per

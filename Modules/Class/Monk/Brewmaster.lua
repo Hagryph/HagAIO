@@ -31,7 +31,7 @@ function MonkBrewmaster:OnSettingChanged()
     local host = self:Host()
     host:_ScheduleUpdate()
     host:_ScheduleTiger()
-    host:_UpdateAoE()  -- self-gates; clears the greying immediately if toggled off
+    host:_RefreshAoETicker()  -- start/stop the combat AoE ticker for the new aoeHelper state
 end
 
 function MonkBrewmaster:Load()
@@ -76,5 +76,5 @@ function MonkBrewmaster:Unload()
     if p.tigerMarker then p.tigerMarker:Hide() end
 end
 
--- All of Base + the AoE helper (Range counts, ActionBars greying).
-ns.Monk.registerSpec("Monk-Brewmaster", MonkBrewmaster, 1, { "EventBus", "Cooldowns", "Secrets", "Range", "ActionBars" })
+-- All of Base + the AoE helper (Range counts, ActionBars greying, Scheduler ticker).
+ns.Monk.registerSpec("Monk-Brewmaster", MonkBrewmaster, 1, { "EventBus", "Cooldowns", "Secrets", "Range", "ActionBars", "Scheduler" })

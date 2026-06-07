@@ -151,9 +151,9 @@ end
 -- ===========================================================================
 -- Monk behaviour (methods on the shared ClassModule)
 -- ===========================================================================
--- depcheck-allow: Secrets, Range, ActionBars  -- these are used by the host methods below;
+-- depcheck-allow: Secrets, Range, ActionBars, Scheduler  -- used by the host methods below;
 -- the per-spec submodules that actually drive them declare them (Base.lua: Secrets;
--- Brewmaster.lua: Secrets/Range/ActionBars), which is what enforces the load ordering.
+-- Brewmaster.lua: Secrets/Range/ActionBars/Scheduler), which is what enforces the load ordering.
 
 -- ---- Expel Harm marker ----------------------------------------------------
 -- Defer + debounce marker updates to the next frame. Reading bar:GetWidth()
@@ -397,10 +397,39 @@ function ClassModule:_LoadAoE()
     self:On("SPELLS_CHANGED",           function() self:_RefreshAoEThreshold() end, "spec")
     self:On("PLAYER_LEVEL_UP",          function() self:_RefreshAoEThreshold() end, "spec")
 
-    -- one always-on throttled ticker that self-gates on combat + the toggle
-    -- (avoids races starting/stopping it on combat events). Lives in the "spec"
-    -- scope, so it's cancelled automatically when the spec unloads.
-    self:Every(0.15, function() self:_UpdateAoE() end, nil, "spec")
+    -- Run the per-tick AoE check ONLY while it can do something: in combat AND with the
+    -- helper enabled (default off). Start the 0.1s ticker on combat start, stop it on combat
+    -- end / toggle-off / unload -- rather than spinning out of combat for a default-off
+    -- feature. The REGEN subs live in the "spec" scope (auto-released on unload).
+    self:On("PLAYER_REGEN_DISABLED", function() self:_StartAoETicker() end, "spec")
+    self:On("PLAYER_REGEN_ENABLED",  function() self:_StopAoETicker() end, "spec")
+    if InCombatLockdown() then self:_StartAoETicker() end   -- loaded mid-combat
+end
+
+-- The AoE ticker is gated on combat + the toggle: a manually-managed Scheduler ticker (NOT
+-- the "spec" scope), so starting/stopping it every combat doesn't accumulate scope teardowns.
+-- _Start/_Stop are idempotent -- safe to call repeatedly.
+function ClassModule:_StartAoETicker()
+    local p = self:_p()
+    if p.aoeTicker then return end                                   -- already running
+    if not (p.aoeActive and self:IsEnabled() and self:GetSetting("aoeHelper")) then return end
+    p.aoeTicker = ns.Scheduler:Every(0.1, function() self:_UpdateAoE() end)
+    self:_UpdateAoE()   -- apply immediately rather than waiting for the first tick
+end
+
+function ClassModule:_StopAoETicker()
+    local p = self:_p()
+    if p.aoeTicker then p.aoeTicker:Cancel(); p.aoeTicker = nil end
+    self:_ClearAoEGrey()
+end
+
+-- React to the aoeHelper toggle: run the ticker iff in combat AND enabled, else stop+clear.
+function ClassModule:_RefreshAoETicker()
+    if InCombatLockdown() and self:IsEnabled() and self:GetSetting("aoeHelper") then
+        self:_StartAoETicker()
+    else
+        self:_StopAoETicker()
+    end
 end
 
 -- The target count at which Spinning Crane Kick is worth pressing over Tiger Palm.
@@ -420,9 +449,7 @@ function ClassModule:_RefreshAoEThreshold()
 end
 
 function ClassModule:_UnloadAoE()
-    -- The 0.15s ticker is in the "spec" scope (released by Base.Unload), so there's
-    -- no handle to cancel here; just clear the greying and mark inactive.
-    self:_ClearAoEGrey()
+    self:_StopAoETicker()   -- cancel the combat ticker (manual handle) + clear the greying
     self:_p().aoeActive = false
 end
 
