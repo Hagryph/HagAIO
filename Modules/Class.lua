@@ -30,14 +30,13 @@ ns.ClassSpec = ClassSpec
 
 -- "none" when the player has no specialisation, else the spec index (1-4). A spec-less
 -- character returns an out-of-range "initial" index, so gate on the in-range index only.
-local function currentSpecKey()
+function ClassModule:CurrentSpecKey()
     local idx = GetSpecialization and GetSpecialization()
     if not idx then return "none" end
     local num = (GetNumSpecializations and GetNumSpecializations()) or 0
     if idx < 1 or idx > num then return "none" end
     return idx
 end
-function ClassModule:CurrentSpecKey() return currentSpecKey() end
 
 -- ---- lifecycle ------------------------------------------------------------
 function ClassModule:OnInitialize()

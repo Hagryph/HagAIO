@@ -22,7 +22,7 @@ local fmt = ns.Format.MMSS   -- pure "M:SS" countdown formatter (Lib/Format.lua)
 -- DIRECTIONAL route key: a -> b is stored separately from b -> a, because the two
 -- directions don't always take the same time (path asymmetry). New recordings use this;
 -- the resolver (_RouteTime) prefers same-direction data and falls back to the reverse.
-local function dirKey(a, b)
+function Misc:_DirKey(a, b)
     local faction = UnitFactionGroup("player") or "?"
     return faction .. "|" .. tostring(a) .. " -> " .. tostring(b)
 end
@@ -34,7 +34,7 @@ local FLYOVER_RANGE = 75  -- closest approach must be within this to count as fl
                           -- farther than this and the node is skipped (never recorded)
 
 -- A flight DB entry is { t = seconds, q = quality, via = { node, ... } }, keyed per
--- DIRECTION (see dirKey). `via` is the ordered booked intermediate nodes this segment
+-- DIRECTION (see _DirKey). `via` is the ordered booked intermediate nodes this segment
 -- spanned (empty/nil for an ATOMIC leg between adjacent stops); it lets the solver split
 -- a span back into atomic legs by subtraction. Only measurements are stored: DIRECT (a
 -- real landing) > FLY (a mid-flight closest-approach guess). Estimates are computed fresh
@@ -44,11 +44,11 @@ local FLYOVER_RANGE = 75  -- closest approach must be within this to count as fl
 -- are persisted as `e.q`, so they must stay 2/1.
 local Quality = ns.Enum.new("FlightQuality", { DIRECT = 2, FLY = 1 })
 
-local function storedTime(e)
+function Misc:_StoredTime(e)
     if type(e) == "number" then return e end
     return e and e.t
 end
-local function entryQ(e)
+function Misc:_EntryQ(e)
     if e == nil then return nil end
     if type(e) ~= "table" then return Quality.DIRECT end   -- legacy number
     if e.q then return e.q end
@@ -59,7 +59,7 @@ end
 --   direct same > direct reverse > fly same > fly reverse > derived same > derived reverse.
 -- A reverse leg substitutes the opposite direction; a derived leg came from subtraction.
 -- Returns seconds, or nil if the leg is entirely unknown.
-local function legTime(legs, a, b)
+function Misc:_LegTime(legs, a, b)
     local fwd = ns.FlightGraph:Get(legs, a, b)
     local rev = ns.FlightGraph:Get(legs, b, a)
     if fwd and not fwd.derived and fwd.q == Quality.DIRECT then return fwd.t end
@@ -73,10 +73,10 @@ end
 
 -- Sum an ORDERED node list into a total by adding each consecutive atomic leg. Returns
 -- seconds, or nil if any leg on the path is unknown (we never fabricate a missing leg).
-local function sumLegs(legs, names)
+function Misc:_SumLegs(legs, names)
     local total = 0
     for i = 1, #names - 1 do
-        local t = legTime(legs, names[i], names[i + 1])
+        local t = self:_LegTime(legs, names[i], names[i + 1])
         if not t then return nil end
         total = total + t
     end
@@ -85,7 +85,7 @@ end
 
 -- Sell every sellable grey (Poor, quality 0) item in the bags. Returns the number
 -- of stacks sold and a list of { link, count } descriptors of what was sold.
-local function sellJunk()
+function Misc:_SellJunk()
     local sold = {}
     if not (C_Container and C_Container.GetContainerNumSlots and C_Container.UseContainerItem) then return 0, sold end
     for bag = 0, (NUM_BAG_SLOTS or 4) do
@@ -216,15 +216,15 @@ end
 --   direct-over-direct only when the time changed by >= 5s.
 function Misc:_Store(a, b, seconds, via)
     local flights = self:GetDB().flights
-    local key = dirKey(a, b)
+    local key = self:_DirKey(a, b)
     local cur = flights[key]
     self:_p().legsCache = nil   -- recorded data changed -> rebuild atomic legs lazily
     if cur == nil then
         flights[key] = { t = seconds, q = Quality.DIRECT, via = via }
         return
     end
-    local curQ = entryQ(cur)
-    if type(cur) ~= "table" then cur = { t = storedTime(cur), q = curQ }; flights[key] = cur end
+    local curQ = self:_EntryQ(cur)
+    if type(cur) ~= "table" then cur = { t = self:_StoredTime(cur), q = curQ }; flights[key] = cur end
     if curQ < Quality.DIRECT then
         cur.t, cur.q, cur.via = seconds, Quality.DIRECT, via    -- direct beats a fly entry
     elseif math.abs(seconds - cur.t) >= 5 then
@@ -236,7 +236,7 @@ end
 -- spanning `via`: the lowest quality tier, so it ONLY populates an empty slot.
 function Misc:_StoreIfNew(a, b, seconds, via)
     local flights = self:GetDB().flights
-    local key = dirKey(a, b)
+    local key = self:_DirKey(a, b)
     if flights[key] == nil then
         flights[key] = { t = seconds, q = Quality.FLY, via = via }
         self:_p().legsCache = nil
@@ -258,11 +258,11 @@ end
 -- Only a same-direction DIRECT is exact; the rest are estimates, prefixed with "~".
 function Misc:_RouteTime(src, dst, slot, name)
     local f = self:GetDB().flights
-    local fwd, rev = f[dirKey(src, dst)], f[dirKey(dst, src)]
-    if fwd and entryQ(fwd) == Quality.DIRECT then return storedTime(fwd), false end  -- 1
-    if rev and entryQ(rev) == Quality.DIRECT then return storedTime(rev), true  end  -- 2
-    if fwd then return storedTime(fwd), true end                              -- 3 (fwd is FLY here)
-    if rev then return storedTime(rev), true end                              -- 4 (rev is FLY here)
+    local fwd, rev = f[self:_DirKey(src, dst)], f[self:_DirKey(dst, src)]
+    if fwd and self:_EntryQ(fwd) == Quality.DIRECT then return self:_StoredTime(fwd), false end  -- 1
+    if rev and self:_EntryQ(rev) == Quality.DIRECT then return self:_StoredTime(rev), true  end  -- 2
+    if fwd then return self:_StoredTime(fwd), true end                        -- 3 (fwd is FLY here)
+    if rev then return self:_StoredTime(rev), true end                        -- 4 (rev is FLY here)
     local est = self:_EstimateRoute(slot, name)                               -- 5 (booked-path sum)
     if est then return est, true end
     return nil, false
@@ -593,7 +593,7 @@ function Misc:_UpdateEarlyTarget()
         for i = cross - 1, p.earlyIdx do names[#names + 1] = p.path[i] and p.path[i].name end
         local complete = true
         for _, nm in ipairs(names) do if not nm then complete = false; break end end
-        segTotal = complete and sumLegs(self:_AtomicLegs(), names) or nil
+        segTotal = complete and self:_SumLegs(self:_AtomicLegs(), names) or nil
     end
     if segTotal and lastPassT then
         p.known = (lastPassT - (p.startTime or lastPassT)) + segTotal
@@ -652,7 +652,7 @@ function Misc:_AtomicLegs()
                 local via = (type(e) == "table") and e.via
                 if via then for _, n in ipairs(via) do seq[#seq + 1] = n end end
                 seq[#seq + 1] = b
-                records[#records + 1] = { seq = seq, t = storedTime(e), q = entryQ(e) }
+                records[#records + 1] = { seq = seq, t = self:_StoredTime(e), q = self:_EntryQ(e) }
             end
         end
     end
@@ -680,7 +680,7 @@ function Misc:_EstimateRoute(destSlot, destName)
     end
     for i = 1, hops + 1 do if not nodes[i] then return nil end end
 
-    return sumLegs(self:_AtomicLegs(), nodes)
+    return self:_SumLegs(self:_AtomicLegs(), nodes)
 end
 
 function Misc:_OnPinEnter(pin)
@@ -714,7 +714,7 @@ function Misc:_OnMerchantClosed()
 end
 
 function Misc:_Sell()
-    local count, sold = sellJunk()
+    local count, sold = self:_SellJunk()
     if count == 0 then return end
     local parts = {}
     for _, it in ipairs(sold) do

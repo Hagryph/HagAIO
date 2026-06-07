@@ -29,7 +29,7 @@ local TYPE_LABEL = ns.Enum.new("TaskTypeLabel", { once = "Tasks", daily = "Daily
 local TYPE_ORDER = { "once", "daily", "weekly" }
 
 -- Is an item collected? Prefer ATT's knowledge, since it covers every collectible.
-local function itemCollected(itemID)
+function Tasklist:_ItemCollected(itemID)
     if not itemID then return false end
     local app = _G.AllTheThings
     if app and app.SearchForField then
@@ -43,7 +43,7 @@ end
 -- survives reloads) and reads ATT's own saved/collected state. Works for bosses
 -- (encounterID, via the hidden kill-credit quest ATT tracks as `saved`), quests
 -- (questID), and collectibles (itemID/mountID/...). Falls back to the quest API.
-local function attDone(attKey, id)
+function Tasklist:_AttDone(attKey, id)
     if not (attKey and id) then return false end
     local app = _G.AllTheThings
     if app and app.SearchForField then
@@ -57,7 +57,7 @@ local function attDone(attKey, id)
 end
 
 -- Collected check straight from the Blizzard collection APIs (no ATT needed).
-local function collectibleCollected(kind, id)
+function Tasklist:_CollectibleCollected(kind, id)
     if not id then return false end
     if kind == "mount" and C_MountJournal and C_MountJournal.GetMountInfoByID then
         local _, _, _, _, _, _, _, _, _, _, isCollected = C_MountJournal.GetMountInfoByID(id)
@@ -276,13 +276,13 @@ function Tasklist:_RegisterTracked(key, t)
     local condition, manual
     if t.att and t.att.key and t.att.id then          -- quest / collectible / boss-lockout via ATT
         local ak, aid = t.att.key, t.att.id
-        condition = function() return attDone(ak, aid) end
+        condition = function() return self:_AttDone(ak, aid) end
     elseif t.coll and t.coll.kind and t.coll.id then  -- collection-journal collectible
         local kind, id = t.coll.kind, t.coll.id
-        condition = function() return collectibleCollected(kind, id) end
+        condition = function() return self:_CollectibleCollected(kind, id) end
     elseif t.itemID then                              -- plain item collectible
         local itemID = t.itemID
-        condition = function() return itemCollected(itemID) end
+        condition = function() return self:_ItemCollected(itemID) end
     elseif t.dungeonID then                           -- boss: live kill via ENCOUNTER_END handler
         manual = false                               -- no polling condition; event-completed
     else                                              -- user-described objective

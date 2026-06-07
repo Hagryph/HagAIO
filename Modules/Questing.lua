@@ -11,26 +11,27 @@ local Theme = ns.Theme
 
 local Questing = Class.new("Questing", ns.Module)
 
--- ---- helpers --------------------------------------------------------------
-local function commafy(n)
+local clock = ns.Format.Clock   -- pure duration formatter (Lib/Format.lua)
+
+-- ---- helpers (thousands-separated number wraps the WoW global; the rest wrap
+-- spec/quest/frame lookups that only make sense against the live client) --------
+function Questing:_Commafy(n)
     return BreakUpLargeNumbers(math.floor(n + 0.5))
 end
 
-local clock = ns.Format.Clock   -- pure duration formatter (Lib/Format.lua)
-
-local function maxLevel()
+function Questing:_MaxLevel()
     if GetMaxLevelForPlayerExpansion then return GetMaxLevelForPlayerExpansion() end
     if GetMaxPlayerLevel then return GetMaxPlayerLevel() end
     return 80
 end
 
-local function findXPBar()
+function Questing:_FindXPBar()
     return MainStatusTrackingBarContainer
         or _G.StatusTrackingBarManager
         or _G.MainMenuExpBar
 end
 
-local function currentQuestID()
+function Questing:_CurrentQuestID()
     return GetQuestID and GetQuestID() or nil
 end
 
@@ -83,7 +84,7 @@ function Questing:_OnLevelUp()
         -- Always announced to chat (even with Echo to Chat off) -- gated only by the
         -- echoLevelUp setting above.
         self:LogAnnounce(("ding! L%d - %s XP/hr this session")
-            :format(UnitLevel("player"), perHour > 0 and commafy(perHour) or "-"))
+            :format(UnitLevel("player"), perHour > 0 and self:_Commafy(perHour) or "-"))
     end
 end
 
@@ -117,7 +118,7 @@ function Questing:_Stats()
     return cur, max, pct, remaining, rested, p.sessionXP, perHour, elapsed, ttl
 end
 
-local function statLine(tt, label, value, valueKey)
+function Questing:_StatLine(tt, label, value, valueKey)
     local lr, lg, lb = Theme.Unpack("textDim")
     local vr, vg, vb = Theme.Unpack(valueKey or "text")
     tt:AddDoubleLine(label, value, lr, lg, lb, vr, vg, vb)
@@ -135,7 +136,7 @@ function Questing:_ShowTooltip()
     tt:ClearLines()
     tt:AddLine("|cff" .. Theme.hex.accent .. "HagAIO|r  |cff" .. Theme.hex.gold .. "Questing|r")
 
-    if UnitLevel("player") >= maxLevel() or UnitXPMax("player") == 0 then
+    if UnitLevel("player") >= self:_MaxLevel() or UnitXPMax("player") == 0 then
         tt:AddLine("Max level - no experience to track.", Theme.Unpack("textDim"))
         tt:Show()
         return
@@ -146,18 +147,18 @@ function Questing:_ShowTooltip()
 
     local cur, max, pct, remaining, rested, sessionXP, perHour, elapsed, ttl = self:_Stats()
 
-    statLine(tt, "Level", UnitLevel("player"), "accent")
-    statLine(tt, "XP", ("%s / %s  (%.1f%%)"):format(commafy(cur), commafy(max), pct))
-    statLine(tt, "Remaining", commafy(remaining))
+    self:_StatLine(tt, "Level", UnitLevel("player"), "accent")
+    self:_StatLine(tt, "XP", ("%s / %s  (%.1f%%)"):format(self:_Commafy(cur), self:_Commafy(max), pct))
+    self:_StatLine(tt, "Remaining", self:_Commafy(remaining))
     if rested and rested > 0 then
-        statLine(tt, "Rested", ("%s  (%.0f%%)"):format(commafy(rested), max > 0 and (rested / max * 100) or 0), "gold")
+        self:_StatLine(tt, "Rested", ("%s  (%.0f%%)"):format(self:_Commafy(rested), max > 0 and (rested / max * 100) or 0), "gold")
     end
 
     tt:AddLine(" ")
-    statLine(tt, "Session XP", commafy(sessionXP))
-    statLine(tt, "XP / hour", perHour > 0 and commafy(perHour) or "-", "green")
-    statLine(tt, "Time played", clock(elapsed))
-    statLine(tt, "Time to level", clock(ttl), "accent")
+    self:_StatLine(tt, "Session XP", self:_Commafy(sessionXP))
+    self:_StatLine(tt, "XP / hour", perHour > 0 and self:_Commafy(perHour) or "-", "green")
+    self:_StatLine(tt, "Time played", clock(elapsed))
+    self:_StatLine(tt, "Time to level", clock(ttl), "accent")
 
     tt:Show()
 end
@@ -165,7 +166,7 @@ end
 function Questing:_EnsureOverlay()
     local p = self:_p()
     if p.overlay then return end
-    local bar = findXPBar()
+    local bar = self:_FindXPBar()
     if not bar then
         self:LogWarn("XP bar not found; hover tooltip unavailable (max level?)")
         return
@@ -199,13 +200,13 @@ end
 
 function Questing:_PrintSession()
     local cur, max, pct, remaining, rested, sessionXP, perHour, elapsed, ttl = self:_Stats()
-    if UnitLevel("player") >= maxLevel() or max == 0 then
+    if UnitLevel("player") >= self:_MaxLevel() or max == 0 then
         self:LogInfo("max level - no XP to track")
         return
     end
     self:LogInfo(("L%d  %s/%s (%.1f%%)  |  session %s  |  %s/hr  |  to level %s")
-        :format(UnitLevel("player"), commafy(cur), commafy(max), pct,
-            commafy(sessionXP), perHour > 0 and commafy(perHour) or "-", clock(ttl)))
+        :format(UnitLevel("player"), self:_Commafy(cur), self:_Commafy(max), pct,
+            self:_Commafy(sessionXP), perHour > 0 and self:_Commafy(perHour) or "-", clock(ttl)))
 end
 
 -- ======================= QUESTS ============================================
@@ -232,7 +233,7 @@ function Questing:_OnComplete()
     if not self:GetSetting("autoTurnIn") or self:_Paused() then return end
     local choices = GetNumQuestChoices() or 0
     if choices > 1 then
-        local qid = currentQuestID()
+        local qid = self:_CurrentQuestID()
         if qid then self:_p().skipTurnIn[qid] = true end
         return
     end

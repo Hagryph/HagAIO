@@ -17,15 +17,14 @@ local Theme = ns.Theme
 local Collection = Class.new("Collection", ns.Module)
 
 -- ---- shared menu ----------------------------------------------------------
-local function active()
-    local c = ns.Collection
-    return c and c:IsEnabled() and c:GetSetting("journalMenus") ~= false
+function Collection:_Active()
+    return self:IsEnabled() and self:GetSetting("journalMenus") ~= false
         and ns.Tasks and MenuUtil and MenuUtil.CreateContextMenu
 end
 
 -- Open a context menu on `owner` with a Track/Remove entry (and optional prepend).
-local function trackMenu(owner, kind, id, name, prepend)
-    if not (active() and id) then return end
+function Collection:_TrackMenu(owner, kind, id, name, prepend)
+    if not (self:_Active() and id) then return end
     MenuUtil.CreateContextMenu(owner, function(_, root)
         if prepend then prepend(root) end
         local tracked = ns.Tasks:IsCollectibleTracked(kind, id)
@@ -67,7 +66,7 @@ function Collection:_DoHooks()
     local function mount(owner, index)
         if not index then return end
         local name, _, _, _, _, _, _, _, _, _, isCollected, mountID = C_MountJournal.GetDisplayedMountInfo(index)
-        if not isCollected then trackMenu(owner, "mount", mountID, name) end
+        if not isCollected then self:_TrackMenu(owner, "mount", mountID, name) end
     end
     if type(MountListItem_OnClick) == "function" then
         hooksecurefunc("MountListItem_OnClick", function(s, b) if b == "RightButton" then mount(s, s.index) end end)
@@ -89,7 +88,7 @@ function Collection:_DoHooks()
             petBtn:HookScript("OnClick", function(s, b)
                 if b == "RightButton" and not s.owned and s.speciesID then
                     local name = C_PetJournal.GetPetInfoBySpeciesID and select(1, C_PetJournal.GetPetInfoBySpeciesID(s.speciesID))
-                    trackMenu(s, "pet", s.speciesID, name)
+                    self:_TrackMenu(s, "pet", s.speciesID, name)
                 end
             end)
         end)
@@ -100,7 +99,7 @@ function Collection:_DoHooks()
         hooksecurefunc("ToySpellButton_OnClick", function(s, b)
             if b == "RightButton" and s.itemID and not (PlayerHasToy and PlayerHasToy(s.itemID)) then
                 local _, name = C_ToyBox.GetToyInfo(s.itemID)
-                trackMenu(s, "toy", s.itemID, name)
+                self:_TrackMenu(s, "toy", s.itemID, name)
             end
         end)
     end
@@ -117,9 +116,9 @@ function Collection:_DoHooks()
         HeirloomsJournalSpellButton_OnClick = function(s, b)
             local itemID = s.itemID
             local has = itemID and C_Heirloom and C_Heirloom.PlayerHasHeirloom and C_Heirloom.PlayerHasHeirloom(itemID)
-            if b == "RightButton" and itemID and not has and active() then
+            if b == "RightButton" and itemID and not has and self:_Active() then
                 local name = (C_Heirloom.GetHeirloomInfo and select(1, C_Heirloom.GetHeirloomInfo(itemID))) or ("Heirloom " .. itemID)
-                trackMenu(s, "heirloom", itemID, name)
+                self:_TrackMenu(s, "heirloom", itemID, name)
                 return
             end
             return orig(s, b)
