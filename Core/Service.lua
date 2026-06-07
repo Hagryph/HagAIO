@@ -10,38 +10,36 @@ local Class = ns.Class
 -- on is already loaded. Cleanup runs in reverse via :OnShutdown().
 --
 -- Logging is built in (core functionality): every service gets a Logger channel
--- and the Log* convenience methods, exactly like a Module.
+-- and the Log* convenience methods, exactly like a Module. Both come from ns.Loggable,
+-- the shared logging mixin (Core/Loggable.lua), which Service inherits. A Service does
+-- NOT inherit ns.Component: it has no on/off + settings surface, so Component's
+-- resource registry / abstract _SettingsDB would be wrong here.
 --
 --   local Foo = ns.Class.new("Foo", ns.Service)
 --   function Foo:OnInitialize() ... end       -- setup; every dep is guaranteed up
 --   function Foo:OnShutdown()  ... end         -- optional cleanup (reverse order)
 --   ns.ServiceManager:Register(Foo:New("Foo", { deps = { "EventBus" } }))
 
-local Service = Class.new("Service")
+local Service = Class.new("Service", ns.Loggable)
 
--- Logging is shared with ns.Component (single source of truth): a service owns a
--- Logger channel and the Log* helpers exactly like a Module. We BORROW Component's
--- logging methods rather than subclass it -- a Service has no on/off + settings
--- surface, so inheriting Component's resource registry / abstract _SettingsDB would be
--- wrong. (Core/Component.lua loads before this file; see the .toc.)
-for _, m in ipairs({ "GetLog", "_AttachLogger",
-                     "LogDebug", "LogInfo", "LogSuccess", "LogWarn", "LogError",
-                     "LogEchoInfo", "LogEchoSuccess", "LogAnnounce" }) do
-    Service[m] = ns.Component[m]
-end
-
--- opts = { deps = { "OtherService", ... }, ui = bool, color = "RRGGBB" }
---   deps  : names of services that must be loaded before this one
---   ui    : publish the instance at ns.UI[name] instead of ns[name]
---   color : Logger channel colour
+-- opts = { deps = { "OtherService", ... }, ui = bool, color = "RRGGBB",
+--          commands = { ... }, generalToggles = { ... } }
+--   deps           : names of services that must be loaded before this one
+--   ui             : publish the instance at ns.UI[name] instead of ns[name]
+--   color          : Logger channel colour
+--   commands       : declarative /hag sub-commands (see ns.Component) -- a service has
+--                    no enable/disable, so they're registered once at init
+--   generalToggles : declarative General-page toggles (see ns.Component), also init-time
 function Service:Initialize(name, opts)
     opts = opts or {}
     local p = self:_p()
-    p.name  = name
-    p.deps  = opts.deps or {}
-    p.ui    = opts.ui and true or false
-    p.color = opts.color
-    p.log   = nil
+    p.name           = name
+    p.deps           = opts.deps or {}
+    p.ui             = opts.ui and true or false
+    p.color          = opts.color
+    p.commands       = opts.commands
+    p.generalToggles = opts.generalToggles
+    p.log            = nil
 end
 
 function Service:GetName() return self:_p().name end
@@ -54,7 +52,25 @@ function Service:GetDeps() return self:_p().deps end
 function Service:_Init()
     self:_Publish()
     self:_AttachLogger()
+    self:_WireContributions()
     self:OnInitialize()
+end
+
+-- Register declarative commands / general toggles once at init (a service has no
+-- enable/disable lifecycle, so there is no teardown -- unlike a Module). Uses the same
+-- spec shapes + builders as ns.Component so both sides declare them identically. A
+-- service that declares commands must depend on "SlashCommand"; one that declares
+-- generalToggles must depend on "SettingsWindow", so the dependency ordering guarantees
+-- those targets are initialised before this runs.
+function Service:_WireContributions()
+    local p = self:_p()
+    for sub, spec in pairs(p.commands or {}) do
+        local fn, help = ns.Component.BuildCommand(self, spec)
+        ns.SlashCommand:Register(sub, fn, help)
+    end
+    for _, spec in ipairs(p.generalToggles or {}) do
+        ns.UI.SettingsWindow:RegisterGeneralToggle(ns.Component.BuildGeneralToggle(self, spec))
+    end
 end
 
 -- Publish this instance into the namespace so call sites reach it as ns.<Name>

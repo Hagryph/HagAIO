@@ -5,11 +5,26 @@
 --   luajit Test/run.lua        (LuaJIT = Lua 5.1, matching WoW)   or   lua Test/run.lua
 -- Exits non-zero on any failure, so CI can gate on it.
 
--- Add a spec here when you create one (Test/<name>_spec.lua).
-local SPECS = { "dependencygraph", "scaling", "cache", "memoize", "scheduler", "serializer", "profiles", "component",
-                "flightgraph", "geometry", "spelltooltipparser", "cvarhelper", "submodulemanager",
-                "eventbus", "hooks", "slashcommand", "secrets", "savedvars", "cooldowns", "range",
-                "component_resources" }
+-- Specs are DISCOVERED from disk (every Test/*_spec.lua), so a new spec runs the
+-- moment it exists -- no list to keep in sync. We shell out for the directory listing
+-- (stock Lua has no readdir): `dir /b` on Windows, `ls` elsewhere. Names are sorted so
+-- the run order is deterministic across platforms.
+local function discoverSpecs()
+    local onWindows = package.config:sub(1, 1) == "\\"
+    local cmd = onWindows and 'dir /b "Test\\*_spec.lua"' or 'ls -1 Test/*_spec.lua 2>/dev/null'
+    local pipe = assert(io.popen(cmd), "could not list Test/*_spec.lua")
+    local names = {}
+    for line in pipe:lines() do
+        local name = line:match("([%w_]+)_spec%.lua")  -- handles both bare names and paths
+        if name then names[#names + 1] = name end
+    end
+    pipe:close()
+    table.sort(names)
+    assert(#names > 0, "no Test/*_spec.lua files found (run from the repo root)")
+    return names
+end
+
+local SPECS = discoverSpecs()
 
 local results = { pass = 0, fail = 0, failures = {} }
 local stack = {}

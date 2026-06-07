@@ -27,6 +27,17 @@ jobs:
       - name: Check every .lua file is listed in HagAIO.toc
         run: node tools/toccheck.mjs
 
+  nscheck:
+    name: Namespace doc block
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+      - name: Check every registered service is documented in Core/Namespace.lua
+        run: node tools/nscheck.mjs
+
   deadcode:
     name: Dead code
     runs-on: ubuntu-latest

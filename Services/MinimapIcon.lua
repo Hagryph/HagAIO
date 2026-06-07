@@ -12,16 +12,8 @@ local DEFAULT_ANGLE = 225   -- degrees, measured from the minimap centre
 
 function MinimapIcon:OnInitialize()
     ns.EventBus:On("PLAYER_LOGIN", function() self:Refresh() end)  -- self-apply on login
-
-    -- Contribute our visibility toggle to the settings window's General page
-    -- (push, not pull) so the window never has to reference us -- no cycle.
-    ns.UI.SettingsWindow:RegisterGeneralToggle({
-        section = "Icons",
-        label = "Minimap icon",
-        desc = "Adds a draggable button on the minimap edge.",
-        get = function() return self:IsShown() end,
-        set = function(on) self:SetShown(on) end,
-    })
+    -- Our General-page toggle is declared on registration (see below) and contributed
+    -- by the Service base -- a push (icons -> window) with no cycle.
 end
 
 function MinimapIcon:_DB()
@@ -127,4 +119,15 @@ function MinimapIcon:SetShown(on)
     self:Refresh()
 end
 
-ns.ServiceManager:Register(MinimapIcon:New("MinimapIcon", { deps = { "EventBus", "SavedVars", "SettingsWindow" } }))
+ns.ServiceManager:Register(MinimapIcon:New("MinimapIcon", {
+    deps = { "EventBus", "SavedVars", "SettingsWindow" },
+    generalToggles = {
+        {
+            section = "Icons",
+            label = "Minimap icon",
+            desc = "Adds a draggable button on the minimap edge.",
+            get = "IsShown",
+            set = "SetShown",
+        },
+    },
+}))

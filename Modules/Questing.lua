@@ -65,7 +65,6 @@ function Questing:OnEnable()
     p.sessionXP = 0
     self:_EnsureOverlay()
     if p.overlay then p.overlay:Show() end
-    ns.SlashCommand:Register("xp", function() self:_PrintSession() end, "session XP / hour")
 end
 
 function Questing:OnDisable()
@@ -315,7 +314,8 @@ ns.ModuleManager:Register(Questing:New("Questing", {
     description = "XP-per-hour tracking, plus auto-accepting and turning in quests.",
     defaultEnabled = true,
     color = ns.Theme.hex.gold,
-    deps = { "SlashCommand" },  -- registers its /hag xp sub-command
+    deps = { "SlashCommand" },  -- for its declarative /hag xp sub-command
+    commands = { xp = { handler = "_PrintSession", help = "session XP / hour" } },
     events = {
         PLAYER_XP_UPDATE      = "_OnXP",
         PLAYER_LEVEL_UP       = "_OnLevelUp",

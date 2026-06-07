@@ -20,11 +20,10 @@ function SettingsWindow:OnInitialize()
     p.current = nil
     p.generalToggles = {} -- descriptors pushed in by addon-wide features (see RegisterGeneralToggle)
 
-    -- Own our slash commands (we depend on the router, not the reverse): the bare
-    -- "/hag" plus "/hag config" toggle this window; "/hag log" jumps to the log page.
+    -- Own the bare "/hag" action (we depend on the router, not the reverse): it toggles
+    -- this window. The "config"/"log" sub-commands are declared on registration (see the
+    -- `commands` opts below) and wired by the Service base.
     ns.SlashCommand:SetDefaultHandler(function() self:Toggle() end)
-    ns.SlashCommand:Register("config", function() self:Toggle() end, "open the settings window")
-    ns.SlashCommand:Register("log", function() self:Show("log") end, "open the activity log")
 end
 
 -- Let an addon-wide feature contribute a toggle to the static "General" page
@@ -39,10 +38,39 @@ end
 --   get()       : -> current bool state
 --   set(on)     : apply; may return true if a /reload is needed to take effect
 --   reloadMsg   : warning logged when set() reports a reload is needed
+-- Returns the descriptor as an opaque HANDLE; pass it to UnregisterGeneralToggle to
+-- withdraw the toggle later (an enable-tied module does this on disable).
 function SettingsWindow:RegisterGeneralToggle(desc)
     local p = self:_p()
     p.generalToggles = p.generalToggles or {}
     p.generalToggles[#p.generalToggles + 1] = desc
+    self:_InvalidateGeneral()  -- reflect a toggle contributed after the window was built
+    return desc
+end
+
+-- Withdraw a previously-registered toggle (by the handle RegisterGeneralToggle gave).
+-- No-op if it isn't present. Rebuilds the General page if it's already on screen.
+function SettingsWindow:UnregisterGeneralToggle(handle)
+    local list = self:_p().generalToggles
+    if not (handle and list) then return end
+    for i = #list, 1, -1 do
+        if list[i] == handle then table.remove(list, i); break end
+    end
+    self:_InvalidateGeneral()
+end
+
+-- Rebuild the General page from the CURRENT toggle list after a feature contributed or
+-- withdrew one. Mirrors InvalidateModule: no-op until the window is built, and re-shows
+-- the page if it's the one currently visible.
+function SettingsWindow:_InvalidateGeneral()
+    local p = self:_p()
+    if not p.built then return end
+    local old = p.pages and p.pages.general
+    if old then old:Hide() end
+    p.pages.general = self:_BuildGeneralPage(p.content)
+    if p.frame and p.frame:IsShown() and p.current == "general" then
+        self:Show("general")
+    end
 end
 
 -- ---- construction ---------------------------------------------------------
@@ -782,5 +810,11 @@ function SettingsWindow:Toggle()
     if p.frame:IsShown() then self:Hide() else self:Show(p.current or "modules") end
 end
 
-ns.ServiceManager:Register(SettingsWindow:New("SettingsWindow",
-    { ui = true, deps = { "EventBus", "SlashCommand", "Profiles", "CopyWindow" } }))
+ns.ServiceManager:Register(SettingsWindow:New("SettingsWindow", {
+    ui = true,
+    deps = { "EventBus", "SlashCommand", "Profiles", "CopyWindow" },
+    commands = {
+        config = { handler = function(self) self:Toggle() end, help = "open the settings window" },
+        log    = { handler = function(self) self:Show("log") end, help = "open the activity log" },
+    },
+}))

@@ -44,4 +44,15 @@ describe("SlashCommand", function()
         local sc = setup()
         assert.is_true(pcall(function() sc:_Dispatch("nope") end))
     end)
+
+    it("Unregister removes a sub-command (falls back to help)", function()
+        local sc = setup()
+        local hit = 0
+        sc:Register("config", function() hit = hit + 1 end)
+        sc:_Dispatch("config"); assert.are.equal(1, hit)
+        sc:Unregister("config")
+        sc:_Dispatch("config")  -- gone -> help, handler not called again
+        assert.are.equal(1, hit)
+        assert.is_true(pcall(function() sc:Unregister("never") end))  -- unknown -> no-op
+    end)
 end)

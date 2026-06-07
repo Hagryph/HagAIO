@@ -30,6 +30,13 @@ function SlashCommand:Register(sub, fn, help)
     self:_p().handlers[sub:lower()] = { fn = fn, help = help }
 end
 
+-- Drop a sub-command. Used by the declarative-command auto-teardown when a module that
+-- contributed it is disabled (see ns.Component). No-op if it isn't registered.
+function SlashCommand:Unregister(sub)
+    if not sub then return end
+    self:_p().handlers[sub:lower()] = nil
+end
+
 function SlashCommand:_Dispatch(msg)
     local p = self:_p()
     local sub, rest = trim(msg):match("^(%S*)%s*(.*)$")

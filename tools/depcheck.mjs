@@ -33,9 +33,9 @@ const FIX = process.argv.includes("--fix");  // --fix: inject missing deps into 
 // exempt without also exempting Modules/Class.lua the feature module.
 const EXEMPT = new Set([
   "Core/Namespace.lua", "Core/Class.lua", "Core/Theme.lua", "Core/DependencyGraph.lua",
-  "Core/Logger.lua", "Core/Service.lua", "Core/ServiceManager.lua", "Core/Component.lua",
-  "Core/Module.lua", "Core/ModuleManager.lua", "Core/Submodule.lua",
-  "Core/SubmoduleManager.lua", "Core/Init.lua", "UI/Widgets.lua",
+  "Core/Logger.lua", "Core/Loggable.lua", "Core/Service.lua", "Core/ServiceManager.lua",
+  "Core/Component.lua", "Core/Module.lua", "Core/ModuleManager.lua", "Core/Submodule.lua",
+  "Core/SubmoduleManager.lua", "Core/Registry.lua", "Core/Init.lua", "UI/Widgets.lua",
 ]);
 
 function luaFiles(dir, out = []) {
@@ -87,6 +87,15 @@ function accesses(code) {
     if (SERVICES.has(m[1])) out.push([m[1], m.index]);
     else if (ALIASES[m[1]]) out.push([ALIASES[m[1]], m.index]);
   }
+  // Declarative contributions are wired by the base class, not by an ns.<Service> call
+  // in this file, but they still REQUIRE the target service (for load/enable ordering):
+  // a `commands` table needs SlashCommand; `generalToggles` needs SettingsWindow. Treat
+  // the declaration as an access so the dep is enforced (and not reported "unused").
+  const implied = [["commands", "SlashCommand"], ["generalToggles", "SettingsWindow"]];
+  for (const [field, dep] of implied) {
+    const i = code.search(new RegExp(`\\b${field}\\s*=\\s*\\{`));
+    if (i >= 0 && SERVICES.has(dep)) out.push([dep, i]);
+  }
   return out;
 }
 
@@ -98,6 +107,7 @@ function declaredIn(code, listName) {
 
 const findings = [];  // [rel, line, dep, absPath]  -- used but not declared
 const unused = [];     // [rel, dep, absPath]         -- declared but never used
+const unregistered = []; // [rel, kind, expectedCall] -- defines but never registers
 for (const path of ALL_FILES) {
   const rel = relative(ROOT, path).replace(/\\/g, "/");
   if (EXEMPT.has(rel)) continue;
@@ -107,6 +117,20 @@ for (const path of ALL_FILES) {
     a[1].split(",").forEach((t) => { t = t.trim(); if (t) allow.add(t); });
   }
   const code = stripComments(raw);
+
+  // Self-registration: a file that DEFINES a service / module / submodule must also
+  // REGISTER it in the same file, or it loads silently and never starts (the ordered
+  // StartAll can't see an unregistered instance). Keyed on the parent class so inner
+  // helper classes (e.g. Class.new("CacheStore")) are ignored. Waive intentional cases
+  // with a `-- depcheck-allow: noregister` comment.
+  if (!allow.has("noregister")) {
+    if (/Class\.new\(\s*["']\w+["']\s*,\s*ns\.Service\b/.test(code) && !/ServiceManager:Register\(/.test(code))
+      unregistered.push([rel, "service", "ServiceManager:Register"]);
+    if (/Class\.new\(\s*["']\w+["']\s*,\s*ns\.Module\b/.test(code) && !/ModuleManager:Register\(/.test(code))
+      unregistered.push([rel, "module", "ModuleManager:Register"]);
+    if (/ns\.Submodule:New\(/.test(code) && !/SubmoduleManager:Register\(/.test(code))
+      unregistered.push([rel, "submodule", "SubmoduleManager:Register"]);
+  }
   const quoted = new Set([...code.matchAll(/["'](\w+)["']/g)].map((x) => x[1]));
   const acc = accesses(code);
   const accessed = new Set(acc.map((a) => a[0]));
@@ -129,13 +153,14 @@ for (const path of ALL_FILES) {
   }
 }
 
-if (findings.length === 0 && unused.length === 0) {
-  console.log("depcheck: OK — declared dependencies match actual ns.<Service/Module> use.");
+if (findings.length === 0 && unused.length === 0 && unregistered.length === 0) {
+  console.log("depcheck: OK — declared dependencies match actual ns.<Service/Module> use, and every defined service/module self-registers.");
   process.exit(0);
 }
 
 findings.sort((x, y) => x[0].localeCompare(y[0]) || x[1] - y[1]);
 unused.sort((x, y) => x[0].localeCompare(y[0]) || x[1].localeCompare(y[1]));
+unregistered.sort((x, y) => x[0].localeCompare(y[0]));
 
 // --- --fix: inject the missing names into each file's declaration ------------
 // Services declare service deps in `deps`; modules declare module deps in `moduleDeps`.
@@ -216,6 +241,10 @@ if (unused.length) {
   console.log("\ndepcheck: unused service dependencies (declared but never accessed; --fix removes them):\n");
   for (const [r, dep] of unused) console.log(`  ${r}  declares '${dep}' but never uses it`);
 }
-const total = findings.length + unused.length;
-console.log(`\n${total} issue${total === 1 ? "" : "s"} (${findings.length} undeclared, ${unused.length} unused).`);
+if (unregistered.length) {
+  console.log("\ndepcheck: defined but never registered (won't load -- add the registration call):\n");
+  for (const [r, kind, call] of unregistered) console.log(`  ${r}  defines a ${kind} but never calls ${call}(...)`);
+}
+const total = findings.length + unused.length + unregistered.length;
+console.log(`\n${total} issue${total === 1 ? "" : "s"} (${findings.length} undeclared, ${unused.length} unused, ${unregistered.length} unregistered).`);
 process.exit(1);

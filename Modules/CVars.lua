@@ -105,12 +105,8 @@ function CVars:OnInitialize()
     local p = self:_p()
     p.sections = {}
     -- db.managed / db.custom are pre-seeded from dbSchema (see registration).
-
-    -- The slash command is always available, even while disabled, for discovery.
-    if ns.SlashCommand then
-        ns.SlashCommand:Register("cvar", function(rest) self:_Slash(rest) end,
-            "console variables: dump / set / get / clear / list")
-    end
+    -- The "/hag cvar" sub-command is declared on registration and wired by the base
+    -- on enable (removed on disable), like the module's events.
 end
 
 function CVars:OnEnable()
@@ -465,6 +461,7 @@ ns.ModuleManager:Register(CVars:New("CVars", {
     defaultEnabled = false,
     color = ns.Theme.hex.red,
     deps = { "SlashCommand", "Dev", "SettingsWindow", "CVarHelper" },  -- routing + enumeration + page refresh + type inference
+    commands = { cvar = { handler = "_Slash", help = "console variables: dump / set / get / clear / list" } },
     -- Persisted structure (seeded on bind, before OnInitialize):
     dbSchema = {
         managed = {},  -- name -> value (account-wide, re-applied each login)

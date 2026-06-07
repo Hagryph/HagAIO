@@ -15,12 +15,6 @@ local Class = ns.Class
 
 local Dev = Class.new("Dev", ns.Service)
 
-function Dev:OnInitialize()
-    if ns.SlashCommand then
-        ns.SlashCommand:Register("dev", function(rest) self:_Slash(rest) end, "developer tools")
-    end
-end
-
 -- Sorted CVar names (optionally substring-filtered), or nil if the console API is absent.
 -- Tries the modern C_Console namespace and the legacy global as a fallback.
 function Dev:AllCVarNames(filter)
@@ -80,6 +74,9 @@ function Dev:_Slash(rest)
     end
 end
 
--- Dev registers a slash sub-command in OnInitialize (after SlashCommand) and shows
--- its dumps in the shared CopyWindow.
-ns.ServiceManager:Register(Dev:New("Dev", { deps = { "SlashCommand", "CopyWindow" } }))
+-- Dev declares its "/hag dev" sub-command (the Service base registers it after
+-- SlashCommand is up) and shows its dumps in the shared CopyWindow.
+ns.ServiceManager:Register(Dev:New("Dev", {
+    deps = { "SlashCommand", "CopyWindow" },
+    commands = { dev = { handler = "_Slash", help = "developer tools" } },
+}))

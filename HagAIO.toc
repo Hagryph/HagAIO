@@ -23,7 +23,9 @@ Core\DependencyGraph.lua
 Core\Logger.lua
 # Registry: shared base for the three lifecycle managers below.
 Core\Registry.lua
-# Component loads before Service: Service borrows Component's shared logging surface.
+# Loggable: the shared logging surface; Component and Service both inherit it, so it
+# must load before both.
+Core\Loggable.lua
 Core\Component.lua
 Core\Service.lua
 Core\ServiceManager.lua

@@ -19,37 +19,13 @@ local Class = ns.Class
 --   self:ReleaseScope("name")             -- undo one scope; _ReleaseAll() undoes all
 -- A nil scope means the DEFAULT scope: the lifetime of one enable / load.
 
-local Component = Class.new("Component")
+-- Logging (GetLog / _AttachLogger / Log*) is inherited from ns.Loggable, the shared
+-- mixin both Component and Service pull in (see Core/Loggable.lua).
+local Component = Class.new("Component", ns.Loggable)
 
 local DEFAULT = "_default"
 
 function Component:_DisplayName() return self:_p().name or "?" end
-
--- ---- logging --------------------------------------------------------------
--- A component MAY own a Logger channel: Modules and Services attach one (their
--- manager calls _AttachLogger during init); a Submodule that logs through its host
--- simply never attaches one. The Log* helpers are nil-safe so calling them without a
--- channel is a harmless no-op rather than an error. This is the single home for the
--- logging surface -- ns.Service borrows these same methods (see Core/Service.lua).
-function Component:GetLog() return self:_p().log end
-
-function Component:_AttachLogger()
-    local p = self:_p()
-    p.log = ns.Logger:Register(p.name, p.color or ns.Theme.hex.accent)
-end
-
-function Component:LogDebug(...)   local l = self:_p().log; if l then l:Debug(...)   end end
-function Component:LogInfo(...)    local l = self:_p().log; if l then l:Info(...)    end end
-function Component:LogSuccess(...) local l = self:_p().log; if l then l:Success(...) end end
-function Component:LogWarn(...)    local l = self:_p().log; if l then l:Warn(...)    end end
-function Component:LogError(...)   local l = self:_p().log; if l then l:Error(...)   end end
-
--- Echo-to-chat variants (see ns.Logger's echo policy): LogEchoInfo / LogEchoSuccess
--- reach chat only when the player's "Echo to Chat" setting is on; LogAnnounce reaches
--- chat even when it's off. Plain Log* above never echo.
-function Component:LogEchoInfo(...)    local l = self:_p().log; if l then l:EchoInfo(...)    end end
-function Component:LogEchoSuccess(...) local l = self:_p().log; if l then l:EchoSuccess(...) end end
-function Component:LogAnnounce(...)     local l = self:_p().log; if l then l:Announce(...)    end end
 
 local function scopes(self)
     local p = self:_p()
@@ -221,6 +197,58 @@ function Component:SetSetting(key, value)
     -- Broadcast so anything else (other components, the UI) can react without the
     -- changer needing to know about them.
     if ns.EventBus then ns.EventBus:Emit("HagAIO_SettingChanged", self:_SettingsOwnerId(), key, value) end
+end
+
+-- ---- declarative contributions (slash commands + General-page toggles) -----
+-- Two cross-cutting integrations a feature can DECLARE instead of wiring by hand,
+-- exactly like the events / messages / settings tables. The base wires them in (a
+-- Module on enable, auto-removed on disable; a Service once at init) so no feature
+-- repeats the imperative ns.SlashCommand:Register / RegisterGeneralToggle plumbing.
+--   commands = { xp = { handler = "_PrintSession", help = "session XP / hour" } }
+--   generalToggles = { { section = "Icons", label = "...", desc = "...",
+--                        get = "IsShown", set = "SetShown", flagReload = bool,
+--                        reloadMsg = "..." } }
+-- handler / get / set are each a METHOD NAME (string) or a function; both are called
+-- bound to the owner -- handler(rest), get() -> bool, set(on) -> bool|nil. These are
+-- statics (no self) so ns.Service, which doesn't inherit Component, can reuse them.
+
+-- Build (fn, help) from a command spec for `owner`. The fn takes the slash arg string.
+function Component.BuildCommand(owner, spec)
+    local h = spec.handler
+    local fn
+    if type(h) == "string" then fn = function(rest) return owner[h](owner, rest) end
+    else                        fn = function(rest) return h(owner, rest) end end
+    return fn, spec.help
+end
+
+-- Build a live General-toggle descriptor (the shape RegisterGeneralToggle expects),
+-- binding the spec's get/set to `owner`. Plain fields pass through untouched.
+function Component.BuildGeneralToggle(owner, spec)
+    local g, s = spec.get, spec.set
+    return {
+        section = spec.section, label = spec.label, desc = spec.desc,
+        flagReload = spec.flagReload, reloadMsg = spec.reloadMsg,
+        get = g and (type(g) == "string" and function() return owner[g](owner) end
+                                          or function() return g(owner) end),
+        set = s and (type(s) == "string" and function(on) return owner[s](owner, on) end
+                                          or function(on) return s(owner, on) end),
+    }
+end
+
+-- Wire this component's declarative commands / general toggles, queuing a teardown
+-- for each so they're removed when the default scope is released (module disable /
+-- submodule unload). Called by Module:Enable via _WireDeclared.
+function Component:_WireContributions()
+    local p = self:_p()
+    for sub, spec in pairs(p.commands or {}) do
+        local fn, help = Component.BuildCommand(self, spec)
+        ns.SlashCommand:Register(sub, fn, help)
+        self:OnTeardown(function() ns.SlashCommand:Unregister(sub) end)
+    end
+    for _, spec in ipairs(p.generalToggles or {}) do
+        local handle = ns.UI.SettingsWindow:RegisterGeneralToggle(Component.BuildGeneralToggle(self, spec))
+        self:OnTeardown(function() ns.UI.SettingsWindow:UnregisterGeneralToggle(handle) end)
+    end
 end
 
 ns.Component = Component

@@ -34,6 +34,12 @@ local Module = Class.new("Module", ns.Component)
 -- self:Subscribe / self:Hook helpers instead -- they are released automatically on
 -- Disable, so OnDisable never has to undo them by hand.
 --
+-- `commands` / `generalToggles` are likewise DECLARATIVE (see ns.Component): a module's
+-- /hag sub-commands and General-page toggles are registered on Enable and removed on
+-- Disable, so a disabled module contributes neither -- no manual Register/Unregister:
+--   commands       = { xp = { handler = "_PrintSession", help = "session XP / hour" } }
+--   generalToggles = { { label = "...", get = "IsShown", set = "SetShown" } }
+--
 -- Each settings schema entry drives one auto-generated control on the module's
 -- settings page (and seeds its saved-var default):
 --   { type = "header", text = "..." }
@@ -57,6 +63,8 @@ function Module:Initialize(name, opts)
     ns.Component.ValidateSettings(p.settings, name)  -- fail fast on a malformed schema
     p.events = opts.events or {}                   -- declarative game-event subscriptions
     p.messages = opts.messages or {}              -- declarative custom-message subscriptions
+    p.commands = opts.commands                     -- declarative /hag sub-commands (see ns.Component)
+    p.generalToggles = opts.generalToggles         -- declarative General-page toggles (see ns.Component)
     p.settingsWatch = opts.settingsWatch          -- declarative setting-key -> handler (see ns.Component)
 
     -- Seed saved-var defaults from the settings schema, then the declarative dbSchema
@@ -136,6 +144,7 @@ function Module:_WireDeclared()
     end
     for event, spec   in pairs(p.events)   do self:On(event, bound[spec]) end
     for message, spec in pairs(p.messages) do self:Subscribe(message, bound[spec]) end
+    self:_WireContributions()  -- declarative commands + general toggles (auto-removed on disable)
 end
 
 -- Internal: the fixed one-time init sequence the ModuleManager runs for this module

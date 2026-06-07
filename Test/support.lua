@@ -72,8 +72,9 @@ function M.newNs()
     local channel = { Debug = noop, Info = noop, Success = noop, Warn = noop, Error = noop }
     ns.Logger = { Core = function() return channel end, Register = function() return channel end }
     ns.Log = { Print = noop, Warn = noop, Error = noop }  -- static print helpers (Namespace.lua)
-    -- Component before Service (mirrors the .toc): Service borrows Component's shared
-    -- logging methods at load.
+    -- Loggable before Component before Service (mirrors the .toc): Component and Service
+    -- both inherit ns.Loggable for the shared logging surface.
+    assert(loadfile("Core/Loggable.lua"))("HagAIO", ns)
     assert(loadfile("Core/Component.lua"))("HagAIO", ns)
     assert(loadfile("Core/Service.lua"))("HagAIO", ns)
     ns._captured = {}
