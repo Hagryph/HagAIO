@@ -47,16 +47,26 @@ describe("class options", function()
         assert.are.equal("hi", Sub:New():Hi())
     end)
 
-    it("statics: members live on the class, are inherited, and reachable from instances", function()
+    it("statics: PRIVATE (not on the class table) and shared with the declaring class (C#)", function()
         local ns = classNs()
-        local C = ns.Class.new("C", nil, {
-            statics = { MAX = 100, Make = function() return "made" end },
-        })
-        assert.are.equal(100, C.MAX)            -- static attribute on the class
-        assert.are.equal("made", C.Make())      -- static (dot-called) method
-        assert.are.equal(100, C:New().MAX)      -- visible from an instance via __index
-        local Sub = ns.Class.new("Sub", C)
-        assert.are.equal(100, Sub.MAX)          -- inherited by subclasses
+        local Base = ns.Class.new("Base", nil, { statics = { total = 0 } })
+        function Base:Bump() local s = self:_statics(); s.total = s.total + 1; return s.total end
+        local Sub = ns.Class.new("Sub", Base)        -- inherits, declares none of its own
+        assert.are.equal(1, Base:New():Bump())
+        assert.are.equal(2, Sub:New():Bump())        -- Sub shares Base's single store
+        assert.are.equal(2, ns.Class.statics(Base).total)
+        assert.is_nil(Base.total)                     -- private: nothing leaks onto the class table
+        assert.is_nil(Base:New().total)               -- nor onto instances
+    end)
+
+    it("statics: a subclass that RE-declares gets its own independent store", function()
+        local ns = classNs()
+        local Base = ns.Class.new("Base", nil, { statics = { n = 1 } })
+        local Own  = ns.Class.new("Own", Base, { statics = { n = 100 } })
+        assert.are.equal(1, ns.Class.statics(Base).n)
+        assert.are.equal(100, ns.Class.statics(Own).n)
+        ns.Class.statics(Own).n = 999
+        assert.are.equal(1, ns.Class.statics(Base).n)  -- Base untouched
     end)
 end)
 

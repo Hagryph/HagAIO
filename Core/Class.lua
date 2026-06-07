@@ -12,6 +12,33 @@ local addonName, ns = ...
 -- instance -> private field table. Weak keys so instances can be GC'd.
 local private = setmetatable({}, { __mode = "k" })
 
+-- class -> its private STATIC table (shared class-level state). The same private-side-table
+-- pattern as instance attributes, but keyed by class. C# semantics: a static is owned by the
+-- class that DECLARES it (opts.statics) and SHARED by every subclass; a subclass that
+-- re-declares gets its own. So lookup resolves UP the parent chain to the nearest declarer.
+local statics = setmetatable({}, { __mode = "k" })
+
+local function classOf(arg)
+    if type(arg) == "table" then
+        if rawget(arg, "__ancestors") then return arg end       -- arg is a class table
+        local mt = getmetatable(arg)
+        if mt and rawget(mt, "__ancestors") then return mt end   -- arg is an instance
+    end
+    error("statics: argument must be a class or an instance", 3)
+end
+
+local function sharedStatics(arg)
+    local cls = classOf(arg)
+    local c = cls
+    while c do
+        local s = statics[c]
+        if s then return s end          -- nearest declaring class wins (shared with subclasses)
+        c = rawget(c, "__parent")
+    end
+    statics[cls] = {}                   -- none declared in the chain: anchor a fresh store here
+    return statics[cls]
+end
+
 local function makeInstance(class, ...)
     local instance = setmetatable({}, class)
     private[instance] = {}
@@ -33,6 +60,12 @@ Object.__ancestors = { [Object] = true }
 -- Protected accessor to this instance's private field table.
 function Object:_p()
     return private[self]
+end
+
+-- Protected accessor to this class's private STATIC table -- the shared, class-level
+-- counterpart of :_p(). Resolves to the declaring class, so subclasses share it (C#).
+function Object:_statics()
+    return sharedStatics(self)
 end
 
 function Object:GetClassName()
@@ -57,8 +90,10 @@ local Class = {}
 -- Create a new class `name`, optionally inheriting from `parent` (defaults to Object).
 -- `opts` (all optional) turns on the richer constructs:
 --   abstract = true          -- the class itself can't be :New()'d (only subclasses can)
---   statics  = { ... }       -- static members copied onto the CLASS (shared, not per-
---                               instance): constants + dot-called methods, inherited by subs
+--   statics  = { ... }       -- PRIVATE static attributes (shared class-level state), kept in
+--                               a private side table and reached via self:_statics() /
+--                               ns.Class.statics(cls). Owned by THIS class and shared by its
+--                               subclasses (C#); a subclass re-declaring gets its own.
 --   mixins   = { M1, M2 }    -- trait method tables (ns.Mixin) merged in; your own methods win
 --   implements = { I1 }      -- interfaces (ns.Interface) verified at first :New()
 function Class.new(name, parent, opts)
@@ -82,7 +117,9 @@ function Class.new(name, parent, opts)
             end
         end
         if opts.statics then
-            for k, v in pairs(opts.statics) do class[k] = v end
+            local store = {}
+            for k, v in pairs(opts.statics) do store[k] = v end
+            statics[class] = store   -- anchor the private static store at THIS declaring class
         end
         if opts.abstract then class.__abstract = true end
         if opts.implements then class.__implements = opts.implements end
@@ -116,6 +153,14 @@ function Class.new(name, parent, opts)
     end
 
     return class
+end
+
+-- Accessor for a class's PRIVATE static table from outside an instance method -- e.g. from a
+-- static (dot) method, or any code holding the class. Same store as self:_statics(); resolves
+-- to the declaring class so subclasses share it (C#). Lazily creates one if undeclared.
+--   function Counter.Reset() ns.Class.statics(Counter).total = 0 end
+function Class.statics(classOrInstance)
+    return sharedStatics(classOrInstance)
 end
 
 -- Abstract-method marker. Assign the result to a base-class method that EVERY
