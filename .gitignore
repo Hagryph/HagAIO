@@ -1,6 +1,9 @@
 # Packaged builds
 *.zip
 
+# Scratch space (dumps, captures) — never tracked, excluded from deploy
+Dev/
+
 # OS / editor cruft
 .DS_Store
 Thumbs.db

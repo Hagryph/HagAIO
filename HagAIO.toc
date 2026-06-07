@@ -10,8 +10,11 @@
 ## X-Category: Combat
 ## AllowLoadGameType: retail
 
-# Interface 120005 = patch 12.0.5 (current live, Midnight). Bump the line above
-# once 12.0.7 "Revelations" goes live (2026-06-16).
+# Single source of truth for the addon's target version: the `## Interface` line above
+# plus the two tags below. README.md's "Target version" table is GENERATED from these by
+# tools/gen_readme.mjs -- edit them here, then run `node tools/gen_readme.mjs`.
+# expansion: Midnight
+# next-patch: 12.0.7 "Revelations" — 2026-06-16 → bump Interface to 120007
 #
 # Edit only the header above. The Lua file list is filled in automatically by
 # deploy.ps1 (from the .lua files on disk) and written into the deployed AddOn

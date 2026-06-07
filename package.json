@@ -1,0 +1,18 @@
+{
+  "name": "hagaio",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Tooling for the HagAIO World of Warcraft addon (lint gates + test runner). The addon itself is Lua; these scripts mirror the CI checks locally.",
+  "type": "module",
+  "scripts": {
+    "check": "node tools/check.mjs",
+    "lint": "node tools/check.mjs --lint",
+    "test": "node tools/check.mjs --test",
+    "depcheck": "node tools/depcheck.mjs",
+    "nscheck": "node tools/nscheck.mjs",
+    "nscheck:fix": "node tools/nscheck.mjs --fix",
+    "deadcode": "node tools/deadcode.mjs",
+    "readme": "node tools/gen_readme.mjs",
+    "readme:check": "node tools/gen_readme.mjs --check"
+  }
+}

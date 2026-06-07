@@ -50,7 +50,9 @@ function Build-TocLines {
     }
     $marker = '# >>> FILES'
     $header = New-Object System.Collections.Generic.List[string]
-    foreach ($line in Get-Content -LiteralPath $template) {
+    # Read as UTF-8 (.NET default) -- the header carries non-ASCII (em dash, arrow) and
+    # PS 5.1's Get-Content would mis-decode this no-BOM UTF-8 file as ANSI.
+    foreach ($line in [System.IO.File]::ReadAllLines($template)) {
         if ($line.TrimStart().StartsWith($marker)) { break }
         $header.Add($line)
     }
@@ -113,7 +115,8 @@ New-Item -ItemType Directory -Force -Path $dest | Out-Null
 # of the deployed copy. HagAIO.toc is excluded from the mirror because the full manifest
 # (header template + generated file list) is written into dest below, after the mirror.
 $exclDirs  = @(".git", ".github", ".claude", "tools", "Test", "Dev")
-$exclFiles = @("deploy.ps1", "README.md", ".gitignore", "LICENSE", "HagAIO.toc", "*.zip", "*.ps1", "*.py")
+$exclFiles = @("deploy.ps1", "README.md", "CONTRIBUTING.md", "package.json", "package-lock.json",
+    ".gitignore", "LICENSE", "HagAIO.toc", "*.zip", "*.ps1", "*.py")
 
 robocopy $src $dest /MIR /XD $exclDirs /XF $exclFiles /NFL /NDL /NJH /NJS /NP | Out-Null
 

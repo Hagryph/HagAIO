@@ -1,14 +1,14 @@
 #!/usr/bin/env node
-// tools/gen_readme.mjs — generate the README's file-tree from the .lua files on disk
-// + each file's own header comment, so the tree can't drift from what actually ships.
-//   node tools/gen_readme.mjs           rewrite the block in README.md
+// tools/gen_readme.mjs — generate the README's managed regions so docs can't drift from
+// what actually ships. Two regions:
+//   * AUTOGEN:filetree — the source tree, built from the .lua files on disk + each file's
+//     own header comment (mirrors deploy.ps1's load order; keep the pinned lists in sync).
+//   * AUTOGEN:version  — the "Target version" table, built from HagAIO.toc (the single
+//     source for the target patch: `## Interface` + the `# expansion:`/`# next-patch:` tags).
+// Usage:
+//   node tools/gen_readme.mjs           rewrite both regions in README.md
 //   node tools/gen_readme.mjs --check   fail (exit 1) if README.md is out of date
-// CI runs --check via .github/workflows/lint.yml. The managed region is delimited by
-// the <!-- AUTOGEN:filetree --> ... <!-- /AUTOGEN:filetree --> markers in README.md.
-//
-// The .toc itself is NOT tracked in the repo -- deploy.ps1 generates it on deploy. This
-// tool mirrors deploy.ps1's load-order rules so the documented tree matches the deployed
-// manifest: keep the pinned lists below in sync with the ones in deploy.ps1.
+// CI runs --check via .github/workflows/lint.yml.
 
 import { readFileSync, writeFileSync, readdirSync } from "node:fs";
 import { join, dirname } from "node:path";
@@ -16,6 +16,7 @@ import { fileURLToPath } from "node:url";
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
 const README = join(ROOT, "README.md");
+const TOC = join(ROOT, "HagAIO.toc");
 const COL = 27;  // description alignment column
 
 const BEGIN = "<!-- AUTOGEN:filetree";  // prefix (the line may carry a note + -->)
@@ -134,32 +135,64 @@ function buildTree() {
   return "```\n" + out.join("\n") + "\n```";
 }
 
+// ---- AUTOGEN:version — the "Target version" table, sourced from HagAIO.toc ----------
+
+// `## Interface: 120005` -> "12.0.5" (AABBCC = major.minor.patch, dropping leading zeros).
+function patchString(iface) {
+  const n = Number(iface);
+  return `${Math.floor(n / 10000)}.${Math.floor(n / 100) % 100}.${n % 100}`;
+}
+
+function buildVersion() {
+  const toc = readFileSync(TOC, "utf8");
+  const grab = (re, label) => {
+    const m = toc.match(re);
+    if (!m) { console.error(`gen_readme: HagAIO.toc is missing the ${label}`); process.exit(1); }
+    return m[1].trim();
+  };
+  const iface = grab(/^##\s*Interface:\s*(\d+)/m, "`## Interface:` line");
+  const expansion = grab(/^#\s*expansion:\s*(.+)$/m, "`# expansion:` tag");
+  const nextPatch = grab(/^#\s*next-patch:\s*(.+)$/m, "`# next-patch:` tag");
+  return [
+    "| | |",
+    "|---|---|",
+    `| Expansion | ${expansion} |`,
+    `| \`.toc\` Interface | \`${iface}\` (patch ${patchString(iface)}) |`,
+    `| Next patch | ${nextPatch} |`,
+  ].join("\n");
+}
+
+// Replace the text between `<beginPrefix...>` and `<endMarker>` (markers kept) with `inner`.
+function replaceRegion(text, beginPrefix, endMarker, inner, label) {
+  const begin = text.indexOf(beginPrefix);
+  const end = text.indexOf(endMarker);
+  if (begin < 0 || end < 0 || end < begin) {
+    console.error(`gen_readme: missing ${label} markers in ${README}`);
+    process.exit(1);
+  }
+  const beginLineEnd = text.indexOf("\n", begin) + 1;  // keep the opening marker line
+  return text.slice(0, beginLineEnd) + inner + "\n" + text.slice(end);
+}
+
 function main() {
   const check = process.argv.includes("--check");
   const readme = readFileSync(README, "utf8");
-  const begin = readme.indexOf(BEGIN);
-  const end = readme.indexOf(END);
-  if (begin < 0 || end < 0 || end < begin) {
-    console.error(`gen_readme: missing AUTOGEN:filetree markers in ${README}`);
-    process.exit(1);
-  }
-  const beginLineEnd = readme.indexOf("\n", begin) + 1;  // keep the opening marker line
-  const tree = buildTree();
-  const next = readme.slice(0, beginLineEnd) + tree + "\n" + readme.slice(end);
+  let next = replaceRegion(readme, BEGIN, END, buildTree(), "AUTOGEN:filetree");
+  next = replaceRegion(next, "<!-- AUTOGEN:version", "<!-- /AUTOGEN:version -->", buildVersion(), "AUTOGEN:version");
 
   if (check) {
     if (next !== readme) {
-      console.error("gen_readme: README.md file-tree is out of date. Run: node tools/gen_readme.mjs");
+      console.error("gen_readme: README.md is out of date (file tree or version table). Run: node tools/gen_readme.mjs");
       process.exit(1);
     }
-    console.log("gen_readme: OK — README.md file-tree matches the source tree.");
+    console.log("gen_readme: OK — README.md file tree + version table match their sources.");
     return;
   }
   if (next !== readme) {
     writeFileSync(README, next);
-    console.log("gen_readme: README.md file-tree updated.");
+    console.log("gen_readme: README.md updated (file tree + version table).");
   } else {
-    console.log("gen_readme: README.md file-tree already up to date.");
+    console.log("gen_readme: README.md already up to date.");
   }
 }
 

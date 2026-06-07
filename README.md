@@ -8,11 +8,13 @@ that feature modules plug into, plus a themed settings window and activity log t
 
 ## Target version
 
+<!-- AUTOGEN:version — generated from HagAIO.toc by `node tools/gen_readme.mjs` (CI runs --check) -->
 | | |
 |---|---|
 | Expansion | Midnight |
-| `.toc` Interface | `120005` (patch 12.0.5, current live) |
-| Next patch | 12.0.7 *Revelations* — 2026-06-16 → bump the Interface line in `HagAIO.toc` to `120007` |
+| `.toc` Interface | `120005` (patch 12.0.5) |
+| Next patch | 12.0.7 "Revelations" — 2026-06-16 → bump Interface to 120007 |
+<!-- /AUTOGEN:version -->
 
 > The Midnight 12.0 API introduced **Secret Values** and migrated several globals into
 > `C_*` namespaces (e.g. `GetAddOnMetadata` → `C_AddOns.GetAddOnMetadata`). Always verify
