@@ -23,14 +23,15 @@ end
 -- Nearest of `points` to (x, y). Each point is a table with numeric `x`, `y` (any other
 -- fields are ignored and the point is returned untouched). `maxDist`, if given, caps the
 -- match (inclusive). Returns (point, distance), or (nil, nil) if none qualify. Points
--- with a missing x/y are skipped.
+-- with a missing x/y are skipped. On a distance TIE the FIRST point wins (strict <).
 function Geometry:Nearest(x, y, points, maxDist)
-    local best, bestD2 = nil, maxDist and (maxDist * maxDist) or math.huge
+    local cap = maxDist and (maxDist * maxDist) or math.huge  -- inclusive match cap
+    local best, bestD2 = nil, math.huge
     for i = 1, #points do
         local pt = points[i]
         if pt and pt.x and pt.y then
             local d2 = self:Dist2(x, y, pt.x, pt.y)
-            if d2 <= bestD2 then best, bestD2 = pt, d2 end
+            if d2 <= cap and d2 < bestD2 then best, bestD2 = pt, d2 end
         end
     end
     if not best then return nil end

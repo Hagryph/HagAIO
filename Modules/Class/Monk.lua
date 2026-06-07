@@ -234,6 +234,7 @@ local Brewmaster = {
 -- this -- the submodules' conditions + events do. The spec onLoad/onUnload run the
 -- spec table's Load/Unload against the Class module instance (the host).
 local classMod = ns.ModuleManager:GetModule("Class")
+assert(classMod, "Monk submodule requires the Class module (load Modules/Class.lua first)")
 local function isMonk() return (select(2, UnitClass("player"))) == "MONK" end
 
 ns.SubmoduleManager:Register(ns.Submodule:New("Monk", {
@@ -388,7 +389,7 @@ function ClassModule:_DrawOrbFill(fill, maxHP, width)
 
     local sb = self:_EnsureOrbBar()
     sb:SetStatusBarColor(c[1], c[2], c[3], 0.55)           -- translucent: predicted-heal band
-    sb:SetMinMaxValues(-p.baseHeal / p.orbHeal, ORB_MAX_COUNT)  -- min bakes in the base heal
+    sb:SetMinMaxValues(-p.baseHeal / math.max(p.orbHeal, 1e-9), ORB_MAX_COUNT)  -- min bakes in the base heal (clamp guards /0 even if the early return changes)
     sb:ClearAllPoints()
     sb:SetPoint("TOPLEFT",    fill, "TOPRIGHT",    0, 0)    -- start AT current health
     sb:SetPoint("BOTTOMLEFT", fill, "BOTTOMRIGHT", 0, 0)

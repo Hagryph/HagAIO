@@ -35,4 +35,10 @@ describe("Geometry", function()
         local best = g:Nearest(0, 0, pts)
         assert.are.equal("ok", best.name)
     end)
+
+    it("on a distance tie the FIRST point wins", function()
+        local g = geom()
+        local pts = { { x = 3, y = 0, name = "first" }, { x = 3, y = 0, name = "second" } }
+        assert.are.equal("first", g:Nearest(0, 0, pts).name)
+    end)
 end)

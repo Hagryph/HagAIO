@@ -156,7 +156,9 @@ function Tasklist:SetDone(key, done)
     local st = self:_State(key)
     local def = self:_p().tasks[key]
     st.done = done and true or false
-    st.resetAt = done and self:_NextReset(def and def.type) or nil
+    -- Only a registered task carries a reset stamp; an unknown key (a stale SetDone) stays
+    -- a one-time mark by design rather than silently becoming a never-resetting task.
+    st.resetAt = (done and def) and self:_NextReset(def.type) or nil
     self:_Refresh()
     self:_UpdateVisibility()
 end
@@ -555,23 +557,30 @@ function Tasklist:BuildSettingsPage(sf)
     local cur = W.SectionLabel(content, "Current tasks"); cur:SetPoint("TOPLEFT", 6, y); y = y - 22
     local p = self:_p()
     local any = false
+    -- Bucket tasks by type ONCE (not a scan of every task per type), then render in
+    -- TYPE_ORDER.
+    local byType = {}
+    for key, def in pairs(p.tasks) do
+        local bucket = byType[def.type]
+        if not bucket then bucket = {}; byType[def.type] = bucket end
+        bucket[#bucket + 1] = { key = key, def = def }
+    end
     for _, ttype in ipairs(TYPE_ORDER) do
-        for key, def in pairs(p.tasks) do
-            if def.type == ttype then
-                any = true
-                local done = self:IsDone(key)
-                local lbl = W.Text(content, ("|cff5b6473[%s]|r %s"):format(TYPE_LABEL[def.type], def.title or key),
-                    done and "textFaint" or "text", "GameFontHighlightSmall")
-                lbl:SetPoint("TOPLEFT", 10, y); lbl:SetWidth(width - 90); lbl:SetJustifyH("LEFT")
-                local rm = W.TextButton(content, "Remove")
-                rm:SetPoint("TOPRIGHT", content, "TOPRIGHT", -6, y)
-                rm.text:SetTextColor(Theme.Unpack("red"))
-                rm:SetScript("OnClick", function()
-                    self:Remove(key)
-                    if ns.UI.SettingsWindow then ns.UI.SettingsWindow:InvalidateModule(self:GetName()) end
-                end)
-                y = y - (math.max(lbl:GetStringHeight(), 14) + 8)
-            end
+        for _, entry in ipairs(byType[ttype] or {}) do
+            local key, def = entry.key, entry.def
+            any = true
+            local done = self:IsDone(key)
+            local lbl = W.Text(content, ("|cff5b6473[%s]|r %s"):format(TYPE_LABEL[def.type], def.title or key),
+                done and "textFaint" or "text", "GameFontHighlightSmall")
+            lbl:SetPoint("TOPLEFT", 10, y); lbl:SetWidth(width - 90); lbl:SetJustifyH("LEFT")
+            local rm = W.TextButton(content, "Remove")
+            rm:SetPoint("TOPRIGHT", content, "TOPRIGHT", -6, y)
+            rm.text:SetTextColor(Theme.Unpack("red"))
+            rm:SetScript("OnClick", function()
+                self:Remove(key)
+                if ns.UI.SettingsWindow then ns.UI.SettingsWindow:InvalidateModule(self:GetName()) end
+            end)
+            y = y - (math.max(lbl:GetStringHeight(), 14) + 8)
         end
     end
     if not any then

@@ -164,10 +164,21 @@ end
 
 -- share string -> saved under `name` (decoded + migrated). Does NOT apply; the user
 -- then loads it. Returns (true, name) or (false, reason).
+-- A profile is a map of saved-var namespace -> table (e.g. module_Questing = { ... }).
+-- Require at least one string-keyed table entry so a decoded blob of garbage (an array,
+-- scalars, an empty table) is rejected before it can overwrite live config on load.
+local function looksLikeProfile(t)
+    if type(t) ~= "table" then return false end
+    for k, v in pairs(t) do
+        if type(k) == "string" and type(v) == "table" then return true end
+    end
+    return false
+end
+
 function Profiles:Import(str, name)
     local value, err = ns.Serializer:Decode(str)
     if not value then return false, err end
-    if type(value) ~= "table" then return false, "that string isn't a profile" end
+    if not looksLikeProfile(value) then return false, "that string isn't a profile" end
     ns.SavedVars:MigrateTable(value)
     if not name or name == "" then name = "Imported" end
     self:_Store()[name] = value

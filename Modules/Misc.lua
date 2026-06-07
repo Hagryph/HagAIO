@@ -109,15 +109,19 @@ function Misc:OnInitialize()
     -- Flight recording is ALWAYS on (builds the database even while disabled).
     -- db.flights is pre-seeded from dbSchema (see registration).
     ns.EventBus:On("TAXIMAP_OPENED", function() self:_OnTaxiMap() end)
+    -- TakeTaxiNode is a permanent secure hook, so it installs once per SESSION (the
+    -- file-level latch). It resolves the live registered Misc instance each call rather
+    -- than capturing `self`, so it never points at a stale instance.
     if not taxiHooked and type(TakeTaxiNode) == "function" then
-        local module = self
-        hooksecurefunc("TakeTaxiNode", function(slot) module:_OnTakeTaxi(slot) end)
+        hooksecurefunc("TakeTaxiNode", function(slot)
+            local m = ns.ModuleManager:GetModule("Misc")
+            if m then m:_OnTakeTaxi(slot) end
+        end)
         taxiHooked = true
     end
 end
 
 function Misc:OnEnable()
-    local p = self:_p()
     -- Enable-scoped subscriptions + hook are auto-released on disable.
     self:On("MERCHANT_SHOW",   function() self:_OnMerchantShow() end)
     self:On("MERCHANT_CLOSED", function() self:_OnMerchantClosed() end)
@@ -329,7 +333,11 @@ function Misc:_LandedNode()
         local node = p.path[i]
         if node.world and node.world.c == pc then
             comparable = true
-            cands[#cands + 1] = { x = node.world.x, y = node.world.y, name = node.name }
+            -- skip nameless nodes: Nearest could otherwise return one whose .name is nil,
+            -- which the caller reads as "ported off the path" and drops a real landing.
+            if node.name then
+                cands[#cands + 1] = { x = node.world.x, y = node.world.y, name = node.name }
+            end
         end
     end
     if not comparable then return p.dst end   -- couldn't measure -> assume target

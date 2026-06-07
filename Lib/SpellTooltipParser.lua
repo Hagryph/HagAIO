@@ -27,7 +27,7 @@ end
 -- "... by N% ..." -> N (the integer percent), or nil.
 function SpellTooltipParser:Percent(desc)
     if type(desc) ~= "string" then return nil end
-    return tonumber(desc:match("by%s*(%d+)%%"))
+    return num(desc:match("by%s*(%d+)%%"))
 end
 
 -- Hit damage from "... dealing N ..." / "N <school> damage" / "N damage" -> N, or nil.

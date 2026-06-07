@@ -158,7 +158,7 @@ function Questing:_ShowTooltip()
     statLine(tt, "XP", ("%s / %s  (%.1f%%)"):format(commafy(cur), commafy(max), pct))
     statLine(tt, "Remaining", commafy(remaining))
     if rested and rested > 0 then
-        statLine(tt, "Rested", ("%s  (%.0f%%)"):format(commafy(rested), rested / max * 100), "gold")
+        statLine(tt, "Rested", ("%s  (%.0f%%)"):format(commafy(rested), max > 0 and (rested / max * 100) or 0), "gold")
     end
 
     tt:AddLine(" ")
@@ -292,7 +292,9 @@ function Questing:_OnGreeting()
     if self:GetSetting("autoTurnIn") then
         for i = 1, GetNumActiveQuests() do
             local _, isComplete = GetActiveTitle(i)
-            if isComplete == nil and GetActiveQuestID and C_QuestLog and C_QuestLog.ReadyForTurnIn then
+            -- GetActiveTitle's completion flag is a boolean/number, so it's rarely nil;
+            -- when it's falsy, fall back to the quest-log ready-for-turn-in check.
+            if not isComplete and GetActiveQuestID and C_QuestLog and C_QuestLog.ReadyForTurnIn then
                 local qid = GetActiveQuestID(i)
                 isComplete = qid and C_QuestLog.ReadyForTurnIn(qid)
             end
