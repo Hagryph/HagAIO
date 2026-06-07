@@ -10,76 +10,11 @@
 ## X-Category: Combat
 ## AllowLoadGameType: retail
 
-# Interface 120005 = patch 12.0.5 (current live, Midnight). Bump to 120007
+# Interface 120005 = patch 12.0.5 (current live, Midnight). Bump the line above
 # once 12.0.7 "Revelations" goes live (2026-06-16).
+#
+# Edit only the header above. The Lua file list is filled in automatically by
+# deploy.ps1 (from the .lua files on disk) and written into the deployed AddOn
+# folder -- this tracked copy intentionally has no file list.
 
-# --- foundation (plain libraries + core singletons) ---
-Core\Namespace.lua
-Core\Class.lua
-Core\Theme.lua
-# DependencyGraph + Logger are core (used by/needed before the service layer).
-# Service/ServiceManager + ModuleManager self-instantiate at load.
-Core\DependencyGraph.lua
-Core\Logger.lua
-# Registry: shared base for the three lifecycle managers below.
-Core\Registry.lua
-# Loggable: the shared logging surface; Component and Service both inherit it, so it
-# must load before both.
-Core\Loggable.lua
-Core\Component.lua
-Core\Service.lua
-Core\ServiceManager.lua
-Core\Module.lua
-Core\ModuleManager.lua
-Core\Submodule.lua
-Core\SubmoduleManager.lua
-# Lib tier: pure-logic helpers (no deps/lifecycle); LibManager just publishes them.
-Core\Lib.lua
-Core\LibManager.lua
-
-# --- services (top-level Services/; each self-registers with the ServiceManager;
-#     order here is irrelevant -- the ServiceManager resolves load order from deps) ---
-# --- libs (Lib/: pure-logic, no WoW API. Most self-register with the LibManager as
-#     stateless ns.Lib singletons; Vector2D is a pure VALUE-CLASS you instantiate) ---
-Lib\FlightGraph.lua
-Lib\Vector2D.lua
-Lib\Format.lua
-Lib\SpellTooltipParser.lua
-Lib\CVarHelper.lua
-
-Services\Cache.lua
-Services\Memoize.lua
-Services\Scheduler.lua
-Services\Serializer.lua
-Services\Profiles.lua
-Services\EventBus.lua
-Services\SavedVars.lua
-Services\SlashCommand.lua
-Services\Hooks.lua
-Services\ActionBars.lua
-Services\Range.lua
-Services\Cooldowns.lua
-Services\Secrets.lua
-Services\Scaling.lua
-Services\Dev.lua
-Services\EditMode.lua
-Services\Compartment.lua
-Services\MinimapIcon.lua
-
-# --- UI (Widgets is a static factory; the windows are UI services) ---
-UI\Widgets.lua
-UI\CopyWindow.lua
-UI\SettingsWindow.lua
-
-# Core initializer: one StartAll() boots every service in dependency order, then
-# wires the runtime startup. Loads after the services/UI, before the modules.
-Core\Init.lua
-Modules\Questing.lua
-Modules\UnitFrames.lua
-Modules\Class.lua
-Modules\Class\Monk.lua
-Modules\Misc.lua
-Modules\CVars.lua
-Modules\Tasklist.lua
-Modules\Collection.lua
-Modules\Collection\ATT.lua
+# >>> FILES (deploy.ps1 fills the load order below this line) >>>

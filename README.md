@@ -12,7 +12,7 @@ that feature modules plug into, plus a themed settings window and activity log t
 |---|---|
 | Expansion | Midnight |
 | `.toc` Interface | `120005` (patch 12.0.5, current live) |
-| Next patch | 12.0.7 *Revelations* — 2026-06-16 → bump Interface to `120007` |
+| Next patch | 12.0.7 *Revelations* — 2026-06-16 → bump the Interface line in `HagAIO.toc` to `120007` |
 
 > The Midnight 12.0 API introduced **Secret Values** and migrated several globals into
 > `C_*` namespaces (e.g. `GetAddOnMetadata` → `C_AddOns.GetAddOnMetadata`). Always verify
@@ -78,7 +78,7 @@ backs the `dependsOn` greying of individual settings controls.
 
 <!-- AUTOGEN:filetree — regenerate with `node tools/gen_readme.mjs` (CI runs --check) -->
 ```
-HagAIO.toc                 Load manifest (file order, saved vars, Interface version)
+HagAIO.toc                 Load manifest — header tracked; file list filled on deploy
 Core/
   Namespace.lua            Root namespace module
   Class.lua                Minimal metatable-based OOP system with true per-instance encapsulation
@@ -97,47 +97,47 @@ Core/
   Lib.lua                  Base for a LIB: a pure-logic helper (no WoW API, no state, no dependencies) published
   LibManager.lua           Registry for the LIB tier (pure-logic helpers; see Core/Lib.lua)
   Init.lua                 The single Core initializer
-Lib/
-  FlightGraph.lua          Pure solver for ATOMIC FLIGHT-LEG times -- no WoW API
-  Vector2D.lua             A pure 2D vector value-CLASS -- no WoW API
-  Format.lua               Pure time formatters -- no WoW API
-  SpellTooltipParser.lua   Pure parsers for the numbers embedded in a spell's description text
-  CVarHelper.lua           Pure helpers for reasoning about console-variable VALUES -- no WoW API
-Services/
-  Cache.lua                Central caching service
-  Memoize.lua              Memoization service: wrap a PURE function so repeat calls with the same arguments
-  Scheduler.lua            Thin, cancellable wrapper over C_Timer
-  Serializer.lua           Turns a Lua value into a compact, copy-pasteable share string and back, using
-  Profiles.lua             Named config profiles + copy-paste sharing, built on the SavedVars layer
-  EventBus.lua             Singleton pub/sub layer over a hidden driver frame
-  SavedVars.lua            Singleton wrapper around the global + per-character saved-variable tables
-  SlashCommand.lua         Singleton slash-command router for /hagaio (alias /hag)
-  Hooks.lua                Removable secure-hook service
-  ActionBars.lua           Service for locating action buttons by what they cast and annotating them
-  Range.lua                Range service: "is this enemy within N yards?" and "how many enemies within N
-  Cooldowns.lua            Watch a spell's cooldown WITHOUT reading secret values
-  Secrets.lua              Thin, allocation-free helpers around 12.0 Secret Values, so modules don't each
-  Scaling.lua              Models WoW "up to X% more" health-based scaling (damage OR healing) as a clamped linear
-  Dev.lua                  Developer-only service (not surfaced in normal use)
-  EditMode.lua             Standalone framework letting any module register a frame to be positioned via
-  Compartment.lua          Registers HagAIO into the Addon Compartment — the button hub on the minimap
-  MinimapIcon.lua          A standalone minimap button (NOT LibDBIcon — no external libraries)
 UI/
   Widgets.lua              Static factory of themed building blocks (the LoL "dark + blue" language in
   CopyWindow.lua           A themed, reusable "copy this text out of the game" window
   SettingsWindow.lua       The unique, themed settings menu (replaces the default Blizzard options
+Lib/
+  CVarHelper.lua           Pure helpers for reasoning about console-variable VALUES -- no WoW API
+  FlightGraph.lua          Pure solver for ATOMIC FLIGHT-LEG times -- no WoW API
+  Format.lua               Pure time formatters -- no WoW API
+  SpellTooltipParser.lua   Pure parsers for the numbers embedded in a spell's description text
+  Vector2D.lua             A pure 2D vector value-CLASS -- no WoW API
+Services/
+  ActionBars.lua           Service for locating action buttons by what they cast and annotating them
+  Cache.lua                Central caching service
+  Compartment.lua          Registers HagAIO into the Addon Compartment — the button hub on the minimap
+  Cooldowns.lua            Watch a spell's cooldown WITHOUT reading secret values
+  Dev.lua                  Developer-only service (not surfaced in normal use)
+  EditMode.lua             Standalone framework letting any module register a frame to be positioned via
+  EventBus.lua             Singleton pub/sub layer over a hidden driver frame
+  Hooks.lua                Removable secure-hook service
+  Memoize.lua              Memoization service: wrap a PURE function so repeat calls with the same arguments
+  MinimapIcon.lua          A standalone minimap button (NOT LibDBIcon — no external libraries)
+  Profiles.lua             Named config profiles + copy-paste sharing, built on the SavedVars layer
+  Range.lua                Range service: "is this enemy within N yards?" and "how many enemies within N
+  SavedVars.lua            Singleton wrapper around the global + per-character saved-variable tables
+  Scaling.lua              Models WoW "up to X% more" health-based scaling (damage OR healing) as a clamped linear
+  Scheduler.lua            Thin, cancellable wrapper over C_Timer
+  Secrets.lua              Thin, allocation-free helpers around 12.0 Secret Values, so modules don't each
+  Serializer.lua           Turns a Lua value into a compact, copy-pasteable share string and back, using
+  SlashCommand.lua         Singleton slash-command router for /hagaio (alias /hag)
 Modules/
-  Questing.lua             Everything around levelling through quests, in one module:
-  UnitFrames.lua           Colours the player & target health bars by remaining health: green at full,
   Class.lua                Generic class-helper module
-  Class/Monk.lua           Monk class file: adds the Monk behaviour as methods on the shared ns.ClassModule
-  Misc.lua                 Miscellaneous helpers:
-  CVars.lua                Force chosen console variables on every character
-  Tasklist.lua             A lightweight objective tracker
   Collection.lua           Adds a "Track in Task List" right-click menu to UNCOLLECTED entries across all
+  CVars.lua                Force chosen console variables on every character
+  Misc.lua                 Miscellaneous helpers:
+  Questing.lua             Everything around levelling through quests, in one module:
+  Tasklist.lua             A lightweight objective tracker
+  UnitFrames.lua           Colours the player & target health bars by remaining health: green at full,
+  Class/Monk.lua           Monk class file: adds the Monk behaviour as methods on the shared ns.ClassModule
   Collection/ATT.lua       All The Things integration as a SUBMODULE of the Collection module
 Dev/                       Scratch space (excluded from deploy)
-deploy.ps1                 Mirror the addon into the live WoW AddOns folder
+deploy.ps1                 Mirror the addon into the live WoW AddOns folder + generate the .toc
 ```
 <!-- /AUTOGEN:filetree -->
 
@@ -197,8 +197,10 @@ ns.ModuleManager:Register(MyFeature:New("MyFeature", {
 -- react to changes:  function MyFeature:OnSettingChanged(key, value) ... end
 ```
 
-Add the file to `HagAIO.toc` in the `Modules/` block. For a condition-gated piece (e.g. a
-spec- or addon-specific feature), register a **submodule** instead:
+No manifest edit needed — `deploy.ps1` fills the `.toc` file list from disk on every deploy,
+so a new `Modules/*.lua` is picked up automatically (you only hand-edit the `.toc` header).
+For a condition-gated piece (e.g. a spec- or addon-specific feature), register a
+**submodule** instead:
 
 ```lua
 ns.SubmoduleManager:Register(ns.Submodule:New("MyBit", {

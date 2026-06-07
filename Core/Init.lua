@@ -37,7 +37,7 @@ function Initializer:Run()
     -- later with a cryptic nil index.
     for _, name in ipairs({ "Logger", "ServiceManager", "ModuleManager", "SubmoduleManager" }) do
         if not ns[name] then
-            error(("HagAIO: ns.%s is missing -- its Core file must load before Core/Init.lua (check the .toc order)"):format(name), 0)
+            error(("HagAIO: ns.%s is missing -- its Core file must load before Core/Init.lua (check the pinned Core order in deploy.ps1)"):format(name), 0)
         end
     end
 

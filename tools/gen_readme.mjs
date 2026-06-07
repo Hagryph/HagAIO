@@ -1,28 +1,45 @@
 #!/usr/bin/env node
-// tools/gen_readme.mjs — generate the README's file-tree from HagAIO.toc + each Lua
-// file's own header comment, so the tree can't drift from the real load manifest.
+// tools/gen_readme.mjs — generate the README's file-tree from the .lua files on disk
+// + each file's own header comment, so the tree can't drift from what actually ships.
 //   node tools/gen_readme.mjs           rewrite the block in README.md
 //   node tools/gen_readme.mjs --check   fail (exit 1) if README.md is out of date
 // CI runs --check via .github/workflows/lint.yml. The managed region is delimited by
 // the <!-- AUTOGEN:filetree --> ... <!-- /AUTOGEN:filetree --> markers in README.md.
+//
+// The .toc itself is NOT tracked in the repo -- deploy.ps1 generates it on deploy. This
+// tool mirrors deploy.ps1's load-order rules so the documented tree matches the deployed
+// manifest: keep the pinned lists below in sync with the ones in deploy.ps1.
 
-import { readFileSync, writeFileSync } from "node:fs";
+import { readFileSync, writeFileSync, readdirSync } from "node:fs";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
-const TOC = join(ROOT, "HagAIO.toc");
 const README = join(ROOT, "README.md");
 const COL = 27;  // description alignment column
 
 const BEGIN = "<!-- AUTOGEN:filetree";  // prefix (the line may carry a note + -->)
 const END = "<!-- /AUTOGEN:filetree -->";
 
-// Lines that aren't .toc Lua files but belong in the tree (the manifest + non-Lua bits).
-const HEADER = [["HagAIO.toc", "Load manifest (file order, saved vars, Interface version)"]];
+// Directories that hold game code (mirrors deploy.ps1's scan list).
+const SCAN_DIRS = ["Core", "Lib", "Services", "UI", "Modules"];
+
+// Foundation files with a fixed load order, then Core/Init.lua which loads after the
+// service/UI tier but before the modules. (Mirrors deploy.ps1's $pinnedHead/$pinnedInit.)
+const PINNED_HEAD = [
+  "Core/Namespace.lua", "Core/Class.lua", "Core/Theme.lua", "Core/DependencyGraph.lua",
+  "Core/Logger.lua", "Core/Registry.lua", "Core/Loggable.lua", "Core/Component.lua",
+  "Core/Service.lua", "Core/ServiceManager.lua", "Core/Module.lua", "Core/ModuleManager.lua",
+  "Core/Submodule.lua", "Core/SubmoduleManager.lua", "Core/Lib.lua", "Core/LibManager.lua",
+  "UI/Widgets.lua",
+];
+const PINNED_INIT = "Core/Init.lua";
+
+// Lines that aren't .lua files but belong in the tree.
+const HEADER = [["HagAIO.toc", "Load manifest — header tracked; file list filled on deploy"]];
 const FOOTER = [
   ["Dev/", "Scratch space (excluded from deploy)"],
-  ["deploy.ps1", "Mirror the addon into the live WoW AddOns folder"],
+  ["deploy.ps1", "Mirror the addon into the live WoW AddOns folder + generate the .toc"],
 ];
 
 const row = (name, desc, indent = 0) => {
@@ -30,15 +47,49 @@ const row = (name, desc, indent = 0) => {
   return left + (left.length < COL ? " ".repeat(COL - left.length) : " ") + desc;
 };
 
-// Ordered list of .lua entries from the .toc (backslash or forward slash tolerated).
-function tocFiles() {
+// All .lua files under a dir, repo-relative with forward slashes.
+function findLua(dir, rel) {
   const out = [];
-  for (const raw of readFileSync(TOC, "utf8").split(/\r?\n/)) {
-    const line = raw.trim();
-    if (!line || line.startsWith("#")) continue;
-    if (line.toLowerCase().endsWith(".lua")) out.push(line.split("\\").join("/"));
+  let entries;
+  try {
+    entries = readdirSync(join(ROOT, dir), { withFileTypes: true });
+  } catch {
+    return out; // a scan dir that doesn't exist yet is fine
+  }
+  for (const e of entries.sort((a, b) => (a.name < b.name ? -1 : 1))) {
+    const r = rel ? `${rel}/${e.name}` : e.name;
+    if (e.isDirectory()) out.push(...findLua(`${dir}/${e.name}`, r));
+    else if (e.isFile() && e.name.toLowerCase().endsWith(".lua")) out.push(r);
   }
   return out;
+}
+
+// Folder-then-name (case-insensitive): shorter parent dir sorts before its child dir,
+// so all Modules/*.lua precede every Modules/<Sub>/*.lua.
+function byFolderThenName(a, b) {
+  const A = a.toLowerCase(), B = b.toLowerCase();
+  const ad = A.slice(0, A.lastIndexOf("/")), bd = B.slice(0, B.lastIndexOf("/"));
+  if (ad !== bd) return ad < bd ? -1 : 1;
+  const an = A.slice(A.lastIndexOf("/") + 1), bn = B.slice(B.lastIndexOf("/") + 1);
+  return an < bn ? -1 : an > bn ? 1 : 0;
+}
+
+// The ordered load manifest, reproduced from disk the same way deploy.ps1 does.
+function orderedFiles() {
+  const onDisk = [];
+  for (const d of SCAN_DIRS) onDisk.push(...findLua(d, d));
+  const seen = new Set(onDisk);
+
+  const pinned = new Set([...PINNED_HEAD, PINNED_INIT].map((p) => p.toLowerCase()));
+  const rest = onDisk.filter((p) => !pinned.has(p.toLowerCase()));
+  const modules = rest.filter((p) => p.startsWith("Modules/")).sort(byFolderThenName);
+  const free = rest.filter((p) => !p.startsWith("Modules/")).sort(byFolderThenName);
+
+  // Drop any pinned entry that no longer exists on disk, so the tree never lists a
+  // phantom file (deploy.ps1 simply omits missing pins the same way).
+  const head = PINNED_HEAD.filter((p) => seen.has(p));
+  const init = seen.has(PINNED_INIT) ? [PINNED_INIT] : [];
+  return [...head, ...free, ...init, ...modules];
 }
 
 // The file's one-line description: the first comment line after its `-- <path>.lua`
@@ -62,7 +113,7 @@ function describe(relPath) {
 }
 
 function buildTree() {
-  const files = tocFiles();
+  const files = orderedFiles();
   const groups = [];           // [groupName, [[displayName, relPath], ...]]
   const index = new Map();
   for (const rel of files) {
@@ -101,7 +152,7 @@ function main() {
       console.error("gen_readme: README.md file-tree is out of date. Run: node tools/gen_readme.mjs");
       process.exit(1);
     }
-    console.log("gen_readme: OK — README.md file-tree matches the .toc.");
+    console.log("gen_readme: OK — README.md file-tree matches the source tree.");
     return;
   }
   if (next !== readme) {

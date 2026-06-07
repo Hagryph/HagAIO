@@ -16,17 +16,6 @@ jobs:
       - name: Check every ns.<Service/Module> access is a declared dependency
         run: node tools/depcheck.mjs
 
-  toccheck:
-    name: TOC file list
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: "20"
-      - name: Check every .lua file is listed in HagAIO.toc
-        run: node tools/toccheck.mjs
-
   nscheck:
     name: Namespace doc block
     runs-on: ubuntu-latest
@@ -46,7 +35,7 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: "20"
-      - name: Check README.md file tree matches HagAIO.toc
+      - name: Check README.md file tree matches the source tree
         run: node tools/gen_readme.mjs --check
 
   deadcode:
