@@ -71,6 +71,7 @@ function M.newNs()
     local noop = function() end
     local channel = { Debug = noop, Info = noop, Success = noop, Warn = noop, Error = noop }
     ns.Logger = { Core = function() return channel end, Register = function() return channel end }
+    ns.Log = { Print = noop, Warn = noop, Error = noop }  -- static print helpers (Namespace.lua)
     -- Component before Service (mirrors the .toc): Service borrows Component's shared
     -- logging methods at load.
     assert(loadfile("Core/Component.lua"))("HagAIO", ns)
@@ -86,6 +87,39 @@ function M.newNs()
         IsLoaded = function() return true end,
     }
     return ns
+end
+
+-- Minimal global CreateFrame stub. Frames support SetScript/GetScript,
+-- RegisterEvent/UnregisterEvent (tracked in .registered), and :Fire(event, ...) to
+-- invoke their OnEvent handler. RegisterEvent throws for an event named "BOGUS_EVENT"
+-- so the unknown-event pcall path can be exercised. Returns the list of created frames
+-- (frames[1] is the first one made -- e.g. the EventBus driver).
+function M.stubFrames()
+    local frames = {}
+    _G.CreateFrame = function()
+        local f = { scripts = {}, registered = {} }
+        function f:SetScript(name, fn) self.scripts[name] = fn end
+        function f:GetScript(name) return self.scripts[name] end
+        function f:RegisterEvent(e)
+            if e == "BOGUS_EVENT" then error("unknown event") end
+            self.registered[e] = true
+        end
+        function f:UnregisterEvent(e) self.registered[e] = nil end
+        function f:Fire(event, ...) if self.scripts.OnEvent then self.scripts.OnEvent(self, event, ...) end end
+        frames[#frames + 1] = f
+        return f
+    end
+    return frames
+end
+
+-- A fresh EventBus instance wired to a stubbed driver frame. Returns (bus, frames).
+function M.newBus()
+    local frames = M.stubFrames()
+    local ns = M.newNs()
+    M.load(ns, "Services/EventBus.lua")
+    local bus = ns._captured["EventBus"]
+    bus:OnInitialize()
+    return bus, frames, ns
 end
 
 -- Load a HagAIO file into `ns` (chainable).

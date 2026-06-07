@@ -91,4 +91,46 @@ describe("Profiles", function()
         assert.is_false(ok)
         assert.is_true(type(err) == "string")
     end)
+
+    it("Save with an existing name overwrites it (single entry)", function()
+        local pr, sv = setup()
+        sv:Global().module_Foo = { x = 1 }
+        pr:Save("A")
+        sv:Global().module_Foo.x = 2
+        pr:Save("A")
+        assert.are.equal(1, #pr:List())
+        assert.are.equal(2, pr:Get("A").module_Foo.x)
+    end)
+
+    it("List is sorted", function()
+        local pr = setup()
+        pr:Save("Beta"); pr:Save("Gamma"); pr:Save("Alpha")
+        local l = pr:List()
+        assert.are.equal("Alpha", l[1])
+        assert.are.equal("Beta", l[2])
+        assert.are.equal("Gamma", l[3])
+    end)
+
+    it("the global profile is exclusive and clears when deleted", function()
+        local pr = setup()
+        pr:Save("A"); pr:Save("B")
+        pr:SetGlobal("A")
+        assert.is_true(pr:IsGlobal("A"))
+        pr:SetGlobal("B")               -- exclusive: A no longer global
+        assert.is_false(pr:IsGlobal("A"))
+        assert.is_true(pr:IsGlobal("B"))
+        pr:Delete("B")
+        assert.is_nil(pr:GetGlobal())   -- dangling global cleared
+    end)
+
+    it("ApplyGlobalForFreshChar applies the global once, then no-ops", function()
+        local pr, sv = setup()
+        sv:Global().module_Foo = { x = 1 }
+        pr:Save("A")
+        sv:Global().module_Foo.x = 2     -- diverge the live config
+        pr:SetGlobal("A")
+        assert.are.equal("A", pr:ApplyGlobalForFreshChar())
+        assert.are.equal(1, sv:Global().module_Foo.x)   -- global re-applied
+        assert.is_nil(pr:ApplyGlobalForFreshChar())     -- char already has a profile
+    end)
 end)

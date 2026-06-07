@@ -70,4 +70,36 @@ describe("Memoize", function()
         assert.are.equal(1, st.hits)
         assert.are.equal(2, st.misses)
     end)
+
+    it("caches longer / trailing-nil arg tuples distinctly", function()
+        local m = newMemo()
+        local calls = 0
+        local f = m:Wrap(function(...) calls = calls + 1; return select("#", ...) end)
+        assert.are.equal(3, f(1, 2, 3))
+        assert.are.equal(3, f(1, 2, 3)); assert.are.equal(1, calls)  -- cached
+        assert.are.equal(3, f(1, nil, 3)); assert.are.equal(2, calls) -- distinct middle nil
+        assert.are.equal(2, f(1, nil)); assert.are.equal(3, calls)    -- distinct trailing nil
+    end)
+
+    it("a weak-keyed memo still caches while the key is referenced", function()
+        local m = newMemo()
+        local calls = 0
+        local f = m:Wrap(function(t) calls = calls + 1; return calls end, { weak = "k" })
+        local key = {}
+        f(key); f(key)
+        assert.are.equal(1, calls)
+    end)
+
+    it("a weak-valued memo reclaims unreferenced entries on GC, then recomputes", function()
+        local m = newMemo()
+        local calls = 0
+        -- weak VALUES: the cached node is reachable only weakly once the call returns,
+        -- so a full GC collects it and the next identical call recomputes.
+        local f = m:Wrap(function(x) calls = calls + 1; return x end, { weak = "v" })
+        f(1); f(1)
+        assert.are.equal(1, calls)   -- cached (no GC yet)
+        collectgarbage("collect")    -- reclaim the unreferenced cache node
+        f(1)
+        assert.are.equal(2, calls)   -- entry was reclaimed -> recomputed
+    end)
 end)

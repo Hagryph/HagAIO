@@ -61,4 +61,17 @@ describe("Serializer", function()
         assert.is_false(sz:IsAvailable())
         assert.is_nil((sz:Encode({})))
     end)
+
+    it("round-trips an empty table", function()
+        local sz = newSerializer()
+        local t = {}
+        assert.are.equal(t, sz:Decode(sz:Encode(t)))
+    end)
+
+    it("fails cleanly on an empty / too-short body", function()
+        local sz = newSerializer()
+        local v, err = sz:Decode("HAGAIO1!")   -- prefix only, no body
+        assert.is_nil(v)
+        assert.is_true(type(err) == "string")
+    end)
 end)

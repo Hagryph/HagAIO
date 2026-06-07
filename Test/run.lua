@@ -7,7 +7,9 @@
 
 -- Add a spec here when you create one (Test/<name>_spec.lua).
 local SPECS = { "dependencygraph", "scaling", "cache", "memoize", "scheduler", "serializer", "profiles", "component",
-                "flightgraph", "geometry", "spelltooltipparser", "cvarhelper", "submodulemanager" }
+                "flightgraph", "geometry", "spelltooltipparser", "cvarhelper", "submodulemanager",
+                "eventbus", "hooks", "slashcommand", "secrets", "savedvars", "cooldowns", "range",
+                "component_resources" }
 
 local results = { pass = 0, fail = 0, failures = {} }
 local stack = {}

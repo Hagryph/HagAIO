@@ -27,6 +27,10 @@
         "FlightMapFrame",
         "MainStatusTrackingBarContainer",
         "UISpecialFrames",
-        "ColorPickerFrame"
+        "ColorPickerFrame",
+        "MountListItem_OnClick",
+        "MountListDragButton_OnClick",
+        "PetJournal_InitPetButton",
+        "ToySpellButton_OnClick"
     ]
 }

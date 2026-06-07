@@ -61,17 +61,20 @@ function SavedVars:Load()
     p.loaded = true
 end
 
--- Shared migration core: run pending MIGRATIONS over a global-shaped table `g`
--- (with `char` as its per-character half). Caller seeds g._schema first. A failing
--- migration is logged and stops the run, leaving _schema at the last good version.
-local function runMigrations(g, char)
+-- Shared migration core: run pending migrations in `migs` (a [version]=fn map) over a
+-- global-shaped table `g` (with `char` as its per-character half), up to `version`.
+-- Caller seeds g._schema first. Migrations run lowest-first; a failing one is logged and
+-- STOPS the run, leaving _schema at the last good version (so it retries next load). A
+-- METHOD (not a local) and parameterised on migs/version so it's unit-testable with
+-- injected migrations -- the real callers pass MIGRATIONS / SCHEMA_VERSION.
+function SavedVars:_RunMigrations(g, char, migs, version)
     local from = g._schema or 1
-    if from >= SCHEMA_VERSION then
-        g._schema = SCHEMA_VERSION
+    if from >= version then
+        g._schema = version
         return true
     end
-    for v = from + 1, SCHEMA_VERSION do
-        local fn = MIGRATIONS[v]
+    for v = from + 1, version do
+        local fn = migs[v]
         if fn then
             local ok, err = pcall(fn, g, char)
             if not ok then
@@ -93,7 +96,7 @@ function SavedVars:Migrate()
     assert(p.loaded, "SavedVars:Migrate called before Load()")
     local g = p.global
     if g._schema == nil then g._schema = p.fresh and SCHEMA_VERSION or 1 end
-    runMigrations(g, p.char)
+    self:_RunMigrations(g, p.char, MIGRATIONS, SCHEMA_VERSION)
 end
 
 -- Bring an arbitrary global-shaped table (e.g. an imported profile snapshot) up to
@@ -102,7 +105,7 @@ end
 function SavedVars:MigrateTable(tbl)
     if type(tbl) ~= "table" then return tbl end
     if tbl._schema == nil then tbl._schema = 1 end
-    runMigrations(tbl, tbl)   -- a profile has no separate per-character half
+    self:_RunMigrations(tbl, tbl, MIGRATIONS, SCHEMA_VERSION)   -- a profile has no separate per-character half
     return tbl
 end
 

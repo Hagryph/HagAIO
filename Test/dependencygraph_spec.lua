@@ -95,4 +95,26 @@ describe("DependencyGraph", function()
         assert.is_false(pcall(function() g:Add("bad", {}) end))   -- {} has no :IsActive()
         assert.is_true(pcall(function() g:Add("ok", function() return true end) end))
     end)
+
+    it("Has reports node existence", function()
+        local g = graph()
+        assert.is_false(g:Has("a"))
+        g:Add("a", function() return true end)
+        assert.is_true(g:Has("a"))
+    end)
+
+    it("a node added with no condition is a root (online iff active)", function()
+        local g = graph()
+        local on = false
+        g:Add("r", function() return on end)   -- nil condition
+        assert.is_false(g:IsOnline("r"))
+        on = true
+        assert.is_true(g:IsOnline("r"))
+    end)
+
+    it("rejects a duplicate node id", function()
+        local g = graph()
+        g:Add("a", function() return true end)
+        assert.is_false(pcall(function() g:Add("a", function() return true end) end))
+    end)
 end)

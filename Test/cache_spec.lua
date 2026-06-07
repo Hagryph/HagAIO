@@ -87,4 +87,20 @@ describe("Cache", function()
         assert.are.equal(1, st.hits)
         assert.are.equal(1, st.misses)
     end)
+
+    it("ttl = 0 is valid same-tick but expires once the clock advances", function()
+        local c, clock = newCache()
+        local s = c:Store("z", { ttl = 0 })
+        s:Set("k", 1)
+        assert.is_true(select(2, s:Get("k")))   -- now == expiry, not yet expired
+        clock.now = clock.now + 1
+        assert.is_false(select(2, s:Get("k")))
+    end)
+
+    it("max = 0 stores nothing (the just-added entry is evicted)", function()
+        local c = newCache()
+        local s = c:Store("z0", { max = 0 })
+        s:Set("k", 1)
+        assert.is_false(select(2, s:Get("k")))
+    end)
 end)
