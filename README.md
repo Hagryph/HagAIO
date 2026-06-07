@@ -114,6 +114,7 @@ UI/
 Lib/
   CVarHelper.lua           Pure helpers for reasoning about console-variable VALUES -- no WoW API
   FlightGraph.lua          Pure solver for ATOMIC FLIGHT-LEG times -- no WoW API
+  FlightResolver.lua       Pure read-side algebra for flight-time queries over a solved atomic-leg table (the
   Format.lua               Pure time formatters -- no WoW API
   Helpers.lua              Small pure-logic helpers shared across the addon -- no WoW API, no state
   SpellTooltipParser.lua   Pure parsers for the numbers embedded in a spell's description text

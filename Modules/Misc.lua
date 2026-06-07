@@ -40,48 +40,13 @@ local FLYOVER_RANGE = 75  -- closest approach must be within this to count as fl
 -- real landing) > FLY (a mid-flight closest-approach guess). Estimates are computed fresh
 -- and never persisted. Legacy: a plain number = DIRECT (no via -> treated as atomic); an
 -- old { t, est = true } (a saved estimate) is treated as FLY.
--- Numeric so a higher quality wins ties (DIRECT measurement beats a FLY guess); the values
--- are persisted as `e.q`, so they must stay 2/1.
-local Quality = ns.Enum.new("FlightQuality", { DIRECT = 2, FLY = 1 })
-
-function Misc:_StoredTime(e)
-    if type(e) == "number" then return e end
-    return e and e.t
-end
-function Misc:_EntryQ(e)
-    if e == nil then return nil end
-    if type(e) ~= "table" then return Quality.DIRECT end   -- legacy number
-    if e.q then return e.q end
-    return e.est and Quality.FLY or Quality.DIRECT               -- legacy saved estimate -> fly
-end
-
--- Best time for one ATOMIC leg a -> b from the solved leg table, in priority order:
---   direct same > direct reverse > fly same > fly reverse > derived same > derived reverse.
--- A reverse leg substitutes the opposite direction; a derived leg came from subtraction.
--- Returns seconds, or nil if the leg is entirely unknown.
-function Misc:_LegTime(legs, a, b)
-    local fwd = ns.FlightGraph:Get(legs, a, b)
-    local rev = ns.FlightGraph:Get(legs, b, a)
-    if fwd and not fwd.derived and fwd.q == Quality.DIRECT then return fwd.t end
-    if rev and not rev.derived and rev.q == Quality.DIRECT then return rev.t end
-    if fwd and not fwd.derived and fwd.q == Quality.FLY then return fwd.t end
-    if rev and not rev.derived and rev.q == Quality.FLY then return rev.t end
-    if fwd and fwd.derived then return fwd.t end
-    if rev and rev.derived then return rev.t end
-    return nil
-end
-
--- Sum an ORDERED node list into a total by adding each consecutive atomic leg. Returns
--- seconds, or nil if any leg on the path is unknown (we never fabricate a missing leg).
-function Misc:_SumLegs(legs, names)
-    local total = 0
-    for i = 1, #names - 1 do
-        local t = self:_LegTime(legs, names[i], names[i + 1])
-        if not t then return nil end
-        total = total + t
-    end
-    return total
-end
+--
+-- The read-side algebra over a solved leg table -- entry normalisation (StoredTime/EntryQ),
+-- the per-leg quality ranking (LegTime) and the never-fabricate route sum (SumLegs) -- lives
+-- in the pure, unit-tested ns.FlightResolver (Lib/FlightResolver.lua), which also owns the
+-- quality enum (DIRECT = 2 > FLY = 1; the values are persisted as `e.q`).
+local Flight  = ns.FlightResolver
+local Quality = Flight.Quality
 
 -- Sell every sellable grey (Poor, quality 0) item in the bags. Returns the number
 -- of stacks sold and a list of { link, count } descriptors of what was sold.
@@ -223,8 +188,8 @@ function Misc:_Store(a, b, seconds, via)
         flights[key] = { t = seconds, q = Quality.DIRECT, via = via }
         return
     end
-    local curQ = self:_EntryQ(cur)
-    if type(cur) ~= "table" then cur = { t = self:_StoredTime(cur), q = curQ }; flights[key] = cur end
+    local curQ = Flight:EntryQ(cur)
+    if type(cur) ~= "table" then cur = { t = Flight:StoredTime(cur), q = curQ }; flights[key] = cur end
     if curQ < Quality.DIRECT then
         cur.t, cur.q, cur.via = seconds, Quality.DIRECT, via    -- direct beats a fly entry
     elseif math.abs(seconds - cur.t) >= 5 then
@@ -259,10 +224,10 @@ end
 function Misc:_RouteTime(src, dst, slot, name)
     local f = self:GetDB().flights
     local fwd, rev = f[self:_DirKey(src, dst)], f[self:_DirKey(dst, src)]
-    if fwd and self:_EntryQ(fwd) == Quality.DIRECT then return self:_StoredTime(fwd), false end  -- 1
-    if rev and self:_EntryQ(rev) == Quality.DIRECT then return self:_StoredTime(rev), true  end  -- 2
-    if fwd then return self:_StoredTime(fwd), true end                        -- 3 (fwd is FLY here)
-    if rev then return self:_StoredTime(rev), true end                        -- 4 (rev is FLY here)
+    if fwd and Flight:EntryQ(fwd) == Quality.DIRECT then return Flight:StoredTime(fwd), false end  -- 1
+    if rev and Flight:EntryQ(rev) == Quality.DIRECT then return Flight:StoredTime(rev), true  end  -- 2
+    if fwd then return Flight:StoredTime(fwd), true end                       -- 3 (fwd is FLY here)
+    if rev then return Flight:StoredTime(rev), true end                       -- 4 (rev is FLY here)
     local est = self:_EstimateRoute(slot, name)                               -- 5 (booked-path sum)
     if est then return est, true end
     return nil, false
@@ -593,7 +558,7 @@ function Misc:_UpdateEarlyTarget()
         for i = cross - 1, p.earlyIdx do names[#names + 1] = p.path[i] and p.path[i].name end
         local complete = true
         for _, nm in ipairs(names) do if not nm then complete = false; break end end
-        segTotal = complete and self:_SumLegs(self:_AtomicLegs(), names) or nil
+        segTotal = complete and Flight:SumLegs(self:_AtomicLegs(), names) or nil
     end
     if segTotal and lastPassT then
         p.known = (lastPassT - (p.startTime or lastPassT)) + segTotal
@@ -652,7 +617,7 @@ function Misc:_AtomicLegs()
                 local via = (type(e) == "table") and e.via
                 if via then for _, n in ipairs(via) do seq[#seq + 1] = n end end
                 seq[#seq + 1] = b
-                records[#records + 1] = { seq = seq, t = self:_StoredTime(e), q = self:_EntryQ(e) }
+                records[#records + 1] = { seq = seq, t = Flight:StoredTime(e), q = Flight:EntryQ(e) }
             end
         end
     end
@@ -680,7 +645,7 @@ function Misc:_EstimateRoute(destSlot, destName)
     end
     for i = 1, hops + 1 do if not nodes[i] then return nil end end
 
-    return self:_SumLegs(self:_AtomicLegs(), nodes)
+    return Flight:SumLegs(self:_AtomicLegs(), nodes)
 end
 
 function Misc:_OnPinEnter(pin)
