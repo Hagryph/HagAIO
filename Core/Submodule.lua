@@ -30,8 +30,8 @@ local Submodule = Class.new("Submodule", ns.Component)
 
 function Submodule:Initialize(name, opts)
     opts = opts or {}
+    Class.super(Submodule, "Initialize", self, name)  -- ns.Loggable: name (submodules have no log colour)
     local p = self:_p()
-    p.name = name
     p.parent = opts.parent              -- { module = name } or { submodule = name }
     p.serviceDeps   = opts.serviceDeps   or {}
     p.moduleDeps    = opts.moduleDeps    or {}
@@ -52,7 +52,7 @@ function Submodule:Initialize(name, opts)
     p.loaded = false
 end
 
-function Submodule:GetName() return self:_p().name end
+-- GetName is inherited from ns.Loggable (shared identity).
 function Submodule:GetTitle() return self:_p().title or self:_p().name end
 function Submodule:GetSettings() return self:_p().settings end
 
@@ -78,7 +78,7 @@ end
 function Submodule:_SettingsDB() return self:_DB() end
 function Submodule:_SettingsOwnerId() return "sub:" .. self:_p().name end
 function Submodule:OnSettingChanged(key, value)
-    ns.Component.OnSettingChanged(self, key, value)  -- declarative settingsWatch (if any)
+    Class.super(Submodule, "OnSettingChanged", self, key, value)  -- inherited declarative settingsWatch
     local p = self:_p()
     if p.onSettingChanged then p.onSettingChanged(p.host, key, value) end
 end
@@ -115,18 +115,32 @@ function Submodule:_Refs()
     return refs
 end
 
+-- Lifecycle hooks (no-ops by default). A SUBCLASS may override OnLoad/OnUnload as
+-- methods; the base versions dispatch to the opts `onLoad`/`onUnload` callbacks, so the
+-- declarative `ns.Submodule:New{ onLoad = ... }` form stays a thin convenience over the
+-- same hook. Called by _Load/_Unload, which own the loaded-state latch.
+function Submodule:OnLoad()
+    local p = self:_p()
+    if p.onLoad then p.onLoad(p.host, self) end
+end
+
+function Submodule:OnUnload()
+    local p = self:_p()
+    if p.onUnload then p.onUnload(p.host, self) end
+end
+
 function Submodule:_Load()
     local p = self:_p()
     if p.loaded then return end
     p.loaded = true
-    if p.onLoad then p.onLoad(p.host, self) end
+    self:OnLoad()
 end
 
 function Submodule:_Unload()
     local p = self:_p()
     if not p.loaded then return end
     p.loaded = false
-    if p.onUnload then p.onUnload(p.host, self) end
+    self:OnUnload()
     self:_ReleaseAll()  -- undo any self:On / self:Every / ... registered while loaded
 end
 

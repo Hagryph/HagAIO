@@ -49,13 +49,12 @@ local Module = Class.new("Module", ns.Component)
 --       options = { { value = "v", text = "..." }, ... } }
 function Module:Initialize(name, opts)
     opts = opts or {}
+    Class.super(Module, "Initialize", self, name, opts.color or ns.Theme.hex.accent)  -- ns.Loggable: name + colour
     local p = self:_p()
-    p.name = name
     p.title = opts.title or name
     p.description = opts.description or ""
     p.defaultEnabled = opts.defaultEnabled ~= false
     p.perChar = opts.perChar and true or false  -- store db + enable state per character
-    p.color = opts.color or ns.Theme.hex.accent  -- log/tag colour
     p.serviceDeps = opts.deps or {}               -- services that must be loaded first
     p.addonDeps = opts.addonDeps or {}            -- external addons required to be available
     p.moduleDeps = opts.moduleDeps or {}          -- other modules that must be enabled
@@ -88,8 +87,7 @@ function Module:Initialize(name, opts)
     p.log = nil
 end
 
--- Getters (private fields are never exposed directly).
-function Module:GetName() return self:_p().name end
+-- Getters (private fields are never exposed directly). GetName comes from ns.Loggable.
 function Module:GetTitle() return self:_p().title end
 function Module:GetDescription() return self:_p().description end
 function Module:GetColor() return self:_p().color end
@@ -175,7 +173,7 @@ function Module:Enable()
         return
     end
     p.enabled = true
-    if self.OnEnable then self:OnEnable() end
+    self:OnEnable()  -- base no-op unless the subclass overrides
     self:_WireDeclared()  -- declarative events/messages (auto-released on disable)
     ns.SavedVars:SetModuleState(p.name, true, p.perChar)
     if p.log then p.log:Success("enabled") end
@@ -186,7 +184,7 @@ function Module:Disable()
     local p = self:_p()
     if not p.enabled then return end
     p.enabled = false
-    if self.OnDisable then self:OnDisable() end
+    self:OnDisable()  -- base no-op unless the subclass overrides
     self:_ReleaseAll()  -- undo every self:On / self:Subscribe / self:Hook + declared wiring
     ns.SavedVars:SetModuleState(p.name, false, p.perChar)
     if p.log then p.log:Info("disabled") end
@@ -203,9 +201,11 @@ end
 --   OnEnable()     : run each time the module is enabled.
 --   OnDisable()    : run each time the module is disabled.
 --   OnShutdown()   : run once on logout/reload (cleanup before the Lua state resets).
--- OnShutdown is declared as a base no-op (like Service's) so the ModuleManager can call
--- it unconditionally -- no `if m.OnShutdown` guard at the call site.
+-- All four are declared as base no-ops so Enable/Disable/the ModuleManager can call them
+-- unconditionally -- no `if self.OnX then` guards at the call sites.
 function Module:OnInitialize() end
+function Module:OnEnable() end
+function Module:OnDisable() end
 function Module:OnShutdown() end
 
 ns.Module = Module

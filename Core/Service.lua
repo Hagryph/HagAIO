@@ -32,17 +32,16 @@ local Service = Class.new("Service", ns.Loggable)
 --   generalToggles : declarative General-page toggles (see ns.Component), also init-time
 function Service:Initialize(name, opts)
     opts = opts or {}
+    Class.super(Service, "Initialize", self, name, opts.color)  -- ns.Loggable: name + colour
     local p = self:_p()
-    p.name           = name
     p.deps           = opts.deps or {}
     p.ui             = opts.ui and true or false
-    p.color          = opts.color
     p.commands       = opts.commands
     p.generalToggles = opts.generalToggles
     p.log            = nil
 end
 
-function Service:GetName() return self:_p().name end
+-- GetName is inherited from ns.Loggable (shared identity).
 function Service:GetDeps() return self:_p().deps end
 
 -- Internal: the fixed one-time init sequence the ServiceManager runs for this

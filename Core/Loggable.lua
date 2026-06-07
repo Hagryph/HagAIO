@@ -18,6 +18,19 @@ local Class = ns.Class
 
 local Loggable = Class.new("Loggable")
 
+-- Identity storage shared by every loggable thing (Module / Submodule / Service): the
+-- name (also the Logger channel + namespace key) and the channel colour. Subclasses call
+-- up to this from their own Initialize (via Class.super) instead of each re-storing p.name
+-- -- so "what is this thing called" has ONE home, the same base that uses it in
+-- _AttachLogger. `color` may be nil (a Submodule logs through its host, never attaches).
+function Loggable:Initialize(name, color)
+    local p = self:_p()
+    p.name = name
+    p.color = color
+end
+
+function Loggable:GetName() return self:_p().name end
+
 function Loggable:GetLog() return self:_p().log end
 
 function Loggable:_AttachLogger()

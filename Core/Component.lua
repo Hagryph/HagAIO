@@ -25,7 +25,9 @@ local Component = Class.new("Component", ns.Loggable)
 
 local DEFAULT = "_default"
 
-function Component:_DisplayName() return self:_p().name or "?" end
+-- name is a base invariant (set by ns.Loggable:Initialize, which every subclass calls up
+-- to), so no "?" fallback is needed.
+function Component:_DisplayName() return self:_p().name end
 
 local function scopes(self)
     local p = self:_p()
