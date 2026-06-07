@@ -11,10 +11,13 @@ local Class = ns.Class
 
 local Range = Class.new("Range", ns.Service)
 
--- Upvalue ipairs (the per-tick combat count's loop). UnitCanAttack/UnitIsDead/C_NamePlate
--- stay global lookups: they're swapped by the test harness, and an upvalue would capture
--- their load-time value -- the real win here is the closure-free loop + early exit anyway.
+-- Upvalue ipairs + the two range-check functions (resolved ONCE -- they're stable Blizzard
+-- functions hit on the combat ticker, so re-reading C_Item.IsItemInRange every call is pure
+-- waste). UnitCanAttack/UnitIsDead/C_NamePlate stay GLOBAL: they're the dominant per-plate
+-- cost (no real upvalue win) and the test harness swaps them per test.
 local ipairs = ipairs
+local IsItemInRange  = C_Item  and C_Item.IsItemInRange
+local IsSpellInRange = C_Spell and C_Spell.IsSpellInRange
 
 -- Harm items by exact yardage (first cached one is used). From LibRangeCheck.
 local HARM_ITEMS = {
@@ -52,7 +55,7 @@ end
 -- Is `unit` within `yards`? true / false / nil (undeterminable).
 function Range:UnitInRange(unit, yards)
     local item = self:_ItemFor(yards)
-    if item and C_Item and C_Item.IsItemInRange then return C_Item.IsItemInRange(item, unit) end
+    if item and IsItemInRange then return IsItemInRange(item, unit) end
     return nil
 end
 
@@ -75,14 +78,12 @@ function Range:CountEnemies(yards, fallbackSpellID, maxNeeded)
     local plates = C_NamePlate and C_NamePlate.GetNamePlates and C_NamePlate.GetNamePlates()
     if not plates then return 0 end
     local item = self:_ItemFor(yards)
-    local itemFn = C_Item and C_Item.IsItemInRange
-    local spellFn = C_Spell and C_Spell.IsSpellInRange
     local n = 0
     for _, plate in ipairs(plates) do
         local u = plate.namePlateUnitToken or (plate.UnitFrame and plate.UnitFrame.unit)
         if u and UnitCanAttack("player", u) and not UnitIsDead(u) then
-            local r = item and itemFn and itemFn(item, u)
-            if r == nil and fallbackSpellID and spellFn then r = spellFn(fallbackSpellID, u) == true end
+            local r = item and IsItemInRange and IsItemInRange(item, u)
+            if r == nil and fallbackSpellID and IsSpellInRange then r = IsSpellInRange(fallbackSpellID, u) == true end
             if r == true then
                 n = n + 1
                 if maxNeeded and n >= maxNeeded then return n end   -- early exit
