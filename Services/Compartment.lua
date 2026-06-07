@@ -1,5 +1,6 @@
 local addonName, ns = ...
 local Class = ns.Class
+local Theme = ns.Theme
 
 -- Services/Compartment.lua
 -- Registers HagAIO into the Addon Compartment — the button hub on the minimap
@@ -18,19 +19,19 @@ function Compartment:OnInitialize()
 end
 
 -- Account-wide visibility setting (default on).
-function Compartment:_DB()
+function Compartment:_Store()
     return ns.SavedVars:Namespace("compartment", { shown = true })
 end
 
 function Compartment:IsShown()
-    return self:_DB().shown ~= false
+    return self:_Store().shown ~= false
 end
 
 -- Toggle the compartment icon. Adding it takes effect immediately; the
 -- compartment API has no unregister, so REMOVING it only applies after /reload.
 -- Returns true if a /reload is needed to reflect the change.
 function Compartment:SetShown(on)
-    self:_DB().shown = on and true or false
+    self:_Store().shown = on and true or false
     if on then
         self:Register()
         return false
@@ -57,7 +58,7 @@ function Compartment:Register()
         end,
         funcOnEnter = function(button)
             GameTooltip:SetOwner(button, "ANCHOR_LEFT")
-            GameTooltip:AddLine("|cff4ab3e6HagAIO|r")
+            GameTooltip:AddLine(Theme.Colorize("accent", "HagAIO"))
             GameTooltip:AddLine("Left-click: open settings", 0.85, 0.87, 0.91)
             GameTooltip:AddLine("Right-click: enable/disable modules", 0.55, 0.58, 0.64)
             GameTooltip:Show()
@@ -86,7 +87,7 @@ ns.ServiceManager:Register(Compartment:New("Compartment", {
             section = "Icons",
             label = "Compartment icon",
             desc = "Shows HagAIO in the minimap's addon-compartment menu.",
-            flagReload = true,
+            reload = true,
             get = "IsShown",
             set = "SetShown",  -- returns true if /reload needed
             reloadMsg = "Reload your UI (/reload) to remove the compartment icon.",

@@ -41,7 +41,7 @@ local Store = Class.new("CacheStore")
 function Store:Initialize(name, opts)
     opts = opts or {}
     local p = self:_p()
-    p.name = name
+    p.id   = name                  -- this store's id (the CLASS name is __name = "CacheStore")
     p.ttl  = opts.ttl              -- seconds, or nil
     p.max  = opts.max              -- LRU capacity, or nil
     p.weak = opts.weak             -- "k"/"v"/"kv", or nil
@@ -64,7 +64,7 @@ function Store:Initialize(name, opts)
     end
 end
 
-function Store:GetName() return self:_p().name end
+function Store:GetId() return self:_p().id end
 
 -- ---- doubly-linked recency list (LRU); no-ops unless `max` is set ----------
 function Store:_Detach(node)

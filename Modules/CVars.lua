@@ -142,8 +142,12 @@ end
 -- Toggle whether a CVar is globalised: when on, its current value is saved
 -- account-wide and re-applied on every character at login; when off, the value
 -- is left as-is but no longer forced. Only meaningful for per-character CVars.
+-- CVar-API rule (consistent across this file): FEATURE-DETECT existence before reading
+-- (C_CVar and C_CVar.GetCVar), and PCALL only the calls that can throw on a valid-but-
+-- rejected argument (SetCVar). A missing read API is a no-op, not a crash.
 function CVars:_SetGlobalise(name, on)
     if on then
+        if not (C_CVar and C_CVar.GetCVar) then return end
         self:GetDB().managed[name] = C_CVar.GetCVar(name)
         self:LogSuccess("saving " .. name .. " on every character")
         if not self:IsEnabled() then

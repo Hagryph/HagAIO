@@ -68,20 +68,24 @@ ns.Initializer = nil    -- startup orchestrator        (Core/Init.lua)
 -- StartAll(), in dependency order. There is no `.Get()` accessor — call sites use
 -- e.g. `ns.EventBus` directly. DependencyGraph stays a CLASS (instantiated per use).
 
--- Logger: a small static table so prints stay consistent and namespaced.
+-- Logger: a small static table so prints stay consistent and namespaced. Colours come
+-- from the shared Theme (one palette), built at CALL time -- Theme.lua loads AFTER this
+-- file, so we can't capture it at load. (A nil-guard keeps the very-early path safe.)
 local Log = {}
-local PREFIX = "|cff33ff99HagAIO|r"
+local function paint(key, text)
+    return ns.Theme and ns.Theme.Colorize(key, text) or text
+end
 
 function Log.Print(...)
-    print(PREFIX .. ":", ...)
+    print(paint("accent", "HagAIO") .. ":", ...)
 end
 
 function Log.Warn(...)
-    print(PREFIX .. " |cffffcc00warning|r:", ...)
+    print(paint("accent", "HagAIO") .. " " .. paint("amber", "warning") .. ":", ...)
 end
 
 function Log.Error(...)
-    print(PREFIX .. " |cffff5555error|r:", ...)
+    print(paint("accent", "HagAIO") .. " " .. paint("red", "error") .. ":", ...)
 end
 
 ns.Log = Log

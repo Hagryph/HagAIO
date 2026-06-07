@@ -21,8 +21,6 @@ local Scheduler = Class.new("Scheduler", ns.Service)
 local unpack = unpack or table.unpack
 local function pack(...) return { n = select("#", ...), ... } end
 
-function Scheduler:OnInitialize() end
-
 -- Repeating timer. `iterations` optional (nil = forever). Returns the C_Timer
 -- ticker handle (has :Cancel() and :IsCancelled()).
 function Scheduler:Every(interval, fn, iterations)

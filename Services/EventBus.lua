@@ -39,7 +39,7 @@ end
 
 function EventBus:OnInitialize()
     local p = self:_p()
-    p.frame = CreateFrame("Frame", "HagAIOEventDriver")
+    p.frame = CreateFrame("Frame")
     p.events = {}      -- [event]   = { byToken = {token=fn}, list = {fn,...} }
     p.messages = {}    -- [message] = { byToken = {token=fn}, list = {fn,...} }
     p.unitFrames = {}  -- [token]   = dedicated RegisterUnitEvent frame

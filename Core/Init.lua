@@ -53,7 +53,9 @@ function Initializer:Run()
         local sv = ns.SavedVars
         sv:Load()
         sv:Migrate()                 -- bring stored data up to the current schema
-        self:_ApplyDefaults(sv)
+        -- Per-module defaults are declarative now: each module's `defaultEnabled` gates its
+        -- initial enable, and setting defaults (autoAccept/autoTurnIn = false, ...) come from
+        -- the module's settings schema via SavedVars' deep-merge -- no seeding needed here.
         -- A character that has never loaded a profile picks up the account's global
         -- profile here -- before modules bind, so no /reload is needed.
         if ns.Profiles then ns.Profiles:ApplyGlobalForFreshChar() end
@@ -76,22 +78,6 @@ function Initializer:Run()
         ns.ModuleManager:Shutdown()
         ns.ServiceManager:ShutdownAll()
     end)
-end
-
--- One-time: start with everything off except the XP-bar tooltip. Runs once
--- (flagged), so any later changes the player makes are kept.
-function Initializer:_ApplyDefaults(sv)
-    local meta = sv:Namespace("_meta", { defaultsV1 = false })
-    if meta.defaultsV1 then return end
-    meta.defaultsV1 = true
-
-    sv:SetModuleState("Questing", true)     -- keep on (hosts the XP tooltip)
-    sv:SetModuleState("UnitFrames", false)
-    sv:SetModuleState("Class", false)
-
-    local q = sv:Namespace("module_Questing", {})
-    q.autoAccept = false
-    q.autoTurnIn = false
 end
 
 ns.Initializer = Initializer

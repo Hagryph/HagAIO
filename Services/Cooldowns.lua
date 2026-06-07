@@ -15,8 +15,6 @@ local Class = ns.Class
 
 local Cooldowns = Class.new("Cooldowns", ns.Service)
 
-function Cooldowns:OnInitialize() end
-
 local function baseCooldown(spellID)
     if not GetSpellBaseCooldown then return nil end
     local ms = GetSpellBaseCooldown(spellID)

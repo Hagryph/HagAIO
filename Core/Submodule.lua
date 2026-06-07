@@ -30,7 +30,7 @@ local Submodule = Class.new("Submodule", ns.Component)
 
 function Submodule:Initialize(name, opts)
     opts = opts or {}
-    Class.super(Submodule, "Initialize", self, name)  -- ns.Loggable: name (submodules have no log colour)
+    Submodule.super.Initialize(self, name)  -- ns.Loggable: name (submodules have no log colour)
     local p = self:_p()
     p.parent = opts.parent              -- { module = name } or { submodule = name }
     p.serviceDeps   = opts.serviceDeps   or {}
@@ -53,12 +53,12 @@ function Submodule:Initialize(name, opts)
 end
 
 -- GetName is inherited from ns.Loggable (shared identity).
-function Submodule:GetTitle() return self:_p().title or self:_p().name end
+function Submodule:GetTitle() local p = self:_p(); return p.title or p.name end
 function Submodule:GetSettings() return self:_p().settings end
 
--- Own saved-var namespace, seeded with the schema defaults (lazy: available once
--- SavedVariables are loaded, which is well before any settings page is shown).
-function Submodule:_DB()
+-- Own saved-var namespace (private lazy store; the _Store convention), seeded with the
+-- schema defaults -- available once SavedVariables load, well before any page is shown.
+function Submodule:_Store()
     local p = self:_p()
     if not p.db and ns.SavedVars and ns.SavedVars:IsLoaded() then
         local defaults = {}
@@ -75,10 +75,10 @@ end
 
 -- Settings hooks for ns.Component: values live in this submodule's namespace, the
 -- broadcast id is "sub:<name>", and a change forwards to the opts onSettingChanged.
-function Submodule:_SettingsDB() return self:_DB() end
+function Submodule:_SettingsDB() return self:_Store() end
 function Submodule:_SettingsOwnerId() return "sub:" .. self:_p().name end
 function Submodule:OnSettingChanged(key, value)
-    Class.super(Submodule, "OnSettingChanged", self, key, value)  -- inherited declarative settingsWatch
+    Submodule.super.OnSettingChanged(self, key, value)  -- inherited declarative settingsWatch
     local p = self:_p()
     if p.onSettingChanged then p.onSettingChanged(p.host, key, value) end
 end

@@ -23,8 +23,6 @@ local C_METHOD = (Enum and Enum.CompressionMethod and Enum.CompressionMethod.Def
 local C_LEVEL  = (Enum and Enum.CompressionLevel and Enum.CompressionLevel.OptimizeForSize) or 2
 local B64      = (Enum and Enum.Base64Variant and Enum.Base64Variant.Standard) or 0
 
-function Serializer:OnInitialize() end
-
 -- True if this client has the native encoding API.
 function Serializer:IsAvailable()
     return C_EncodingUtil ~= nil and type(C_EncodingUtil.SerializeCBOR) == "function"

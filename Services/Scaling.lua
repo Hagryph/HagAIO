@@ -28,8 +28,6 @@ local Class = ns.Class
 
 local Scaling = Class.new("Scaling", ns.Service)
 
-function Scaling:OnInitialize() end
-
 local DEFAULTS = { highPct = 100, lowPct = 0, direction = "missing" }
 
 local function field(spec, key)

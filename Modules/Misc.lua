@@ -619,8 +619,8 @@ function Misc:_HookFlightPins()
         p.nodePos = {}     -- slotIndex -> { x, y } on the flight map
         p.flightMapID = FlightMapFrame.GetMapID and FlightMapFrame:GetMapID()
         for pin in pool:EnumerateActive() do
-            if not pin.__hagHover then
-                pin.__hagHover = true
+            if not pin.__hagHoverHooked then
+                pin.__hagHoverHooked = true
                 pin:HookScript("OnEnter", function(self2) module:_OnPinEnter(self2) end)
             end
             local d = pin.taxiNodeData

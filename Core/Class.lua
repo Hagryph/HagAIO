@@ -62,6 +62,7 @@ function Class.new(name, parent)
     class.__index = class
     class.__name = name
     class.__parent = parent
+    class.super = parent   -- public alias for super-calls: Sub.super.Method(self, ...)
     -- Ancestry = this class + everything the parent already counts as. Built once
     -- at class-creation, so IsInstanceOf never walks the chain at call time.
     local ancestors = { [class] = true }
@@ -87,19 +88,15 @@ function Class.abstract(name)
     end
 end
 
--- Call the PARENT class's version of `method` on `self`. `class` is the class whose code
--- is making the call -- pass the class the method is DEFINED on, not the instance's class
--- -- so super resolves relative to where it's written. It walks the `__parent` link
--- (which itself uses the __index chain), so it never hard-codes a specific ancestor:
--- inserting an intermediate class later is picked up automatically instead of being
--- silently bypassed.
+-- Super-calls use the `class.super` field set above (the parent CLASS). Always name the
+-- class the method is DEFINED on -- NOT self -- so super resolves relative to where it's
+-- written, never the instance's most-derived class (which would self-recurse in a deep
+-- hierarchy). It reaches the parent via the normal __index chain, so an inserted
+-- intermediate class is picked up automatically rather than silently bypassed:
 --   function Sub:OnSettingChanged(k, v)
---       Class.super(Sub, "OnSettingChanged", self, k, v)  -- run the inherited behaviour
+--       Sub.super.OnSettingChanged(self, k, v)   -- run the inherited behaviour (dot + self)
 --       ... -- then this class's extra work
 --   end
-function Class.super(class, method, self, ...)
-    return class.__parent[method](self, ...)
-end
 
 ns.Class = Class
 ns.Object = Object

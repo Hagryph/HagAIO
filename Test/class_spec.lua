@@ -6,13 +6,13 @@ local function classNs()
     return ns
 end
 
-describe("Class.super", function()
-    it("calls the parent class's version of a method", function()
+describe("class.super", function()
+    it("calls the parent class's version of a method (dot + explicit self)", function()
         local ns = classNs()
         local Base = ns.Class.new("Base")
         function Base:Greet() return "base" end
         local Sub = ns.Class.new("Sub", Base)
-        function Sub:Greet() return ns.Class.super(Sub, "Greet", self) .. "+sub" end
+        function Sub:Greet() return Sub.super.Greet(self) .. "+sub" end
         assert.are.equal("base+sub", Sub:New():Greet())
     end)
 
@@ -21,7 +21,7 @@ describe("Class.super", function()
         local Base = ns.Class.new("Base")
         function Base:Add(a, b) return a + b end
         local Sub = ns.Class.new("Sub", Base)
-        function Sub:Add(a, b) return ns.Class.super(Sub, "Add", self, a, b) * 10 end
+        function Sub:Add(a, b) return Sub.super.Add(self, a, b) * 10 end
         assert.are.equal(70, Sub:New():Add(3, 4))
     end)
 
@@ -31,8 +31,8 @@ describe("Class.super", function()
         function Base:Tag() return "B" end
         local Mid = ns.Class.new("Mid", Base)      -- intermediate, no Tag of its own
         local Leaf = ns.Class.new("Leaf", Mid)
-        function Leaf:Tag() return ns.Class.super(Leaf, "Tag", self) .. "L" end
-        -- Leaf's super is Mid; Mid inherits Base:Tag -> still found, not bypassed.
+        function Leaf:Tag() return Leaf.super.Tag(self) .. "L" end
+        -- Leaf.super is Mid; Mid inherits Base:Tag -> still found, not bypassed.
         assert.are.equal("BL", Leaf:New():Tag())
     end)
 end)

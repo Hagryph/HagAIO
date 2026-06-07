@@ -167,10 +167,25 @@ function Component.ValidateSettings(settings, owner)
         if s.type == "select" then
             assert(type(s.options) == "table", where .. " (select): needs an 'options' list")
         end
+        if s.dependsOn ~= nil then
+            -- a single key (string) or a list of keys (table of strings)
+            assert(type(s.dependsOn) == "string" or type(s.dependsOn) == "table",
+                where .. ": 'dependsOn' must be a key string or a list of key strings")
+            if type(s.dependsOn) == "table" then
+                for _, k in ipairs(s.dependsOn) do
+                    assert(type(k) == "string", where .. ": 'dependsOn' list entries must be strings")
+                end
+            end
+        end
     end
 end
 
 
+-- Saved-var accessor naming (one convention across the codebase):
+--   GetDB()       -- PUBLIC handle to a Module's bound saved-var namespace (read by others)
+--   _SettingsDB() -- the CONTRACT below: where THIS component's settings values live
+--   _Store()      -- a service's PRIVATE lazy saved-var handle (Compartment/MinimapIcon)
+--
 -- ABSTRACT: every Component subclass must say WHERE its settings live (Module -> its
 -- bound db; Submodule -> its own namespace). A subclass that uses settings but forgot
 -- to override this hits a clear error rather than silently storing nothing.
@@ -219,7 +234,7 @@ end
 -- repeats the imperative ns.SlashCommand:Register / RegisterGeneralToggle plumbing.
 --   commands = { xp = { handler = "_PrintSession", help = "session XP / hour" } }
 --   generalToggles = { { section = "Icons", label = "...", desc = "...",
---                        get = "IsShown", set = "SetShown", flagReload = bool,
+--                        get = "IsShown", set = "SetShown", reload = bool,
 --                        reloadMsg = "..." } }
 -- handler / get / set are each a METHOD NAME (string) or a function; both are called
 -- bound to the owner -- handler(rest), get() -> bool, set(on) -> bool|nil. These are
@@ -240,7 +255,7 @@ function Component.BuildGeneralToggle(owner, spec)
     local g, s = spec.get, spec.set
     return {
         section = spec.section, label = spec.label, desc = spec.desc,
-        flagReload = spec.flagReload, reloadMsg = spec.reloadMsg,
+        reload = spec.reload, reloadMsg = spec.reloadMsg,
         get = g and (type(g) == "string" and function() return owner[g](owner) end
                                           or function() return g(owner) end),
         set = s and (type(s) == "string" and function(on) return owner[s](owner, on) end

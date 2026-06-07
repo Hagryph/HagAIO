@@ -32,7 +32,7 @@ local Service = Class.new("Service", ns.Loggable)
 --   generalToggles : declarative General-page toggles (see ns.Component), also init-time
 function Service:Initialize(name, opts)
     opts = opts or {}
-    Class.super(Service, "Initialize", self, name, opts.color)  -- ns.Loggable: name + colour
+    Service.super.Initialize(self, name, opts.color)  -- ns.Loggable: name + colour
     local p = self:_p()
     p.deps           = opts.deps or {}
     p.ui             = opts.ui and true or false

@@ -29,8 +29,6 @@ end
 -- loading a profile never rewrites them.
 local META_KEYS = { profiles = true, globalProfile = true }
 
-function Profiles:OnInitialize() end
-
 -- The stored profiles map (account-wide), created on first use.
 function Profiles:_Store()
     local g = ns.SavedVars:Global()

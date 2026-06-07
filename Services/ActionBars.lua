@@ -24,8 +24,6 @@ local BAR_PREFIXES = {
 }
 local SLOTS_PER_BAR = 12
 
-function ActionBars:OnInitialize() end
-
 local function buttonSlot(btn)
     if not btn then return nil end
     if btn.action then return btn.action end

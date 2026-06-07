@@ -1,5 +1,6 @@
 local addonName, ns = ...
 local Class = ns.Class
+local Theme = ns.Theme
 
 -- Services/SlashCommand.lua
 -- Singleton slash-command router for /hagaio (alias /hag). It is a GENERIC router
@@ -84,7 +85,7 @@ function SlashCommand:Activate()
         for m in mm:Iterate() do
             ns.Log.Print(("  %s - %s"):format(
                 m:GetName(),
-                m:IsEnabled() and "|cff44ff44on|r" or "|cffff4444off|r"))
+                m:IsEnabled() and Theme.Colorize("green", "on") or Theme.Colorize("red", "off")))
         end
     end, "list feature modules and their state")
 end

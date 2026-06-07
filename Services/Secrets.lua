@@ -19,8 +19,6 @@ local Class = ns.Class
 
 local Secrets = Class.new("Secrets", ns.Service)
 
-function Secrets:OnInitialize() end
-
 -- True if v is a secret value. Safe when the API is absent (pre-12.0 / test paths).
 function Secrets:Is(v)
     return (issecretvalue and issecretvalue(v)) or false

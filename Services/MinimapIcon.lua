@@ -1,5 +1,6 @@
 local addonName, ns = ...
 local Class = ns.Class
+local Theme = ns.Theme
 
 -- Services/MinimapIcon.lua
 -- A standalone minimap button (NOT LibDBIcon — no external libraries). A round
@@ -16,19 +17,19 @@ function MinimapIcon:OnInitialize()
     -- by the Service base -- a push (icons -> window) with no cycle.
 end
 
-function MinimapIcon:_DB()
+function MinimapIcon:_Store()
     return ns.SavedVars:Namespace("minimap", { shown = false, angle = DEFAULT_ANGLE })
 end
 
 function MinimapIcon:IsShown()
-    return self:_DB().shown == true
+    return self:_Store().shown == true
 end
 
 -- Place the button on the minimap rim at the saved angle.
 function MinimapIcon:_Reposition()
     local p = self:_p()
     if not (p.button and Minimap) then return end
-    local rad = math.rad(self:_DB().angle or DEFAULT_ANGLE)
+    local rad = math.rad(self:_Store().angle or DEFAULT_ANGLE)
     local r = (Minimap:GetWidth() / 2) + 5
     p.button:ClearAllPoints()
     p.button:SetPoint("CENTER", Minimap, "CENTER", r * math.cos(rad), r * math.sin(rad))
@@ -38,7 +39,7 @@ function MinimapIcon:_Build()
     local p = self:_p()
     if p.button or not Minimap then return end
 
-    local b = CreateFrame("Button", "HagAIOMinimapButton", Minimap)
+    local b = CreateFrame("Button", nil, Minimap)
     b:SetFrameStrata("MEDIUM")
     b:SetFrameLevel(8)
     b:SetSize(31, 31)
@@ -82,7 +83,7 @@ function MinimapIcon:_DragUpdate()
     local scale = Minimap:GetEffectiveScale()
     local px, py = GetCursorPosition()
     px, py = px / scale, py / scale
-    self:_DB().angle = math.deg(math.atan2(py - my, px - mx))
+    self:_Store().angle = math.deg(math.atan2(py - my, px - mx))
     self:_Reposition()
 end
 
@@ -96,7 +97,7 @@ end
 
 function MinimapIcon:_OnEnter(b)
     GameTooltip:SetOwner(b, "ANCHOR_LEFT")
-    GameTooltip:AddLine("|cff4ab3e6HagAIO|r")
+    GameTooltip:AddLine(Theme.Colorize("accent", "HagAIO"))
     GameTooltip:AddLine("Left-click: open settings", 0.85, 0.87, 0.91)
     GameTooltip:AddLine("Right-click: enable/disable modules", 0.55, 0.58, 0.64)
     GameTooltip:AddLine("Drag: move around the minimap", 0.55, 0.58, 0.64)
@@ -115,7 +116,7 @@ function MinimapIcon:Refresh()
 end
 
 function MinimapIcon:SetShown(on)
-    self:_DB().shown = on and true or false
+    self:_Store().shown = on and true or false
     self:Refresh()
 end
 

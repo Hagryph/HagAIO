@@ -84,23 +84,21 @@ function Tasklist:OnInitialize()
     ns.Tasks = self
     local p = self:_p()
     p.tasks = {}          -- key -> runtime def
-    p.eventTokens = {}    -- event -> EventBus token (subscribed once, shared)
+    p.subscribed = {}     -- event -> true: dedupe self:On so each event is hooked once
     p.eventTasks = {}     -- event -> { key -> def }: reverse index so a fire dispatches
                           -- ONLY to interested tasks (never scan all tasks; never debounce)
-    p.busTokens = {}      -- lifecycle subscriptions (combat, reset)
     -- db.state / db.tracked / db.nextId are pre-seeded from dbSchema (see registration).
 end
 
 function Tasklist:OnEnable()
-    local bus = ns.EventBus
-    local p = self:_p()
-    p.busTokens.combat1 = bus:On("PLAYER_REGEN_DISABLED", function() self:_UpdateVisibility() end)
-    p.busTokens.combat2 = bus:On("PLAYER_REGEN_ENABLED", function() self:_UpdateVisibility() end)
-    p.busTokens.world   = bus:On("PLAYER_ENTERING_WORLD", function() self:_CheckResets() end)
+    -- Lifecycle subscriptions via self:On -> auto-released on disable (no manual tokens).
+    self:On("PLAYER_REGEN_DISABLED", function() self:_UpdateVisibility() end)
+    self:On("PLAYER_REGEN_ENABLED",  function() self:_UpdateVisibility() end)
+    self:On("PLAYER_ENTERING_WORLD", function() self:_CheckResets() end)
     -- Authoritative live boss-kill detection (see DBM/BigWigs + warcraft.wiki):
     -- ENCOUNTER_END success==1 / BOSS_KILL, matched on the DungeonEncounterID.
-    p.busTokens.encEnd   = bus:On("ENCOUNTER_END", function(_, encID, _, _, _, success) self:_OnEncounterEnd(encID, success) end)
-    p.busTokens.bossKill = bus:On("BOSS_KILL", function(_, encID) self:_OnEncounterEnd(encID, 1) end)
+    self:On("ENCOUNTER_END", function(_, encID, _, _, _, success) self:_OnEncounterEnd(encID, success) end)
+    self:On("BOSS_KILL",     function(_, encID) self:_OnEncounterEnd(encID, 1) end)
 
     -- re-create persistent tracked tasks
     for key, t in pairs(self:GetDB().tracked) do self:_RegisterTracked(key, t) end
@@ -113,15 +111,9 @@ end
 
 function Tasklist:OnDisable()
     local p = self:_p()
-    local bus = ns.EventBus
-    for ev, tok in pairs(p.eventTokens) do bus:Off(ev, tok) end
-    if p.busTokens.combat1 then bus:Off("PLAYER_REGEN_DISABLED", p.busTokens.combat1) end
-    if p.busTokens.combat2 then bus:Off("PLAYER_REGEN_ENABLED", p.busTokens.combat2) end
-    if p.busTokens.world then bus:Off("PLAYER_ENTERING_WORLD", p.busTokens.world) end
-    if p.busTokens.encEnd then bus:Off("ENCOUNTER_END", p.busTokens.encEnd) end
-    if p.busTokens.bossKill then bus:Off("BOSS_KILL", p.busTokens.bossKill) end
-    wipe(p.eventTokens); wipe(p.busTokens)
-    -- the 60s reset ticker is auto-cancelled by the framework (self:Every)
+    -- Every self:On / self:Every subscription is released by the framework (_ReleaseAll);
+    -- just reset the per-event dedupe so re-enabling re-hooks the task events.
+    wipe(p.subscribed)
     if p.frame then p.frame:Hide() end
 end
 
@@ -178,8 +170,9 @@ end
 
 function Tasklist:_SubscribeEvent(ev)
     local p = self:_p()
-    if p.eventTokens[ev] then return end
-    p.eventTokens[ev] = ns.EventBus:On(ev, function(_, ...) self:_OnEvent(ev, ...) end)
+    if p.subscribed[ev] then return end
+    p.subscribed[ev] = true
+    self:On(ev, function(_, ...) self:_OnEvent(ev, ...) end)  -- auto-released on disable
 end
 
 -- Dispatch ONE event to exactly the tasks that registered for it (reverse index), every
@@ -386,7 +379,7 @@ function Tasklist:_BuildFrame()
     if p.frame then return end
 
     -- See-through: no backdrop. Only header bars + text are drawn over the world.
-    local f = CreateFrame("Frame", "HagAIOTaskTracker", UIParent)
+    local f = CreateFrame("Frame", nil, UIParent)
     f:SetSize(240, 30)
     f:SetFrameStrata("MEDIUM")
     f:SetClampedToScreen(true)
@@ -638,7 +631,7 @@ ns.ModuleManager:Register(Tasklist:New("Tasklist", {
     description = "A movable objective tracker for one-time, daily and weekly tasks.",
     defaultEnabled = true,
     color = ns.Theme.hex.amber,  -- distinct tag (Core uses accent)
-    deps = { "EventBus", "EditMode", "SettingsWindow" },  -- reset/encounter events, movable frame, page refresh
+    deps = { "EditMode", "SettingsWindow" },  -- movable frame, page refresh (events go through self:On)
     -- Persisted structure (seeded on bind, before OnInitialize):
     dbSchema = {
         state   = {},  -- key -> { done, resetAt }

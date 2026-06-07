@@ -49,7 +49,7 @@ local Module = Class.new("Module", ns.Component)
 --       options = { { value = "v", text = "..." }, ... } }
 function Module:Initialize(name, opts)
     opts = opts or {}
-    Class.super(Module, "Initialize", self, name, opts.color or ns.Theme.hex.accent)  -- ns.Loggable: name + colour
+    Module.super.Initialize(self, name, opts.color or ns.Theme.hex.accent)  -- ns.Loggable: name + colour
     local p = self:_p()
     p.title = opts.title or name
     p.description = opts.description or ""
@@ -173,7 +173,10 @@ function Module:Enable()
         return
     end
     p.enabled = true
-    self:OnEnable()  -- base no-op unless the subclass overrides
+    -- Guard the subclass hook (like OnShutdown) so one module's error can't abort the
+    -- ModuleManager's start loop; log it rather than swallowing silently.
+    local ok, err = pcall(self.OnEnable, self)  -- base no-op unless the subclass overrides
+    if not ok then ns.Logger:Core():Warn(("%s OnEnable error: %s"):format(p.name, tostring(err))) end
     self:_WireDeclared()  -- declarative events/messages (auto-released on disable)
     ns.SavedVars:SetModuleState(p.name, true, p.perChar)
     if p.log then p.log:Success("enabled") end
@@ -184,7 +187,8 @@ function Module:Disable()
     local p = self:_p()
     if not p.enabled then return end
     p.enabled = false
-    self:OnDisable()  -- base no-op unless the subclass overrides
+    local ok, err = pcall(self.OnDisable, self)  -- base no-op unless the subclass overrides
+    if not ok then ns.Logger:Core():Warn(("%s OnDisable error: %s"):format(p.name, tostring(err))) end
     self:_ReleaseAll()  -- undo every self:On / self:Subscribe / self:Hook + declared wiring
     ns.SavedVars:SetModuleState(p.name, false, p.perChar)
     if p.log then p.log:Info("disabled") end
@@ -201,6 +205,11 @@ end
 --   OnEnable()     : run each time the module is enabled.
 --   OnDisable()    : run each time the module is disabled.
 --   OnShutdown()   : run once on logout/reload (cleanup before the Lua state resets).
+-- PLACEMENT RULE: put ALWAYS-ON setup that must work even while the module is disabled
+-- (discovery, saved-var reads, recording engines) in OnInitialize; put behaviour that
+-- should only run while ENABLED (event reactions, frames, hooks) in OnEnable -- and prefer
+-- the declarative events/messages/commands/generalToggles tables, which are wired on enable
+-- and torn down on disable for you.
 -- All four are declared as base no-ops so Enable/Disable/the ModuleManager can call them
 -- unconditionally -- no `if self.OnX then` guards at the call sites.
 function Module:OnInitialize() end

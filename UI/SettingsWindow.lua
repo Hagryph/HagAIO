@@ -34,7 +34,7 @@ end
 --   section     : group label on the page (default "General")
 --   label       : the toggle's text
 --   desc        : a faint one-line description under it
---   flagReload  : true to append the "(reload)" hint to the label
+--   reload      : true to append the "(reload)" hint to the label
 --   get()       : -> current bool state
 --   set(on)     : apply; may return true if a /reload is needed to take effect
 --   reloadMsg   : warning logged when set() reports a reload is needed
@@ -313,7 +313,7 @@ function SettingsWindow:_BuildGeneralPage(parent)
             lastSection = section
         end
 
-        local toggle = W.Toggle(page, d.flagReload and W.FlagReload(d.label) or d.label)
+        local toggle = W.Toggle(page, d.reload and W.FlagReload(d.label) or d.label)
         toggle:SetPoint("TOPLEFT", 20, y)
         toggle:SetChecked(d.get and d.get())
         toggle:SetOnToggle(function(on)

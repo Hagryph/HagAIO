@@ -180,7 +180,7 @@ function Questing:_EnsureOverlay()
         return
     end
 
-    local overlay = CreateFrame("Frame", "HagAIOQuestingXPOverlay", bar)
+    local overlay = CreateFrame("Frame", nil, bar)
     overlay:SetAllPoints(bar)
     overlay:SetFrameLevel(bar:GetFrameLevel() + 10)
     if overlay.EnableMouseMotion then
