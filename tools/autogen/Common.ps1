@@ -41,7 +41,11 @@ function Get-OrderedLuaFiles {
     $pinnedSet[$script:PinnedInit.ToLower()] = $true
 
     $rest = @($all | Where-Object { -not $pinnedSet.ContainsKey($_.ToLower()) })
-    $sort = @{ Expression = { Split-Path $_ -Parent } }, @{ Expression = { Split-Path $_ -Leaf } }
+    # Folder-then-name, but a folder's ENTRY file (Foo\Foo.lua) sorts FIRST within it, so a
+    # split feature (e.g. Modules\Class\Monk\Monk.lua) loads before its sibling parts.
+    $sort = @{ Expression = { Split-Path $_ -Parent } },
+            @{ Expression = { if ((Split-Path $_ -Leaf) -ieq ((Split-Path (Split-Path $_ -Parent) -Leaf) + '.lua')) { 0 } else { 1 } } },
+            @{ Expression = { Split-Path $_ -Leaf } }
     $modules = @($rest | Where-Object { $_ -like 'Modules\*' } | Sort-Object $sort)
     $free    = @($rest | Where-Object { $_ -notlike 'Modules\*' } | Sort-Object $sort)
 

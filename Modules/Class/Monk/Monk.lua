@@ -1,12 +1,12 @@
 local addonName, ns = ...
 
--- Modules/Class/Monk.lua
--- Monk class file: adds the Monk behaviour as methods on the shared ns.ClassModule
--- and registers the Monk submodule + per-spec submodules with the Submodule framework
--- (Class -> Monk -> spec). Each spec is an ns.ClassSpec subclass (MonkBase -> MonkBrewmaster)
--- driven by a spec condition + PLAYER_SPECIALIZATION_CHANGED, not by manual swapping.
+-- Modules/Class/Monk/Monk.lua
+-- Monk module entry point (loads before its per-spec siblings): the shared Monk behaviour
+-- as methods on ns.ClassModule, the Monk submodule registration (loads on Monk characters,
+-- parent = the Class module), and the ns.Monk surface the spec files build on. The specs
+-- themselves are ns.ClassSpec subclasses in Base.lua / Brewmaster.lua, each registered via
+-- ns.Monk.registerSpec.
 
-local Class = ns.Class
 local ClassModule = ns.ClassModule
 
 -- Upvalue the globals the combat tickers hit each tick.
@@ -45,10 +45,6 @@ local SCK_BIAS = 1.20
 -- Harm heal (baseHeal + count*orbHeal) -- the heal-to point including orbs, or just the
 -- base heal at 0 orbs. It tracks the orbs IN and OUT of combat. 5 = Gift of the Ox cap.
 local ORB_MAX_COUNT = 5
-
--- bar-learning hooks are global; install once per session
-local hookInstalled = false
-local powerHookInstalled = false
 
 -- ---- spell-data helpers ---------------------------------------------------
 -- Grace of the Crane raises all healing taken by a flat % the Expel Harm tooltip
@@ -104,159 +100,33 @@ end
 -- Submodules
 -- ===========================================================================
 
--- MonkBase: the no-specialisation spec, providing the Expel Harm marker every Monk has.
--- An ns.ClassSpec subclass: its methods configure the HOST (self:Host(), the Class module
--- instance). Other specs extend it via real inheritance.
-local MonkBase = Class.new("MonkBase", ns.ClassSpec)
-MonkBase.settings = {
-    { type = "header", text = "Expel Harm" },
-    { type = "toggle", key = "expelHarm", label = "Show heal-threshold marker", default = true,
-      desc = "A line on your health bar marking where Expel Harm would heal you to full." },
-    { type = "color", key = "expelColor", label = "Ready colour", default = EXPEL_READY_COLOR, dependsOn = "expelHarm" },
-    { type = "color", key = "expelInactiveColor", label = "On-cooldown colour", default = EXPEL_COOLDOWN_COLOR, dependsOn = "expelHarm" },
-}
-
-function MonkBase:OnSettingChanged()
-    self:Host():_ScheduleUpdate()
-end
-
-function MonkBase:Load()
-    local host = self:Host()
-    local p = host:_p()
-
-    -- install the player health-bar learning hook once (captures the real bar)
-    if not hookInstalled and type(UnitFrameHealthBar_Update) == "function" then
-        hooksecurefunc("UnitFrameHealthBar_Update", function(statusbar, unit)
-            -- Only the real PlayerFrame bar. Other frames (pet/target-of-target)
-            -- transiently carry unit "player" during vehicle/art swaps; touching
-            -- them here can flush a pending resize that compares secret health.
-            if unit == "player" and statusbar.unitFrame == PlayerFrame then
-                host:_p().bar = statusbar
-                host:_ScheduleUpdate()
-            end
-        end)
-        hookInstalled = true
-    end
-
-    -- heal scales with spell power, so re-read it on anything that changes it
-    host:On("UNIT_MAXHEALTH",             function(_, u) if u == "player" then host:_SnapshotMaxHP(); host:_ScheduleUpdate() end end, "spec")
-    host:On("PLAYER_EQUIPMENT_CHANGED",   function() host:_RefreshHeal() end, "spec")
-    host:On("PLAYER_LEVEL_UP",            function() host:_RefreshHeal() end, "spec")
-    host:On("SPELLS_CHANGED",             function() host:_RefreshHeal() end, "spec")
-    host:On("TRAIT_CONFIG_UPDATED",       function() host:_RefreshHeal() end, "spec")
-    host:On("ACTIVE_COMBAT_CONFIG_CHANGED", function() host:_RefreshHeal() end, "spec")
-    host:On("UNIT_AURA",                  function(_, u) if u == "player" then host:_RefreshHeal() end end, "spec")
-    p.onCooldown = false
-    p.expelActive = true
-    -- recolour the marker (ready <-> on-cooldown) via the secret-safe Cooldowns
-    -- service (cast + non-secret booleans + base-cooldown timer).
-    p.expelWatch = ns.Cooldowns:Watch(EXPEL_HARM, function(onCD)
-        p.onCooldown = onCD
-        host:_ScheduleUpdate()
-    end)
-    host:_RefreshHeal()
-end
-
-function MonkBase:Unload()
-    local host = self:Host()
-    local p = host:_p()
-    host:ReleaseScope("spec")   -- drop every spec event sub + the AoE ticker
-    p.expelActive = false
-    p.onCooldown = false
-    if p.expelWatch then ns.Cooldowns:Unwatch(p.expelWatch); p.expelWatch = nil end
-    if p.marker then p.marker:Hide() end
-    host:_HideOrbFill()
-end
-
--- MonkBrewmaster: extends MonkBase with a Tiger Palm/Keg Smash energy marker + AoE helper.
--- A real subclass, so it reaches the base behaviour via MonkBrewmaster.super, not by name.
-local MonkBrewmaster = Class.new("MonkBrewmaster", MonkBase)
-MonkBrewmaster.settings = {
-    { type = "header", text = "Expel Harm" },
-    { type = "toggle", key = "expelHarm", label = "Show heal bar", default = true,
-      desc = "A bar that fills from your current health to where Expel Harm would heal you, including Gift of the Ox orbs." },
-    { type = "color", key = "expelColor", label = "Ready colour", default = EXPEL_READY_COLOR, dependsOn = "expelHarm" },
-    { type = "color", key = "expelInactiveColor", label = "On-cooldown colour", default = EXPEL_COOLDOWN_COLOR, dependsOn = "expelHarm" },
-    { type = "header", text = "Tiger Palm" },
-    { type = "toggle", key = "tiger", label = "Show missing-energy bar", default = true,
-      desc = "A bar showing how much energy you still need to cast Tiger Palm and Keg Smash. It shrinks as you regenerate and disappears once you can afford both." },
-    { type = "color", key = "tigerColor", label = "Bar colour", default = { 1, 1, 1 }, dependsOn = "tiger" },
-    { type = "header", text = "AoE helper" },
-    { type = "toggle", key = "aoeHelper", label = "Grey Tiger Palm / Spinning Crane Kick by target count", default = false,
-      desc = "In combat: greys Tiger Palm once Spinning Crane Kick does more damage for the enemies in range (use SCK), or greys Spinning Crane Kick below that (use Tiger Palm). The breakpoint is read from their tooltips and adjusts with your gear." },
-}
-
-function MonkBrewmaster:OnSettingChanged()
-    local host = self:Host()
-    host:_ScheduleUpdate()
-    host:_ScheduleTiger()
-    host:_UpdateAoE()  -- self-gates; clears the greying immediately if toggled off
-end
-
-function MonkBrewmaster:Load()
-    MonkBrewmaster.super.Load(self)   -- MonkBase:Load -- the shared Expel Harm marker
-    local host = self:Host()
-    local p = host:_p()
-
-    -- install the player power(energy) bar learning hook once
-    if not powerHookInstalled and type(UnitFrameManaBar_Update) == "function" then
-        hooksecurefunc("UnitFrameManaBar_Update", function(statusbar, unit)
-            if unit == "player" and statusbar.unitFrame == PlayerFrame then
-                host:_p().powerBar = statusbar
-                if not host:_p().tigerMarker then host:_ScheduleTiger() end
-            end
-        end)
-        powerHookInstalled = true
-    end
-
-    p.tigerActive = true
-    host:On("UNIT_MAXPOWER",        function(_, u) if u == "player" then host:_ScheduleTiger() end end, "spec")
-    host:On("UNIT_DISPLAYPOWER",    function(_, u) if u == "player" then host:_ScheduleTiger() end end, "spec")
-    host:On("TRAIT_CONFIG_UPDATED", function() host:_p().tigerCost = nil; host:_ScheduleTiger() end, "spec")
-    host:On("PLAYER_LEVEL_UP",      function() host:_ScheduleTiger() end, "spec")
-    host:_ScheduleTiger()
-    host:_LoadAoE()
-
-    -- The sphere count changes with no event of its own (orbs spawn/get absorbed as
-    -- you move), so poll to keep the orb-count colour live. The poll STOPS when it's
-    -- pointless -- out of combat with zero orbs left (new ones only spawn in combat) --
-    -- and is kicked off again when combat starts, rather than spinning forever.
-    host:On("PLAYER_REGEN_DISABLED", function() host:_StartOrbPoll() end, "spec")
-    host:_StartOrbPoll()
-end
-
-function MonkBrewmaster:Unload()
-    local host = self:Host()
-    host:_UnloadAoE()
-    local p = host:_p()
-    p.orbPollGen = (p.orbPollGen or 0) + 1   -- retire the poll loop
-    MonkBrewmaster.super.Unload(self)  -- MonkBase:Unload -- releases the "spec" scope (incl. tiger's)
-    p.tigerActive = false
-    if p.tigerMarker then p.tigerMarker:Hide() end
-end
-
--- Register the Monk submodule tree with the framework: Class (module) -> Monk
--- (loads on Monk characters) -> per-spec submodules (each loads on its matching spec,
--- swapped automatically on PLAYER_SPECIALIZATION_CHANGED). Class no longer decides
--- this -- the submodules' conditions + events do. The spec onLoad/onUnload run the
--- spec's Load/Unload (an ns.ClassSpec instance bound to the Class module host).
+-- Register the Monk submodule under the Class module (it loads on Monk characters). The
+-- per-spec files (Base.lua, Brewmaster.lua) load after this one and register their spec
+-- submodules under it via ns.Monk.registerSpec.
 local classMod = ns.ModuleManager:GetModule("Class")
 assert(classMod, "Monk submodule requires the Class module (load Modules/Class.lua first)")
 local function isMonk() return (select(2, UnitClass("player"))) == "MONK" end
-
--- One spec instance per spec, each bound to the Class module (the host).
-local Base = MonkBase:New(classMod)
-local Brewmaster = MonkBrewmaster:New(classMod)
 
 ns.SubmoduleManager:Register(ns.Submodule:New("Monk", {
     parent = { module = "Class" },        -- Class is the parent (no separate dependency needed)
     condition = isMonk,
 }))
 
-local function registerSpec(name, spec, specKey, serviceDeps)
-    -- Every spec refreshes its settings page on load, so SettingsWindow is a
-    -- dependency of the shared onLoad below (not spec-specific) -- prepend it to
-    -- whatever services the spec's own features use.
+-- Shared surface for the per-spec files: the few constants their settings/Load need, plus
+-- registerSpec. A spec file defines its ns.ClassSpec subclass, sets ns.Monk.<Name> so a
+-- deeper spec can extend it, then calls ns.Monk.registerSpec to wire it as a submodule.
+ns.Monk = {
+    EXPEL_HARM           = EXPEL_HARM,
+    EXPEL_READY_COLOR    = EXPEL_READY_COLOR,
+    EXPEL_COOLDOWN_COLOR = EXPEL_COOLDOWN_COLOR,
+}
+
+-- Wire a spec class as a submodule under Monk. SpecClass is an ns.ClassSpec subclass; one
+-- instance (bound to the Class module host) drives its load/unload. specKey is what
+-- CurrentSpecKey() returns for this spec ("none" or a spec index). serviceDeps are the
+-- services the spec uses; SettingsWindow (the shared settings refresh) is prepended.
+function ns.Monk.registerSpec(name, SpecClass, specKey, serviceDeps)
+    local spec = SpecClass:New(classMod)
     local deps = { "SettingsWindow" }
     for _, d in ipairs(serviceDeps) do deps[#deps + 1] = d end
     ns.SubmoduleManager:Register(ns.Submodule:New(name, {
@@ -277,17 +147,13 @@ local function registerSpec(name, spec, specKey, serviceDeps)
         end,
     }))
 end
--- Base: Expel Harm marker (event subs, Cooldowns watch, secret-safe paint).
--- ns.SpellTooltipParser is a pure Lib (always available) -- not a service dep.
-registerSpec("Monk-Base", Base, "none",
-    { "EventBus", "Cooldowns", "Secrets" })
--- Brewmaster: all of Base + the AoE helper (Range counts, ActionBars greying).
-registerSpec("Monk-Brewmaster", Brewmaster, 1,
-    { "EventBus", "Cooldowns", "Secrets", "Range", "ActionBars" })
 
 -- ===========================================================================
 -- Monk behaviour (methods on the shared ClassModule)
 -- ===========================================================================
+-- depcheck-allow: Secrets, Range, ActionBars  -- these are used by the host methods below;
+-- the per-spec submodules that actually drive them declare them (Base.lua: Secrets;
+-- Brewmaster.lua: Secrets/Range/ActionBars), which is what enforces the load ordering.
 
 -- ---- Expel Harm marker ----------------------------------------------------
 -- Defer + debounce marker updates to the next frame. Reading bar:GetWidth()
