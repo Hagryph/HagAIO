@@ -12,6 +12,9 @@ local ClassModule = ns.ClassModule
 -- Upvalue the globals the combat tickers hit each tick.
 local InCombatLockdown = InCombatLockdown
 
+-- Pure combat arithmetic (breakpoint, orb-fill geometry, energy cost) -- unit-tested.
+local MonkMath = ns.MonkMath
+
 -- ---- tunables (spell IDs, marker colours, AoE breakpoint) -----------------
 -- Monk spell / talent IDs: a frozen set. The values feed the spell APIs and the ns.Monk
 -- surface; the enum keeps them grouped and typo-safe (an unknown member errors loudly).
@@ -294,12 +297,13 @@ function ClassModule:_DrawOrbFill(fill, maxHP, width)
             and C_Spell and C_Spell.GetSpellCastCount) then
         return false
     end
-    local span = (p.baseHeal + ORB_MAX_COUNT * p.orbHeal) / maxHP * width  -- full bar width (px)
+    -- min/max bake the base heal into the secret-count fill; span is the full bar width (px).
+    local minV, maxV, span = MonkMath:OrbFill(p.baseHeal, p.orbHeal, ORB_MAX_COUNT, maxHP, width)
     local c = self:_ExpelColor()
 
     local sb = self:_EnsureOrbBar()
     sb:SetStatusBarColor(c[1], c[2], c[3], 0.55)           -- translucent: predicted-heal band
-    sb:SetMinMaxValues(-p.baseHeal / math.max(p.orbHeal, 1e-9), ORB_MAX_COUNT)  -- min bakes in the base heal (clamp guards /0 even if the early return changes)
+    sb:SetMinMaxValues(minV, maxV)
     sb:ClearAllPoints()
     sb:SetPoint("TOPLEFT",    fill, "TOPRIGHT",    0, 0)    -- start AT current health
     sb:SetPoint("BOTTOMLEFT", fill, "BOTTOMRIGHT", 0, 0)
@@ -447,11 +451,7 @@ function ClassModule:_RefreshAoEThreshold()
     local p = self:_p()
     local tp  = spellHitDamage(Spell.TIGER_PALM)
     local sck = spellHitDamage(Spell.SPINNING_CRANE_KICK)
-    if tp and sck and sck > 0 then
-        p.aoeThreshold = math.max(1, math.floor((tp * SCK_BIAS) / sck) + 1)
-    else
-        p.aoeThreshold = 3
-    end
+    p.aoeThreshold = MonkMath:AoEThreshold(tp, sck, SCK_BIAS) or 3   -- 3 = conventional fallback
 end
 
 function ClassModule:_UnloadAoE()
@@ -499,17 +499,12 @@ function ClassModule:_TigerCost()
     local p = self:_p()
     if p.tigerCost ~= nil then return p.tigerCost end
     local energy = Enum and Enum.PowerType and Enum.PowerType.Energy
-    local total = 0
+    local costsPerSpell = {}
     for _, id in ipairs(TIGER_COST_SPELLS) do
-        local costs = C_Spell and C_Spell.GetSpellPowerCost and C_Spell.GetSpellPowerCost(id)
-        if costs then
-            for _, c in ipairs(costs) do
-                if c.type == energy and c.cost and not (issecretvalue and issecretvalue(c.cost)) then
-                    total = total + c.cost
-                end
-            end
-        end
+        costsPerSpell[#costsPerSpell + 1] =
+            C_Spell and C_Spell.GetSpellPowerCost and C_Spell.GetSpellPowerCost(id)
     end
+    local total = MonkMath:SumEnergyCosts(costsPerSpell, energy, issecretvalue)
     p.tigerCost = total
     return total
 end
@@ -568,7 +563,7 @@ function ClassModule:_UpdateTiger()
     if liveW and not ns.Secrets:Is(liveW) and liveW > 0 then p.powerWidthSnap = liveW end
     local barW = p.powerWidthSnap
     if not barW or barW <= 0 then if p.tigerMarker then p.tigerMarker:Hide() end return end
-    local costX = (cost / maxE) * barW  -- the cost point, from the bar's left edge
+    local costX = MonkMath:CostPoint(cost, maxE, barW)  -- the cost point, from the bar's left edge
     m:ClearAllPoints()
     -- left edge tracks current energy (the fill's right edge); right edge is the cost point.
     -- once current >= cost the left passes the right -> zero/negative width -> invisible.

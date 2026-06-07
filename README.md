@@ -117,6 +117,7 @@ Lib/
   FlightResolver.lua       Pure read-side algebra for flight-time queries over a solved atomic-leg table (the
   Format.lua               Pure time formatters -- no WoW API
   Helpers.lua              Small pure-logic helpers shared across the addon -- no WoW API, no state
+  MonkMath.lua             Pure combat arithmetic for the Monk module -- no WoW API, no state
   SpellTooltipParser.lua   Pure parsers for the numbers embedded in a spell's description text
   Vector2D.lua             A pure 2D vector value-TYPE (ns.Type) -- no WoW API
 Services/
