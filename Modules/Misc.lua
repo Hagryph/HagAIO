@@ -224,11 +224,13 @@ end
 --   2. DIRECT other direction  -- a real landing on the return trip            (~)
 --   3. FLY  same direction     -- a same-direction fly-over closest approach   (~)
 --   4. FLY  other direction    -- a reverse fly-over guess                     (~)
---   5. an assembled multi-hop estimate from sub-segments along the booked route  (~)
---   6. a composed estimate through ANY learned legs (graph) -- covers a direct
---      hop never flown, e.g. A->B as A->C + C->B                                 (~)
--- Only a same-direction DIRECT is reported as exact; everything else is flagged an
--- estimate, which the UI prefixes with "~".
+--   5. an assembled estimate from sub-segments ALONG THE BOOKED ROUTE          (~)
+-- Every result is tied to a real measurement of THIS route: tiers 1-4 measure the exact
+-- src->dst pair; tier 5 sums only legs that lie on the actual taxi path the game would
+-- fly src -> dst (each leg itself flown). A route with no on-path data shows "-:--" -- we
+-- never compose a time from unrelated legs (e.g. estimating a direct hop you never flew by
+-- routing through some other node). Only a same-direction DIRECT is exact; the rest are
+-- estimates, which the UI prefixes with "~".
 function Misc:_RouteTime(src, dst, slot, name)
     local f = self:GetDB().flights
     local fwd, rev = f[dirKey(src, dst)], f[dirKey(dst, src)]
@@ -238,8 +240,6 @@ function Misc:_RouteTime(src, dst, slot, name)
     if rev then return storedTime(rev), true end                              -- 4 (rev is FLY here)
     local est = self:_EstimateRoute(slot, name)                               -- 5 (booked-path sum)
     if est then return est, true end
-    local graph = self:_EstimateGraph(src, dst)                               -- 6 (compose via any legs)
-    if graph then return graph, true end
     return nil, false
 end
 
@@ -620,29 +620,6 @@ function Misc:_EstimateRoute(destSlot, destName)
     for i = 1, hops + 1 do if not nodes[i] then return nil end end
 
     return self:_EstimatePathNames(nodes)
-end
-
--- Last-resort estimate: the least-imprecise chain of LEARNED segments from src to
--- dst through ANY intermediate nodes (not just the booked route). Lets a never-flown
--- direct hop A->B be estimated as A->C + C->B when those legs exist. Dijkstra over the
--- segment graph, minimising accumulated legCost penalty and summing the times.
-function Misc:_EstimateGraph(src, dst)
-    if not (src and dst) or src == dst then return nil end
-    local flights = self:GetDB().flights
-
-    -- every node name recorded under the CURRENT faction (legCost only uses those).
-    local prefix = (UnitFactionGroup("player") or "?") .. "|"
-    local nodes = { [src] = true, [dst] = true }
-    for key in pairs(flights) do
-        if key:sub(1, #prefix) == prefix then
-            local a, b = key:sub(#prefix + 1):match("^(.-) %-> (.+)$")
-            if a and b then nodes[a] = true; nodes[b] = true end
-        end
-    end
-
-    -- Dijkstra over the learned segment graph (pure FlightGraph): minimise imprecision,
-    -- sum the times.
-    return ns.FlightGraph:GraphCost(src, dst, nodes, function(a, b) return legCost(flights, a, b) end)
 end
 
 function Misc:_OnPinEnter(pin)

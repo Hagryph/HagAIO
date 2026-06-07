@@ -98,7 +98,7 @@ Core/
   LibManager.lua           Registry for the LIB tier (pure-logic helpers; see Core/Lib.lua)
   Init.lua                 The single Core initializer
 Lib/
-  FlightGraph.lua          Pure route-cost calculations over a generic weighted graph -- no WoW API, no flight
+  FlightGraph.lua          Pure route-cost calculation over an ORDERED path -- no WoW API, no flight specifics
   Geometry.lua             Pure 2D geometry helpers -- no WoW API
   SpellTooltipParser.lua   Pure parsers for the numbers embedded in a spell's description text
   CVarHelper.lua           Pure helpers for reasoning about console-variable VALUES -- no WoW API
