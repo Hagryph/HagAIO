@@ -2,7 +2,7 @@ local S = dofile("Test/support.lua")
 
 local function helper()
     local ns = S.newNs()
-    S.load(ns, "Services/CVarHelper.lua")
+    S.load(ns, "Lib/CVarHelper.lua")
     return ns._captured["CVarHelper"]
 end
 

@@ -1,7 +1,7 @@
 local addonName, ns = ...
 local Class = ns.Class
 
--- Services/SpellTooltipParser.lua
+-- Lib/SpellTooltipParser.lua
 -- Pure parsers for the numbers embedded in a spell's description text. NO WoW API:
 -- callers fetch the description (C_Spell.GetSpellDescription) and pass the string in,
 -- so the regex/number extraction is unit-testable in isolation. Locale-dependent

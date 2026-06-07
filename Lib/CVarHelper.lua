@@ -1,7 +1,7 @@
 local addonName, ns = ...
 local Class = ns.Class
 
--- Services/CVarHelper.lua
+-- Lib/CVarHelper.lua
 -- Pure helpers for reasoning about console-variable VALUES -- no WoW API. The CVars
 -- module fetches the live value (C_CVar.GetCVar) and uses this to pick a control type
 -- when no curated typing exists, so the inference rule is unit-testable on its own.

@@ -39,16 +39,18 @@ Core\LibManager.lua
 
 # --- services (top-level Services/; each self-registers with the ServiceManager;
 #     order here is irrelevant -- the ServiceManager resolves load order from deps) ---
+# --- libs (ns.Lib: pure-logic helpers, no WoW API / deps / lifecycle; published at
+#     load by the LibManager, never started -- so they live apart from Services) ---
+Lib\FlightGraph.lua
+Lib\Geometry.lua
+Lib\SpellTooltipParser.lua
+Lib\CVarHelper.lua
+
 Services\Cache.lua
 Services\Memoize.lua
 Services\Scheduler.lua
 Services\Serializer.lua
 Services\Profiles.lua
-# pure-logic LIBS (ns.Lib: no WoW API, no deps/lifecycle; published at load, not started)
-Services\FlightGraph.lua
-Services\Geometry.lua
-Services\SpellTooltipParser.lua
-Services\CVarHelper.lua
 Services\EventBus.lua
 Services\SavedVars.lua
 Services\SlashCommand.lua

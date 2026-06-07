@@ -2,7 +2,7 @@ local S = dofile("Test/support.lua")
 
 local function parser()
     local ns = S.newNs()
-    S.load(ns, "Services/SpellTooltipParser.lua")
+    S.load(ns, "Lib/SpellTooltipParser.lua")
     return ns._captured["SpellTooltipParser"]
 end
 

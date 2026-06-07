@@ -23,7 +23,7 @@ import { join, relative, basename, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
-const SCAN = ["Core", "Services", "UI", "Modules"];
+const SCAN = ["Core", "Lib", "Services", "UI", "Modules"];
 const FIX = process.argv.includes("--fix");  // --fix: inject missing deps into each file
 
 // Foundation files (core singletons / base classes / statics): always available, so

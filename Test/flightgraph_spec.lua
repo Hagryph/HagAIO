@@ -2,7 +2,7 @@ local S = dofile("Test/support.lua")
 
 local function fg()
     local ns = S.newNs()
-    S.load(ns, "Services/FlightGraph.lua")
+    S.load(ns, "Lib/FlightGraph.lua")
     return ns._captured["FlightGraph"]
 end
 

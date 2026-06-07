@@ -15,7 +15,7 @@ import { join, relative, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
-const SCAN = ["Core", "Services", "UI", "Modules"];
+const SCAN = ["Core", "Lib", "Services", "UI", "Modules"];
 const NAMESPACE = join(ROOT, "Core", "Namespace.lua");
 
 function luaFiles(dir, out = []) {

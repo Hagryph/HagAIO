@@ -1,7 +1,7 @@
 local addonName, ns = ...
 local Class = ns.Class
 
--- Services/FlightGraph.lua
+-- Lib/FlightGraph.lua
 -- Pure route-cost calculations over a generic weighted graph -- no WoW API, no flight
 -- specifics. A caller supplies a `legFn(a, b) -> (value, penalty)` for the directed
 -- leg a->b (or nil if there is no such leg); these solvers find the chain that

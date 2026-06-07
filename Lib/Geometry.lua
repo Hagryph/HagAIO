@@ -1,7 +1,7 @@
 local addonName, ns = ...
 local Class = ns.Class
 
--- Services/Geometry.lua
+-- Lib/Geometry.lua
 -- Pure 2D geometry helpers -- no WoW API. Distances and a point->many-points "nearest"
 -- solver, reusable by anything that needs proximity (flight-path landing detection,
 -- frame snapping, ...). Callers do their own coordinate-space filtering (e.g. same

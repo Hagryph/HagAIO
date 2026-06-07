@@ -97,16 +97,17 @@ Core/
   Lib.lua                  Base for a LIB: a pure-logic helper (no WoW API, no state, no dependencies) published
   LibManager.lua           Registry for the LIB tier (pure-logic helpers; see Core/Lib.lua)
   Init.lua                 The single Core initializer
+Lib/
+  FlightGraph.lua          Pure route-cost calculations over a generic weighted graph -- no WoW API, no flight
+  Geometry.lua             Pure 2D geometry helpers -- no WoW API
+  SpellTooltipParser.lua   Pure parsers for the numbers embedded in a spell's description text
+  CVarHelper.lua           Pure helpers for reasoning about console-variable VALUES -- no WoW API
 Services/
   Cache.lua                Central caching service
   Memoize.lua              Memoization service: wrap a PURE function so repeat calls with the same arguments
   Scheduler.lua            Thin, cancellable wrapper over C_Timer
   Serializer.lua           Turns a Lua value into a compact, copy-pasteable share string and back, using
   Profiles.lua             Named config profiles + copy-paste sharing, built on the SavedVars layer
-  FlightGraph.lua          Pure route-cost calculations over a generic weighted graph -- no WoW API, no flight
-  Geometry.lua             Pure 2D geometry helpers -- no WoW API
-  SpellTooltipParser.lua   Pure parsers for the numbers embedded in a spell's description text
-  CVarHelper.lua           Pure helpers for reasoning about console-variable VALUES -- no WoW API
   EventBus.lua             Singleton pub/sub layer over a hidden driver frame
   SavedVars.lua            Singleton wrapper around the global + per-character saved-variable tables
   SlashCommand.lua         Singleton slash-command router for /hagaio (alias /hag)

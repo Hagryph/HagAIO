@@ -16,7 +16,7 @@ const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
 const TOC = join(ROOT, "HagAIO.toc");
 
 // Directories that hold game code; every .lua under these must be in the .toc.
-const SCAN_DIRS = ["Core", "Services", "Modules", "UI"];
+const SCAN_DIRS = ["Core", "Lib", "Services", "Modules", "UI"];
 
 // Normalise any path to the .toc's form: backslash separators, repo-relative.
 const toTocPath = (p) => relative(ROOT, p).split(sep).join("\\");

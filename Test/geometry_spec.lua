@@ -2,7 +2,7 @@ local S = dofile("Test/support.lua")
 
 local function geom()
     local ns = S.newNs()
-    S.load(ns, "Services/Geometry.lua")
+    S.load(ns, "Lib/Geometry.lua")
     return ns._captured["Geometry"]
 end
 
