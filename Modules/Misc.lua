@@ -34,7 +34,6 @@ local ARRIVE_YARDS = 40    -- within this of a path node = we landed there
 local CROSS_MARGIN = 75   -- moved this many (linear) yards past the closest approach = passed it
 local FLYOVER_RANGE = 75  -- closest approach must be within this to count as flying OVER a node;
                           -- farther than this and the node is skipped (never recorded)
-local LAND_LEAD = 60      -- too close to a node to land there -> an early stop overshoots it
 
 -- A flight DB entry is { t = seconds, q = quality, via = { node, ... } }, keyed per
 -- DIRECTION (see dirKey). `via` is the ordered booked intermediate nodes this segment
@@ -550,9 +549,12 @@ function Misc:_RefreshDisplay()
     p.frame:Show()
 end
 
--- The player clicked Request Stop (TaxiRequestEarlyLanding). Commit an early-stop
--- target: the next node ahead, or the one after if we're too close to it to
--- decelerate and land (on top of a node). It then re-tracks every tick.
+-- The player clicked Request Stop (TaxiRequestEarlyLanding). Commit the early-stop
+-- target to the node we're currently flying toward -- crossIdx already IS the next
+-- reachable node (it only advances once we pass one), so Request Stop lands there. If the
+-- flight can't stop and carries on, _UpdateEarlyTarget bumps the target forward when
+-- crossIdx advances. (We do NOT pre-advance for "too close to land": a stop requested
+-- while approaching a node lands AT it, so guessing the node after dropped the real one.)
 function Misc:_OnEarlyLanding()
     local p = self:_p()
     if not p.path then return end
@@ -561,16 +563,7 @@ function Misc:_OnEarlyLanding()
     -- crossIdx is only set once _Tick flips boarding -> flying; a stop requested in that
     -- gap (right after lift-off) arrives before it exists, so fall back to node 2 -- the
     -- first node after the source. _UpdateEarlyTarget refines it once tracking starts.
-    local idx = p.crossIdx or 2
-    local node = p.path[idx]
-    if node and node.world and p.path[idx + 1] then
-        local px, py, pc = self:_PlayerWorld()
-        if px and pc == node.world.c then
-            local dx, dy = px - node.world.x, py - node.world.y
-            if math.sqrt(dx * dx + dy * dy) < LAND_LEAD then idx = idx + 1 end
-        end
-    end
-    p.earlyIdx = idx
+    p.earlyIdx = p.crossIdx or 2
 
     self:_UpdateEarlyTarget()
     self:_RefreshDisplay()
