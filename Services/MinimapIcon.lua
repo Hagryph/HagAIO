@@ -1,6 +1,5 @@
 local addonName, ns = ...
 local Class = ns.Class
-local Theme = ns.Theme
 
 -- Services/MinimapIcon.lua
 -- A standalone minimap button (NOT LibDBIcon — no external libraries). A round
@@ -96,12 +95,11 @@ function MinimapIcon:_OnClick(btn)
 end
 
 function MinimapIcon:_OnEnter(b)
-    GameTooltip:SetOwner(b, "ANCHOR_LEFT")
-    GameTooltip:AddLine(Theme.Colorize("accent", "HagAIO"))
-    GameTooltip:AddLine("Left-click: open settings", 0.85, 0.87, 0.91)
-    GameTooltip:AddLine("Right-click: enable/disable modules", 0.55, 0.58, 0.64)
-    GameTooltip:AddLine("Drag: move around the minimap", 0.55, 0.58, 0.64)
-    GameTooltip:Show()
+    ns.UI.Widgets.IconTooltip(b, {
+        { text = "Left-click: open settings", key = "text" },
+        { text = "Right-click: enable/disable modules" },
+        { text = "Drag: move around the minimap" },
+    })
 end
 
 -- Show/hide per the saved setting (builds lazily on first show).

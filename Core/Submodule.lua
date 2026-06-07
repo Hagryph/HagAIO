@@ -61,13 +61,7 @@ function Submodule:GetSettings() return self:_p().settings end
 function Submodule:_Store()
     local p = self:_p()
     if not p.db and ns.SavedVars and ns.SavedVars:IsLoaded() then
-        local defaults = {}
-        for _, s in ipairs(p.settings) do
-            if s.key ~= nil and s.default ~= nil then defaults[s.key] = s.default end
-        end
-        if p.dbSchema then
-            for k, v in pairs(p.dbSchema) do defaults[k] = v end
-        end
+        local defaults = ns.Component.SeedDefaults(p.settings, p.dbSchema)
         p.db = ns.SavedVars:Namespace("submodule_" .. p.name, defaults)
     end
     return p.db

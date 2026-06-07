@@ -107,6 +107,7 @@ Lib/
   CVarHelper.lua           Pure helpers for reasoning about console-variable VALUES -- no WoW API
   FlightGraph.lua          Pure solver for ATOMIC FLIGHT-LEG times -- no WoW API
   Format.lua               Pure time formatters -- no WoW API
+  Helpers.lua              Small pure-logic helpers shared across the addon -- no WoW API, no state
   SpellTooltipParser.lua   Pure parsers for the numbers embedded in a spell's description text
   Vector2D.lua             A pure 2D vector value-CLASS -- no WoW API
 Services/

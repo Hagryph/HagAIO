@@ -13,12 +13,7 @@ local Class = ns.Class
 
 local Profiles = Class.new("Profiles", ns.Service)
 
-local function deepcopy(v)
-    if type(v) ~= "table" then return v end
-    local t = {}
-    for k, val in pairs(v) do t[k] = deepcopy(val) end
-    return t
-end
+local deepcopy = ns.Helpers.DeepCopy   -- shared pure helper (Lib/Helpers.lua)
 
 local function clear(t)
     for k in pairs(t) do t[k] = nil end

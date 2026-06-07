@@ -422,4 +422,17 @@ function Widgets.ScrollFrame(parent, name)
     return sf
 end
 
+-- Shared HagAIO icon tooltip (addon-compartment + minimap buttons): an accent title plus
+-- a list of { text, key } lines coloured from the Theme palette (key defaults to "textDim").
+-- Keeps the two icon services from each hand-rolling the same block + magic RGBs.
+function Widgets.IconTooltip(owner, lines)
+    GameTooltip:SetOwner(owner, "ANCHOR_LEFT")
+    GameTooltip:AddLine(Theme.Colorize("accent", "HagAIO"))
+    for _, ln in ipairs(lines) do
+        local r, g, b = Theme.Unpack(ln.key or "textDim")
+        GameTooltip:AddLine(ln.text, r, g, b)
+    end
+    GameTooltip:Show()
+end
+
 ns.UI.Widgets = Widgets

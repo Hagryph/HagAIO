@@ -152,6 +152,27 @@ end
 local KEYED_SETTING = {
     toggle = true, select = true, color = true, number = true, input = true, slider = true, range = true,
 }
+-- Build the saved-var default map from a settings schema: each keyed setting's `default`,
+-- plus any extra default maps (dbSchema / dbDefaults) merged on top in order. Every value
+-- is DEEP-COPIED (via ns.Helpers) so a table default -- a {r,g,b} colour, a nested schema
+-- table -- is never shared by reference across instances or characters. A static (no self),
+-- shared by Module / Submodule / the Class module's per-spec seeding.
+function Component.SeedDefaults(settings, ...)
+    local defaults = {}
+    for _, s in ipairs(settings or {}) do
+        if s.key ~= nil and s.default ~= nil then
+            defaults[s.key] = ns.Helpers.DeepCopy(s.default)
+        end
+    end
+    for i = 1, select("#", ...) do
+        local extra = (select(i, ...))
+        if extra then
+            for k, v in pairs(extra) do defaults[k] = ns.Helpers.DeepCopy(v) end
+        end
+    end
+    return defaults
+end
+
 function Component.ValidateSettings(settings, owner)
     for i, s in ipairs(settings or {}) do
         local where = ("%s settings[%d]"):format(tostring(owner), i)
@@ -166,6 +187,13 @@ function Component.ValidateSettings(settings, owner)
         end
         if s.type == "select" then
             assert(type(s.options) == "table", where .. " (select): needs an 'options' list")
+        end
+        if s.type == "color" and s.default ~= nil then
+            -- the renderer indexes default[1..3] (SettingsWindow color path), so fail loudly
+            -- here rather than silently rendering white from a malformed default.
+            assert(type(s.default) == "table" and type(s.default[1]) == "number"
+                and type(s.default[2]) == "number" and type(s.default[3]) == "number",
+                where .. " (color): 'default' must be a { r, g, b } array of three numbers")
         end
         if s.dependsOn ~= nil then
             -- a single key (string) or a list of keys (table of strings)

@@ -104,10 +104,10 @@ function CopyWindow:Build()
     prev:SetScript("OnClick", function() self:_Goto(p.page - 1) end)
     p.prev = prev
 
-    local next = W.TextButton(footer, "Next >")
-    next:SetPoint("RIGHT", footer, "RIGHT", 0, 0)
-    next:SetScript("OnClick", function() self:_Goto(p.page + 1) end)
-    p.next = next
+    local nextBtn = W.TextButton(footer, "Next >")
+    nextBtn:SetPoint("RIGHT", footer, "RIGHT", 0, 0)
+    nextBtn:SetScript("OnClick", function() self:_Goto(p.page + 1) end)
+    p.next = nextBtn
 
     local pageLabel = W.Text(footer, "", "textDim", "GameFontHighlightSmall")
     pageLabel:SetPoint("CENTER", footer, "CENTER", 0, 0)

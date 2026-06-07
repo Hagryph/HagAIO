@@ -76,6 +76,7 @@ function M.newNs()
     -- both inherit ns.Loggable for the shared logging surface. Lib is the pure-helper base.
     assert(loadfile("Core/Loggable.lua"))("HagAIO", ns)
     assert(loadfile("Core/Lib.lua"))("HagAIO", ns)
+    assert(loadfile("Lib/Helpers.lua"))("HagAIO", ns)   -- pure helpers (DeepCopy) used by Component.SeedDefaults
     assert(loadfile("Core/Component.lua"))("HagAIO", ns)
     assert(loadfile("Core/Service.lua"))("HagAIO", ns)
     ns._captured = {}

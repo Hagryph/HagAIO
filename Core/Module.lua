@@ -68,19 +68,9 @@ function Module:Initialize(name, opts)
 
     -- Seed saved-var defaults from the settings schema, then the declarative dbSchema
     -- (structural nested tables this module persists), then any explicit dbDefaults on
-    -- top. SavedVars deep-merges these on bind, so a module never has to hand-init
-    -- `db.x = db.x or {}` in OnInitialize.
-    local defaults = {}
-    for _, s in ipairs(p.settings) do
-        if s.key ~= nil and s.default ~= nil then defaults[s.key] = s.default end
-    end
-    if opts.dbSchema then
-        for k, v in pairs(opts.dbSchema) do defaults[k] = v end
-    end
-    if opts.dbDefaults then
-        for k, v in pairs(opts.dbDefaults) do defaults[k] = v end
-    end
-    p.dbDefaults = defaults
+    -- top -- all deep-copied so table defaults aren't shared by reference. SavedVars
+    -- deep-merges these on bind, so a module never has to hand-init `db.x = db.x or {}`.
+    p.dbDefaults = ns.Component.SeedDefaults(p.settings, opts.dbSchema, opts.dbDefaults)
 
     p.enabled = false
     p.db = nil

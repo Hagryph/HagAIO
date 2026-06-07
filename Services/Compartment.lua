@@ -1,6 +1,5 @@
 local addonName, ns = ...
 local Class = ns.Class
-local Theme = ns.Theme
 
 -- Services/Compartment.lua
 -- Registers HagAIO into the Addon Compartment — the button hub on the minimap
@@ -57,11 +56,10 @@ function Compartment:Register()
             self:OnClick(button, btn)
         end,
         funcOnEnter = function(button)
-            GameTooltip:SetOwner(button, "ANCHOR_LEFT")
-            GameTooltip:AddLine(Theme.Colorize("accent", "HagAIO"))
-            GameTooltip:AddLine("Left-click: open settings", 0.85, 0.87, 0.91)
-            GameTooltip:AddLine("Right-click: enable/disable modules", 0.55, 0.58, 0.64)
-            GameTooltip:Show()
+            ns.UI.Widgets.IconTooltip(button, {
+                { text = "Left-click: open settings", key = "text" },
+                { text = "Right-click: enable/disable modules" },
+            })
         end,
         funcOnLeave = function()
             GameTooltip:Hide()

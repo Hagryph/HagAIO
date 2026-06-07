@@ -43,16 +43,9 @@ function ClassModule:_BuildSettings()
 
     local db = self:_SettingsDB()
     if db then
-        for _, s in ipairs(p.settings) do
-            if s.key ~= nil and s.default ~= nil and db[s.key] == nil then
-                if type(s.default) == "table" then
-                    local c = {}
-                    for i, v in ipairs(s.default) do c[i] = v end
-                    db[s.key] = c
-                else
-                    db[s.key] = s.default
-                end
-            end
+        -- Fill any unset keys from the schema defaults (deep-copied via Component.SeedDefaults).
+        for k, v in pairs(ns.Component.SeedDefaults(p.settings)) do
+            if db[k] == nil then db[k] = v end
         end
     end
 end

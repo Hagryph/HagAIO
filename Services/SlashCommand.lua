@@ -54,9 +54,13 @@ end
 
 function SlashCommand:_PrintHelp()
     ns.Log.Print("commands:")
-    for sub, entry in pairs(self:_p().handlers) do
+    local handlers = self:_p().handlers
+    local subs = {}
+    for sub in pairs(handlers) do subs[#subs + 1] = sub end
+    table.sort(subs)   -- stable, alphabetical order (pairs() order is undefined)
+    for _, sub in ipairs(subs) do
         ns.Log.Print(("  |cffffff00/hag %s|r %s"):format(
-            sub, entry.help and ("- " .. entry.help) or ""))
+            sub, handlers[sub].help and ("- " .. handlers[sub].help) or ""))
     end
 end
 
