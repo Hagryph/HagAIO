@@ -91,6 +91,7 @@ Core/
   Delegate.lua             A multicast DELEGATE / signal -- an object-owned event you Connect handlers to and Fire
   Contributions.lua        ns.Contributions -- the shared, PURE machinery for a feature's declarative cross-cutting
   Persisted.lua            ns.Persisted -- a MIXIN (ns.Mixin) for objects that own a lazily-resolved, CACHED SavedVars
+  Color.lua                ns.Color -- an RGBA colour VALUE TYPE (ns.Type)
   Theme.lua                Static design system ported from the LoL Game Helper desktop app's
   DependencyGraph.lua      A generic dependency forest
   Logger.lua               Central logging service

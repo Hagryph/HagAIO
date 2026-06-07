@@ -1,4 +1,5 @@
 local addonName, ns = ...
+local Color = ns.Color
 
 -- Core/Theme.lua
 -- Static design system ported from the LoL Game Helper desktop app's
@@ -32,26 +33,26 @@ Theme.hex = {
     purple    = "b483e0",
 }
 
--- {r, g, b, a} in 0..1 (hex values above converted).
+-- ns.Color values (r/g/b/a in 0..1; the hex above converted). Reached via Theme.Unpack(key).
 Theme.rgb = {
-    bg0          = { 0.039, 0.047, 0.063, 1.00 },  -- #0a0c10
-    bg1          = { 0.055, 0.067, 0.090, 1.00 },  -- #0e1117
-    panel        = { 0.078, 0.090, 0.118, 0.97 },
-    panel2       = { 0.110, 0.125, 0.161, 0.98 },
-    panelHover   = { 0.141, 0.161, 0.204, 0.98 },
-    border       = { 0.290, 0.702, 0.902, 0.16 },  -- accent @ low alpha
-    borderStrong = { 0.290, 0.702, 0.902, 0.45 },
-    accent       = { 0.290, 0.702, 0.902, 1.00 },  -- #4ab3e6
-    accentDim    = { 0.184, 0.498, 0.690, 1.00 },  -- #2f7fb0
-    accentSoft   = { 0.290, 0.702, 0.902, 0.12 },  -- active-nav tint
-    green        = { 0.247, 0.698, 0.498, 1.00 },  -- #3fb27f
-    amber        = { 0.878, 0.663, 0.333, 1.00 },  -- #e0a955
-    red          = { 0.878, 0.333, 0.420, 1.00 },  -- #e0556b
-    grey         = { 0.541, 0.576, 0.639, 1.00 },  -- #8a93a3
-    text         = { 0.906, 0.925, 0.953, 1.00 },  -- #e7ecf3
-    textDim      = { 0.541, 0.576, 0.639, 1.00 },  -- #8a93a3
-    textFaint    = { 0.357, 0.392, 0.451, 1.00 },  -- #5b6473
-    purple       = { 0.706, 0.514, 0.878, 1.00 },  -- #b483e0
+    bg0          = Color:New(0.039, 0.047, 0.063, 1.00),  -- #0a0c10
+    bg1          = Color:New(0.055, 0.067, 0.090, 1.00),  -- #0e1117
+    panel        = Color:New(0.078, 0.090, 0.118, 0.97),
+    panel2       = Color:New(0.110, 0.125, 0.161, 0.98),
+    panelHover   = Color:New(0.141, 0.161, 0.204, 0.98),
+    border       = Color:New(0.290, 0.702, 0.902, 0.16),  -- accent @ low alpha
+    borderStrong = Color:New(0.290, 0.702, 0.902, 0.45),
+    accent       = Color:New(0.290, 0.702, 0.902, 1.00),  -- #4ab3e6
+    accentDim    = Color:New(0.184, 0.498, 0.690, 1.00),  -- #2f7fb0
+    accentSoft   = Color:New(0.290, 0.702, 0.902, 0.12),  -- active-nav tint
+    green        = Color:New(0.247, 0.698, 0.498, 1.00),  -- #3fb27f
+    amber        = Color:New(0.878, 0.663, 0.333, 1.00),  -- #e0a955
+    red          = Color:New(0.878, 0.333, 0.420, 1.00),  -- #e0556b
+    grey         = Color:New(0.541, 0.576, 0.639, 1.00),  -- #8a93a3
+    text         = Color:New(0.906, 0.925, 0.953, 1.00),  -- #e7ecf3
+    textDim      = Color:New(0.541, 0.576, 0.639, 1.00),  -- #8a93a3
+    textFaint    = Color:New(0.357, 0.392, 0.451, 1.00),  -- #5b6473
+    purple       = Color:New(0.706, 0.514, 0.878, 1.00),  -- #b483e0
 }
 
 -- Flat 8x8 white texture: tinted to any colour for solid fills + hairline
@@ -65,8 +66,8 @@ end
 
 -- Return r, g, b, a for a palette key (optional alpha override).
 function Theme.Unpack(key, alphaOverride)
-    local c = Theme.rgb[key] or Theme.rgb.text
-    return c[1], c[2], c[3], alphaOverride or c[4] or 1
+    local r, g, b, a = (Theme.rgb[key] or Theme.rgb.text):Unpack()
+    return r, g, b, alphaOverride or a
 end
 
 -- Backdrop info for a solid panel with a 1px (default) border.

@@ -8,9 +8,6 @@ local Monk = ns.Monk   -- shared Monk surface (constants + registerSpec + Base),
 -- base behaviour via MonkBrewmaster.super, not by name. Loads after Base.lua, which set
 -- ns.Monk.Base.
 
--- player power(energy)-bar learning hook: global, installed once per session.
-local powerHookInstalled = false
-
 local MonkBrewmaster = Class.new("MonkBrewmaster", ns.Monk.Base)
 MonkBrewmaster.settings = {
     { type = "header", text = "Expel Harm" },
@@ -39,15 +36,16 @@ function MonkBrewmaster:Load()
     local host = self:Host()
     local p = host:_p()
 
-    -- install the player power(energy) bar learning hook once
-    if not powerHookInstalled and type(UnitFrameManaBar_Update) == "function" then
+    -- install the player power(energy) bar learning hook once per session (global, can't
+    -- be removed; the latch lives on the host singleton's private state)
+    if not p.powerHookInstalled and type(UnitFrameManaBar_Update) == "function" then
         hooksecurefunc("UnitFrameManaBar_Update", function(statusbar, unit)
             if unit == "player" and statusbar.unitFrame == PlayerFrame then
                 host:_p().powerBar = statusbar
                 if not host:_p().tigerMarker then host:_ScheduleTiger() end
             end
         end)
-        powerHookInstalled = true
+        p.powerHookInstalled = true
     end
 
     p.tigerActive = true

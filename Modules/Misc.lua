@@ -17,8 +17,6 @@ local sqrt, huge = math.sqrt, math.huge
 
 local Misc = Class.new("Misc", ns.Module)
 
-local taxiHooked = false       -- TakeTaxiNode hook installed once per session
-
 local fmt = ns.Format.MMSS   -- pure "M:SS" countdown formatter (Lib/Format.lua)
 
 -- DIRECTIONAL route key: a -> b is stored separately from b -> a, because the two
@@ -42,7 +40,9 @@ local FLYOVER_RANGE = 75  -- closest approach must be within this to count as fl
 -- real landing) > FLY (a mid-flight closest-approach guess). Estimates are computed fresh
 -- and never persisted. Legacy: a plain number = DIRECT (no via -> treated as atomic); an
 -- old { t, est = true } (a saved estimate) is treated as FLY.
-local Q_DIRECT, Q_FLY = 2, 1
+-- Numeric so a higher quality wins ties (DIRECT measurement beats a FLY guess); the values
+-- are persisted as `e.q`, so they must stay 2/1.
+local Quality = ns.Enum.new("FlightQuality", { DIRECT = 2, FLY = 1 })
 
 local function storedTime(e)
     if type(e) == "number" then return e end
@@ -50,9 +50,9 @@ local function storedTime(e)
 end
 local function entryQ(e)
     if e == nil then return nil end
-    if type(e) ~= "table" then return Q_DIRECT end   -- legacy number
+    if type(e) ~= "table" then return Quality.DIRECT end   -- legacy number
     if e.q then return e.q end
-    return e.est and Q_FLY or Q_DIRECT               -- legacy saved estimate -> fly
+    return e.est and Quality.FLY or Quality.DIRECT               -- legacy saved estimate -> fly
 end
 
 -- Best time for one ATOMIC leg a -> b from the solved leg table, in priority order:
@@ -62,10 +62,10 @@ end
 local function legTime(legs, a, b)
     local fwd = ns.FlightGraph:Get(legs, a, b)
     local rev = ns.FlightGraph:Get(legs, b, a)
-    if fwd and not fwd.derived and fwd.q == Q_DIRECT then return fwd.t end
-    if rev and not rev.derived and rev.q == Q_DIRECT then return rev.t end
-    if fwd and not fwd.derived and fwd.q == Q_FLY then return fwd.t end
-    if rev and not rev.derived and rev.q == Q_FLY then return rev.t end
+    if fwd and not fwd.derived and fwd.q == Quality.DIRECT then return fwd.t end
+    if rev and not rev.derived and rev.q == Quality.DIRECT then return rev.t end
+    if fwd and not fwd.derived and fwd.q == Quality.FLY then return fwd.t end
+    if rev and not rev.derived and rev.q == Quality.FLY then return rev.t end
     if fwd and fwd.derived then return fwd.t end
     if rev and rev.derived then return rev.t end
     return nil
@@ -110,14 +110,14 @@ function Misc:OnInitialize()
     -- db.flights is pre-seeded from dbSchema (see registration).
     ns.EventBus:On("TAXIMAP_OPENED", function() self:_OnTaxiMap() end)
     -- TakeTaxiNode is a permanent secure hook, so it installs once per SESSION (the
-    -- file-level latch). It resolves the live registered Misc instance each call rather
-    -- than capturing `self`, so it never points at a stale instance.
-    if not taxiHooked and type(TakeTaxiNode) == "function" then
+    -- private latch on this singleton). It resolves the live registered Misc instance
+    -- each call rather than capturing `self`, so it never points at a stale instance.
+    if not p.taxiHooked and type(TakeTaxiNode) == "function" then
         hooksecurefunc("TakeTaxiNode", function(slot)
             local m = ns.ModuleManager:GetModule("Misc")
             if m then m:_OnTakeTaxi(slot) end
         end)
-        taxiHooked = true
+        p.taxiHooked = true
     end
 end
 
@@ -220,13 +220,13 @@ function Misc:_Store(a, b, seconds, via)
     local cur = flights[key]
     self:_p().legsCache = nil   -- recorded data changed -> rebuild atomic legs lazily
     if cur == nil then
-        flights[key] = { t = seconds, q = Q_DIRECT, via = via }
+        flights[key] = { t = seconds, q = Quality.DIRECT, via = via }
         return
     end
     local curQ = entryQ(cur)
     if type(cur) ~= "table" then cur = { t = storedTime(cur), q = curQ }; flights[key] = cur end
-    if curQ < Q_DIRECT then
-        cur.t, cur.q, cur.via = seconds, Q_DIRECT, via    -- direct beats a fly entry
+    if curQ < Quality.DIRECT then
+        cur.t, cur.q, cur.via = seconds, Quality.DIRECT, via    -- direct beats a fly entry
     elseif math.abs(seconds - cur.t) >= 5 then
         cur.t, cur.via = seconds, via                     -- +/-5s, direct over direct
     end
@@ -238,7 +238,7 @@ function Misc:_StoreIfNew(a, b, seconds, via)
     local flights = self:GetDB().flights
     local key = dirKey(a, b)
     if flights[key] == nil then
-        flights[key] = { t = seconds, q = Q_FLY, via = via }
+        flights[key] = { t = seconds, q = Quality.FLY, via = via }
         self:_p().legsCache = nil
     end
 end
@@ -259,8 +259,8 @@ end
 function Misc:_RouteTime(src, dst, slot, name)
     local f = self:GetDB().flights
     local fwd, rev = f[dirKey(src, dst)], f[dirKey(dst, src)]
-    if fwd and entryQ(fwd) == Q_DIRECT then return storedTime(fwd), false end  -- 1
-    if rev and entryQ(rev) == Q_DIRECT then return storedTime(rev), true  end  -- 2
+    if fwd and entryQ(fwd) == Quality.DIRECT then return storedTime(fwd), false end  -- 1
+    if rev and entryQ(rev) == Quality.DIRECT then return storedTime(rev), true  end  -- 2
     if fwd then return storedTime(fwd), true end                              -- 3 (fwd is FLY here)
     if rev then return storedTime(rev), true end                              -- 4 (rev is FLY here)
     local est = self:_EstimateRoute(slot, name)                               -- 5 (booked-path sum)

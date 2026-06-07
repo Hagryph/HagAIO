@@ -22,7 +22,10 @@ local W = ns.UI.Widgets
 
 local Tasklist = Class.new("Tasklist", ns.Module)
 
-local TYPE_LABEL = { once = "Tasks", daily = "Daily", weekly = "Weekly" }
+-- The closed set of task buckets: a frozen key->section-header map. Only ever read with a
+-- key drawn from TYPE_ORDER, which also drives render order (Enum keys would sort
+-- alphabetically, so the sequence stays a plain list).
+local TYPE_LABEL = ns.Enum.new("TaskTypeLabel", { once = "Tasks", daily = "Daily", weekly = "Weekly" })
 local TYPE_ORDER = { "once", "daily", "weekly" }
 
 -- Is an item collected? Prefer ATT's knowledge, since it covers every collectible.

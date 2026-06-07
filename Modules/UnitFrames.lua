@@ -47,9 +47,6 @@ local function restore(bar)
     if bar.SetStatusBarColor then bar:SetStatusBarColor(1, 1, 1) elseif tex then tex:SetVertexColor(1, 1, 1) end
 end
 
--- The hook is global and can't be removed; install once per session.
-local installed = false
-
 -- ---- lifecycle ------------------------------------------------------------
 function UnitFrames:OnInitialize()
     local p = self:_p()
@@ -66,7 +63,9 @@ function UnitFrames:OnEnable()
     p.curve = self:_BuildCurve()
 
     -- Learn the real bar object per unit, and recolour after Blizzard's update.
-    if not installed and type(UnitFrameHealthBar_Update) == "function" then
+    -- The hook is global and can't be removed; install once per session (the latch
+    -- lives on the singleton's private state, so a disable/enable won't re-hook).
+    if not p.installed and type(UnitFrameHealthBar_Update) == "function" then
         local module = self
         hooksecurefunc("UnitFrameHealthBar_Update", function(statusbar, unit)
             if unit == "player" or unit == "target" then
@@ -74,7 +73,7 @@ function UnitFrames:OnEnable()
                 module:_Color(unit)
             end
         end)
-        installed = true
+        p.installed = true
     end
 
     -- Drive recolouring on health changes (the example's UNIT_HEALTH approach). Filtered

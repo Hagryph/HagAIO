@@ -11,9 +11,6 @@ local Monk = ns.Monk   -- shared Monk surface (constants + registerSpec), set in
 -- load-order dep satisfied by the toc; this spec's parent chain is Monk -> Class), not a
 -- service/module-instance dependency.
 
--- player health-bar learning hook: global, installed once per session.
-local hookInstalled = false
-
 local MonkBase = Class.new("MonkBase", ns.ClassSpec)
 ns.Monk.Base = MonkBase   -- so Brewmaster.lua (loads after) can extend it
 
@@ -33,8 +30,9 @@ function MonkBase:Load()
     local host = self:Host()
     local p = host:_p()
 
-    -- install the player health-bar learning hook once (captures the real bar)
-    if not hookInstalled and type(UnitFrameHealthBar_Update) == "function" then
+    -- install the player health-bar learning hook once per session (global, can't be
+    -- removed; the latch lives on the host singleton's private state)
+    if not p.healthHookInstalled and type(UnitFrameHealthBar_Update) == "function" then
         hooksecurefunc("UnitFrameHealthBar_Update", function(statusbar, unit)
             -- Only the real PlayerFrame bar. Other frames (pet/target-of-target)
             -- transiently carry unit "player" during vehicle/art swaps; touching
@@ -44,7 +42,7 @@ function MonkBase:Load()
                 host:_ScheduleUpdate()
             end
         end)
-        hookInstalled = true
+        p.healthHookInstalled = true
     end
 
     -- heal scales with spell power, so re-read it on anything that changes it
