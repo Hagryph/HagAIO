@@ -284,13 +284,15 @@ function Questing:_OnGreeting()
     if self:GetSetting("autoTurnIn") then
         for i = 1, GetNumActiveQuests() do
             local _, isComplete = GetActiveTitle(i)
-            -- GetActiveTitle's completion flag is a boolean/number, so it's rarely nil;
-            -- when it's falsy, fall back to the quest-log ready-for-turn-in check.
-            if not isComplete and GetActiveQuestID and C_QuestLog and C_QuestLog.ReadyForTurnIn then
+            -- GetActiveTitle's completion flag may be a number (0/1) -- and 0 is TRUTHY in
+            -- Lua -- so normalise to a real boolean before testing. When not complete, fall
+            -- back to the quest-log ready-for-turn-in check.
+            local complete = isComplete == true or isComplete == 1
+            if not complete and GetActiveQuestID and C_QuestLog and C_QuestLog.ReadyForTurnIn then
                 local qid = GetActiveQuestID(i)
-                isComplete = qid and C_QuestLog.ReadyForTurnIn(qid)
+                complete = (qid and C_QuestLog.ReadyForTurnIn(qid)) or false
             end
-            if isComplete then
+            if complete then
                 SelectActiveQuest(i)
                 return
             end

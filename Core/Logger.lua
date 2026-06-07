@@ -183,7 +183,7 @@ function Logger:Record(channel, level, text, echo)
     if (p.last - p.start + 1) > p.keep then
         h[p.start] = nil          -- release the oldest for GC; advance the head (O(1))
         p.start = p.start + 1
-        if p.start > p.keep then  -- dead prefix grew to ~keep: compact (amortised O(1))
+        if (p.start - 1) >= p.keep then  -- dead prefix (length start-1) reached keep: compact (amortised O(1))
             local compact, j = {}, 0
             for i = p.start, p.last do j = j + 1; compact[j] = h[i] end
             p.history = compact

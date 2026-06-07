@@ -72,10 +72,12 @@ function ClassModule:_SettingsDB()
     return db.specs[key]
 end
 
--- Forward a settings change to the active spec submodule.
-function ClassModule:OnSettingChanged()
+-- Run the inherited declarative settingsWatch, then forward the change to the active spec
+-- submodule (passing key/value, like Submodule:OnSettingChanged does).
+function ClassModule:OnSettingChanged(key, value)
+    ClassModule.super.OnSettingChanged(self, key, value)  -- inherited settingsWatch (Component)
     local sub = self:_p().activeSub
-    if sub and sub.OnSettingChanged then sub.OnSettingChanged(self) end
+    if sub and sub.OnSettingChanged then sub.OnSettingChanged(self, key, value) end
 end
 
 -- Spec features subscribe via self:On(event, fn, "spec") and the whole "spec" scope

@@ -49,6 +49,7 @@ function EditMode:Register(frame, opts)
         frame   = frame,
         key     = opts.key,
         label   = opts.label,
+        anchor  = opts.anchor,   -- "TOPLEFT" persists a top-left offset (else CENTER); read in _SnapAndSave
         default = opts.default or { point = "CENTER", x = 0, y = 0 },
         active  = opts.active,
         onEnter = opts.onEnter,
