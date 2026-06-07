@@ -61,7 +61,12 @@ local PREFIX = "|cff" .. Theme.hex.accent .. "HagAIO|r"
 function Logger:Initialize()
     local p = self:_p()
     p.channels = {}   -- name -> Channel
-    p.history = {}     -- bounded list of entries
+    -- Bounded history as a head/tail-indexed buffer: live entries occupy
+    -- history[start..last]. Eviction advances `start` (O(1)) instead of shifting the
+    -- whole array down (table.remove(h,1) was O(n) on EVERY log line once full).
+    p.history = {}
+    p.start = 1       -- index of the oldest live entry
+    p.last = 0        -- index of the newest live entry (0 = empty)
     p.minLevel = LEVELS.INFO.order
     p.echo = true
     p.keep = 500
@@ -83,12 +88,18 @@ function Logger:LoadSettings()
     p.keep = db.keep
 end
 
+-- Register is idempotent: the first registration of a name wins, so calling it
+-- again just returns the existing channel (a re-used name never clobbers).
 function Logger:Register(name, hex)
     local p = self:_p()
     if not p.channels[name] then
         p.channels[name] = Channel:New(self, name, hex)
     end
     return p.channels[name]
+end
+
+function Logger:HasChannel(name)
+    return self:_p().channels[name] ~= nil
 end
 
 -- Shared channel for framework-level messages.
@@ -110,7 +121,22 @@ function Logger:SetMinLevel(order)
 end
 function Logger:GetMinLevel() return self:_p().minLevel end
 
-function Logger:GetHistory() return self:_p().history end
+-- A fresh array of the live entries, oldest -> newest (the storage itself is
+-- head/tail-indexed and may carry niled-out slots, so never expose it directly).
+function Logger:GetHistory()
+    local p = self:_p()
+    local h, out, j = p.history, {}, 0
+    for i = p.start, p.last do j = j + 1; out[j] = h[i] end
+    return out
+end
+
+-- Drop all recorded history (the Log page's Clear button).
+function Logger:Clear()
+    local p = self:_p()
+    p.history = {}
+    p.start = 1
+    p.last = 0
+end
 
 local function formatLine(e)
     local time  = "|cff" .. Theme.hex.textFaint .. e.time .. "|r"
@@ -137,8 +163,18 @@ function Logger:Record(channel, level, text)
     entry.line = formatLine(entry)
 
     local h = p.history
-    h[#h + 1] = entry
-    while #h > p.keep do table.remove(h, 1) end
+    p.last = p.last + 1
+    h[p.last] = entry
+    if (p.last - p.start + 1) > p.keep then
+        h[p.start] = nil          -- release the oldest for GC; advance the head (O(1))
+        p.start = p.start + 1
+        if p.start > p.keep then  -- dead prefix grew to ~keep: compact (amortised O(1))
+            local compact, j = {}, 0
+            for i = p.start, p.last do j = j + 1; compact[j] = h[i] end
+            p.history = compact
+            p.start, p.last = 1, j
+        end
+    end
 
     if p.echo and level.order >= p.minLevel then
         p.frame:AddMessage(entry.line)

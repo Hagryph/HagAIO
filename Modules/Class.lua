@@ -2,25 +2,19 @@ local addonName, ns = ...
 local Class = ns.Class
 
 -- Modules/Class.lua
--- Generic class-helper module. The real, class-specific logic lives in per-class
--- files (Modules/Class/<Class>.lua) that add methods to ns.ClassModule and
--- register their spec submodules into ns.ClassSubmodules[CLASS_TOKEN][specKey],
--- where specKey is "none" (no specialisation) or a spec index 1-4.
---
--- The active submodule follows the player's CURRENT spec and is swapped on spec
--- change (the old one fully unloaded first); we never fall back to the no-spec
--- submodule while a spec is active. A submodule is:
---   { settings, Load(self), Unload(self), OnSettingChanged(self)? }
--- with self = the ClassModule instance (state via self:_p(), events via self:_Sub).
+-- Generic class-helper module. Per-class files (Modules/Class/<Class>.lua) add their
+-- methods to ns.ClassModule and register their specs as SUBMODULES under the class's
+-- own submodule, each with a spec CONDITION + spec-change EVENTS. The Submodule
+-- framework -- NOT this module -- decides which spec submodule is loaded: it loads the
+-- one whose condition holds and swaps it on PLAYER_SPECIALIZATION_CHANGED. A spec
+-- submodule's onLoad/onUnload run the spec's Load/Unload against this module instance
+-- (the host) and set self:_p().activeSub, which drives the settings page.
 
 local ClassModule = Class.new("Class", ns.Module)
 ns.ClassModule = ClassModule       -- per-class files add their methods here
-ns.ClassSubmodules = {}            -- [CLASS_TOKEN] = { ["none"] = sub, [1] = sub, ... }
 
--- "none" when the player has no specialisation, else the spec index (1-4).
--- A spec-less character returns an out-of-range "initial" index (e.g. 5 for a
--- pre-level-10 Monk, > GetNumSpecializations). NOTE: GetSpecializationInfo returns
--- name=nil even for real specs on 12.0, so gate on the in-range index only.
+-- "none" when the player has no specialisation, else the spec index (1-4). A spec-less
+-- character returns an out-of-range "initial" index, so gate on the in-range index only.
 local function currentSpecKey()
     local idx = GetSpecialization and GetSpecialization()
     if not idx then return "none" end
@@ -28,32 +22,26 @@ local function currentSpecKey()
     if idx < 1 or idx > num then return "none" end
     return idx
 end
-
-function ClassModule:_Submodule()
-    local reg = ns.ClassSubmodules[self:_p().class]
-    return reg and reg[currentSpecKey()] or nil
-end
+function ClassModule:CurrentSpecKey() return currentSpecKey() end
 
 -- ---- lifecycle ------------------------------------------------------------
 function ClassModule:OnInitialize()
     local p = self:_p()
-    p.tokens = {}
-    p.subTokens = {}
     local _, classToken = UnitClass("player")
     p.class = classToken
     p.description = "Helpers tailored to your class and specialisation."
     self:_BuildSettings()
 end
 
--- (Re)build the settings schema from the current spec's submodule and seed any
--- missing saved-var defaults. Called at init and on every spec change.
+-- (Re)build the settings schema from the active spec submodule and seed any missing
+-- saved-var defaults. Called from a spec submodule's onLoad (load / spec change).
 function ClassModule:_BuildSettings()
     local p = self:_p()
-    local sub = self:_Submodule()
+    local sub = p.activeSub
     p.settings = (sub and sub.settings)
         or { { type = "note", text = "Nothing for your current specialisation yet." } }
 
-    local db = self:GetDB()
+    local db = self:_SettingsDB()
     if db then
         for _, s in ipairs(p.settings) do
             if s.key ~= nil and s.default ~= nil and db[s.key] == nil then
@@ -69,70 +57,40 @@ function ClassModule:_BuildSettings()
     end
 end
 
-function ClassModule:OnEnable()
+-- Class settings are stored ACCOUNT-WIDE but BUCKETED by class+spec, so all your
+-- characters of the same class+spec share one config, while different specs/classes
+-- never collide -- and the buckets ride along in account-wide profiles. The active
+-- bucket (chosen by the current character's class + spec) is what GetSetting/
+-- SetSetting (ns.Component) read and write.
+function ClassModule:_SettingsDB()
     local p = self:_p()
-    if not ns.ClassSubmodules[p.class] then return end  -- no helpers for this class yet
-
-    -- Watch for spec changes to swap submodules.
-    local bus = ns.EventBus
-    p.tokens["PLAYER_SPECIALIZATION_CHANGED"] = bus:On("PLAYER_SPECIALIZATION_CHANGED", function() self:_Sync() end)
-    p.tokens["PLAYER_ENTERING_WORLD"]         = bus:On("PLAYER_ENTERING_WORLD",         function() self:_Sync() end)
-    self:_Sync()
+    local db = self:GetDB()          -- module_Class (account-wide)
+    if not db then return nil end
+    db.specs = db.specs or {}
+    local key = (p.class or "?") .. ":" .. tostring(self:CurrentSpecKey())
+    db.specs[key] = db.specs[key] or {}
+    return db.specs[key]
 end
 
-function ClassModule:OnDisable()
-    local p = self:_p()
-    local bus = ns.EventBus
-    for event, token in pairs(p.tokens) do bus:Off(event, token) end
-    wipe(p.tokens)
-    if p.activeSub and p.activeSub.Unload then p.activeSub.Unload(self) end
-    p.activeSub = nil
-end
-
--- Forward to the active submodule (the class file decides what to refresh).
+-- Forward a settings change to the active spec submodule.
 function ClassModule:OnSettingChanged()
     local sub = self:_p().activeSub
     if sub and sub.OnSettingChanged then sub.OnSettingChanged(self) end
 end
 
--- Submodule event subscriptions (a list, so several features can share events).
-function ClassModule:_Sub(event, fn)
-    local p = self:_p()
-    p.subTokens = p.subTokens or {}
-    local token = ns.EventBus:On(event, fn)
-    if token then p.subTokens[#p.subTokens + 1] = { event, token } end
-end
-
-function ClassModule:_UnloadSubs()
-    local p = self:_p()
-    if not p.subTokens then return end
-    local bus = ns.EventBus
-    for _, e in ipairs(p.subTokens) do bus:Off(e[1], e[2]) end
-    wipe(p.subTokens)
-end
-
--- Load the submodule matching the current spec, unloading the previous one.
-function ClassModule:_Sync()
-    local p = self:_p()
-    if not self:IsEnabled() then return end
-    local sub = self:_Submodule()
-    if sub == p.activeSub then return end
-    if p.activeSub and p.activeSub.Unload then p.activeSub.Unload(self) end
-    p.activeSub = sub
-    if sub and sub.Load then sub.Load(self) end
-    -- spec changed: rebuild the schema and refresh the settings page in place
-    self:_BuildSettings()
-    if ns.UI and ns.UI.SettingsWindow and ns.UI.SettingsWindow.InvalidateModule then
-        ns.UI.SettingsWindow:InvalidateModule(self:GetName())
-    end
-end
+-- Spec features subscribe via self:On(event, fn, "spec") and the whole "spec" scope
+-- is released on spec swap / unload (self:ReleaseScope("spec")) -- both inherited from
+-- ns.Component, so the old hand-rolled _Sub / _UnloadSubs are gone.
 
 -- ---- registration ---------------------------------------------------------
 ns.ModuleManager:Register(ClassModule:New("Class", {
     title = "Class",
     description = "Helpers for your current class.",
     defaultEnabled = false,
-    perChar = true,  -- class/spec differ per character, so store state per char
+    -- Account-wide: settings are bucketed by class+spec (see _SettingsDB), so they're
+    -- shared across same-class+spec alts and captured by profiles.
     color = ns.Theme.hex.purple,
-    settings = {},   -- built per class/spec in OnInitialize
+    -- No service deps: event subscriptions go through self:On (ns.Component), and each
+    -- spec submodule declares the services ITS features use.
+    settings = {},   -- built per spec from the active spec submodule
 }))

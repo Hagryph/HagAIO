@@ -103,7 +103,6 @@ end
 -- ---- lifecycle ------------------------------------------------------------
 function CVars:OnInitialize()
     local p = self:_p()
-    p.tokens = {}
     p.sections = {}
     local db = self:GetDB()
     db.managed = db.managed or {}   -- name -> value (account-wide, re-applied each login)
@@ -117,14 +116,8 @@ function CVars:OnInitialize()
 end
 
 function CVars:OnEnable()
-    self:_p().tokens["PLAYER_ENTERING_WORLD"] =
-        ns.EventBus:On("PLAYER_ENTERING_WORLD", function() self:_ApplyAll() end)
+    self:On("PLAYER_ENTERING_WORLD", function() self:_ApplyAll() end)  -- auto-released on disable
     self:_ApplyAll()
-end
-
-function CVars:OnDisable()
-    for ev, tok in pairs(self:_p().tokens) do ns.EventBus:Off(ev, tok) end
-    wipe(self:_p().tokens)
 end
 
 -- Re-apply every globalised CVar (only while enabled; disabling stops forcing).
@@ -475,5 +468,5 @@ ns.ModuleManager:Register(CVars:New("CVars", {
     description = "Force useful console variables on every character. Grouped, typed controls plus custom CVars.",
     defaultEnabled = false,
     color = ns.Theme.hex.red,
-    deps = { "SlashCommand", "Dev" },  -- /hag cvar routing + CVar enumeration
+    deps = { "SlashCommand", "Dev", "SettingsWindow" },  -- /hag cvar routing + CVar enumeration + page refresh
 }))

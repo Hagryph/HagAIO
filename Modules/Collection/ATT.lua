@@ -89,6 +89,7 @@ end
 sub = ns.Submodule:New("ATT", {
     parent = { module = "Collection" },
     addonDeps = { "AllTheThings" },     -- only loads when ATT is installed
+    moduleDeps = { "Tasklist" },        -- tracks ATT rows into the Task List (ns.Tasks)
     title = "All The Things",
     settings = {                         -- shown on Collection's page only while loaded
         { type = "toggle", key = "window", label = "Hook the ATT window", default = true,

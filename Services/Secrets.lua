@@ -1,7 +1,7 @@
 local addonName, ns = ...
 local Class = ns.Class
 
--- Core/Secrets.lua
+-- Services/Secrets.lua
 -- Thin, allocation-free helpers around 12.0 Secret Values, so modules don't each
 -- re-implement the issecretvalue dance (and the easy ways to crash on it).
 --

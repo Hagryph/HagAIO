@@ -68,10 +68,7 @@ function ServiceManager:StartAll()
     p.started = true
 
     local g = self:_Graph()
-    local ok, issues = g:Validate()
-    if not ok then
-        for _, msg in ipairs(issues) do ns.Logger:Core():Warn("service dependencies: " .. msg) end
-    end
+    g:AssertValid("service dependencies")  -- a cycle or dangling dep is a fatal misconfiguration
 
     p.startOrder = g:TopologicalOrder()
     for _, name in ipairs(p.startOrder) do

@@ -1,7 +1,7 @@
 local addonName, ns = ...
 local Class = ns.Class
 
--- Core/Compartment.lua
+-- Services/Compartment.lua
 -- Registers HagAIO into the Addon Compartment — the button hub on the minimap
 -- that collects many addons' icons (added in patch 10.1.0; manual-registration
 -- signature current as of 11.0+). Left-click toggles the settings window;
@@ -12,6 +12,19 @@ local Compartment = Class.new("Compartment", ns.Service)
 
 function Compartment:OnInitialize()
     self:_p().registered = false
+    ns.EventBus:On("PLAYER_LOGIN", function() self:Register() end)  -- self-apply on login
+
+    -- Contribute our visibility toggle to the settings window's General page
+    -- (push, not pull) so the window never has to reference us -- no cycle.
+    ns.UI.SettingsWindow:RegisterGeneralToggle({
+        section = "Icons",
+        label = "Compartment icon",
+        desc = "Shows HagAIO in the minimap's addon-compartment menu.",
+        flagReload = true,
+        get = function() return self:IsShown() end,
+        set = function(on) return self:SetShown(on) end,  -- returns true if /reload needed
+        reloadMsg = "Reload your UI (/reload) to remove the compartment icon.",
+    })
 end
 
 -- Account-wide visibility setting (default on).
@@ -76,4 +89,4 @@ function Compartment:OnClick(button, owner)
     end
 end
 
-ns.ServiceManager:Register(Compartment:New("Compartment", { deps = { "SavedVars", "SettingsWindow" } }))
+ns.ServiceManager:Register(Compartment:New("Compartment", { deps = { "EventBus", "SavedVars", "SettingsWindow" } }))

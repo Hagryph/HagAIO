@@ -13,9 +13,11 @@ local Class = ns.Class
 --   IsSatisfied(id)  -- the node's condition is met by its parents (roots: always true)
 --   IsOnline(id)     -- IsActive AND IsSatisfied, recursively (each parent must be Online)
 --
--- Validate() reports circular dependencies and dangling references up front; the
+-- Validate() reports circular dependencies and dangling references up front (returns
+-- ok,issues -- for soft callers like UI greying); AssertValid() raises on the same faults
+-- (for callers ordering real subsystems, where a cycle is a fatal bug, not a state). The
 -- evaluators also guard against cycles defensively (a cycle resolves to false rather than
--- recursing forever), so a mis-wired graph degrades instead of crashing.
+-- recursing forever), so even an un-asserted mis-wired graph degrades instead of looping.
 --
 -- Subjects may be any object implementing the configured method, OR a plain function
 -- returning a boolean -- so callers can point a node at a real class (subject:IsActive())
@@ -39,6 +41,13 @@ function DependencyGraph:Initialize(opts)
     p.method = (opts and opts.method) or DEFAULT_METHOD
     p.nodes = {}    -- id -> { id, subject, condition }
     p.order = {}    -- insertion order (stable iteration / reporting)
+    -- Caches. STRUCTURE-derived results (validate/topo) depend only on nodes+refs,
+    -- so they're cached until the structure changes (Add invalidates). STATE-derived
+    -- results (online) depend on live subject predicates, so they're only memoised
+    -- within an explicit pass (Begin/EndPass), never across one.
+    p.cacheValidate = nil  -- { ok, issues }
+    p.cacheTopo = nil      -- ordered id list
+    p.memo = nil           -- id -> bool, only non-nil between Begin/EndPass
 end
 
 -- ---- condition builders (pure; ignore self, but read nicely as g:All(...)) ------------
@@ -89,11 +98,18 @@ function DependencyGraph:Add(id, subject, condition)
     local p = self:_p()
     assert(type(id) == "string" and id ~= "", "DependencyGraph: node id must be a non-empty string")
     assert(not p.nodes[id], "DependencyGraph: duplicate node id '" .. id .. "'")
+    -- The subject must be a predicate: a function, or an object implementing the
+    -- graph's method (default :IsActive). Catch a mis-wired node now, not as a silent
+    -- always-offline at query time.
+    assert(type(subject) == "function" or (type(subject) == "table" and type(subject[p.method]) == "function"),
+        ("DependencyGraph: node '%s' subject must be a function or implement :%s()"):format(id, p.method))
     if condition ~= nil and (type(condition) == "string" or condition.kind == nil) then
         condition = self:Parse(condition)  -- accept "key" / declarative specs as well as built conditions
     end
     p.nodes[id] = { id = id, subject = subject, condition = condition }
     p.order[#p.order + 1] = id
+    p.cacheValidate = nil  -- structure changed; drop structure-derived caches
+    p.cacheTopo = nil
     return self
 end
 
@@ -132,14 +148,28 @@ function DependencyGraph:_Eval(cond, visiting)
 end
 
 function DependencyGraph:_Online(id, visiting)
-    local node = self:_p().nodes[id]
+    local p = self:_p()
+    local memo = p.memo
+    if memo then
+        local hit = memo[id]
+        if hit ~= nil then return hit end   -- already resolved this pass
+    end
+    local node = p.nodes[id]
     if not node then return false end       -- dangling reference -> never online
-    if visiting[id] then return false end   -- cycle -> defensively false (Validate reports it)
+    if visiting[id] then return false end   -- cycle -> defensively false (don't memoise a partial)
     visiting[id] = true
     local online = self:_Active(node) and self:_Eval(node.condition, visiting)
     visiting[id] = nil
+    if memo then memo[id] = online end      -- safe: subjects don't change within a pass
     return online
 end
+
+-- Open/close a memoisation pass. Inside one, repeated online queries reuse a single
+-- evaluation of each node (so shared parent subtrees are walked once, not once per
+-- dependent). The CALLER must guarantee no subject's state changes between Begin and
+-- End -- read all decisions first, then act (see SubmoduleManager:Reevaluate).
+function DependencyGraph:BeginPass() self:_p().memo = {} end
+function DependencyGraph:EndPass()   self:_p().memo = nil end
 
 -- The subject's own predicate, ignoring dependencies.
 function DependencyGraph:IsActive(id)
@@ -184,6 +214,7 @@ end
 -- offending path). Cheap; call once after building a graph.
 function DependencyGraph:Validate()
     local p = self:_p()
+    if p.cacheValidate then return p.cacheValidate.ok, p.cacheValidate.issues end
     local issues = {}
 
     for _, id in ipairs(p.order) do
@@ -222,7 +253,23 @@ function DependencyGraph:Validate()
         if colour[id] == WHITE then dfs(id) end
     end
 
-    return #issues == 0, issues
+    p.cacheValidate = { ok = (#issues == 0), issues = issues }
+    return p.cacheValidate.ok, p.cacheValidate.issues
+end
+
+-- Hard-fail variant of Validate: raises a Lua error listing every structural problem
+-- (circular dependencies and dangling references). A structural dependency fault is a
+-- programmer bug, never a valid runtime state, so subsystems that ORDER real components
+-- (the Service/Module/Submodule managers) assert instead of degrading quietly. The live
+-- evaluators still resolve a cycle to false as a backstop, but a mis-wired graph should
+-- surface loudly at startup -- not silently leave a component un-loaded. `label` names the
+-- failing layer in the message.
+function DependencyGraph:AssertValid(label)
+    local ok, issues = self:Validate()
+    if not ok then
+        error((label or "DependencyGraph") .. ": " .. table.concat(issues, "; "), 2)
+    end
+    return true
 end
 
 -- ---- ordering -------------------------------------------------------------------------
@@ -232,6 +279,7 @@ end
 -- DFS post-order over each node's refs; stable in insertion order.
 function DependencyGraph:TopologicalOrder()
     local p = self:_p()
+    if p.cacheTopo then return p.cacheTopo end   -- structure unchanged since last call
     local order, state = {}, {}   -- state: nil | "visiting" | "done"
     local function visit(id)
         if not p.nodes[id] or state[id] == "done" or state[id] == "visiting" then return end
@@ -243,6 +291,7 @@ function DependencyGraph:TopologicalOrder()
         order[#order + 1] = id
     end
     for _, id in ipairs(p.order) do visit(id) end
+    p.cacheTopo = order   -- callers treat the result as read-only
     return order
 end
 

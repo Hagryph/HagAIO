@@ -24,7 +24,9 @@ local Class = ns.Class
 --       onLoad = function(host) ... end, onUnload = function(host) ... end,
 --   }))
 
-local Submodule = Class.new("Submodule")
+-- Inherits ns.Component for the auto-released resource registry (self:On/Every/...
+-- with named scopes) and the shared settings accessors + broadcast.
+local Submodule = Class.new("Submodule", ns.Component)
 
 function Submodule:Initialize(name, opts)
     opts = opts or {}
@@ -65,16 +67,15 @@ function Submodule:_DB()
     return p.db
 end
 
-function Submodule:GetSetting(key)
-    local db = self:_DB()
-    return db and db[key]
+-- Settings hooks for ns.Component: values live in this submodule's namespace, the
+-- broadcast id is "sub:<name>", and a change forwards to the opts onSettingChanged.
+function Submodule:_SettingsDB() return self:_DB() end
+function Submodule:_SettingsOwnerId() return "sub:" .. self:_p().name end
+function Submodule:OnSettingChanged(key, value)
+    local p = self:_p()
+    if p.onSettingChanged then p.onSettingChanged(p.host, key, value) end
 end
 
-function Submodule:SetSetting(key, value)
-    local db = self:_DB()
-    if db then db[key] = value end
-    if self:_p().onSettingChanged then self:_p().onSettingChanged(self:_p().host, key, value) end
-end
 function Submodule:GetParent() return self:_p().parent end
 function Submodule:GetEvents() return self:_p().events end
 function Submodule:GetServiceDeps() return self:_p().serviceDeps end
@@ -119,6 +120,7 @@ function Submodule:_Unload()
     if not p.loaded then return end
     p.loaded = false
     if p.onUnload then p.onUnload(p.host, self) end
+    self:_ReleaseAll()  -- undo any self:On / self:Every / ... registered while loaded
 end
 
 ns.Submodule = Submodule

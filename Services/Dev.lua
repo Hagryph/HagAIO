@@ -1,7 +1,7 @@
 local addonName, ns = ...
 local Class = ns.Class
 
--- Core/Dev.lua
+-- Services/Dev.lua
 -- Developer-only service (not surfaced in normal use). Owns the FULL CVar dump: it
 -- enumerates every console variable and shows them -- name, default, scope -- in the copy
 -- window, ready to Ctrl+C, so we can capture the complete list each patch and keep the
@@ -80,5 +80,6 @@ function Dev:_Slash(rest)
     end
 end
 
--- Dev registers a slash sub-command in OnInitialize, so it loads after SlashCommand.
-ns.ServiceManager:Register(Dev:New("Dev", { deps = { "SlashCommand" } }))
+-- Dev registers a slash sub-command in OnInitialize (after SlashCommand) and shows
+-- its dumps in the shared CopyWindow.
+ns.ServiceManager:Register(Dev:New("Dev", { deps = { "SlashCommand", "CopyWindow" } }))

@@ -1,7 +1,7 @@
 local addonName, ns = ...
 local Class = ns.Class
 
--- Core/ActionBars.lua
+-- Services/ActionBars.lua
 -- Service for locating action buttons by what they cast and annotating them.
 -- Enumerates the standard action bars, resolves each button's effective spell
 -- (a direct spell, an override, or the spell a macro casts) and returns the live

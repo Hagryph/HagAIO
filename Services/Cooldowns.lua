@@ -1,7 +1,7 @@
 local addonName, ns = ...
 local Class = ns.Class
 
--- Core/Cooldowns.lua
+-- Services/Cooldowns.lua
 -- Watch a spell's cooldown WITHOUT reading secret values. In 12.0 the live
 -- start/duration are secret, but `isActive`/`isOnGCD` are non-secret booleans and
 -- GetSpellBaseCooldown is static. So we flip ON only on a real cast

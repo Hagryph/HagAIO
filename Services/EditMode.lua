@@ -1,7 +1,7 @@
 local addonName, ns = ...
 local Class = ns.Class
 
--- Core/EditMode.lua
+-- Services/EditMode.lua
 -- Standalone framework letting any module register a frame to be positioned via
 -- Blizzard's Edit Mode. While Edit Mode is active the registered frames become
 -- draggable; on release they snap to the Edit Mode grid (when it's shown) and to

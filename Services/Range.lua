@@ -1,7 +1,7 @@
 local addonName, ns = ...
 local Class = ns.Class
 
--- Core/Range.lua
+-- Services/Range.lua
 -- Range service: "is this enemy within N yards?" and "how many enemies within N
 -- yards?", by yardage. The reliable in-combat primitive is C_Item.IsItemInRange
 -- with a harm item of the wanted range (item range checks are NOT combat-forbidden,

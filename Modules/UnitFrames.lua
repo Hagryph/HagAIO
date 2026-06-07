@@ -55,7 +55,6 @@ function UnitFrames:OnInitialize()
     local p = self:_p()
     p.curve = nil
     p.bars = {}      -- unit -> the real StatusBar (learned from the hook)
-    p.tokens = {}
 end
 
 function UnitFrames:OnEnable()
@@ -79,10 +78,10 @@ function UnitFrames:OnEnable()
     end
 
     -- Drive recolouring on health changes (the example's UNIT_HEALTH approach).
-    local bus = ns.EventBus
-    p.tokens["UNIT_HEALTH"]            = bus:On("UNIT_HEALTH",           function(_, u) self:_Color(u) end)
-    p.tokens["UNIT_MAXHEALTH"]        = bus:On("UNIT_MAXHEALTH",        function(_, u) self:_Color(u) end)
-    p.tokens["PLAYER_TARGET_CHANGED"] = bus:On("PLAYER_TARGET_CHANGED", function() self:_Color("target") end)
+    -- Subscriptions are auto-released on disable.
+    self:On("UNIT_HEALTH",           function(_, u) self:_Color(u) end)
+    self:On("UNIT_MAXHEALTH",        function(_, u) self:_Color(u) end)
+    self:On("PLAYER_TARGET_CHANGED", function() self:_Color("target") end)
 
     self:_Color("player")
     self:_Color("target")
@@ -90,9 +89,6 @@ end
 
 function UnitFrames:OnDisable()
     local p = self:_p()
-    local bus = ns.EventBus
-    for event, token in pairs(p.tokens) do bus:Off(event, token) end
-    wipe(p.tokens)
     for _, bar in pairs(p.bars) do restore(bar) end
 end
 

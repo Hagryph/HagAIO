@@ -1,7 +1,7 @@
 local addonName, ns = ...
 local Class = ns.Class
 
--- Core/EventBus.lua
+-- Services/EventBus.lua
 -- Singleton pub/sub layer over a hidden driver frame. Wraps both real game
 -- events (RegisterEvent) and custom in-addon messages so modules never have to
 -- create their own frames or collide on OnEvent handlers.
@@ -68,6 +68,17 @@ function EventBus:Subscribe(message, fn)
     local token = freshToken(p)
     p.messages[message][token] = fn
     return token
+end
+
+-- Remove a custom-message handler by the token Subscribe returned (mirror of
+-- Off for game events). Drops the message table once its last handler is gone.
+function EventBus:Unsubscribe(message, token)
+    if token == nil then return end
+    local p = self:_p()
+    local handlers = p.messages[message]
+    if not handlers then return end
+    handlers[token] = nil
+    if not next(handlers) then p.messages[message] = nil end
 end
 
 -- Broadcast a custom in-addon message.

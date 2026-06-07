@@ -1,7 +1,7 @@
 local addonName, ns = ...
 local Class = ns.Class
 
--- Core/Scaling.lua
+-- Services/Scaling.lua
 -- Models WoW "up to X% more" health-based scaling (damage OR healing) as a clamped linear
 -- ramp with an optional PLATEAU. Mirrors SimulationCraft's missing_health_percentage_t:
 --   multiplier = 1 + bonus * t,   t = clamp((highPct - hp) / (highPct - lowPct), 0, 1)

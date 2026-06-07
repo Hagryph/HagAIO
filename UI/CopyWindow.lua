@@ -201,10 +201,37 @@ end
 function CopyWindow:Show(title, text)
     self:Build()
     local p = self:_p()
+    if p.acceptBtn then p.acceptBtn:Hide() end   -- copy-out mode: no Import button
     p.titleText = title or "Copy"
     p.pages = paginate(text or "")
     p.frame:Show()
     self:_Goto(1)
+end
+
+-- Paste-IN mode: an empty, editable box + an "Import" button that hands the pasted
+-- text to onAccept and closes. Reuses the same multi-line edit box.
+function CopyWindow:Prompt(title, onAccept)
+    self:Build()
+    local p = self:_p()
+    if not p.acceptBtn then
+        local b = W.TextButton(p.frame, "Import")
+        b:SetPoint("CENTER", p.footer, "CENTER", 0, 0)
+        p.acceptBtn = b
+    end
+    p.titleText = title or "Import"
+    p.title:SetText(p.titleText)
+    p.footer:Show()
+    p.prev:Hide(); p.next:Hide(); p.pageLabel:Hide()
+    p.acceptBtn:Show()
+    p.acceptBtn:SetScript("OnClick", function()
+        local text = p.editBox:GetText()
+        self:Hide()
+        p.prev:Show(); p.next:Show(); p.pageLabel:Show()  -- restore for copy-out
+        if onAccept then onAccept(text) end
+    end)
+    p.frame:Show()
+    p.editBox:SetText("")
+    p.editBox:SetFocus()
 end
 
 function CopyWindow:Hide()

@@ -1,16 +1,25 @@
 local addonName, ns = ...
 local Class = ns.Class
 
--- Core/SlashCommand.lua
--- Singleton slash-command router for /hagaio (alias /hag). Sub-commands are
--- registered as { fn, help } entries; an empty command opens the options panel.
+-- Services/SlashCommand.lua
+-- Singleton slash-command router for /hagaio (alias /hag). It is a GENERIC router
+-- with no dependencies: features register their own sub-commands as { fn, help }
+-- entries, and one feature may claim the empty command via SetDefaultHandler. The
+-- settings window, for example, registers "config"/"log" and the default handler
+-- itself (it depends on this service) -- so this router never references any UI.
 
 local SlashCommand = Class.new("SlashCommand", ns.Service)
 
 function SlashCommand:OnInitialize()
     local p = self:_p()
-    p.handlers = {}      -- subcommand -> { fn = fn, help = string }
+    p.handlers = {}        -- subcommand -> { fn = fn, help = string }
+    p.defaultHandler = nil -- run for an empty command (set by a feature); falls back to help
     p.registered = false
+end
+
+-- Claim the bare "/hag" (no sub-command) action. Last caller wins.
+function SlashCommand:SetDefaultHandler(fn)
+    self:_p().defaultHandler = fn
 end
 
 local function trim(s)
@@ -28,8 +37,8 @@ function SlashCommand:_Dispatch(msg)
     local entry = p.handlers[sub]
     if entry then
         entry.fn(rest)
-    elseif sub == "" then
-        ns.UI.SettingsWindow:Toggle()
+    elseif sub == "" and p.defaultHandler then
+        p.defaultHandler(rest)
     else
         self:_PrintHelp()
     end
@@ -53,10 +62,9 @@ function SlashCommand:Activate()
     SLASH_HAGAIO2 = "/hag"
     SlashCmdList["HAGAIO"] = function(msg) self:_Dispatch(msg) end
 
-    self:Register("config", function() ns.UI.SettingsWindow:Toggle() end,
-        "open the settings window")
-    self:Register("log", function() ns.UI.SettingsWindow:Show("log") end,
-        "open the activity log")
+    -- "config"/"log" and the default (bare-command) action are contributed by the
+    -- settings window itself (see SettingsWindow:OnInitialize) so this router stays
+    -- UI-agnostic. Only generic, dependency-free built-ins live here.
     self:Register("help", function() self:_PrintHelp() end,
         "list commands")
     self:Register("modules", function()

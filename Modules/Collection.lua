@@ -132,6 +132,7 @@ ns.ModuleManager:Register(Collection:New("Collection", {
     description = "Right-click an uncollected mount, pet, toy or heirloom to track it in your Task List.",
     defaultEnabled = true,
     color = ns.Theme.hex.accentDim,
+    deps = { "EventBus" },        -- waits on ADDON_LOADED for Blizzard_Collections
     moduleDeps = { "Tasklist" },  -- tracking lives in the Task List
     settings = {
         { type = "header", text = "Collections" },

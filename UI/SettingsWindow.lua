@@ -18,6 +18,31 @@ function SettingsWindow:OnInitialize()
     p.modulePages = {}    -- name -> auto-generated module settings page
     p.nav = {}
     p.current = nil
+    p.generalToggles = {} -- descriptors pushed in by addon-wide features (see RegisterGeneralToggle)
+
+    -- Own our slash commands (we depend on the router, not the reverse): the bare
+    -- "/hag" plus "/hag config" toggle this window; "/hag log" jumps to the log page.
+    ns.SlashCommand:SetDefaultHandler(function() self:Toggle() end)
+    ns.SlashCommand:Register("config", function() self:Toggle() end, "open the settings window")
+    ns.SlashCommand:Register("log", function() self:Show("log") end, "open the activity log")
+end
+
+-- Let an addon-wide feature contribute a toggle to the static "General" page
+-- WITHOUT the settings window having to know that feature exists. This inverts
+-- the dependency: the compartment / minimap icons push their toggle in here (they
+-- already depend on this window to open it), so this window never reaches back
+-- into them -- no dependency cycle. Descriptor fields:
+--   section     : group label on the page (default "General")
+--   label       : the toggle's text
+--   desc        : a faint one-line description under it
+--   flagReload  : true to append the "(reload)" hint to the label
+--   get()       : -> current bool state
+--   set(on)     : apply; may return true if a /reload is needed to take effect
+--   reloadMsg   : warning logged when set() reports a reload is needed
+function SettingsWindow:RegisterGeneralToggle(desc)
+    local p = self:_p()
+    p.generalToggles = p.generalToggles or {}
+    p.generalToggles[#p.generalToggles + 1] = desc
 end
 
 -- ---- construction ---------------------------------------------------------
@@ -77,17 +102,19 @@ function SettingsWindow:Build()
     p.content = content
 
     -- pages
-    p.pages.modules = self:_BuildModulesPage(content)
-    p.pages.general = self:_BuildGeneralPage(content)
-    p.pages.log     = self:_BuildLogPage(content)
-    p.pages.about   = self:_BuildAboutPage(content)
+    p.pages.modules  = self:_BuildModulesPage(content)
+    p.pages.general  = self:_BuildGeneralPage(content)
+    p.pages.profiles = self:_BuildProfilesPage(content)
+    p.pages.log      = self:_BuildLogPage(content)
+    p.pages.about    = self:_BuildAboutPage(content)
 
     -- nav items
     local defs = {
-        { key = "general", text = "General" },
-        { key = "modules", text = "Modules" },
-        { key = "log",     text = "Log" },
-        { key = "about",   text = "About" },
+        { key = "general",  text = "General" },
+        { key = "modules",  text = "Modules" },
+        { key = "profiles", text = "Profiles" },
+        { key = "log",      text = "Log" },
+        { key = "about",    text = "About" },
     }
     local y = -42
     for _, d in ipairs(defs) do
@@ -227,8 +254,12 @@ function SettingsWindow:_RefreshModules()
     end
 end
 
--- Static "General" page: addon-wide options (currently the icon toggles).
+-- Static "General" page: addon-wide options. Its contents are CONTRIBUTED by
+-- features via RegisterGeneralToggle (e.g. the compartment / minimap icons) so
+-- this page never references those features directly -- keeping the dependency
+-- one-way (icons -> window) with no cycle.
 function SettingsWindow:_BuildGeneralPage(parent)
+    local p = self:_p()
     local page = CreateFrame("Frame", nil, parent)
     page:SetAllPoints()
 
@@ -241,32 +272,150 @@ function SettingsWindow:_BuildGeneralPage(parent)
     div:SetPoint("TOPLEFT", note, "BOTTOMLEFT", 0, -12)
     div:SetPoint("RIGHT", page, "RIGHT", -18, 0)
 
-    -- Icons section
-    local icons = W.SectionLabel(page, "Icons")
-    icons:SetPoint("TOPLEFT", div, "BOTTOMLEFT", 4, -16)
-
-    local comp = W.Toggle(page, W.FlagReload("Compartment icon"))
-    comp:SetPoint("TOPLEFT", icons, "BOTTOMLEFT", 2, -12)
-    comp:SetChecked(ns.Compartment:IsShown())
-    comp:SetOnToggle(function(on)
-        local needsReload = ns.Compartment:SetShown(on)
-        if needsReload then
-            ns.Logger:Core():Warn("Reload your UI (/reload) to remove the compartment icon.")
+    -- y descends from just below the divider; everything anchors to the page's
+    -- top-left at a fixed x so section/toggle/desc indents stay consistent.
+    local y = -90
+    local lastSection = nil
+    for _, d in ipairs(p.generalToggles or {}) do
+        local section = d.section or "General"
+        if section ~= lastSection then
+            local label = W.SectionLabel(page, section)
+            label:SetPoint("TOPLEFT", 22, y)
+            y = y - 28
+            lastSection = section
         end
-    end)
-    local compDesc = W.Text(page, "Shows HagAIO in the minimap's addon-compartment menu.",
-        "textFaint", "GameFontHighlightSmall")
-    compDesc:SetPoint("TOPLEFT", comp, "BOTTOMLEFT", 26, -2)
 
-    local mini = W.Toggle(page, "Minimap icon")
-    mini:SetPoint("TOPLEFT", compDesc, "BOTTOMLEFT", -26, -14)
-    mini:SetChecked(ns.MinimapIcon:IsShown())
-    mini:SetOnToggle(function(on) ns.MinimapIcon:SetShown(on) end)
-    local miniDesc = W.Text(page, "Adds a draggable button on the minimap edge.",
-        "textFaint", "GameFontHighlightSmall")
-    miniDesc:SetPoint("TOPLEFT", mini, "BOTTOMLEFT", 26, -2)
+        local toggle = W.Toggle(page, d.flagReload and W.FlagReload(d.label) or d.label)
+        toggle:SetPoint("TOPLEFT", 20, y)
+        toggle:SetChecked(d.get and d.get())
+        toggle:SetOnToggle(function(on)
+            local needsReload = d.set and d.set(on)
+            if needsReload and d.reloadMsg then
+                ns.Logger:Core():Warn(d.reloadMsg)
+            end
+        end)
+        y = y - 24
+
+        if d.desc and d.desc ~= "" then
+            local desc = W.Text(page, d.desc, "textFaint", "GameFontHighlightSmall")
+            desc:SetPoint("TOPLEFT", 46, y)
+            y = y - 22
+        end
+    end
 
     return page
+end
+
+-- ---- Profiles page --------------------------------------------------------
+function SettingsWindow:_BuildProfilesPage(parent)
+    local p = self:_p()
+    local page = CreateFrame("Frame", nil, parent)
+    page:SetAllPoints()
+
+    local title = W.Text(page, "Profiles", "text", "GameFontNormalLarge")
+    title:SetPoint("TOPLEFT", 18, -16)
+    local note = W.Text(page, "Save, switch and share full config sets. Loading a profile applies after /reload.",
+        "textDim", "GameFontHighlightSmall")
+    note:SetPoint("TOPLEFT", title, "BOTTOMLEFT", 0, -6)
+    local div = W.Divider(page)
+    div:SetPoint("TOPLEFT", note, "BOTTOMLEFT", 0, -12)
+    div:SetPoint("RIGHT", page, "RIGHT", -18, 0)
+
+    -- save-current row
+    local saveLabel = W.Text(page, "Save current config as:", "textDim", "GameFontHighlightSmall")
+    saveLabel:SetPoint("TOPLEFT", 22, -64)
+    local input = W.Input(page, 180)
+    input:SetPoint("TOPLEFT", 20, -82)
+    local save = W.TextButton(page, "Save")
+    save:SetPoint("LEFT", input, "RIGHT", 16, 0)
+    save:SetScript("OnClick", function()
+        local name = input:GetText()
+        if name and name ~= "" then
+            ns.Profiles:Save(name)
+            input:SetText("")
+            ns.Logger:Core():Success("saved profile '" .. name .. "'")
+            self:_RefreshProfilesPage()
+        end
+    end)
+    local import = W.TextButton(page, "Import string")
+    import:SetPoint("LEFT", save, "RIGHT", 24, 0)
+    import:SetScript("OnClick", function()
+        ns.UI.CopyWindow:Prompt("Paste a profile string, then Import", function(text)
+            local ok, res = ns.Profiles:Import(text, "Imported")
+            if ok then
+                ns.Logger:Core():Success("imported as '" .. res .. "'")
+                self:_RefreshProfilesPage()
+            else
+                ns.Logger:Core():Warn("import failed: " .. tostring(res))
+            end
+        end)
+    end)
+
+    local listLabel = W.SectionLabel(page, "Saved profiles")
+    listLabel:SetPoint("TOPLEFT", 22, -124)
+    local empty = W.Text(page, "No profiles yet.", "textFaint", "GameFontHighlightSmall")
+    empty:SetPoint("TOPLEFT", 24, -150)
+    p.profileEmpty = empty
+    p.profileRows = {}
+
+    page:SetScript("OnShow", function() self:_RefreshProfilesPage() end)
+    return page
+end
+
+-- A reusable row: name + Load / Export / Delete, acting on row.name.
+function SettingsWindow:_BuildProfileRow(page)
+    local row = CreateFrame("Frame", nil, page)
+    row:SetHeight(26)
+    local label = W.Text(row, "", "text", "GameFontHighlight")
+    label:SetPoint("LEFT", 2, 0)
+    row.label = label
+
+    local del = W.TextButton(row, "Delete")
+    del:SetPoint("RIGHT", 0, 0)
+    del:SetScript("OnClick", function()
+        if not row.name then return end
+        ns.Profiles:Delete(row.name)
+        self:_RefreshProfilesPage()
+    end)
+    local export = W.TextButton(row, "Export")
+    export:SetPoint("RIGHT", del, "LEFT", -16, 0)
+    export:SetScript("OnClick", function()
+        if not row.name then return end
+        local str, err = ns.Profiles:Export(row.name)
+        if str then ns.UI.CopyWindow:Show("Profile - " .. row.name, str)
+        else ns.Logger:Core():Warn(err or "export failed") end
+    end)
+    local load = W.TextButton(row, "Load")
+    load:SetPoint("RIGHT", export, "LEFT", -16, 0)
+    load:SetScript("OnClick", function()
+        if not row.name then return end
+        local ok, err = ns.Profiles:LoadProfile(row.name)
+        if ok then ns.Logger:Core():Success(("loaded '%s' -- type /reload to apply"):format(row.name))
+        else ns.Logger:Core():Warn(err or "load failed") end
+    end)
+    return row
+end
+
+-- Rebuild the saved-profile list (cheap; called on show + after save/delete/import).
+function SettingsWindow:_RefreshProfilesPage()
+    local p = self:_p()
+    local page = p.pages and p.pages.profiles
+    if not page then return end
+    for _, row in ipairs(p.profileRows) do row:Hide() end
+    local names = ns.Profiles and ns.Profiles:List() or {}
+    p.profileEmpty:SetShown(#names == 0)
+    local y = -150
+    for i, name in ipairs(names) do
+        local row = p.profileRows[i]
+        if not row then row = self:_BuildProfileRow(page); p.profileRows[i] = row end
+        row:ClearAllPoints()
+        row:SetPoint("TOPLEFT", page, "TOPLEFT", 22, y)
+        row:SetPoint("RIGHT", page, "RIGHT", -22, 0)
+        row.label:SetText(name)
+        row.name = name
+        row:Show()
+        y = y - 30
+    end
 end
 
 -- Drop a module's cached settings page so it rebuilds from the CURRENT schema
@@ -466,7 +615,7 @@ function SettingsWindow:_BuildLogPage(parent)
     clear:SetPoint("RIGHT", page, "RIGHT", -18, 0)
     clear:SetPoint("TOP", title, "TOP", 0, 3)
     clear:SetScript("OnClick", function()
-        wipe(ns.Logger:GetHistory())
+        ns.Logger:Clear()
         self:_RefreshLog()
     end)
 
@@ -615,4 +764,5 @@ function SettingsWindow:Toggle()
     if p.frame:IsShown() then self:Hide() else self:Show(p.current or "modules") end
 end
 
-ns.ServiceManager:Register(SettingsWindow:New("SettingsWindow", { ui = true, deps = { "EventBus" } }))
+ns.ServiceManager:Register(SettingsWindow:New("SettingsWindow",
+    { ui = true, deps = { "EventBus", "SlashCommand", "Profiles", "CopyWindow" } }))

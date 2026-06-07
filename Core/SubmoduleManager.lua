@@ -80,10 +80,7 @@ function SubmoduleManager:_Graph()
         g:Add("sub:" .. name, function() return s:_ConditionMet() end, { all = s:_Refs() })
     end
 
-    local ok, issues = g:Validate()
-    if not ok then
-        for _, msg in ipairs(issues) do ns.Logger:Core():Warn("submodule dependencies: " .. msg) end
-    end
+    g:AssertValid("submodule dependencies")  -- a cycle or dangling dep is a fatal misconfiguration
     p.graph = g
     return g
 end
@@ -93,22 +90,34 @@ end
 function SubmoduleManager:Reevaluate()
     local p = self:_p()
     local g = self:_Graph()
-    local order = g:TopologicalOrder()
+    local order = g:TopologicalOrder()  -- cached until a submodule registers
 
+    -- DECIDE first, with online-state memoised for the whole sweep (every submodule
+    -- of a given module shares that module's subtree -- walked once, not once each).
+    -- We only READ here; loading/unloading happens after, so no subject changes
+    -- mid-pass (a callback that flips state emits its own event -> a fresh pass).
+    g:BeginPass()
+    local toUnload, toLoad = {}, {}
     for i = #order, 1, -1 do
         local n = order[i]:match("^sub:(.+)$")
         if n then
             local s = p.subs[n]
-            if s:IsLoaded() and not g:IsOnline("sub:" .. n) then s:_Unload() end
+            if s:IsLoaded() and not g:IsOnline("sub:" .. n) then toUnload[#toUnload + 1] = s end
         end
     end
     for _, id in ipairs(order) do
         local n = id:match("^sub:(.+)$")
         if n then
             local s = p.subs[n]
-            if not s:IsLoaded() and g:IsOnline(id) then s:_Load() end
+            if not s:IsLoaded() and g:IsOnline(id) then toLoad[#toLoad + 1] = s end
         end
     end
+    g:EndPass()
+
+    -- ACT: unload children-first, then load parents-first (order preserved above).
+    -- _Load/_Unload self-guard against double application.
+    for _, s in ipairs(toUnload) do s:_Unload() end
+    for _, s in ipairs(toLoad)   do s:_Load() end
 end
 
 function SubmoduleManager:_SubscribeEvents(sub)
@@ -127,7 +136,7 @@ function SubmoduleManager:StartAll()
     if p.started then return end
     p.started = true
     for _, name in ipairs(p.order) do self:_SubscribeEvents(p.subs[name]) end
-    ns.EventBus:Subscribe("HagAIO_ModuleState", function() self:Reevaluate() end)
+    p.msgToken = ns.EventBus:Subscribe("HagAIO_ModuleState", function() self:Reevaluate() end)
     self:Reevaluate()
 end
 

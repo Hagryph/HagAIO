@@ -1,13 +1,12 @@
 local addonName, ns = ...
 
 -- Modules/Class/Monk.lua
--- Monk class file: registers the Monk spec submodules into ns.ClassSubmodules.MONK
--- and adds the Monk-specific behaviour as methods on the shared ns.ClassModule.
--- Each specialisation is a submodule { settings, Load, Unload, OnSettingChanged }.
+-- Monk class file: adds the Monk behaviour as methods on the shared ns.ClassModule
+-- and registers the Monk submodule + per-spec submodules with the Submodule framework
+-- (Class -> Monk -> spec). Each spec is a table { settings, Load, Unload, OnSettingChanged }
+-- driven by a spec condition + PLAYER_SPECIALIZATION_CHANGED, not by manual swapping.
 
 local ClassModule = ns.ClassModule
-local SUBMODULES = ns.ClassSubmodules
-SUBMODULES.MONK = SUBMODULES.MONK or {}
 
 local EXPEL_HARM = 322101
 -- Expel Harm bar colours. Ready = cyan accent (stands out against the green->yellow->red
@@ -41,10 +40,9 @@ local SCK_BIAS = 1.20
 -- base heal at 0 orbs. It tracks the orbs IN and OUT of combat. 5 = Gift of the Ox cap.
 local ORB_MAX_COUNT = 5
 
--- bar-learning hooks + debug command are global; install once per session
+-- bar-learning hooks are global; install once per session
 local hookInstalled = false
 local powerHookInstalled = false
-local castCountCmdDone = false
 
 -- ---- spell-data helpers ---------------------------------------------------
 -- Grace of the Crane raises all healing taken by a flat % the Expel Harm tooltip
@@ -134,21 +132,15 @@ local Base = {
             end)
             hookInstalled = true
         end
-        -- one-time debug command: watch C_Spell.GetSpellCastCount (Expel Harm orbs)
-        if not castCountCmdDone and ns.SlashCommand then
-            castCountCmdDone = true
-            ns.SlashCommand:Register("scc", function() self:_ToggleCastCountDebug() end,
-                "toggle a per-second log of Expel Harm's GetSpellCastCount (orb count)")
-        end
 
         -- heal scales with spell power, so re-read it on anything that changes it
-        self:_Sub("UNIT_MAXHEALTH",             function(_, u) if u == "player" then self:_SnapshotMaxHP(); self:_ScheduleUpdate() end end)
-        self:_Sub("PLAYER_EQUIPMENT_CHANGED",   function() self:_RefreshHeal() end)
-        self:_Sub("PLAYER_LEVEL_UP",            function() self:_RefreshHeal() end)
-        self:_Sub("SPELLS_CHANGED",             function() self:_RefreshHeal() end)
-        self:_Sub("TRAIT_CONFIG_UPDATED",       function() self:_RefreshHeal() end)
-        self:_Sub("ACTIVE_COMBAT_CONFIG_CHANGED", function() self:_RefreshHeal() end)
-        self:_Sub("UNIT_AURA",                  function(_, u) if u == "player" then self:_RefreshHeal() end end)
+        self:On("UNIT_MAXHEALTH",             function(_, u) if u == "player" then self:_SnapshotMaxHP(); self:_ScheduleUpdate() end end, "spec")
+        self:On("PLAYER_EQUIPMENT_CHANGED",   function() self:_RefreshHeal() end, "spec")
+        self:On("PLAYER_LEVEL_UP",            function() self:_RefreshHeal() end, "spec")
+        self:On("SPELLS_CHANGED",             function() self:_RefreshHeal() end, "spec")
+        self:On("TRAIT_CONFIG_UPDATED",       function() self:_RefreshHeal() end, "spec")
+        self:On("ACTIVE_COMBAT_CONFIG_CHANGED", function() self:_RefreshHeal() end, "spec")
+        self:On("UNIT_AURA",                  function(_, u) if u == "player" then self:_RefreshHeal() end end, "spec")
         p.onCooldown = false
         p.expelActive = true
         -- recolour the marker (ready <-> on-cooldown) via the secret-safe Cooldowns
@@ -161,11 +153,10 @@ local Base = {
     end,
     Unload = function(self)
         local p = self:_p()
-        self:_UnloadSubs()
+        self:ReleaseScope("spec")   -- drop every spec event sub + the AoE ticker
         p.expelActive = false
         p.onCooldown = false
         if p.expelWatch then ns.Cooldowns:Unwatch(p.expelWatch); p.expelWatch = nil end
-        if p.sccTicker then p.sccTicker:Cancel(); p.sccTicker = nil end
         if p.marker then p.marker:Hide() end
         self:_HideOrbFill()
     end,
@@ -208,10 +199,10 @@ local Brewmaster = {
         end
 
         p.tigerActive = true
-        self:_Sub("UNIT_MAXPOWER",        function(_, u) if u == "player" then self:_ScheduleTiger() end end)
-        self:_Sub("UNIT_DISPLAYPOWER",    function(_, u) if u == "player" then self:_ScheduleTiger() end end)
-        self:_Sub("TRAIT_CONFIG_UPDATED", function() self:_ScheduleTiger() end)
-        self:_Sub("PLAYER_LEVEL_UP",      function() self:_ScheduleTiger() end)
+        self:On("UNIT_MAXPOWER",        function(_, u) if u == "player" then self:_ScheduleTiger() end end, "spec")
+        self:On("UNIT_DISPLAYPOWER",    function(_, u) if u == "player" then self:_ScheduleTiger() end end, "spec")
+        self:On("TRAIT_CONFIG_UPDATED", function() self:_ScheduleTiger() end, "spec")
+        self:On("PLAYER_LEVEL_UP",      function() self:_ScheduleTiger() end, "spec")
         self:_ScheduleTiger()
         self:_LoadAoE()
 
@@ -235,14 +226,55 @@ local Brewmaster = {
         self:_UnloadAoE()
         local p = self:_p()
         p.orbPollGen = (p.orbPollGen or 0) + 1   -- retire the poll loop
-        Base.Unload(self)  -- _UnloadSubs() removes every sub, incl. tiger's
+        Base.Unload(self)  -- releases the "spec" scope: every sub + AoE ticker, incl. tiger's
         p.tigerActive = false
         if p.tigerMarker then p.tigerMarker:Hide() end
     end,
 }
 
-SUBMODULES.MONK["none"] = Base        -- no specialisation
-SUBMODULES.MONK[1]      = Brewmaster  -- + Tiger Palm energy marker + AoE helper
+-- Register the Monk submodule tree with the framework: Class (module) -> Monk
+-- (loads on Monk characters) -> per-spec submodules (each loads on its matching spec,
+-- swapped automatically on PLAYER_SPECIALIZATION_CHANGED). Class no longer decides
+-- this -- the submodules' conditions + events do. The spec onLoad/onUnload run the
+-- spec table's Load/Unload against the Class module instance (the host).
+local classMod = ns.ModuleManager:GetModule("Class")
+local function isMonk() return (select(2, UnitClass("player"))) == "MONK" end
+
+ns.SubmoduleManager:Register(ns.Submodule:New("Monk", {
+    parent = { module = "Class" },        -- Class is the parent (no separate dependency needed)
+    condition = isMonk,
+}))
+
+local function registerSpec(name, spec, specKey, serviceDeps)
+    -- Every spec refreshes its settings page on load, so SettingsWindow is a
+    -- dependency of the shared onLoad below (not spec-specific) -- prepend it to
+    -- whatever services the spec's own features use.
+    local deps = { "SettingsWindow" }
+    for _, d in ipairs(serviceDeps) do deps[#deps + 1] = d end
+    ns.SubmoduleManager:Register(ns.Submodule:New(name, {
+        parent = { submodule = "Monk" },
+        host = classMod,
+        serviceDeps = deps,          -- SettingsWindow (shared onLoad) + the services THIS spec uses
+        condition = function() return classMod:CurrentSpecKey() == specKey end,
+        events = { "PLAYER_SPECIALIZATION_CHANGED", "PLAYER_ENTERING_WORLD" },
+        onLoad = function(host)
+            host:_p().activeSub = spec
+            host:_BuildSettings()
+            if spec.Load then spec.Load(host) end
+            if ns.UI and ns.UI.SettingsWindow then ns.UI.SettingsWindow:InvalidateModule(host:GetName()) end
+        end,
+        onUnload = function(host)
+            if spec.Unload then spec.Unload(host) end
+            host:_p().activeSub = nil
+        end,
+    }))
+end
+-- Base: Expel Harm marker (event subs, Cooldowns watch, secret-safe paint).
+registerSpec("Monk-Base", Base, "none",
+    { "EventBus", "Cooldowns", "Secrets" })
+-- Brewmaster: all of Base + the AoE helper (Range counts, ActionBars greying).
+registerSpec("Monk-Brewmaster", Brewmaster, 1,
+    { "EventBus", "Cooldowns", "Secrets", "Range", "ActionBars" })
 
 -- ===========================================================================
 -- Monk behaviour (methods on the shared ClassModule)
@@ -444,25 +476,24 @@ function ClassModule:_LoadAoE()
     -- prime the 8-yd checker (the Range service caches the item data)
     ns.Range:UnitInRange("player", SCK_RADIUS)
     -- re-find the spell buttons whenever the bars change
-    self:_Sub("ACTIONBAR_SLOT_CHANGED", function() self:_ScanAoEButtons() end)
-    self:_Sub("ACTIONBAR_PAGE_CHANGED", function() self:_ScanAoEButtons() end)
-    self:_Sub("UPDATE_BONUS_ACTIONBAR", function() self:_ScanAoEButtons() end)
-    self:_Sub("PLAYER_ENTERING_WORLD",  function() self:_ScanAoEButtons() end)
+    self:On("ACTIONBAR_SLOT_CHANGED", function() self:_ScanAoEButtons() end, "spec")
+    self:On("ACTIONBAR_PAGE_CHANGED", function() self:_ScanAoEButtons() end, "spec")
+    self:On("UPDATE_BONUS_ACTIONBAR", function() self:_ScanAoEButtons() end, "spec")
+    self:On("PLAYER_ENTERING_WORLD",  function() self:_ScanAoEButtons() end, "spec")
     self:_ScanAoEButtons()
 
     -- breakpoint between Tiger Palm and Spinning Crane Kick, recomputed when gear /
     -- talents / level change the tooltip damage.
     self:_RefreshAoEThreshold()
-    self:_Sub("PLAYER_EQUIPMENT_CHANGED", function() self:_RefreshAoEThreshold() end)
-    self:_Sub("TRAIT_CONFIG_UPDATED",     function() self:_RefreshAoEThreshold() end)
-    self:_Sub("SPELLS_CHANGED",           function() self:_RefreshAoEThreshold() end)
-    self:_Sub("PLAYER_LEVEL_UP",          function() self:_RefreshAoEThreshold() end)
+    self:On("PLAYER_EQUIPMENT_CHANGED", function() self:_RefreshAoEThreshold() end, "spec")
+    self:On("TRAIT_CONFIG_UPDATED",     function() self:_RefreshAoEThreshold() end, "spec")
+    self:On("SPELLS_CHANGED",           function() self:_RefreshAoEThreshold() end, "spec")
+    self:On("PLAYER_LEVEL_UP",          function() self:_RefreshAoEThreshold() end, "spec")
 
     -- one always-on throttled ticker that self-gates on combat + the toggle
-    -- (avoids races starting/stopping it on combat events).
-    if not p.aoeTicker then
-        p.aoeTicker = C_Timer.NewTicker(0.15, function() self:_UpdateAoE() end)
-    end
+    -- (avoids races starting/stopping it on combat events). Lives in the "spec"
+    -- scope, so it's cancelled automatically when the spec unloads.
+    self:Every(0.15, function() self:_UpdateAoE() end, nil, "spec")
 end
 
 -- The target count at which Spinning Crane Kick is worth pressing over Tiger Palm.
@@ -482,10 +513,10 @@ function ClassModule:_RefreshAoEThreshold()
 end
 
 function ClassModule:_UnloadAoE()
-    local p = self:_p()
-    if p.aoeTicker then p.aoeTicker:Cancel(); p.aoeTicker = nil end
+    -- The 0.15s ticker is in the "spec" scope (released by Base.Unload), so there's
+    -- no handle to cancel here; just clear the greying and mark inactive.
     self:_ClearAoEGrey()
-    p.aoeActive = false
+    self:_p().aoeActive = false
 end
 
 function ClassModule:_ScanAoEButtons()
@@ -512,49 +543,6 @@ function ClassModule:_ClearAoEGrey()
     for _, b in ipairs(p.sckButtons or {}) do ns.ActionBars:SetGrey(b, false) end
 end
 
--- ---- debug: C_Spell.GetSpellCastCount (Expel Harm orb count) ---------------
--- /hag scc toggles a 1s log of what GetSpellCastCount returns for Expel Harm so we
--- can see how it behaves out in the open vs. in restricted content (M+/raid/PvP),
--- where the orb count is expected to come back as a SECRET value. Each line reports
--- combat state and routes the value through the secret-safe Secrets service rather
--- than touching it directly (a raw tostring/compare on a secret would throw).
-function ClassModule:_DumpCastCount()
-    local L = ns.Log
-    local fn = C_Spell and C_Spell.GetSpellCastCount
-    if not fn then L.Print("|cffff4444GetSpellCastCount unavailable|r"); return end
-
-    -- The call itself is safe; what it RETURNS may be a secret. Never tostring/compare
-    -- it directly -- ask Secrets first, then only read it when it's plainly a number.
-    local raw = fn(EXPEL_HARM)
-    local isSecret = ns.Secrets:Is(raw)
-    local num = ns.Secrets:Number(raw)         -- nil when secret / non-numeric
-    local shown = isSecret and "|cffff8800<secret>|r" or tostring(raw)
-
-    -- Exercise the secret-value sink: paint the (possibly secret) value via Secrets:Text
-    -- onto a throwaway FontString -- the one legal way to "use" a secret we can't read.
-    local p = self:_p()
-    if not p.sccProbe then
-        p.sccProbe = UIParent:CreateFontString(nil, "BACKGROUND", "GameFontNormal")
-        p.sccProbe:Hide()   -- never shown; just proves the secret-safe call path works
-    end
-    local painted = ns.Secrets:Text(p.sccProbe, raw)
-
-    L.Print(("scc: combat=%s restricted=%s | raw=%s type=%s secret=%s Number=%s painted=%s"):format(
-        tostring(InCombatLockdown()), tostring(ns.Secrets:Restricted()),
-        shown, type(raw), tostring(isSecret), tostring(num), tostring(painted)))
-end
-
-function ClassModule:_ToggleCastCountDebug()
-    local p = self:_p()
-    if p.sccTicker then
-        p.sccTicker:Cancel(); p.sccTicker = nil
-        ns.Log.Print("|cffffff00scc debug off|r")
-        return
-    end
-    ns.Log.Print("|cffffff00scc debug on|r - logging Expel Harm GetSpellCastCount every 1s (/hag scc to stop)")
-    self:_DumpCastCount()
-    p.sccTicker = C_Timer.NewTicker(1, function() self:_DumpCastCount() end)
-end
 
 -- ---- Tiger Palm energy marker (Brewmaster) --------------------------------
 -- Combined energy cost of Tiger Palm + Keg Smash (non-secret spell data).

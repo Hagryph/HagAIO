@@ -1,7 +1,7 @@
 local addonName, ns = ...
 local Class = ns.Class
 
--- Core/Hooks.lua
+-- Services/Hooks.lua
 -- Removable secure-hook service. WoW's `hooksecurefunc` CANNOT be undone (there is
 -- no unhook), so -- like AceHook -- we install ONE permanent post-hook per target
 -- that dispatches to a set of registered handlers. "Unhooking" simply drops a

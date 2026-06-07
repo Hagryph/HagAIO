@@ -54,38 +54,22 @@ function Questing:OnInitialize()
     p.hovering = false
     -- quests
     p.skipTurnIn = {}   -- questIDs that need a manual reward choice
-    -- shared
-    p.tokens = {}
 end
 
+-- Event subscriptions are declared on the module (see registration below) and
+-- wired/torn down automatically; OnEnable only does the one-off setup.
 function Questing:OnEnable()
     local p = self:_p()
-    local bus = ns.EventBus
-
-    -- experience tracking
     self:_Snapshot()
     p.startTime = GetTime()
     p.sessionXP = 0
-    p.tokens["PLAYER_XP_UPDATE"]      = bus:On("PLAYER_XP_UPDATE",      function() self:_OnXP() end)
-    p.tokens["PLAYER_LEVEL_UP"]       = bus:On("PLAYER_LEVEL_UP",       function() self:_OnLevelUp() end)
-    p.tokens["PLAYER_ENTERING_WORLD"] = bus:On("PLAYER_ENTERING_WORLD", function() self:_Snapshot() end)
     self:_EnsureOverlay()
     if p.overlay then p.overlay:Show() end
     ns.SlashCommand:Register("xp", function() self:_PrintSession() end, "session XP / hour")
-
-    -- quest automation
-    p.tokens["GOSSIP_SHOW"]    = bus:On("GOSSIP_SHOW",    function() self:_OnGossip() end)
-    p.tokens["QUEST_GREETING"] = bus:On("QUEST_GREETING", function() self:_OnGreeting() end)
-    p.tokens["QUEST_DETAIL"]   = bus:On("QUEST_DETAIL",   function() self:_OnDetail() end)
-    p.tokens["QUEST_PROGRESS"] = bus:On("QUEST_PROGRESS", function() self:_OnProgress() end)
-    p.tokens["QUEST_COMPLETE"] = bus:On("QUEST_COMPLETE", function() self:_OnComplete() end)
 end
 
 function Questing:OnDisable()
     local p = self:_p()
-    local bus = ns.EventBus
-    for event, token in pairs(p.tokens) do bus:Off(event, token) end
-    wipe(p.tokens)
     wipe(p.skipTurnIn)
     if p.overlay then
         p.overlay:Hide()
@@ -329,6 +313,17 @@ ns.ModuleManager:Register(Questing:New("Questing", {
     description = "XP-per-hour tracking, plus auto-accepting and turning in quests.",
     defaultEnabled = true,
     color = ns.Theme.hex.gold,
+    deps = { "SlashCommand" },  -- registers its /hag xp sub-command
+    events = {
+        PLAYER_XP_UPDATE      = "_OnXP",
+        PLAYER_LEVEL_UP       = "_OnLevelUp",
+        PLAYER_ENTERING_WORLD = "_Snapshot",
+        GOSSIP_SHOW           = "_OnGossip",
+        QUEST_GREETING        = "_OnGreeting",
+        QUEST_DETAIL          = "_OnDetail",
+        QUEST_PROGRESS        = "_OnProgress",
+        QUEST_COMPLETE        = "_OnComplete",
+    },
     settings = {
         { type = "header", text = "Experience" },
         { type = "toggle", key = "showTooltip", label = "Show tooltip on the XP bar", default = true,

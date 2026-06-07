@@ -5,8 +5,12 @@ local Class = ns.Class
 -- Abstract base class for every feature module. Subclasses are created with
 -- `ns.Class.new("MyFeature", ns.Module)` and override the lifecycle hooks.
 -- Enable state and the persistence handle are private; access is via methods.
+--
+-- The resource registry (self:On/Subscribe/Hook/Every/... auto-released on disable)
+-- and the settings accessors live on ns.Component, the shared base; this class adds
+-- enable/disable, dependency gating, saved-var binding and logging.
 
-local Module = Class.new("Module")
+local Module = Class.new("Module", ns.Component)
 
 -- Constructor. Subclasses that need their own constructor should override
 -- Initialize and call Module.Initialize(self, name, opts) first.
@@ -19,6 +23,16 @@ local Module = Class.new("Module")
 -- available at all (e.g. "AllTheThings"); unavailable modules are hidden.
 -- `moduleDeps` names other HagAIO MODULES that must be ENABLED for this one to
 -- run; a module whose module-deps aren't met is shown greyed-out and can't enable.
+--
+-- `events` / `messages` are DECLARATIVE subscriptions wired automatically on
+-- Enable and torn down on Disable -- a module that only reacts to events needs no
+-- OnEnable/OnDisable plumbing at all. Each maps a name to either a method name on
+-- the module or a function; both are called as handler(self, eventOrMessage, ...):
+--   events   = { PLAYER_XP_UPDATE = "_OnXP", PLAYER_LEVEL_UP = function(self, e) ... end }
+--   messages = { HagAIO_SomeSignal = "_OnSignal" }
+-- For dynamic/conditional subscriptions inside OnEnable, use the self:On /
+-- self:Subscribe / self:Hook helpers instead -- they are released automatically on
+-- Disable, so OnDisable never has to undo them by hand.
 --
 -- Each settings schema entry drives one auto-generated control on the module's
 -- settings page (and seeds its saved-var default):
@@ -40,6 +54,8 @@ function Module:Initialize(name, opts)
     p.addonDeps = opts.addonDeps or {}            -- external addons required to be available
     p.moduleDeps = opts.moduleDeps or {}          -- other modules that must be enabled
     p.settings = opts.settings or {}
+    p.events = opts.events or {}                   -- declarative game-event subscriptions
+    p.messages = opts.messages or {}              -- declarative custom-message subscriptions
 
     -- Seed saved-var defaults from the settings schema, then layer any explicit
     -- dbDefaults on top.
@@ -84,18 +100,23 @@ function Module:IsPerChar() return self:_p().perChar end
 function Module:GetDB() return self:_p().db end
 function Module:GetLog() return self:_p().log end
 
--- Settings accessors (bound to the module's saved-var namespace).
-function Module:GetSetting(key)
-    local db = self:_p().db
-    return db and db[key]
-end
-function Module:SetSetting(key, value)
+-- Settings live in the module's saved-var namespace (see ns.Component for the
+-- shared GetSetting/SetSetting + the HagAIO_SettingChanged broadcast).
+function Module:_SettingsDB() return self:_p().db end
+
+-- Wire the declarative events/messages tables. Called by Enable; each entry is a
+-- method name or a function, invoked as handler(self, name, ...).
+function Module:_WireDeclared()
     local p = self:_p()
-    if p.db then p.db[key] = value end
-    self:OnSettingChanged(key, value)
+    local function bind(spec)
+        if type(spec) == "string" then
+            return function(name, ...) return self[spec](self, name, ...) end
+        end
+        return function(name, ...) return spec(self, name, ...) end
+    end
+    for event, spec in pairs(p.events) do self:On(event, bind(spec)) end
+    for message, spec in pairs(p.messages) do self:Subscribe(message, bind(spec)) end
 end
--- Hook: react to a setting change (no-op by default).
-function Module:OnSettingChanged(key, value) end
 
 -- Internal: bind saved-variable namespace. Called by ModuleManager at startup.
 function Module:_BindDB()
@@ -127,6 +148,7 @@ function Module:Enable()
     end
     p.enabled = true
     if self.OnEnable then self:OnEnable() end
+    self:_WireDeclared()  -- declarative events/messages (auto-released on disable)
     ns.SavedVars:SetModuleState(p.name, true, p.perChar)
     if p.log then p.log:Success("enabled") end
     if ns.EventBus and ns.EventBus.Emit then ns.EventBus:Emit("HagAIO_ModuleState", p.name, true) end
@@ -137,6 +159,7 @@ function Module:Disable()
     if not p.enabled then return end
     p.enabled = false
     if self.OnDisable then self:OnDisable() end
+    self:_ReleaseAll()  -- undo every self:On / self:Subscribe / self:Hook + declared wiring
     ns.SavedVars:SetModuleState(p.name, false, p.perChar)
     if p.log then p.log:Info("disabled") end
     ns.ModuleManager:DisableDependents(p.name)  -- cascade: modules that needed this one

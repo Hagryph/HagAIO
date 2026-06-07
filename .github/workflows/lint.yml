@@ -1,0 +1,50 @@
+name: Lint
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  depcheck:
+    name: Dependency declarations
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+      - name: Check every ns.<Service/Module> access is a declared dependency
+        run: node tools/depcheck.mjs
+
+  toccheck:
+    name: TOC file list
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+      - name: Check every .lua file is listed in HagAIO.toc
+        run: node tools/toccheck.mjs
+
+  deadcode:
+    name: Dead code
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+      - name: Check for unused locals / uncalled private methods
+        run: node tools/deadcode.mjs
+
+  test:
+    name: Unit tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: leafo/gh-actions-lua@v10
+        with:
+          luaVersion: "5.1"   # match WoW's Lua 5.1
+      - name: Run the headless test suite
+        run: lua Test/run.lua

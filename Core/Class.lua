@@ -26,6 +26,9 @@ end
 local Object = {}
 Object.__index = Object
 Object.__name = "Object"
+-- Each class carries the SET of itself + every ancestor, so IsInstanceOf is a
+-- single hash lookup instead of walking the __parent chain on every call.
+Object.__ancestors = { [Object] = true }
 
 -- Protected accessor to this instance's private field table.
 function Object:_p()
@@ -38,6 +41,9 @@ end
 
 function Object:IsInstanceOf(class)
     local mt = getmetatable(self)
+    local ancestors = mt and rawget(mt, "__ancestors")
+    if ancestors then return ancestors[class] == true end
+    -- Fallback for any metatable built without an ancestry set (defensive).
     while mt do
         if mt == class then return true end
         mt = rawget(mt, "__parent")
@@ -56,6 +62,11 @@ function Class.new(name, parent)
     class.__index = class
     class.__name = name
     class.__parent = parent
+    -- Ancestry = this class + everything the parent already counts as. Built once
+    -- at class-creation, so IsInstanceOf never walks the chain at call time.
+    local ancestors = { [class] = true }
+    for a in pairs(parent.__ancestors or { [parent] = true }) do ancestors[a] = true end
+    class.__ancestors = ancestors
 
     -- Instantiation entry point: MyClass:New(...).
     function class:New(...)
@@ -63,6 +74,17 @@ function Class.new(name, parent)
     end
 
     return class
+end
+
+-- Abstract-method marker. Assign the result to a base-class method that EVERY
+-- concrete subclass MUST override; reaching the base version (a forgotten override)
+-- raises a clear, class-named error instead of silently no-oping.
+--   MyBase.DoThing = Class.abstract("DoThing")
+function Class.abstract(name)
+    return function(self)
+        error(("%s: abstract method '%s' must be overridden by the subclass"):format(
+            (type(self) == "table" and self.GetClassName and self:GetClassName()) or "?", name), 2)
+    end
 end
 
 ns.Class = Class

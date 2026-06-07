@@ -57,10 +57,7 @@ function ModuleManager:_DepGraph()
         g:Add("module:" .. name, m, (#refs > 0) and { all = refs } or nil)
     end
 
-    local ok, issues = g:Validate()
-    if not ok then
-        for _, msg in ipairs(issues) do ns.Logger:Core():Warn("module dependencies: " .. msg) end
-    end
+    g:AssertValid("module dependencies")  -- a cycle or dangling dep is a fatal misconfiguration
     p.depGraph = g
     return g
 end

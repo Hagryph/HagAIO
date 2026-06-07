@@ -13,7 +13,9 @@ local Class = ns.Class
 --   <load>               -> ServiceManager:StartAll() boots every service
 --   ADDON_LOADED(HagAIO) -> load saved vars, apply one-time defaults,
 --                           load logger prefs, activate slash commands
---   PLAYER_LOGIN         -> start all registered modules, add compartment button
+--   PLAYER_LOGIN         -> start all registered modules + submodules
+--                           (services that need login, e.g. Compartment/MinimapIcon,
+--                            subscribe it themselves)
 --   PLAYER_LOGOUT        -> shut down modules then services (cleanup before reload)
 --
 -- The single :Run() call at the end is the only top-level statement in the addon.
@@ -29,6 +31,16 @@ function Initializer:Run()
     if p.started then return end
     p.started = true
 
+    -- Fail fast on a broken load order. The bootstrapper drives the registries and
+    -- logs through these self-instantiating Core singletons; if any is missing, its
+    -- Core file didn't load before Init.lua. Surface it loudly rather than dying
+    -- later with a cryptic nil index.
+    for _, name in ipairs({ "Logger", "ServiceManager", "ModuleManager", "SubmoduleManager" }) do
+        if not ns[name] then
+            error(("HagAIO: ns.%s is missing -- its Core file must load before Core/Init.lua (check the .toc order)"):format(name), 0)
+        end
+    end
+
     -- One call boots the whole service layer: the ServiceManager orders every
     -- registered service by its declared dependencies and runs OnInitialize so
     -- each one starts only after the services it depends on are loaded.
@@ -40,6 +52,7 @@ function Initializer:Run()
         if loaded ~= addonName then return end
         local sv = ns.SavedVars
         sv:Load()
+        sv:Migrate()                 -- bring stored data up to the current schema
         self:_ApplyDefaults(sv)
         ns.Logger:LoadSettings()
         ns.SlashCommand:Activate()
@@ -50,8 +63,8 @@ function Initializer:Run()
     bus:On("PLAYER_LOGIN", function()
         ns.ModuleManager:StartAll()
         ns.SubmoduleManager:StartAll()   -- after modules: load condition-gated submodules
-        ns.Compartment:Register()
-        ns.MinimapIcon:Refresh()
+        -- The Compartment / MinimapIcon services apply their own saved state on
+        -- PLAYER_LOGIN (they subscribe it themselves) -- Init doesn't manage them.
     end)
 
     -- PLAYER_LOGOUT fires on /reload and full exit. Shut modules down first (they

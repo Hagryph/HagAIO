@@ -107,9 +107,7 @@ function Tasklist:OnEnable()
     for key, t in pairs(self:GetDB().tracked) do self:_RegisterTracked(key, t) end
 
     self:_CheckResets()
-    if not p.ticker then
-        p.ticker = C_Timer.NewTicker(60, function() self:_CheckResets() end)  -- catch resets while logged in
-    end
+    self:Every(60, function() self:_CheckResets() end)  -- catch resets while logged in (auto-cancelled on disable)
     self:_Refresh()
     self:_UpdateVisibility()
 end
@@ -124,7 +122,7 @@ function Tasklist:OnDisable()
     if p.busTokens.encEnd then bus:Off("ENCOUNTER_END", p.busTokens.encEnd) end
     if p.busTokens.bossKill then bus:Off("BOSS_KILL", p.busTokens.bossKill) end
     wipe(p.eventTokens); wipe(p.busTokens)
-    if p.ticker then p.ticker:Cancel(); p.ticker = nil end
+    -- the 60s reset ticker is auto-cancelled by the framework (self:Every)
     if p.frame then p.frame:Hide() end
 end
 
@@ -593,6 +591,7 @@ ns.ModuleManager:Register(Tasklist:New("Tasklist", {
     description = "A movable objective tracker for one-time, daily and weekly tasks.",
     defaultEnabled = true,
     color = ns.Theme.hex.amber,  -- distinct tag (Core uses accent)
+    deps = { "EventBus", "EditMode", "SettingsWindow" },  -- reset/encounter events, movable frame, page refresh
     settings = {
         { type = "header", text = "Task List" },
         { type = "toggle", key = "showCompleted", label = "Show completed tasks", default = true },

@@ -23,26 +23,32 @@ Core\DependencyGraph.lua
 Core\Logger.lua
 Core\Service.lua
 Core\ServiceManager.lua
+Core\Component.lua
 Core\Module.lua
 Core\ModuleManager.lua
 Core\Submodule.lua
 Core\SubmoduleManager.lua
 
-# --- services (each self-registers with the ServiceManager; order here is
-#     irrelevant -- the ServiceManager resolves load order from declared deps) ---
-Core\EventBus.lua
-Core\SavedVars.lua
-Core\SlashCommand.lua
-Core\Hooks.lua
-Core\ActionBars.lua
-Core\Range.lua
-Core\Cooldowns.lua
-Core\Secrets.lua
-Core\Scaling.lua
-Core\Dev.lua
-Core\EditMode.lua
-Core\Compartment.lua
-Core\MinimapIcon.lua
+# --- services (top-level Services/; each self-registers with the ServiceManager;
+#     order here is irrelevant -- the ServiceManager resolves load order from deps) ---
+Services\Cache.lua
+Services\Memoize.lua
+Services\Scheduler.lua
+Services\Serializer.lua
+Services\Profiles.lua
+Services\EventBus.lua
+Services\SavedVars.lua
+Services\SlashCommand.lua
+Services\Hooks.lua
+Services\ActionBars.lua
+Services\Range.lua
+Services\Cooldowns.lua
+Services\Secrets.lua
+Services\Scaling.lua
+Services\Dev.lua
+Services\EditMode.lua
+Services\Compartment.lua
+Services\MinimapIcon.lua
 
 # --- UI (Widgets is a static factory; the windows are UI services) ---
 UI\Widgets.lua

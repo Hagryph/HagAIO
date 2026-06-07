@@ -86,7 +86,6 @@ end
 -- ---- lifecycle ------------------------------------------------------------
 function Misc:OnInitialize()
     local p = self:_p()
-    p.tokens = {}       -- enable-gated subscriptions (sell junk)
     p.phase = nil       -- nil / "boarding" / "flying"
     p.src = nil
 
@@ -103,32 +102,29 @@ end
 
 function Misc:OnEnable()
     local p = self:_p()
-    local bus = ns.EventBus
-    p.tokens["MERCHANT_SHOW"]   = bus:On("MERCHANT_SHOW",   function() self:_OnMerchantShow() end)
-    p.tokens["MERCHANT_CLOSED"] = bus:On("MERCHANT_CLOSED", function() self:_OnMerchantClosed() end)
+    -- Enable-scoped subscriptions + hook are auto-released on disable.
+    self:On("MERCHANT_SHOW",   function() self:_OnMerchantShow() end)
+    self:On("MERCHANT_CLOSED", function() self:_OnMerchantClosed() end)
     -- build + register the timer so it can be placed in Blizzard's Edit Mode
     self:_BuildFrame()
 
     -- Redirect on Request-Stop / early landing: hook the API itself (always
     -- present; fires however it's triggered -- button, keybind, macro) rather than
-    -- the fragile button method. Via the removable hook service so OnDisable
-    -- uninstalls it.
+    -- the fragile button method. Via the removable hook helper so disabling
+    -- uninstalls it automatically.
     if type(TaxiRequestEarlyLanding) == "function" then
         local module = self
-        ns.Hooks:Secure("TaxiRequestEarlyLanding", function()
+        self:Hook("TaxiRequestEarlyLanding", function()
             if UnitOnTaxi("player") and module:GetSetting("showInFlight") then
                 module:_OnEarlyLanding()
             end
-        end, self)
+        end)
     end
 end
 
 function Misc:OnDisable()
     local p = self:_p()
-    local bus = ns.EventBus
-    for event, token in pairs(p.tokens) do bus:Off(event, token) end
-    wipe(p.tokens)
-    ns.Hooks:UnhookAll(self)              -- remove the early-landing redirect
+    -- Subscriptions + the early-landing hook are released by the framework.
     -- Do NOT stop the in-flight ticker: it is the recording engine (it detects the landing
     -- and stores the time), and flight recording must run even while the module is disabled.
     -- _Tick's recording is ungated; the DISPLAY is gated in _RefreshDisplay, so the frame
@@ -751,6 +747,7 @@ ns.ModuleManager:Register(Misc:New("Misc", {
     description = "Flight-path timers and selling junk.",
     defaultEnabled = false,
     color = ns.Theme.hex.grey,  -- distinct tag (accent=Core, green=UnitFrames, purple=Class, gold=Questing, red=CVars)
+    deps = { "EventBus", "EditMode" },  -- always-on TAXIMAP_OPENED recording + movable in-flight timer
     settings = {
         { type = "header", text = "Flight timers" },
         { type = "toggle", key = "showInFlight", label = "Show timer while in flight", default = true },
