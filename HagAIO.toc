@@ -43,6 +43,7 @@ Core\LibManager.lua
 #     stateless ns.Lib singletons; Vector2D is a pure VALUE-CLASS you instantiate) ---
 Lib\FlightGraph.lua
 Lib\Vector2D.lua
+Lib\Format.lua
 Lib\SpellTooltipParser.lua
 Lib\CVarHelper.lua
 

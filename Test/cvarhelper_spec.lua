@@ -25,4 +25,10 @@ describe("CVarHelper:InferType", function()
         assert.are.equal("string", h:InferType("auto"))
         assert.are.equal("string", h:InferType(nil))
     end)
+
+    it("boundaries: '' is string, '01' is number (not boolean)", function()
+        local h = helper()
+        assert.are.equal("string", h:InferType(""))    -- tonumber("") == nil
+        assert.are.equal("number", h:InferType("01"))   -- not exactly "0"/"1"; tonumber -> 1
+    end)
 end)

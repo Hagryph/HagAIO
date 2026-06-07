@@ -52,6 +52,7 @@ ns.Serializer = nil     -- CBOR/deflate/base64 strings  (Services/Serializer.lua
 ns.Profiles = nil       -- named config profiles+share  (Services/Profiles.lua)
 ns.FlightGraph = nil    -- LIB: atomic flight-leg solver  (Lib/FlightGraph.lua)
 ns.Vector2D = nil       -- 2D vector value-class         (Lib/Vector2D.lua)
+ns.Format = nil         -- pure time formatters          (Lib/Format.lua)
 ns.SpellTooltipParser = nil -- LIB: spell-desc number parse (Lib/SpellTooltipParser.lua)
 ns.CVarHelper = nil     -- LIB: CVar type inference      (Lib/CVarHelper.lua)
 ns.DependencyGraph = nil -- generic dependency forest   (Core/DependencyGraph.lua)

@@ -54,4 +54,16 @@ describe("Vector2D", function()
         local _, _, i = Vec:New(0, 0):Nearest(list)
         assert.are.equal(1, i)  -- first of the equidistant pair
     end)
+
+    it("Nearest returns nil for an empty list", function()
+        local Vec = V()
+        assert.is_nil(Vec:New(0, 0):Nearest({}))
+    end)
+
+    it("handles a coincident point (distance 0) and negative coords", function()
+        local Vec = V()
+        assert.are.equal(25, Vec:New(-3, -4):Dist2(Vec:New(0, 0)))   -- negative coords
+        local best, d = Vec:New(-3, -4):Nearest({ Vec:New(-3, -4), Vec:New(0, 0) })
+        assert.are.equal(-3, best:X()); assert.are.equal(0, d)        -- exact origin-coincident
+    end)
 end)

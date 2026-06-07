@@ -55,6 +55,21 @@ describe("Scaling", function()
         assert.near(150, sc:ValueAtEmpty(spec, 100), 1e-9)
     end)
 
+    it("degenerate window with direction=current is a hard step the other way", function()
+        local sc = scaling()
+        local spec = { bonus = 1, highPct = 50, lowPct = 50, direction = "current" }
+        assert.are.equal(1, sc:Fraction(spec, 60))   -- hp >= hi
+        assert.are.equal(0, sc:Fraction(spec, 40))
+    end)
+
+    it("nil bonus falls back to no scaling", function()
+        local sc = scaling()
+        assert.are.equal(1, sc:Multiplier({}, 50))   -- (spec.bonus or 0)
+        assert.are.equal(0, sc:Value({}, nil, 0))    -- (base or 0)
+        local mlo, mhi = sc:MultiplierBand({})
+        assert.are.equal(1, mlo); assert.are.equal(1, mhi)
+    end)
+
     it("a negative bonus sorts Band / MultiplierBand correctly", function()
         local sc = scaling()
         local spec = { bonus = -0.5 }   -- a reduction, peak below base

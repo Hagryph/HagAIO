@@ -6,6 +6,8 @@ local function realRegistry()
     local ns = { UI = {} }
     assert(loadfile("Core/Class.lua"))("HagAIO", ns)
     assert(loadfile("Core/Registry.lua"))("HagAIO", ns)
+    -- minimal DependencyGraph stub so _GetGraph can build (validity is its own concern)
+    ns.DependencyGraph = { New = function() return { AssertValid = function() end } end }
     return ns.Class.new("R", ns.Registry):New("thing")
 end
 
@@ -46,5 +48,42 @@ describe("Registry sweeps", function()
         r:Register(bad); r:Register(item("ok", log))
         assert.is_true(pcall(function() r:_ShutdownEach("Go") end))  -- never propagates
         assert.are.equal("ok", log[1])  -- ok still ran despite bad throwing
+    end)
+end)
+
+describe("Registry core", function()
+    it("rejects a duplicate name", function()
+        local r = realRegistry()
+        r:Register(item("a", {}))
+        assert.is_false(pcall(function() r:Register(item("a", {})) end))
+    end)
+
+    it("Iterate / Get / Count reflect registration order", function()
+        local r, names = realRegistry(), {}
+        r:Register(item("a", {})); r:Register(item("b", {})); r:Register(item("c", {}))
+        for it in r:Iterate() do names[#names + 1] = it.name end
+        assert.are.equal("a", names[1]); assert.are.equal("b", names[2]); assert.are.equal("c", names[3])
+        assert.are.equal(3, r:Count())
+        assert.are.equal("b", r:Get("b").name)
+        assert.is_nil(r:Get("nope"))
+    end)
+
+    it("_BeginStart latches once; IsStarted tracks it", function()
+        local r = realRegistry()
+        assert.is_false(r:IsStarted())
+        assert.is_true(r:_BeginStart())    -- first call wins
+        assert.is_false(r:_BeginStart())   -- already started
+        assert.is_true(r:IsStarted())
+    end)
+
+    it("_GetGraph builds once (cached) and rebuilds after a Register", function()
+        local r = realRegistry()
+        local builds = 0
+        local nb = function() builds = builds + 1 end
+        r:_GetGraph(nb); r:_GetGraph(nb)
+        assert.are.equal(1, builds)        -- second call hit the cache
+        r:Register(item("x", {}))           -- structure changed -> cache cleared
+        r:_GetGraph(nb)
+        assert.are.equal(2, builds)
     end)
 end)

@@ -16,16 +16,7 @@ local function commafy(n)
     return BreakUpLargeNumbers(math.floor(n + 0.5))
 end
 
-local function clock(seconds)
-    if not seconds or seconds <= 0 then return "-" end
-    seconds = math.floor(seconds)
-    local h = math.floor(seconds / 3600)
-    local m = math.floor((seconds % 3600) / 60)
-    local s = seconds % 60
-    if h > 0 then return ("%dh %02dm"):format(h, m) end
-    if m > 0 then return ("%dm %02ds"):format(m, s) end
-    return ("%ds"):format(s)
-end
+local clock = ns.Format.Clock   -- pure duration formatter (Lib/Format.lua)
 
 local function maxLevel()
     if GetMaxLevelForPlayerExpansion then return GetMaxLevelForPlayerExpansion() end

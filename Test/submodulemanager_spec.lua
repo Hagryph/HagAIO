@@ -56,6 +56,30 @@ describe("SubmoduleManager", function()
         assert.are.equal(1, count)   -- loaded once, not on every sweep
     end)
 
+    it("IsLoaded reflects a sub's loaded state by name (unknown -> false)", function()
+        local ns = setup()
+        local mgr = ns.SubmoduleManager
+        local x = ns.Submodule:New("x", { condition = function() return true end })
+        mgr:Register(x)
+        assert.is_false(mgr:IsLoaded("x"))
+        assert.is_false(mgr:IsLoaded("nope"))   -- unknown name
+        x:_Load()
+        assert.is_true(mgr:IsLoaded("x"))
+    end)
+
+    it("LoadedChildrenOf returns only LOADED subs whose parent is that module", function()
+        local ns = setup()
+        local mgr = ns.SubmoduleManager
+        local a = ns.Submodule:New("a", { parent = { module = "Foo" } })
+        local b = ns.Submodule:New("b", { parent = { module = "Bar" } })  -- other parent
+        local c = ns.Submodule:New("c", { parent = { module = "Foo" } })  -- right parent, unloaded
+        mgr:Register(a); mgr:Register(b); mgr:Register(c)
+        a:_Load(); b:_Load()
+        local kids = mgr:LoadedChildrenOf("Foo")
+        assert.are.equal(1, #kids)
+        assert.are.equal("a", kids[1]:GetName())
+    end)
+
     it("handles re-entrant Reevaluate from an onLoad callback (guard + dirty re-sweep)", function()
         local ns = setup()
         local mgr = ns.SubmoduleManager

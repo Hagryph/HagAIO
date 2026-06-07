@@ -40,4 +40,13 @@ describe("Secrets", function()
         assert.is_false(s:Text(fs, nil))                  -- nil -> cleared, returns false
         assert.are.equal("", fs.text)
     end)
+
+    it("Text writes a plain value, with an optional prefix", function()
+        local s = setup()
+        local fs = { text = "?", SetText = function(self, t) self.text = t end }
+        assert.is_true(s:Text(fs, "5"))
+        assert.are.equal("5", fs.text)
+        assert.is_true(s:Text(fs, "5", "HP "))
+        assert.are.equal("HP 5", fs.text)
+    end)
 end)

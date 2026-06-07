@@ -100,6 +100,7 @@ Core/
 Lib/
   FlightGraph.lua          Pure solver for ATOMIC FLIGHT-LEG times -- no WoW API
   Vector2D.lua             A pure 2D vector value-CLASS -- no WoW API
+  Format.lua               Pure time formatters -- no WoW API
   SpellTooltipParser.lua   Pure parsers for the numbers embedded in a spell's description text
   CVarHelper.lua           Pure helpers for reasoning about console-variable VALUES -- no WoW API
 Services/

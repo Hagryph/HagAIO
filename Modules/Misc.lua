@@ -19,12 +19,7 @@ local Misc = Class.new("Misc", ns.Module)
 
 local taxiHooked = false       -- TakeTaxiNode hook installed once per session
 
-local function fmt(s)
-    if s == nil then return "-:--" end   -- no recorded time
-    if s < 0 then s = 0 end
-    s = math.floor(s + 0.5)
-    return ("%d:%02d"):format(math.floor(s / 60), s % 60)
-end
+local fmt = ns.Format.MMSS   -- pure "M:SS" countdown formatter (Lib/Format.lua)
 
 -- DIRECTIONAL route key: a -> b is stored separately from b -> a, because the two
 -- directions don't always take the same time (path asymmetry). New recordings use this;
