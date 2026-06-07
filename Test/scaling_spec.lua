@@ -70,6 +70,20 @@ describe("Scaling", function()
         assert.are.equal(1, mlo); assert.are.equal(1, mhi)
     end)
 
+    it("clamps health above 100 / below 0 (missing form)", function()
+        local sc = scaling()
+        local spec = { bonus = 0.8 }                  -- highPct=100, lowPct=0
+        assert.are.equal(0, sc:Fraction(spec, 150))   -- t = (100-150)/100 = -0.5 -> 0
+        assert.are.equal(1, sc:Fraction(spec, -20))   -- t = (100+20)/100 = 1.2  -> 1
+    end)
+
+    it("clamps health above 100 / below 0 (current direction)", function()
+        local sc = scaling()
+        local spec = { bonus = 0.8, direction = "current" }
+        assert.are.equal(1, sc:Fraction(spec, 150))   -- (150-0)/100 = 1.5 -> 1
+        assert.are.equal(0, sc:Fraction(spec, -20))   -- (-20-0)/100 = -0.2 -> 0
+    end)
+
     it("a negative bonus sorts Band / MultiplierBand correctly", function()
         local sc = scaling()
         local spec = { bonus = -0.5 }   -- a reduction, peak below base

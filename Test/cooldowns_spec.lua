@@ -58,6 +58,40 @@ describe("Cooldowns", function()
         assert.is_false(w.onCooldown)
     end)
 
+    it("a non-positive base cooldown flips ON with no internal timer (poll-only off)", function()
+        local cds, frames, clock = setup({ isActive = false, isOnGCD = false })
+        _G.GetSpellBaseCooldown = function() return 0 end   -- <=0 -> baseCooldown nil -> no timer
+        local w = cds:Watch(SPELL, function() end)
+        cast(frames)
+        assert.is_true(w.onCooldown)
+        clock.advance(600)                 -- no internal timer was scheduled
+        assert.is_true(w.onCooldown)       -- still ON: only the poll can flip it off
+        frames[1]:Fire("SPELL_UPDATE_COOLDOWN")   -- isActive=false -> off
+        assert.is_false(w.onCooldown)
+    end)
+
+    it("a secret base cooldown is treated as unreadable (flips ON, no timer)", function()
+        local cds, frames, clock = setup({ isActive = false, isOnGCD = false })
+        _G.issecretvalue = function() return true end   -- base cooldown ms is secret -> nil
+        local w = cds:Watch(SPELL, function() end)
+        cast(frames)
+        assert.is_true(w.onCooldown)
+        clock.advance(600)
+        assert.is_true(w.onCooldown)       -- no internal flip-off timer
+    end)
+
+    it("re-casting restarts the base-cooldown timer", function()
+        local cds, frames, clock = setup({ isActive = false, isOnGCD = false })
+        local w = cds:Watch(SPELL, function() end)
+        cast(frames)
+        clock.advance(3)                   -- 3s into the 6s cooldown
+        cast(frames)                       -- recast: cancels the old timer, starts a fresh 6s
+        clock.advance(3)                   -- would have been 6s total, but the timer restarted
+        assert.is_true(w.onCooldown)       -- the original timer was cancelled, so still ON
+        clock.advance(3)                   -- 6s after the restart
+        assert.is_false(w.onCooldown)
+    end)
+
     it("Unwatch clears state and cancels the timer", function()
         local cds, frames, clock = setup({ isActive = false, isOnGCD = false })
         local fired = 0

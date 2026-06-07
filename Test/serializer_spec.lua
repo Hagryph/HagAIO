@@ -74,4 +74,42 @@ describe("Serializer", function()
         assert.is_nil(v)
         assert.is_true(type(err) == "string")
     end)
+
+    -- A Blizzard codec can return a NON-string without erroring; each step guards on
+    -- type(result) == "string" and reports its own stage, distinct from a thrown error.
+    it("Encode reports 'could not serialize' when CBOR returns a non-string", function()
+        local sz = newSerializer()
+        _G.C_EncodingUtil.SerializeCBOR = function() return 12345 end
+        local v, err = sz:Encode({})
+        assert.is_nil(v); assert.are.equal("could not serialize", err)
+    end)
+
+    it("Encode reports 'could not compress' when compression returns a non-string", function()
+        local sz = newSerializer()
+        _G.C_EncodingUtil.CompressString = function() return nil end
+        local v, err = sz:Encode({})
+        assert.is_nil(v); assert.are.equal("could not compress", err)
+    end)
+
+    it("Encode reports 'could not encode' when base64 returns a non-string", function()
+        local sz = newSerializer()
+        _G.C_EncodingUtil.EncodeBase64 = function() return {} end
+        local v, err = sz:Encode({})
+        assert.is_nil(v); assert.are.equal("could not encode", err)
+    end)
+
+    it("Decode reports 'invalid characters' when base64 decode returns a non-string", function()
+        local sz = newSerializer()
+        _G.C_EncodingUtil.DecodeBase64 = function() return 999 end
+        local v, err = sz:Decode("HAGAIO1!body")
+        assert.is_nil(v); assert.are.equal("invalid characters", err)
+    end)
+
+    it("Decode reports 'could not decompress' when decompression returns a non-string", function()
+        local sz = newSerializer()
+        local str = sz:Encode({ a = 1 })                       -- valid framing first
+        _G.C_EncodingUtil.DecompressString = function() return nil end
+        local v, err = sz:Decode(str)
+        assert.is_nil(v); assert.are.equal("could not decompress", err)
+    end)
 end)

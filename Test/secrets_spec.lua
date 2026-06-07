@@ -49,4 +49,24 @@ describe("Secrets", function()
         assert.is_true(s:Text(fs, "5", "HP "))
         assert.are.equal("HP 5", fs.text)
     end)
+
+    it("Text returns false for a nil FontString", function()
+        assert.is_false((setup()):Text(nil, "5"))
+    end)
+
+    it("Text treats an empty prefix like no prefix (no concat)", function()
+        local s = setup()
+        local fs = { SetText = function(self, t) self.text = t end }
+        assert.is_true(s:Text(fs, "5", ""))
+        assert.are.equal("5", fs.text)   -- "" prefix is not prepended
+    end)
+
+    it("pre-12.0 (no issecretvalue / C_Secrets): Is and Restricted are false, Number still works", function()
+        local s = setup()
+        _G.issecretvalue = nil
+        _G.C_Secrets = nil
+        assert.is_false(s:Is({ __secret = true }))   -- no API -> nothing reads as secret
+        assert.is_false(s:Restricted())
+        assert.are.equal(42, s:Number("42"))         -- non-secret path still converts
+    end)
 end)

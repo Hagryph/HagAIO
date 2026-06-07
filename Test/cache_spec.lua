@@ -8,7 +8,7 @@ local function newCache()
     S.load(ns, "Services/Cache.lua")
     local c = ns._captured["Cache"]
     c:OnInitialize()
-    return c, clock
+    return c, clock, ns
 end
 
 describe("Cache", function()
@@ -102,5 +102,65 @@ describe("Cache", function()
         local s = c:Store("z0", { max = 0 })
         s:Set("k", 1)
         assert.is_false(select(2, s:Get("k")))
+    end)
+
+    -- ---- weak stores (the GC-reclaimed branch; logic is testable without forcing GC) ----
+    it("a weak store holds and serves values", function()
+        local c = newCache()
+        local s = c:Store("w", { weak = "v" })
+        local obj = { x = 1 }
+        s:Set("k", obj)
+        local v, hit = s:Get("k")
+        assert.are.equal(obj, v); assert.is_true(hit)
+        assert.is_false(select(2, s:Get("nope")))
+    end)
+
+    it("a weak store treats Set(nil) and Invalidate as deletes; Clear empties it", function()
+        local c = newCache()
+        local s = c:Store("w", { weak = "kv" })
+        s:Set("k", { 1 })
+        s:Set("k", nil)                          -- weak can't hold nil -> delete
+        assert.is_false(select(2, s:Get("k")))
+        s:Set("a", { 2 }); s:Invalidate("a")
+        assert.is_false(select(2, s:Get("a")))
+        s:Set("b", { 3 }); s:Clear()
+        assert.is_false(select(2, s:Get("b")))
+    end)
+
+    it("a weak store omits count from Stats (the GC owns lifetime)", function()
+        local c = newCache()
+        local s = c:Store("w", { weak = "k" })
+        s:Set("k", { 1 })
+        s:Get("k"); s:Get("x")
+        local st = s:Stats()
+        assert.are.equal(1, st.hits); assert.are.equal(1, st.misses)
+        assert.is_nil(st.count)                  -- omitted for weak stores
+    end)
+
+    it("weak + ttl is downgraded to managed and warns", function()
+        local c, _, ns = newCache()
+        local warned
+        ns.Logger.Core = function()
+            return { Debug = function() end, Info = function() end, Success = function() end,
+                     Warn = function(_, msg) warned = msg end, Error = function() end }
+        end
+        local s = c:Store("dg", { weak = "v", ttl = 10 })
+        assert.is_true(type(warned) == "string")     -- the downgrade warning fired
+        s:Set("k", 1)
+        assert.are.equal(1, s:Stats().count)         -- managed now: count tracked (weak would omit it)
+    end)
+
+    it("ttl and max compose: LRU eviction AND per-entry expiry on one store", function()
+        local c, clock = newCache()
+        local s = c:Store("tm", { max = 2, ttl = 10 })
+        s:Set("a", 1); s:Set("b", 2)
+        s:Get("a")                               -- touch a -> b becomes LRU
+        s:Set("c", 3)                            -- over max -> evict b
+        assert.is_true(select(2, s:Get("a")))
+        assert.is_false(select(2, s:Get("b")))   -- evicted by LRU
+        assert.is_true(select(2, s:Get("c")))
+        clock.now = clock.now + 11
+        assert.is_false(select(2, s:Get("a")))   -- expired by ttl
+        assert.is_false(select(2, s:Get("c")))
     end)
 end)
