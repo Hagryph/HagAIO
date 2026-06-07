@@ -6,41 +6,58 @@ local function fg()
     return ns._captured["FlightGraph"]
 end
 
--- A leg function from a table keyed "a>b" -> { value, penalty }.
-local function legsFrom(map)
-    return function(a, b)
-        local e = map[a .. ">" .. b]
-        if not e then return nil end
-        return e[1], e[2]
-    end
-end
+-- Build records: each is { seq = {...}, t = , q = }. Helper for brevity.
+local function rec(seq, t, q) return { seq = seq, t = t, q = q or 2 } end
 
-describe("FlightGraph:PathCost", function()
-    it("sums a single known leg", function()
+describe("FlightGraph:Solve", function()
+    it("seeds atomic legs from 2-node records", function()
         local g = fg()
-        assert.are.equal(10, g:PathCost({ "A", "B" }, legsFrom({ ["A>B"] = { 10, 0 } })))
+        local legs = g:Solve({ rec({ "A", "B" }, 10, 2) })
+        assert.are.equal(10, g:Get(legs, "A", "B").t)
+        assert.is_false(g:Get(legs, "A", "B").derived)
+        assert.is_nil(g:Get(legs, "B", "A"))   -- direction is distinct
     end)
 
-    it("returns 0 for a degenerate (0/1-item) path", function()
+    it("keeps the best-quality measurement per leg", function()
         local g = fg()
-        assert.are.equal(0, g:PathCost({ "A" }, legsFrom({})))
-        assert.are.equal(0, g:PathCost({}, legsFrom({})))
+        local legs = g:Solve({ rec({ "A", "B" }, 12, 1), rec({ "A", "B" }, 10, 2) })
+        assert.are.equal(10, g:Get(legs, "A", "B").t)   -- direct (q2) beats fly (q1)
+        assert.are.equal(2, g:Get(legs, "A", "B").q)
     end)
 
-    it("minimises PENALTY, not value (a low-penalty direct hop beats a cheaper chain)", function()
+    it("derives a missing leg from a span by subtraction (A->B = A->C - B->C)", function()
         local g = fg()
-        local legs = legsFrom({ ["A>B"] = { 10, 1 }, ["B>C"] = { 20, 1 }, ["A>C"] = { 40, 1 } })
-        assert.are.equal(40, g:PathCost({ "A", "B", "C" }, legs))  -- direct A>C: penalty 1 < 2
+        -- span A->C over { B } = 160; leg B->C = 60  =>  leg A->B = 100
+        local legs = g:Solve({ rec({ "A", "B", "C" }, 160, 2), rec({ "B", "C" }, 60, 2) })
+        local ab = g:Get(legs, "A", "B")
+        assert.are.equal(100, ab.t)
+        assert.is_true(ab.derived)
     end)
 
-    it("falls back to the multi-hop chain when the direct hop is unknown", function()
+    it("chains subtraction to a fixpoint", function()
         local g = fg()
-        local legs = legsFrom({ ["A>B"] = { 10, 1 }, ["B>C"] = { 20, 1 } })
-        assert.are.equal(30, g:PathCost({ "A", "B", "C" }, legs))
+        -- span A->D over {B,C} = 100; B->C = 30; C->D = 40  => A->B = 30 (after both known)
+        local legs = g:Solve({ rec({ "A", "B", "C", "D" }, 100, 2), rec({ "B", "C" }, 30, 2), rec({ "C", "D" }, 40, 2) })
+        assert.are.equal(30, g:Get(legs, "A", "B").t)
     end)
 
-    it("returns nil when the chain can't be completed", function()
+    it("cannot derive when two legs are unknown", function()
         local g = fg()
-        assert.is_nil(g:PathCost({ "A", "B" }, legsFrom({})))
+        local legs = g:Solve({ rec({ "A", "B", "C" }, 160, 2) })  -- neither A->B nor B->C known
+        assert.is_nil(g:Get(legs, "A", "B"))
+        assert.is_nil(g:Get(legs, "B", "C"))
+    end)
+
+    it("rejects an inconsistent (non-positive) derived leg", function()
+        local g = fg()
+        -- span A->C = 50 but B->C = 60  =>  A->B would be -10: dropped
+        local legs = g:Solve({ rec({ "A", "B", "C" }, 50, 2), rec({ "B", "C" }, 60, 2) })
+        assert.is_nil(g:Get(legs, "A", "B"))
+    end)
+
+    it("Get is nil-safe and returns nil for unknown legs", function()
+        local g = fg()
+        assert.is_nil(g:Get(nil, "A", "B"))
+        assert.is_nil(g:Get(g:Solve({}), "A", "B"))
     end)
 end)
