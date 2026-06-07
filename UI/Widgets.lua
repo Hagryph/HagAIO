@@ -11,7 +11,7 @@ local Widgets = {}
 
 -- Shared "needs a /reload to apply" flag, appended to an option's label so the
 -- marker looks the same everywhere it's used.
-Widgets.RELOAD_FLAG = "  |cff" .. Theme.hex.warn .. "(reload)|r"
+Widgets.RELOAD_FLAG = "  |cff" .. Theme.hex.amber .. "(reload)|r"
 function Widgets.FlagReload(label) return label .. Widgets.RELOAD_FLAG end
 
 -- Apply a solid themed backdrop + colours to a BackdropTemplate frame.
@@ -85,8 +85,18 @@ function Widgets.Toggle(parent, labelText)
         label:SetPoint("LEFT", btn, "RIGHT", 8, 0)
     end
 
-    local state, onToggle = false, nil
+    local state, onToggle, enabled = false, nil, true
     local function render()
+        if not enabled then  -- greyed out: dim, show state faintly, ignore input
+            box:SetBackdropColor(Theme.Unpack("panel2", 0.5))
+            box:SetBackdropBorderColor(Theme.Unpack("border"))
+            check:SetVertexColor(0.5, 0.5, 0.5)
+            check:SetShown(state)
+            if label then label:SetTextColor(Theme.Unpack("textFaint")) end
+            return
+        end
+        check:SetVertexColor(1, 1, 1)
+        if label then label:SetTextColor(Theme.Unpack("text")) end
         if state then
             box:SetBackdropColor(Theme.Unpack("accent", 0.85))
             box:SetBackdropBorderColor(Theme.Unpack("accent"))
@@ -99,10 +109,11 @@ function Widgets.Toggle(parent, labelText)
     end
 
     btn:SetScript("OnEnter", function()
-        if not state then box:SetBackdropBorderColor(Theme.Unpack("accent")) end
+        if enabled and not state then box:SetBackdropBorderColor(Theme.Unpack("accent")) end
     end)
     btn:SetScript("OnLeave", render)
     btn:SetScript("OnClick", function()
+        if not enabled then return end
         state = not state
         render()
         if onToggle then onToggle(state) end
@@ -111,6 +122,7 @@ function Widgets.Toggle(parent, labelText)
     btn.SetChecked   = function(_, v) state = v and true or false; render() end
     btn.GetChecked   = function() return state end
     btn.SetOnToggle  = function(_, fn) onToggle = fn end
+    btn.SetEnabled   = function(_, on) enabled = on and true or false; render() end
     btn.label = label
     render()
     return btn
@@ -170,7 +182,7 @@ function Widgets.Segmented(parent, options)
     Widgets.Style(c, "panel2", "border")
     c:SetHeight(24)
 
-    local btns, value, onChange = {}, nil, nil
+    local btns, value, onChange, enabled = {}, nil, nil, true
     local function render()
         for _, e in ipairs(btns) do
             if e.value == value then
@@ -197,10 +209,11 @@ function Widgets.Segmented(parent, options)
 
         b.bg, b.fs, b.value = bg, fs, opt.value
         b:SetScript("OnClick", function()
+            if not enabled then return end
             value = opt.value; render()
             if onChange then onChange(value) end
         end)
-        b:SetScript("OnEnter", function() if opt.value ~= value then fs:SetTextColor(Theme.Unpack("text")) end end)
+        b:SetScript("OnEnter", function() if enabled and opt.value ~= value then fs:SetTextColor(Theme.Unpack("text")) end end)
         b:SetScript("OnLeave", render)
 
         btns[#btns + 1] = b
@@ -211,6 +224,7 @@ function Widgets.Segmented(parent, options)
     c.SetValue    = function(_, v) value = v; render() end
     c.GetValue    = function() return value end
     c.SetOnChange = function(_, fn) onChange = fn end
+    c.SetEnabled  = function(_, on) enabled = on and true or false; c:SetAlpha(enabled and 1 or 0.4); render() end
     render()
     return c
 end
@@ -227,12 +241,13 @@ function Widgets.ColorSwatch(parent)
     sw:SetPoint("BOTTOMRIGHT", -2, 2)
     sw:SetColorTexture(1, 1, 1)
 
-    local cr, cg, cb, onChange = 1, 1, 1, nil
+    local cr, cg, cb, onChange, enabled = 1, 1, 1, nil, true
     local function set(r, g, b) cr, cg, cb = r, g, b; sw:SetColorTexture(r, g, b) end
 
-    btn:SetScript("OnEnter", function() btn:SetBackdropBorderColor(Theme.Unpack("accent")) end)
+    btn:SetScript("OnEnter", function() if enabled then btn:SetBackdropBorderColor(Theme.Unpack("accent")) end end)
     btn:SetScript("OnLeave", function() btn:SetBackdropBorderColor(Theme.Unpack("borderStrong")) end)
     btn:SetScript("OnClick", function()
+        if not enabled then return end
         local prevR, prevG, prevB = cr, cg, cb
         local info = {
             hasOpacity = false,
@@ -265,7 +280,7 @@ function Widgets.ColorSwatch(parent)
     reset:SetPoint("RIGHT", btn, "LEFT", -8, 0)
     reset:Hide()
     reset:SetScript("OnClick", function()
-        if not dr then return end
+        if not enabled or not dr then return end
         set(dr, dg, db)
         if onChange then onChange(dr, dg, db) end
     end)
@@ -273,8 +288,128 @@ function Widgets.ColorSwatch(parent)
     btn.SetColor    = function(_, r, g, b) set(r, g, b) end
     btn.GetColor    = function() return cr, cg, cb end
     btn.SetOnChange = function(_, fn) onChange = fn end
-    btn.SetDefault  = function(_, r, g, b) dr, dg, db = r, g, b; reset:SetShown(r ~= nil) end
+    btn.SetDefault  = function(_, r, g, b) dr, dg, db = r, g, b; reset:SetShown(enabled and r ~= nil) end
+    btn.SetEnabled  = function(_, on)
+        enabled = on and true or false
+        btn:SetAlpha(enabled and 1 or 0.4)     -- dims the swatch + its Reset child
+        reset:SetShown(enabled and dr ~= nil)  -- and hides Reset while greyed out
+    end
     return btn
+end
+
+-- Dependency group: lets a settings page grey out controls whose parent option is off.
+-- Add(control, predicate) registers any widget that supports :SetEnabled(bool); Refresh()
+-- re-evaluates every predicate and enables/disables accordingly. Call Refresh() after a
+-- parent control changes (and once after building). Controls without :SetEnabled are
+-- ignored, so notes/labels can be skipped safely.
+function Widgets.DependencyGroup()
+    local entries = {}
+    local group = {}
+    function group:Add(control, predicate)
+        if control and control.SetEnabled and type(predicate) == "function" then
+            entries[#entries + 1] = { control = control, predicate = predicate }
+        end
+    end
+    function group:Refresh()
+        for _, e in ipairs(entries) do
+            e.control:SetEnabled(e.predicate() and true or false)
+        end
+    end
+    return group
+end
+
+-- Collapsible section ("accordion"): a clickable header with a +/- chevron that
+-- shows or hides a content frame full of sub-widgets. Lets a long settings page
+-- compress to a short stack of category headers; expand only what you need.
+-- Parent children into :GetContent(), then call :SetContentHeight(h) so the
+-- section knows how tall its expanded body is. :SetOnToggle(fn) fires on every
+-- expand/collapse so the page can re-stack the sections below it.
+-- Methods: :GetContent() :SetContentHeight(h) :SetExpanded(b) :IsExpanded()
+--          :SetOnToggle(fn)   (read current total height with :GetHeight()).
+function Widgets.CollapsibleSection(parent, titleText)
+    local HEADER, GAP = 26, 4
+    local sec = CreateFrame("Frame", nil, parent)
+    sec:SetHeight(HEADER)
+
+    local header = CreateFrame("Button", nil, sec, "BackdropTemplate")
+    header:SetHeight(HEADER)
+    header:SetPoint("TOPLEFT")
+    header:SetPoint("TOPRIGHT")
+    Widgets.Style(header, "panel2", "border")
+
+    local chevron = Widgets.Text(header, "+", "accent", "GameFontNormalLarge")
+    chevron:SetPoint("LEFT", 10, 0)
+    local label = Widgets.Text(header, titleText, "text", "GameFontNormal")
+    label:SetPoint("LEFT", chevron, "RIGHT", 8, 0)
+
+    local content = CreateFrame("Frame", nil, sec)
+    content:SetPoint("TOPLEFT", header, "BOTTOMLEFT", 0, -GAP)
+    content:SetPoint("RIGHT", sec, "RIGHT", 0, 0)
+    content:SetHeight(1)
+    content:Hide()
+
+    local expanded, contentH, onToggle = false, 0, nil
+    local function apply()
+        chevron:SetText(expanded and "-" or "+")
+        content:SetShown(expanded)
+        sec:SetHeight(expanded and (HEADER + GAP + contentH) or HEADER)
+    end
+
+    header:SetScript("OnEnter", function() header:SetBackdropBorderColor(Theme.Unpack("accent")) end)
+    header:SetScript("OnLeave", function() header:SetBackdropBorderColor(Theme.Unpack("border")) end)
+    header:SetScript("OnClick", function()
+        expanded = not expanded
+        apply()
+        if onToggle then onToggle(expanded) end
+    end)
+
+    sec.GetContent       = function() return content end
+    sec.SetContentHeight = function(_, h) contentH = math.max(0, h or 0); apply() end
+    sec.SetExpanded      = function(_, v) expanded = v and true or false; apply() end
+    sec.IsExpanded       = function() return expanded end
+    sec.SetOnToggle      = function(_, fn) onToggle = fn end
+    sec.SetTitle         = function(_, t) label:SetText(t) end
+    apply()
+    return sec
+end
+
+-- Themed single-line EditBox. `numeric` only affects which characters look valid
+-- to us; we never SetNumeric (that would block decimals/negatives many CVars
+-- need) -- callers validate on change. Commits on Enter or focus-loss; Esc
+-- reverts. Methods: :SetValue(v) :GetValue() :SetOnChange(fn) :SetEnabled(b).
+function Widgets.Input(parent, width)
+    local box = CreateFrame("EditBox", nil, parent, "BackdropTemplate")
+    box:SetAutoFocus(false)
+    box:SetHeight(20)
+    box:SetWidth(width or 90)
+    Widgets.Style(box, "panel2", "borderStrong")
+    box:SetFontObject("GameFontHighlightSmall")
+    box:SetTextInsets(6, 6, 0, 0)
+    box:SetTextColor(Theme.Unpack("text"))
+    box:SetMaxLetters(0)
+
+    local value, onChange, enabled = "", nil, true
+    local function commit()
+        local v = box:GetText()
+        if v == value then return end
+        value = v
+        if onChange then onChange(v) end
+    end
+    box:SetScript("OnEnterPressed",    function(self) self:ClearFocus() end)  -- triggers focus-lost commit
+    box:SetScript("OnEscapePressed",   function(self) self:SetText(value); self:ClearFocus() end)
+    box:SetScript("OnEditFocusGained", function() box:SetBackdropBorderColor(Theme.Unpack("accent")) end)
+    box:SetScript("OnEditFocusLost",   function() box:SetBackdropBorderColor(Theme.Unpack("borderStrong")); commit() end)
+
+    box.SetValue    = function(_, v) value = tostring(v == nil and "" or v); box:SetText(value) end
+    box.GetValue    = function() return box:GetText() end
+    box.SetOnChange = function(_, fn) onChange = fn end
+    box.SetEnabled  = function(_, on)
+        enabled = on and true or false
+        box:EnableMouse(enabled)
+        box:EnableKeyboard(enabled)
+        box:SetAlpha(enabled and 1 or 0.4)
+    end
+    return box
 end
 
 -- Named scroll frame (template needs a name for its $parentScrollBar).

@@ -13,9 +13,9 @@ local Class = ns.Class
 --   w:onCooldown   -- current state
 --   ns.Cooldowns:Unwatch(w)
 
-local Cooldowns = Class.new("Cooldowns")
+local Cooldowns = Class.new("Cooldowns", ns.Service)
 
-function Cooldowns:Initialize() end
+function Cooldowns:OnInitialize() end
 
 local function baseCooldown(spellID)
     if not GetSpellBaseCooldown then return nil end
@@ -80,4 +80,4 @@ function Cooldowns:Unwatch(w)
     w.onCooldown = false
 end
 
-ns.Cooldowns = Cooldowns
+ns.ServiceManager:Register(Cooldowns:New("Cooldowns", { deps = { "EventBus" } }))

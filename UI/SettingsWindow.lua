@@ -9,9 +9,9 @@ local W = ns.UI.Widgets
 -- three pages: Modules (live toggles), Log (the Logger's history, live), and
 -- About. Styled to match the LoL Game Helper desktop app.
 
-local SettingsWindow = Class.new("SettingsWindow")
+local SettingsWindow = Class.new("SettingsWindow", ns.Service)
 
-function SettingsWindow:Initialize()
+function SettingsWindow:OnInitialize()
     local p = self:_p()
     p.built = false
     p.pages = {}          -- static pages: modules / log / about
@@ -57,7 +57,7 @@ function SettingsWindow:Build()
     close:SetPoint("RIGHT", 0, 0)
     local x = W.Text(close, "X", "textDim", "GameFontNormalLarge")
     x:SetPoint("CENTER")
-    close:SetScript("OnEnter", function() x:SetTextColor(Theme.Unpack("loss")) end)
+    close:SetScript("OnEnter", function() x:SetTextColor(Theme.Unpack("red")) end)
     close:SetScript("OnLeave", function() x:SetTextColor(Theme.Unpack("textDim")) end)
     close:SetScript("OnClick", function() self:Hide() end)
 
@@ -183,34 +183,47 @@ function SettingsWindow:_RefreshModules()
     end
 
     -- Each row: [toggle]  Name + short description  ............  [ Settings › ]
+    -- Modules whose required addon isn't loaded are hidden entirely; modules whose
+    -- prerequisite module is disabled are shown greyed out (can't toggle on).
     local y = 0
     for module in mm:Iterate() do
-        local row = CreateFrame("Frame", nil, holder)
-        row:SetPoint("TOPLEFT", 2, y)
-        row:SetPoint("RIGHT", holder, "RIGHT", -2, 0)
-        row:SetHeight(44)
+        if module:IsAvailable() then
+            local depsMet = module:AreModuleDepsMet()
 
-        local toggle = W.Toggle(row, nil)
-        toggle:SetPoint("TOPLEFT", 0, -4)
-        toggle:SetChecked(module:IsEnabled())
-        toggle:SetOnToggle(function(on)
-            if on then module:Enable() else module:Disable() end
-        end)
+            local row = CreateFrame("Frame", nil, holder)
+            row:SetPoint("TOPLEFT", 2, y)
+            row:SetPoint("RIGHT", holder, "RIGHT", -2, 0)
+            row:SetHeight(44)
 
-        local name = W.Text(row, module:GetTitle(), "text", "GameFontNormal")
-        name:SetPoint("TOPLEFT", toggle, "TOPRIGHT", 12, 2)
+            local toggle = W.Toggle(row, nil)
+            toggle:SetPoint("TOPLEFT", 0, -4)
+            toggle:SetChecked(module:IsEnabled())
+            toggle:SetEnabled(depsMet)
+            toggle:SetOnToggle(function(on)
+                if on then module:Enable() else module:Disable() end
+                self:_RefreshModules()  -- dependents may need to grey/ungrey
+            end)
 
-        local settings = W.TextButton(row, "Settings >")
-        settings:SetPoint("RIGHT", row, "RIGHT", -4, 0)
-        settings:SetScript("OnClick", function() self:Show("module:" .. module:GetName()) end)
+            local name = W.Text(row, module:GetTitle(), depsMet and "text" or "textFaint", "GameFontNormal")
+            name:SetPoint("TOPLEFT", toggle, "TOPRIGHT", 12, 2)
 
-        local desc = W.Text(row, module:GetDescription(), "textDim", "GameFontHighlightSmall")
-        desc:SetPoint("TOPLEFT", name, "BOTTOMLEFT", 0, -3)
-        desc:SetPoint("RIGHT", settings, "LEFT", -10, 0)
-        desc:SetJustifyH("LEFT")
+            local settings = W.TextButton(row, "Settings >")
+            settings:SetPoint("RIGHT", row, "RIGHT", -4, 0)
+            settings:SetScript("OnClick", function() self:Show("module:" .. module:GetName()) end)
 
-        p.moduleRows[#p.moduleRows + 1] = row
-        y = y - 48
+            local descText = module:GetDescription()
+            if not depsMet then
+                local deps = module:GetModuleDeps()
+                descText = "Requires " .. table.concat(deps, ", ") .. " enabled."
+            end
+            local desc = W.Text(row, descText, "textFaint", "GameFontHighlightSmall")
+            desc:SetPoint("TOPLEFT", name, "BOTTOMLEFT", 0, -3)
+            desc:SetPoint("RIGHT", settings, "LEFT", -10, 0)
+            desc:SetJustifyH("LEFT")
+
+            p.moduleRows[#p.moduleRows + 1] = row
+            y = y - 48
+        end
     end
 end
 
@@ -309,29 +322,42 @@ function SettingsWindow:_EnsureModulePage(name)
     sf:SetPoint("TOPLEFT", div, "BOTTOMLEFT", 0, -8)
     sf:SetPoint("BOTTOMRIGHT", page, "BOTTOMRIGHT", -30, 14)
 
-    self:_BuildModuleControls(sf, module)
+    -- A module may own a fully custom, live-bound page (e.g. CVars, whose
+    -- controls bind to the game rather than to keyed saved-vars). Otherwise the
+    -- shared schema renderer builds the page from module:GetSettings().
+    if module.BuildSettingsPage then
+        module:BuildSettingsPage(sf)
+    else
+        self:_BuildModuleControls(sf, module)
+    end
 
     page.enableToggle = enable
     p.modulePages[name] = page
     return page
 end
 
--- Generate controls into a module page's scroll content from its schema.
-function SettingsWindow:_BuildModuleControls(sf, module)
-    local content = sf.content
-    local width = sf:GetWidth()
-    if not width or width < 1 then width = 420 end
-    content:SetWidth(width)
+-- Render one settings HOST's schema (a Module OR a Submodule -- anything with
+-- GetSettings/GetSetting/SetSetting) into `content` starting at `y`; returns the
+-- new y. Controls bind live to that host.
+function SettingsWindow:_RenderSchema(content, host, width, y)
+    local schema = host:GetSettings()
 
-    local schema = module:GetSettings()
-    if #schema == 0 then
-        local none = W.Text(content, "This module has no options.", "textFaint", "GameFontHighlightSmall")
-        none:SetPoint("TOPLEFT", 4, -4)
-        content:SetHeight(30)
-        return
+    -- controls that declare `dependsOn` get greyed out when their parent option is off.
+    local dep = W.DependencyGroup()
+    local graph = ns.DependencyGraph:New()
+    for _, s in ipairs(schema) do
+        if s.key and (s.type == "toggle" or s.type == "select" or s.type == "color") then
+            graph:Add(s.key, function() return host:GetSetting(s.key) and true or false end, s.dependsOn)
+        end
+    end
+    local ok, issues = graph:Validate()
+    if not ok then
+        local log = host.GetLog and host:GetLog()
+        for _, msg in ipairs(issues) do
+            if log then log:Warn("settings dependency: " .. msg) else ns.Logger:Core():Warn("settings dependency: " .. msg) end
+        end
     end
 
-    local y = -4
     for _, s in ipairs(schema) do
         if s.type == "header" then
             local h = W.SectionLabel(content, s.text)
@@ -348,8 +374,9 @@ function SettingsWindow:_BuildModuleControls(sf, module)
         elseif s.type == "toggle" then
             local t = W.Toggle(content, s.reload and W.FlagReload(s.label) or s.label)
             t:SetPoint("TOPLEFT", 6, y)
-            t:SetChecked(module:GetSetting(s.key) and true or false)
-            t:SetOnToggle(function(on) module:SetSetting(s.key, on) end)
+            t:SetChecked(host:GetSetting(s.key) and true or false)
+            t:SetOnToggle(function(on) host:SetSetting(s.key, on); dep:Refresh() end)
+            if s.dependsOn then dep:Add(t, function() return graph:IsSatisfied(s.key) end) end
             y = y - 26
             if s.desc then
                 local d = W.Text(content, s.desc, "textFaint", "GameFontHighlightSmall")
@@ -367,8 +394,9 @@ function SettingsWindow:_BuildModuleControls(sf, module)
             y = y - 20
             local seg = W.Segmented(content, s.options)
             seg:SetPoint("TOPLEFT", 6, y)
-            seg:SetValue(module:GetSetting(s.key))
-            seg:SetOnChange(function(v) module:SetSetting(s.key, v) end)
+            seg:SetValue(host:GetSetting(s.key))
+            seg:SetOnChange(function(v) host:SetSetting(s.key, v); dep:Refresh() end)
+            if s.dependsOn then dep:Add(seg, function() return graph:IsSatisfied(s.key) end) end
             y = y - 34
 
         elseif s.type == "color" then
@@ -376,14 +404,52 @@ function SettingsWindow:_BuildModuleControls(sf, module)
             lbl:SetPoint("TOPLEFT", 6, y)
             local sw = W.ColorSwatch(content)
             sw:SetPoint("TOPRIGHT", content, "TOPRIGHT", -6, y)
-            local c = module:GetSetting(s.key) or s.default or { 1, 1, 1 }
+            local c = host:GetSetting(s.key) or s.default or { 1, 1, 1 }
             sw:SetColor(c[1] or 1, c[2] or 1, c[3] or 1)
-            sw:SetOnChange(function(r, g, b) module:SetSetting(s.key, { r, g, b }) end)
+            sw:SetOnChange(function(r, g, b) host:SetSetting(s.key, { r, g, b }) end)
             if s.default then sw:SetDefault(s.default[1], s.default[2], s.default[3]) end
+            if s.dependsOn then dep:Add(sw, function() return graph:IsSatisfied(s.key) end) end
             y = y - 26
         end
     end
 
+    dep:Refresh()  -- set initial enabled/greyed state from the current values
+    return y
+end
+
+-- A module page = the module's own schema, then the settings of every LOADED
+-- submodule of that module. Submodule options therefore appear (and persist)
+-- ONLY while the submodule is loaded -- e.g. the ATT submodule's option shows
+-- only when AllTheThings is installed. No addon checks live here.
+function SettingsWindow:_BuildModuleControls(sf, module)
+    local content = sf.content
+    local width = sf:GetWidth()
+    if not width or width < 1 then width = 420 end
+    content:SetWidth(width)
+
+    local y, rendered = -4, false
+    if #module:GetSettings() > 0 then
+        y = self:_RenderSchema(content, module, width, y)
+        rendered = true
+    end
+
+    local subs = ns.SubmoduleManager and ns.SubmoduleManager:LoadedChildrenOf(module:GetName()) or {}
+    for _, sub in ipairs(subs) do
+        if sub.GetSettings and #sub:GetSettings() > 0 then
+            local h = W.SectionLabel(content, sub:GetTitle())
+            h:SetPoint("TOPLEFT", 4, y - 6)
+            y = y - 28
+            y = self:_RenderSchema(content, sub, width, y)
+            rendered = true
+        end
+    end
+
+    if not rendered then
+        local none = W.Text(content, "This module has no options.", "textFaint", "GameFontHighlightSmall")
+        none:SetPoint("TOPLEFT", 4, -4)
+        content:SetHeight(30)
+        return
+    end
     content:SetHeight(math.max(30, -y + 8))
 end
 
@@ -549,4 +615,4 @@ function SettingsWindow:Toggle()
     if p.frame:IsShown() then self:Hide() else self:Show(p.current or "modules") end
 end
 
-ns.UI.SettingsWindow = SettingsWindow
+ns.ServiceManager:Register(SettingsWindow:New("SettingsWindow", { ui = true, deps = { "EventBus" } }))

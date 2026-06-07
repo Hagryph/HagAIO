@@ -22,6 +22,9 @@ local TIGER_PALM = 100780
 local KEG_SMASH  = 121253
 local SPINNING_CRANE_KICK = 101546   -- 8-yd PBAoE; efficient at 3+ targets
 local SCK_RADIUS = 8                  -- yards; the Range service resolves the checker
+-- SCK must out-damage Tiger Palm by this factor to be "worth it" -- Tiger Palm also
+-- reduces brew cooldowns, so raw damage parity isn't enough to switch off it.
+local SCK_BIAS = 1.20
 
 -- Orb-count marker. C_Spell.GetSpellCastCount(EXPEL_HARM) is the absorbable Gift-of-the-Ox
 -- sphere count -- a SECRET NUMBER in restricted content (M+/raid/PvP), so we can't read,
@@ -82,6 +85,22 @@ local function orbHealAmount()
     return math.floor((tonumber((n:gsub(",", ""))) or 0) * healingTakenMultiplier() + 0.5)
 end
 
+-- The (current-stat) hit damage parsed from a spell's tooltip description: the
+-- number in "... dealing N <school> damage ...". Locale-dependent (enUS phrasing);
+-- nil if it can't be read, so callers fall back to a sensible default. Used to
+-- compute the Tiger Palm vs Spinning Crane Kick breakpoint live from your gear.
+local function spellHitDamage(spellID)
+    local desc = C_Spell and C_Spell.GetSpellDescription and C_Spell.GetSpellDescription(spellID)
+    if not desc or desc == "" then return nil end
+    local n = desc:match("dealing%s+([%d,]+)")
+        or desc:match("([%d,]+)%s+%a+%s+damage")
+        or desc:match("([%d,]+)%s+damage")
+    if not n then return nil end
+    local v = tonumber((n:gsub(",", "")))
+    if not v or v <= 0 or (issecretvalue and issecretvalue(v)) then return nil end
+    return v
+end
+
 -- ===========================================================================
 -- Submodules
 -- ===========================================================================
@@ -93,8 +112,8 @@ local Base = {
         { type = "header", text = "Expel Harm" },
         { type = "toggle", key = "expelHarm", label = "Show heal-threshold marker", default = true,
           desc = "A line on your health bar marking where Expel Harm would heal you to full." },
-        { type = "color", key = "expelColor", label = "Ready colour", default = EXPEL_READY_COLOR },
-        { type = "color", key = "expelInactiveColor", label = "On-cooldown colour", default = EXPEL_COOLDOWN_COLOR },
+        { type = "color", key = "expelColor", label = "Ready colour", default = EXPEL_READY_COLOR, dependsOn = "expelHarm" },
+        { type = "color", key = "expelInactiveColor", label = "On-cooldown colour", default = EXPEL_COOLDOWN_COLOR, dependsOn = "expelHarm" },
     },
     OnSettingChanged = function(self)
         self:_ScheduleUpdate()
@@ -158,15 +177,15 @@ local Brewmaster = {
         { type = "header", text = "Expel Harm" },
         { type = "toggle", key = "expelHarm", label = "Show heal bar", default = true,
           desc = "A bar that fills from your current health to where Expel Harm would heal you, including Gift of the Ox orbs." },
-        { type = "color", key = "expelColor", label = "Ready colour", default = EXPEL_READY_COLOR },
-        { type = "color", key = "expelInactiveColor", label = "On-cooldown colour", default = EXPEL_COOLDOWN_COLOR },
+        { type = "color", key = "expelColor", label = "Ready colour", default = EXPEL_READY_COLOR, dependsOn = "expelHarm" },
+        { type = "color", key = "expelInactiveColor", label = "On-cooldown colour", default = EXPEL_COOLDOWN_COLOR, dependsOn = "expelHarm" },
         { type = "header", text = "Tiger Palm" },
         { type = "toggle", key = "tiger", label = "Show missing-energy bar", default = true,
           desc = "A bar showing how much energy you still need to cast Tiger Palm and Keg Smash. It shrinks as you regenerate and disappears once you can afford both." },
-        { type = "color", key = "tigerColor", label = "Bar colour", default = { 1, 1, 1 } },
+        { type = "color", key = "tigerColor", label = "Bar colour", default = { 1, 1, 1 }, dependsOn = "tiger" },
         { type = "header", text = "AoE helper" },
         { type = "toggle", key = "aoeHelper", label = "Grey Tiger Palm / Spinning Crane Kick by target count", default = false,
-          desc = "In combat: greys Tiger Palm at 3+ enemies in Spinning Crane Kick range (use SCK), or greys Spinning Crane Kick below 3 (use Tiger Palm)." },
+          desc = "In combat: greys Tiger Palm once Spinning Crane Kick does more damage for the enemies in range (use SCK), or greys Spinning Crane Kick below that (use Tiger Palm). The breakpoint is read from their tooltips and adjusts with your gear." },
     },
     OnSettingChanged = function(self)
         self:_ScheduleUpdate()
@@ -380,7 +399,14 @@ function ClassModule:_UpdateMarker()
     local liveMax = UnitHealthMax("player")
     local maxHP = (liveMax and liveMax > 0 and not ns.Secrets:Is(liveMax)) and liveMax or p.maxHPSnap
     if not maxHP or maxHP <= 0 then return hideAll() end
-    local width = bar:GetWidth()
+
+    -- Bar WIDTH can also come back SECRET in restricted content (like max health),
+    -- and geometry can't consume a secret. Snapshot the last non-secret width and
+    -- reuse it. Check Secrets:Is BEFORE any comparison so we never compare a secret.
+    local liveWidth = bar:GetWidth()
+    if liveWidth and not ns.Secrets:Is(liveWidth) and liveWidth > 0 then p.widthSnap = liveWidth end
+    local width = p.widthSnap
+    if not width or width <= 0 then return hideAll() end
 
     -- Brewmaster with a sphere talent: one orb fill StatusBar with stop ticks at each
     -- sphere count carries the whole marker (stop 0 = base heal). The fill is driven by the
@@ -423,10 +449,35 @@ function ClassModule:_LoadAoE()
     self:_Sub("UPDATE_BONUS_ACTIONBAR", function() self:_ScanAoEButtons() end)
     self:_Sub("PLAYER_ENTERING_WORLD",  function() self:_ScanAoEButtons() end)
     self:_ScanAoEButtons()
+
+    -- breakpoint between Tiger Palm and Spinning Crane Kick, recomputed when gear /
+    -- talents / level change the tooltip damage.
+    self:_RefreshAoEThreshold()
+    self:_Sub("PLAYER_EQUIPMENT_CHANGED", function() self:_RefreshAoEThreshold() end)
+    self:_Sub("TRAIT_CONFIG_UPDATED",     function() self:_RefreshAoEThreshold() end)
+    self:_Sub("SPELLS_CHANGED",           function() self:_RefreshAoEThreshold() end)
+    self:_Sub("PLAYER_LEVEL_UP",          function() self:_RefreshAoEThreshold() end)
+
     -- one always-on throttled ticker that self-gates on combat + the toggle
     -- (avoids races starting/stopping it on combat events).
     if not p.aoeTicker then
         p.aoeTicker = C_Timer.NewTicker(0.15, function() self:_UpdateAoE() end)
+    end
+end
+
+-- The target count at which Spinning Crane Kick is worth pressing over Tiger Palm.
+-- SCK hits every enemy, so at N targets it deals sck*N; we require it to beat Tiger
+-- Palm by SCK_BIAS (since Tiger Palm also reduces brew cooldowns), i.e. sck*N >
+-- tp*SCK_BIAS -> smallest such N = floor(tp*SCK_BIAS / sck) + 1. Read live from the
+-- tooltips; falls back to the conventional 3 if either can't be parsed.
+function ClassModule:_RefreshAoEThreshold()
+    local p = self:_p()
+    local tp  = spellHitDamage(TIGER_PALM)
+    local sck = spellHitDamage(SPINNING_CRANE_KICK)
+    if tp and sck and sck > 0 then
+        p.aoeThreshold = math.max(1, math.floor((tp * SCK_BIAS) / sck) + 1)
+    else
+        p.aoeThreshold = 3
     end
 end
 
@@ -448,8 +499,9 @@ function ClassModule:_UpdateAoE()
     if not (p.aoeActive and self:IsEnabled() and self:GetSetting("aoeHelper") and InCombatLockdown()) then
         return self:_ClearAoEGrey()
     end
-    -- enemies within SCK's 8 yd (Range uses the item check; TP ~5yd is the fallback)
-    local greyTP = ns.Range:CountEnemies(SCK_RADIUS, TIGER_PALM) >= 3  -- 3+: AoE -> grey TP
+    -- enemies within SCK's 8 yd (Range uses the item check; TP ~5yd is the fallback);
+    -- grey TP once that count reaches the live SCK-beats-TP breakpoint.
+    local greyTP = ns.Range:CountEnemies(SCK_RADIUS, TIGER_PALM) >= (p.aoeThreshold or 3)
     for _, b in ipairs(p.tpButtons or {})  do ns.ActionBars:SetGrey(b, greyTP) end
     for _, b in ipairs(p.sckButtons or {}) do ns.ActionBars:SetGrey(b, not greyTP) end
 end
@@ -531,10 +583,11 @@ end
 
 -- A reverse-filling bar on the energy bar showing the MISSING energy until you can afford
 -- Tiger Palm + Keg Smash. It spans from your current energy to the (TP+KS) cost point and
--- shrinks as energy regenerates, vanishing once you can cast both. We never read current
--- energy: the bar's left edge is anchored to the energy fill (Blizzard moves it) and its
--- right edge to the fixed cost point, so when energy passes the cost the left edge crosses
--- the right and the bar collapses to nothing on its own.
+-- shrinks as energy regenerates, vanishing once you can cast both. Drawn ON TOP, but only
+-- over the EMPTY part of the bar (current energy -> cost), so it never overlaps the fill and
+-- can't muddy its colour. We never read current energy: the bar's left edge is anchored to
+-- the energy fill (Blizzard moves it) and its right edge to the fixed cost point, so it
+-- tracks energy for free and collapses to nothing once the fill passes the cost.
 function ClassModule:_UpdateTiger()
     local p = self:_p()
     local bar = p.powerBar
@@ -570,7 +623,12 @@ function ClassModule:_UpdateTiger()
     local c = self:GetSetting("tigerColor") or { 1, 1, 1 }
     m:SetColorTexture(c[1], c[2], c[3], 0.55)  -- translucent band over the deficit
 
-    local costX = (cost / maxE) * bar:GetWidth()  -- the cost point, from the bar's left edge
+    -- Bar width can be secret in restricted content -- reuse the last non-secret one.
+    local liveW = bar:GetWidth()
+    if liveW and not ns.Secrets:Is(liveW) and liveW > 0 then p.powerWidthSnap = liveW end
+    local barW = p.powerWidthSnap
+    if not barW or barW <= 0 then if p.tigerMarker then p.tigerMarker:Hide() end return end
+    local costX = (cost / maxE) * barW  -- the cost point, from the bar's left edge
     m:ClearAllPoints()
     -- left edge tracks current energy (the fill's right edge); right edge is the cost point.
     -- once current >= cost the left passes the right -> zero/negative width -> invisible.

@@ -22,10 +22,68 @@ function ModuleManager:Register(module)
     assert(not p.modules[name], "duplicate module: " .. tostring(name))
     p.modules[name] = module
     p.order[#p.order + 1] = name
+    p.depGraph = nil  -- structure changed; rebuild lazily
     if p.started then
         self:_Start(module)
     end
     return module
+end
+
+-- The shared dependency forest for modules. Three node kinds, all evaluated by
+-- the core DependencyGraph (not by hand): addon:* (is the external addon loaded),
+-- service:* (is the service loaded), module:* (is the module enabled, with its
+-- module-deps as the node's condition). Cached; rebuilt when a module registers.
+function ModuleManager:_DepGraph()
+    local p = self:_p()
+    if p.depGraph then return p.depGraph end
+    local g = ns.DependencyGraph:New({ method = "IsEnabled" })  -- module subjects use :IsEnabled()
+
+    local function ensure(id, predicate)
+        if not g:Has(id) then g:Add(id, predicate) end
+    end
+    for _, name in ipairs(p.order) do
+        local m = p.modules[name]
+        for _, a in ipairs(m:GetAddonDeps()) do
+            ensure("addon:" .. a, function() return C_AddOns and C_AddOns.IsAddOnLoaded and C_AddOns.IsAddOnLoaded(a) and true or false end)
+        end
+        for _, s in ipairs(m:GetServiceDeps()) do
+            ensure("service:" .. s, function() return ns.ServiceManager and ns.ServiceManager:IsLoaded(s) and true or false end)
+        end
+    end
+    for _, name in ipairs(p.order) do
+        local m = p.modules[name]
+        local refs = {}
+        for _, d in ipairs(m:GetModuleDeps()) do refs[#refs + 1] = "module:" .. d end
+        g:Add("module:" .. name, m, (#refs > 0) and { all = refs } or nil)
+    end
+
+    local ok, issues = g:Validate()
+    if not ok then
+        for _, msg in ipairs(issues) do ns.Logger:Core():Warn("module dependencies: " .. msg) end
+    end
+    p.depGraph = g
+    return g
+end
+
+-- DISPLAY gate: every required external addon is loaded.
+function ModuleManager:IsModuleAvailable(name)
+    local m = self:GetModule(name); if not m then return false end
+    local g = self:_DepGraph()
+    for _, a in ipairs(m:GetAddonDeps()) do
+        if not g:IsActive("addon:" .. a) then return false end
+    end
+    return true
+end
+
+-- GREY gate: required services loaded AND prerequisite modules enabled (the
+-- latter via the node's condition, resolved transitively by the graph).
+function ModuleManager:AreModuleDepsMet(name)
+    local m = self:GetModule(name); if not m then return false end
+    local g = self:_DepGraph()
+    for _, s in ipairs(m:GetServiceDeps()) do
+        if not g:IsActive("service:" .. s) then return false end
+    end
+    return g:IsSatisfied("module:" .. name)
 end
 
 -- Look up a registered module instance by name.
@@ -49,6 +107,9 @@ function ModuleManager:Count()
 end
 
 function ModuleManager:_Start(module)
+    -- Initialise the module regardless; whether it actually ENABLES is gated by
+    -- Module:Enable, which consults the dependency graph (addon + service + module
+    -- deps). So a module with unmet deps simply stays disabled, not uninitialised.
     module:_AttachLogger()
     module:_BindDB()
     module:OnInitialize()
@@ -59,6 +120,20 @@ function ModuleManager:_Start(module)
     end
     if shouldEnable then
         module:Enable()
+    end
+end
+
+-- Disable every enabled module that declares `name` as a module-dependency.
+-- Called when a module is disabled so dependents can't keep running without it.
+function ModuleManager:DisableDependents(name)
+    local p = self:_p()
+    for _, mname in ipairs(p.order) do
+        local m = p.modules[mname]
+        if m and m:IsEnabled() then
+            for _, dep in ipairs(m:GetModuleDeps()) do
+                if dep == name then m:Disable(); break end  -- Disable() cascades further
+            end
+        end
     end
 end
 
@@ -103,4 +178,6 @@ function ModuleManager:OpenContextMenu(owner)
     end)
 end
 
-ns.ModuleManager = ModuleManager
+-- Self-instantiate the singleton at load so feature modules can register into it
+-- as their files load (after the Core layer).
+ns.ModuleManager = ModuleManager:New()

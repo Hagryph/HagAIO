@@ -13,9 +13,9 @@ local Class = ns.Class
 --   ns.Hooks:Unhook(h)         -- remove one
 --   ns.Hooks:UnhookAll(owner)  -- remove every hook an owner installed (use on disable)
 
-local Hooks = Class.new("Hooks")
+local Hooks = Class.new("Hooks", ns.Service)
 
-function Hooks:Initialize()
+function Hooks:OnInitialize()
     local p = self:_p()
     p.targets = {}     -- object -> method -> { handlers = { id -> fn } }
     p.byOwner = {}     -- owner  -> { handle -> true }
@@ -73,4 +73,4 @@ function Hooks:UnhookAll(owner)
     p.byOwner[owner] = nil
 end
 
-ns.Hooks = Hooks
+ns.ServiceManager:Register(Hooks:New("Hooks"))

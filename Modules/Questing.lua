@@ -164,7 +164,7 @@ function Questing:_ShowTooltip()
         return
     end
     if IsXPUserDisabled and IsXPUserDisabled() then
-        tt:AddLine("XP gain is disabled.", Theme.Unpack("warn"))
+        tt:AddLine("XP gain is disabled.", Theme.Unpack("amber"))
     end
 
     local cur, max, pct, remaining, rested, sessionXP, perHour, elapsed, ttl = self:_Stats()
@@ -178,7 +178,7 @@ function Questing:_ShowTooltip()
 
     tt:AddLine(" ")
     statLine(tt, "Session XP", commafy(sessionXP))
-    statLine(tt, "XP / hour", perHour > 0 and commafy(perHour) or "-", "win")
+    statLine(tt, "XP / hour", perHour > 0 and commafy(perHour) or "-", "green")
     statLine(tt, "Time played", clock(elapsed))
     statLine(tt, "Time to level", clock(ttl), "accent")
 
@@ -278,10 +278,12 @@ function Questing:_OnGossip()
     end
 
     if self:GetSetting("autoAccept") and C_GossipInfo and C_GossipInfo.GetAvailableQuests then
-        local avail = C_GossipInfo.GetAvailableQuests()
-        if avail and avail[1] then
-            C_GossipInfo.SelectAvailableQuest(avail[1].questID)
-            return
+        local acceptGrey = self:GetSetting("acceptGrey")
+        for _, q in ipairs(C_GossipInfo.GetAvailableQuests()) do
+            if acceptGrey or not q.isTrivial then  -- skip trivial (grey) quests unless opted in
+                C_GossipInfo.SelectAvailableQuest(q.questID)
+                return
+            end
         end
     end
 
@@ -336,12 +338,17 @@ ns.ModuleManager:Register(Questing:New("Questing", {
 
         { type = "header", text = "Quests" },
         { type = "toggle", key = "autoAccept", label = "Auto-accept quests", default = false },
+        { type = "toggle", key = "acceptGrey", label = "Accept grey quests", default = false,
+          dependsOn = "autoAccept",
+          desc = "Also accept trivial quests too low-level to award XP. Off by default so they're skipped." },
         { type = "toggle", key = "autoTurnIn", label = "Auto-turn-in quests", default = false },
         { type = "toggle", key = "autoDialogue", label = "Auto-advance single dialogue", default = false,
           desc = "When an NPC has only one dialogue option (and no quests), pick it automatically." },
         { type = "toggle", key = "shiftPause", label = "Hold Shift to pause", default = true,
+          dependsOn = { "autoAccept", "autoTurnIn", "autoDialogue" },
           desc = "Hold Shift while talking to an NPC to handle it yourself." },
         { type = "toggle", key = "pauseInstance", label = "Pause inside instances", default = false,
+          dependsOn = { "autoAccept", "autoTurnIn", "autoDialogue" },
           desc = "Skip quest automation while in dungeons and raids." },
         { type = "note", text = "Quests that let you choose between rewards are left open so you can pick." },
     },

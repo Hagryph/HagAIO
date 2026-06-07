@@ -21,23 +21,24 @@ local function fmt(s)
     return ("%d:%02d"):format(math.floor(s / 60), s % 60)
 end
 
--- Bi-directional route key: the two endpoints are sorted so a flight recorded
--- in one direction also serves the return trip (the timer is symmetric).
-local function routeKey(a, b)
+-- DIRECTIONAL route key: a -> b is stored separately from b -> a, because the two
+-- directions don't always take the same time (path asymmetry). New recordings use this;
+-- the resolver (_RouteTime) prefers same-direction data and falls back to the reverse.
+local function dirKey(a, b)
     local faction = UnitFactionGroup("player") or "?"
-    a, b = tostring(a), tostring(b)
-    if a > b then a, b = b, a end
-    return faction .. "|" .. a .. " <-> " .. b
+    return faction .. "|" .. tostring(a) .. " -> " .. tostring(b)
 end
 
 local ARRIVE_YARDS = 40    -- within this of a path node = we landed there
 local CROSS_MARGIN = 75   -- moved this many (linear) yards past the closest approach = passed it
+local FLYOVER_RANGE = 75  -- closest approach must be within this to count as flying OVER a node;
+                          -- farther than this and the node is skipped (never recorded)
 local LAND_LEAD = 60      -- too close to a node to land there -> an early stop overshoots it
 
--- A flight DB entry is { t = seconds, q = quality }. Only measurements are stored:
--- DIRECT (a real landing) > FLY (a mid-flight closest-approach guess). Estimates
--- are computed fresh and never persisted. Legacy: a plain number = DIRECT; an old
--- { t, est = true } (a saved estimate, no longer produced) is treated as FLY.
+-- A flight DB entry is { t = seconds, q = quality }, keyed per DIRECTION (see dirKey).
+-- Only measurements are stored: DIRECT (a real landing) > FLY (a mid-flight closest-
+-- approach guess). Estimates are computed fresh and never persisted. Legacy: a plain
+-- number = DIRECT; an old { t, est = true } (a saved estimate) is treated as FLY.
 local Q_DIRECT, Q_FLY = 2, 1
 
 local function storedTime(e)
@@ -49,6 +50,21 @@ local function entryQ(e)
     if type(e) ~= "table" then return Q_DIRECT end   -- legacy number
     if e.q then return e.q end
     return e.est and Q_FLY or Q_DIRECT               -- legacy saved estimate -> fly
+end
+
+-- Best stored time for a sub-leg a -> b, considering BOTH directions as a PRIORITY (not an
+-- exclusion -- a reverse-direction segment is still usable, just less preferred):
+--   Direct same (0) < Direct other (1) < Fly same (2) < Fly other (3).
+-- Returns (seconds, penalty), or nil if neither direction is known.
+local function legCost(flights, a, b)
+    local fwd, rev = flights[dirKey(a, b)], flights[dirKey(b, a)]
+    local t, pen
+    if fwd then pen = 2 * (Q_DIRECT - entryQ(fwd)); t = storedTime(fwd) end   -- same direction
+    if rev then
+        local rp = 2 * (Q_DIRECT - entryQ(rev)) + 1                            -- other direction (+1)
+        if not pen or rp < pen then pen, t = rp, storedTime(rev) end
+    end
+    return t, pen
 end
 
 -- Sell every sellable grey (Poor, quality 0) item in the bags. Returns count.
@@ -113,8 +129,11 @@ function Misc:OnDisable()
     for event, token in pairs(p.tokens) do bus:Off(event, token) end
     wipe(p.tokens)
     ns.Hooks:UnhookAll(self)              -- remove the early-landing redirect
-    if p.ticker then p.ticker:Hide() end  -- stop OnUpdate ticks while disabled
-    if p.frame then p.frame:Hide() end    -- recording keeps running; display stops
+    -- Do NOT stop the in-flight ticker: it is the recording engine (it detects the landing
+    -- and stores the time), and flight recording must run even while the module is disabled.
+    -- _Tick's recording is ungated; the DISPLAY is gated in _RefreshDisplay, so the frame
+    -- stays hidden on its own. (Hiding the ticker here used to drop mid-flight recordings.)
+    if p.frame then p.frame:Hide() end
     if p.sellBtn then p.sellBtn:Hide() end
 end
 
@@ -147,10 +166,9 @@ function Misc:_OnTakeTaxi(slot)
 
     p.dst = dst
     p.dstMapID = p.flightMapID
-    p.route = routeKey(p.src, dst)
     -- resolve the expected time NOW, while the flight map (taxi data) is still
     -- open -- GetNumRoutes/TaxiGetNodeSlot stop working once it closes.
-    p.known = (self:_RouteTime(p.route, slot, dst))
+    p.known = (self:_RouteTime(p.src, dst, slot, dst))
     p.path = self:_BuildPath(slot, dst)   -- ordered nodes (+world pos) for timing/landing
     p.earlyLanding = false                -- reset any prior Request-Stop redirect
     p.phase = "boarding"
@@ -176,11 +194,12 @@ function Misc:_StopTicker()
     p.earlyLanding = false
 end
 
--- A measured DIRECT (landing) write:
+-- A measured DIRECT (landing) write for the a -> b direction:
 --   always replaces a lower-quality (fly) entry, even < 5s;
 --   direct-over-direct only when the time changed by >= 5s.
-function Misc:_Store(key, seconds)
+function Misc:_Store(a, b, seconds)
     local flights = self:GetDB().flights
+    local key = dirKey(a, b)
     local cur = flights[key]
     if cur == nil then
         flights[key] = { t = seconds, q = Q_DIRECT }
@@ -195,26 +214,37 @@ function Misc:_Store(key, seconds)
     end
 end
 
--- Fill-only write for fly-over (closest-approach) segment times: the lowest
--- quality tier, so it ONLY populates an empty slot and never overwrites anything.
-function Misc:_StoreIfNew(key, seconds)
+-- Fill-only write for fly-over (closest-approach) segment times in the a -> b direction:
+-- the lowest quality tier, so it ONLY populates an empty slot and never overwrites.
+function Misc:_StoreIfNew(a, b, seconds)
     local flights = self:GetDB().flights
+    local key = dirKey(a, b)
     if flights[key] == nil then flights[key] = { t = seconds, q = Q_FLY } end
 end
 
--- Best known time for a route as (seconds, isEstimate). A measured direct wins;
--- otherwise compute a multi-hop estimate, persist it, and return it.
-function Misc:_RouteTime(key, slot, name)
-    local entry = self:GetDB().flights[key]
-    if entry and entryQ(entry) == Q_DIRECT then
-        return storedTime(entry), false   -- a real direct: exact
-    end
-    -- otherwise compute the best amalgamated estimate FRESH (prefers direct
-    -- sub-segments). Estimates are never persisted -- they would only stale/
-    -- compound real measurements -- so this is computed on every hover/take-off.
-    local est = self:_EstimateRoute(slot, name)
+-- Best known time for a current flight src -> dst as (seconds, isEstimate). Resolved in
+-- priority order (the two directions can differ, so same-direction wins within each tier):
+--   1. DIRECT same direction   -- a real landing on this exact trip            (exact)
+--   2. DIRECT other direction  -- a real landing on the return trip            (~)
+--   3. FLY  same direction     -- a same-direction fly-over closest approach   (~)
+--   4. FLY  other direction    -- a reverse fly-over guess                     (~)
+--   5. an assembled multi-hop estimate from sub-segments along the booked route  (~)
+--   6. a composed estimate through ANY learned legs (graph) -- covers a direct
+--      hop never flown, e.g. A->B as A->C + C->B                                 (~)
+-- Only a same-direction DIRECT is reported as exact; everything else is flagged an
+-- estimate, which the UI prefixes with "~".
+function Misc:_RouteTime(src, dst, slot, name)
+    local f = self:GetDB().flights
+    local fwd, rev = f[dirKey(src, dst)], f[dirKey(dst, src)]
+    if fwd and entryQ(fwd) == Q_DIRECT then return storedTime(fwd), false end  -- 1
+    if rev and entryQ(rev) == Q_DIRECT then return storedTime(rev), true  end  -- 2
+    if fwd then return storedTime(fwd), true end                              -- 3 (fwd is FLY here)
+    if rev then return storedTime(rev), true end                              -- 4 (rev is FLY here)
+    local est = self:_EstimateRoute(slot, name)                               -- 5 (booked-path sum)
     if est then return est, true end
-    return storedTime(entry), entry ~= nil   -- fall back to a stored fly time (or nil)
+    local graph = self:_EstimateGraph(src, dst)                               -- 6 (compose via any legs)
+    if graph then return graph, true end
+    return nil, false
 end
 
 -- Ordered nodes the taxi flies through (source ... destination), each tagged with
@@ -223,6 +253,10 @@ end
 -- closest approach to each node mid-flight.
 function Misc:_BuildPath(destSlot, destName)
     local p = self:_p()
+    -- Position + name come from the captured flight-map pins (keyed by the same slotIndex
+    -- the taxi route uses), so every node here is genuinely on the booked route. (An earlier
+    -- attempt to backfill positions from C_TaxiMap.GetAllTaxiNodes was reverted: its slotIndex
+    -- does NOT line up with TaxiGetNodeSlot, so it mis-keyed nodes onto off-route names/pos.)
     local function nodeAt(slot, name)
         local mp = slot and p.nodePos and p.nodePos[slot]
         local world
@@ -264,13 +298,16 @@ end
 -- Which path node are we standing at? Nearest within ARRIVE_YARDS. Returns its
 -- name (the target on a full flight, an earlier node on a stopped one), nil if we
 -- are near none (ported off the path), or the target if position is unmeasurable.
+-- The ORIGIN (node 1) is never a candidate: you cannot land back where you took off,
+-- so it must never be picked as a landing point (start at node 2).
 function Misc:_LandedNode()
     local p = self:_p()
-    if not (p.path and #p.path > 0) then return p.dst end
+    if not (p.path and #p.path > 1) then return p.dst end
     local px, py, pc = self:_PlayerWorld()
     if not px then return p.dst end
     local bestName, bestD2, comparable = nil, ARRIVE_YARDS * ARRIVE_YARDS, false
-    for _, node in ipairs(p.path) do
+    for i = 2, #p.path do                       -- skip node 1 (origin)
+        local node = p.path[i]
         if node.world and node.world.c == pc then
             comparable = true
             local dx, dy = px - node.world.x, py - node.world.y
@@ -304,7 +341,13 @@ function Misc:_PollCrossing()
         p.crossMinDist = dist
         p.crossMinTime = GetTime()
     elseif p.crossMinTime and dist > p.crossMinDist + CROSS_MARGIN then
-        self:_RecordCross(p.crossIdx, p.crossMinTime)
+        -- We've clearly moved past this node's closest approach. Record it as a
+        -- fly-over ONLY if we actually came within FLYOVER_RANGE; otherwise skip it
+        -- (the next recorded node's segment then spans from the last node we DID
+        -- fly over, e.g. A -> C when B was never within range).
+        if p.crossMinDist <= FLYOVER_RANGE then
+            self:_RecordCross(p.crossIdx, p.crossMinTime)
+        end
         p.crossIdx = p.crossIdx + 1
         p.crossMinDist = math.huge
         p.crossMinTime = nil
@@ -317,13 +360,17 @@ function Misc:_RecordCross(idx, when)
     local p = self:_p()
     p.crossTimes = p.crossTimes or {}
     p.crossTimes[idx] = when
-    local prevT = p.crossTimes[idx - 1]
-    local a = p.path[idx - 1] and p.path[idx - 1].name
+    -- Segment from the last node we ACTUALLY flew over (skipped nodes are bypassed),
+    -- so when B was never within range this records A -> C directly.
+    local prevIdx = p.lastCrossIdx or 1
+    local prevT = p.crossTimes[prevIdx]
+    local a = p.path[prevIdx] and p.path[prevIdx].name
     local b = p.path[idx] and p.path[idx].name
-    if prevT and a and b then
+    if prevT and a and b and a ~= b then
         local seg = when - prevT
-        if seg > 1 then self:_StoreIfNew(routeKey(a, b), seg) end  -- fill-only
+        if seg > 1 then self:_StoreIfNew(a, b, seg) end  -- fill-only, a -> b direction
     end
+    p.lastCrossIdx = idx
 end
 
 -- The final leg: last node we actually passed (the before-last) -> where we
@@ -332,14 +379,14 @@ end
 function Misc:_RecordFinalLeg(landed, when)
     local p = self:_p()
     if not p.crossTimes then return end
-    local maxIdx, maxTime = 1, p.crossTimes[1]
-    for i, t in pairs(p.crossTimes) do
-        if i > maxIdx then maxIdx, maxTime = i, t end
-    end
-    local fromName = p.path and p.path[maxIdx] and p.path[maxIdx].name
-    if fromName and maxTime and fromName ~= landed then
-        local seg = when - maxTime
-        if seg > 1 then self:_StoreIfNew(routeKey(fromName, landed), seg) end  -- fill-only
+    -- From the last node we ACTUALLY flew over (or the source if none) -- so a
+    -- skipped second-to-last node doesn't break the final leg.
+    local fromIdx = p.lastCrossIdx or 1
+    local fromT = p.crossTimes[fromIdx]
+    local fromName = p.path and p.path[fromIdx] and p.path[fromIdx].name
+    if fromName and fromT and fromName ~= landed then
+        local seg = when - fromT
+        if seg > 1 then self:_StoreIfNew(fromName, landed, seg) end  -- fill-only, fromName -> landed
     end
 end
 
@@ -352,6 +399,7 @@ function Misc:_Tick(dt)
             -- crossing state: we're at the source node (1) on lift-off
             p.crossTimes = { [1] = p.startTime }
             p.crossIdx = 2
+            p.lastCrossIdx = 1   -- last node actually flown over (source); skips advance past
             p.crossMinDist = math.huge
             p.crossMinTime = nil
             -- p.known was resolved at take-off (recorded time or multi-hop estimate)
@@ -369,7 +417,7 @@ function Misc:_Tick(dt)
             -- we were ported off the path, so nothing is recorded.
             local landed = self:_LandedNode()
             if dur > 1 and landed then
-                self:_Store(routeKey(p.src, landed), dur)  -- full source -> landed
+                self:_Store(p.src, landed, dur)  -- full source -> landed
                 self:_RecordFinalLeg(landed, now)                 -- last per-node segment
             end
             if p.frame then p.frame:Hide() end
@@ -456,10 +504,13 @@ end
 -- decelerate and land (on top of a node). It then re-tracks every tick.
 function Misc:_OnEarlyLanding()
     local p = self:_p()
-    if not (p.path and p.crossIdx) then return end
+    if not p.path then return end
     p.earlyLanding = true
 
-    local idx = p.crossIdx
+    -- crossIdx is only set once _Tick flips boarding -> flying; a stop requested in that
+    -- gap (right after lift-off) arrives before it exists, so fall back to node 2 -- the
+    -- first node after the source. _UpdateEarlyTarget refines it once tracking starts.
+    local idx = p.crossIdx or 2
     local node = p.path[idx]
     if node and node.world and p.path[idx + 1] then
         local px, py, pc = self:_PlayerWorld()
@@ -482,20 +533,25 @@ function Misc:_UpdateEarlyTarget()
     if not (p.earlyLanding and p.path and p.earlyIdx) then return end
 
     -- past our target? (crossIdx is the next-node-ahead tracker) -> move it forward
-    if p.crossIdx and p.crossIdx > p.earlyIdx then p.earlyIdx = p.crossIdx end
+    local cross = p.crossIdx
+    if cross and cross > p.earlyIdx then p.earlyIdx = cross end
 
     local landNode = p.path[p.earlyIdx]
     if not landNode then return end
-    p.dst = landNode.name
+    p.dst = landNode.name   -- always update the shown destination, even before tracking starts
 
-    -- p.known = elapsed at the last node we passed + the segment time to the stop.
-    local flights = self:GetDB().flights
-    local lastPassT = p.crossTimes and p.crossTimes[p.crossIdx - 1]
-    local segTotal = 0
-    for i = p.crossIdx, p.earlyIdx do
-        local seg = storedTime(flights[routeKey(p.path[i - 1].name, p.path[i].name)])
-        if not seg then segTotal = nil; break end
-        segTotal = segTotal + seg
+    -- The countdown needs crossing data; until _Tick begins tracking (crossIdx/crossTimes),
+    -- leave it unknown. From the last node we passed to the stop, estimate the same way the
+    -- full route does -- both directions, fly-over fallback -- so an early stop shows a time
+    -- whenever the whole-route hover would have.
+    local segTotal, lastPassT
+    if cross then
+        lastPassT = p.crossTimes and p.crossTimes[cross - 1]
+        local names = {}
+        for i = cross - 1, p.earlyIdx do names[#names + 1] = p.path[i] and p.path[i].name end
+        local complete = true
+        for _, nm in ipairs(names) do if not nm then complete = false; break end end
+        segTotal = complete and self:_EstimatePathNames(names) or nil
     end
     if segTotal and lastPassT then
         p.known = (lastPassT - (p.startTime or lastPassT)) + segTotal
@@ -536,10 +592,37 @@ function Misc:_HookFlightPins()
     end)
 end
 
--- Estimate an unrecorded multi-hop route by summing known stop-to-stop segment
--- times along the path the taxi actually flies (GetNumRoutes / TaxiGetNodeSlot),
--- the way InFlight does it. Returns seconds, or nil if the chain can't be
--- completed from known segments. Uses flight-map names to stay key-consistent.
+-- Estimate the time along an ordered list of node names by assembling known sub-segments.
+-- DP over the path: reach name 1 -> each name using whatever segments exist (EITHER
+-- direction, via legCost), MINIMISING total imprecision -- so the most precise + same-
+-- direction parts win where they exist, gaps fall back to reverse / fly-over, and a long
+-- single fly-over loses to a chain of directs covering it. Returns seconds, or nil if the
+-- chain can't be completed. Shared by the full-route estimate and the early-stop estimate.
+function Misc:_EstimatePathNames(names)
+    local n = names and #names or 0
+    if n < 2 then return 0 end   -- nothing to sum (stop is where we already are)
+    local flights = self:GetDB().flights
+    local pen, time = { [1] = 0 }, { [1] = 0 }
+    for j = 2, n do
+        for i = 1, j - 1 do
+            if pen[i] ~= nil then
+                local t, segPen = legCost(flights, names[i], names[j])
+                if segPen ~= nil then
+                    local cand = pen[i] + segPen
+                    if pen[j] == nil or cand < pen[j] then
+                        pen[j] = cand
+                        time[j] = time[i] + t
+                    end
+                end
+            end
+        end
+    end
+    return time[n]   -- nil if the chain can't be completed
+end
+
+-- Estimate an unrecorded multi-hop route by summing known segments along the path the taxi
+-- actually flies (GetNumRoutes / TaxiGetNodeSlot). Returns seconds, or nil. Uses flight-map
+-- names to stay key-consistent.
 function Misc:_EstimateRoute(destSlot, destName)
     if not (destSlot and GetNumRoutes and TaxiGetNodeSlot) then return nil end
     local p = self:_p()
@@ -554,29 +637,49 @@ function Misc:_EstimateRoute(destSlot, destName)
     end
     for i = 1, hops + 1 do if not nodes[i] then return nil end end
 
-    -- DP over the ordered path: reach node 1 -> each node using whatever known
-    -- sub-segments exist, but MINIMISE total imprecision (penalty per segment:
-    -- direct 0, fly-over 1). This takes the most precise parts where they exist and
-    -- fills the gaps with fly-overs -- so a single fly-over spanning the whole route
-    -- loses to a chain of directs covering it.
+    return self:_EstimatePathNames(nodes)
+end
+
+-- Last-resort estimate: the least-imprecise chain of LEARNED segments from src to
+-- dst through ANY intermediate nodes (not just the booked route). Lets a never-flown
+-- direct hop A->B be estimated as A->C + C->B when those legs exist. Dijkstra over the
+-- segment graph, minimising accumulated legCost penalty and summing the times.
+function Misc:_EstimateGraph(src, dst)
+    if not (src and dst) or src == dst then return nil end
     local flights = self:GetDB().flights
-    local pen, time = { [1] = 0 }, { [1] = 0 }
-    for j = 2, hops + 1 do
-        for i = 1, j - 1 do
-            if pen[i] ~= nil then
-                local e = flights[routeKey(nodes[i], nodes[j])]
-                local q = entryQ(e)
-                if q then
-                    local cand = pen[i] + (Q_DIRECT - q)   -- direct 0, fly 1
-                    if pen[j] == nil or cand < pen[j] then
-                        pen[j] = cand
-                        time[j] = time[i] + storedTime(e)
+
+    -- every node name recorded under the CURRENT faction (legCost only uses those).
+    local prefix = (UnitFactionGroup("player") or "?") .. "|"
+    local nodes = { [src] = true, [dst] = true }
+    for key in pairs(flights) do
+        if key:sub(1, #prefix) == prefix then
+            local a, b = key:sub(#prefix + 1):match("^(.-) %-> (.+)$")
+            if a and b then nodes[a] = true; nodes[b] = true end
+        end
+    end
+
+    local pen, time, done = { [src] = 0 }, { [src] = 0 }, {}
+    while true do
+        local cur, curPen = nil, math.huge
+        for nm, pn in pairs(pen) do
+            if not done[nm] and pn < curPen then cur, curPen = nm, pn end
+        end
+        if not cur then return nil end
+        if cur == dst then return time[dst] end
+        done[cur] = true
+        for nm in pairs(nodes) do
+            if not done[nm] and nm ~= cur then
+                local t, segPen = legCost(flights, cur, nm)
+                if segPen ~= nil then
+                    local cand = curPen + segPen
+                    if pen[nm] == nil or cand < pen[nm] then
+                        pen[nm] = cand
+                        time[nm] = time[cur] + t
                     end
                 end
             end
         end
     end
-    return time[hops + 1]   -- nil if the chain can't be completed
 end
 
 function Misc:_OnPinEnter(pin)
@@ -586,7 +689,7 @@ function Misc:_OnPinEnter(pin)
     local src = self:_p().src
     if not src then return end
 
-    local dur, estimated = self:_RouteTime(routeKey(src, d.name), d.slotIndex, d.name)
+    local dur, estimated = self:_RouteTime(src, d.name, d.slotIndex, d.name)
 
     local r, g, b = Theme.Unpack("accent")
     local prefix = estimated and "Flight: ~" or "Flight: "  -- "~" = summed estimate
@@ -647,7 +750,7 @@ ns.ModuleManager:Register(Misc:New("Misc", {
     title = "Miscellaneous",
     description = "Flight-path timers and selling junk.",
     defaultEnabled = false,
-    color = ns.Theme.hex.accent,
+    color = ns.Theme.hex.grey,  -- distinct tag (accent=Core, green=UnitFrames, purple=Class, gold=Questing, red=CVars)
     settings = {
         { type = "header", text = "Flight timers" },
         { type = "toggle", key = "showInFlight", label = "Show timer while in flight", default = true },

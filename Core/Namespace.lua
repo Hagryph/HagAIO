@@ -22,6 +22,10 @@ ns.ICON = "Interface\\AddOns\\HagAIO\\Media\\icon"
 ns.Class = nil          -- OOP class factory          (Core/Class.lua)
 ns.Object = nil         -- root base class             (Core/Class.lua)
 ns.Theme = nil          -- design system (LoL palette) (Core/Theme.lua)
+ns.Service = nil        -- abstract service base       (Core/Service.lua)
+ns.ServiceManager = nil -- service registry + ordering (Core/ServiceManager.lua)
+ns.Submodule = nil      -- condition-gated submodule base (Core/Submodule.lua)
+ns.SubmoduleManager = nil -- submodule registry + loader (Core/SubmoduleManager.lua)
 ns.EventBus = nil       -- event/message singleton     (Core/EventBus.lua)
 ns.SavedVars = nil      -- saved-variable manager      (Core/SavedVars.lua)
 ns.Logger = nil         -- logging service singleton   (Core/Logger.lua)
@@ -35,14 +39,20 @@ ns.ActionBars = nil     -- find/annotate action buttons (Core/ActionBars.lua)
 ns.Range = nil          -- enemies-in-range by yardage    (Core/Range.lua)
 ns.Cooldowns = nil      -- secret-safe cooldown watcher (Core/Cooldowns.lua)
 ns.Secrets = nil        -- 12.0 Secret Value helpers    (Core/Secrets.lua)
+ns.Scaling = nil        -- health-based scaling formulas (Core/Scaling.lua)
+ns.DependencyGraph = nil -- generic dependency forest   (Core/DependencyGraph.lua)
+ns.Dev = nil            -- developer tools (CVar dump)  (Core/Dev.lua)
 ns.EditMode = nil       -- Edit Mode framework         (Core/EditMode.lua)
-ns.UI = nil             -- UI namespace (widgets+window) (UI/*.lua)
+ns.UI = nil             -- UI namespace (widgets+windows) (UI/*.lua)
 ns.Initializer = nil    -- startup orchestrator        (Core/Init.lua)
 
--- NOTE: the singleton slots above (EventBus, SavedVars, Logger, ModuleManager,
--- SlashCommand, Compartment, EditMode, UI.SettingsWindow) start as the CLASS at
--- file load and are replaced with their sole INSTANCE by Core/Init.lua. There is
--- no `.Get()` accessor — call sites use e.g. `ns.EventBus` directly.
+-- NOTE on lifecycle: a few core singletons self-instantiate at file load
+-- (Logger, ServiceManager, ModuleManager) so they're available immediately. Every
+-- SERVICE slot (EventBus, SavedVars, SlashCommand, Hooks, ActionBars, Range,
+-- Cooldowns, Secrets, Scaling, Dev, EditMode, Compartment, MinimapIcon, and the
+-- UI.* windows) is filled with its sole INSTANCE by the ServiceManager during
+-- StartAll(), in dependency order. There is no `.Get()` accessor — call sites use
+-- e.g. `ns.EventBus` directly. DependencyGraph stays a CLASS (instantiated per use).
 
 -- Logger: a small static table so prints stay consistent and namespaced.
 local Log = {}

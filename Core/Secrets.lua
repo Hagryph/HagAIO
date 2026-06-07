@@ -17,9 +17,9 @@ local Class = ns.Class
 --   ns.Secrets:Text(fontString, maybeSecret)   -- paint a value we may not read
 --   if ns.Secrets:Restricted() then ...        -- in M+/raid/PvP secret content?
 
-local Secrets = Class.new("Secrets")
+local Secrets = Class.new("Secrets", ns.Service)
 
-function Secrets:Initialize() end
+function Secrets:OnInitialize() end
 
 -- True if v is a secret value. Safe when the API is absent (pre-12.0 / test paths).
 function Secrets:Is(v)
@@ -59,4 +59,4 @@ function Secrets:Text(fontString, v, prefix)
     return true
 end
 
-ns.Secrets = Secrets
+ns.ServiceManager:Register(Secrets:New("Secrets"))

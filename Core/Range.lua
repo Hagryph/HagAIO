@@ -9,7 +9,7 @@ local Class = ns.Class
 -- including self-cast spells' radii). Item->yardage brackets are curated from
 -- LibRangeCheck's HarmItems; a targeted spell can be passed as a per-unit fallback.
 
-local Range = Class.new("Range")
+local Range = Class.new("Range", ns.Service)
 
 -- Harm items by exact yardage (first cached one is used). From LibRangeCheck.
 local HARM_ITEMS = {
@@ -22,7 +22,7 @@ local HARM_ITEMS = {
     [30] = { 835 },                           -- Large Rope Net
 }
 
-function Range:Initialize()
+function Range:OnInitialize()
     self:_p().resolved = {}   -- yards -> resolved itemID
 end
 
@@ -75,4 +75,4 @@ function Range:CountEnemies(yards, fallbackSpellID)
     return n
 end
 
-ns.Range = Range
+ns.ServiceManager:Register(Range:New("Range"))

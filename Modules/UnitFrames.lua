@@ -6,20 +6,19 @@ local Class = ns.Class
 -- through yellow, to red when low.
 --
 -- Built from the official ColorCurveObject example (warcraft.wiki.gg): a colour
--- curve evaluated by UnitHealthPercent yields a (secret) colour we apply with
--- GetStatusBarTexture():SetVertexColor. Two practical notes the example implies:
---   * The default bar's fill is a GREEN atlas, and vertex colour MULTIPLIES it,
---     so hue can't change. We swap it for the example's flat texture, which
---     tints to any colour at full brightness.
+-- curve evaluated by UnitHealthPercent yields a (secret) colour we apply to the
+-- health-bar fill. Two practical notes:
+--   * The default fill is a GREEN atlas, and a plain colour MULTIPLIES it, so the
+--     hue can't change. We DON'T swap the texture for a flat one -- doing that drops
+--     the atlas's built-in trim, so a plain texture fills past the frame art (the
+--     fill shifts and paints over the border). Instead we DESATURATE the atlas in
+--     place (stripping its green to greyscale) and tint that, which keeps Blizzard's
+--     exact texture shape + inset, so the border stays intact.
 --   * Updates are driven by UNIT_HEALTH (per the example). We also hook
 --     UnitFrameHealthBar_Update only to learn the real bar object for each unit
 --     (a frame-path resolver returns a hidden alias, not the visible bar).
 
 local UnitFrames = Class.new("UnitFrames", ns.Module)
-
--- Solid 8x8 white: tints to a flat, uniform colour (the UI-StatusBar texture
--- has a built-in light/dark split we don't want).
-local FLAT = "Interface\\Buttons\\WHITE8X8"
 
 -- gradient endpoints (also the settings defaults)
 local DEF_START = { 0.90, 0.15, 0.15 }  -- low health  (red)
@@ -30,33 +29,22 @@ local function apiAvailable()
     return C_CurveUtil and C_CurveUtil.CreateColorCurve and UnitHealthPercent and CreateColor
 end
 
--- Paint the fill colour. Two combined fixes so the hue always shows brightly:
---   * (re)apply a flat texture every time — Blizzard re-sets the green atlas on
---     its updates, and the atlas MULTIPLIES vertex colour (killing yellow's red
---     channel and darkening everything).
---   * also desaturate, so even if the flat swap is rejected we tint a greyscale
---     bar rather than multiplying the green atlas.
+-- Recolour the fill IN PLACE, never replacing the texture (that broke geometry):
+--   * desaturate the atlas so its baked-in green doesn't multiply our tint away
+--     (lets red/yellow actually show), and
+--   * tint via SetStatusBarColor (falls back to the fill texture's vertex colour).
+-- Keeping the atlas preserves its trim/mask, so the fill stays inside the border.
 local function paint(bar, r, g, b)
-    if not bar.__hagCaptured then
-        local t = bar:GetStatusBarTexture()
-        bar.__hagAtlas = t and t.GetAtlas and t:GetAtlas() or nil
-        bar.__hagCaptured = true
-    end
-    if bar.SetStatusBarTexture then bar:SetStatusBarTexture(FLAT) end
     local tex = bar:GetStatusBarTexture()
     if not tex then return end
     if tex.SetDesaturated then tex:SetDesaturated(true) end
-    tex:SetVertexColor(r, g, b)
+    if bar.SetStatusBarColor then bar:SetStatusBarColor(r, g, b) else tex:SetVertexColor(r, g, b) end
 end
 
 local function restore(bar)
-    if not bar.__hagCaptured then return end
     local tex = bar:GetStatusBarTexture()
-    if tex then
-        if tex.SetDesaturated then tex:SetDesaturated(false) end
-        tex:SetVertexColor(1, 1, 1)
-        if bar.__hagAtlas and tex.SetAtlas then tex:SetAtlas(bar.__hagAtlas) end
-    end
+    if tex and tex.SetDesaturated then tex:SetDesaturated(false) end
+    if bar.SetStatusBarColor then bar:SetStatusBarColor(1, 1, 1) elseif tex then tex:SetVertexColor(1, 1, 1) end
 end
 
 -- The hook is global and can't be removed; install once per session.
@@ -151,16 +139,16 @@ ns.ModuleManager:Register(UnitFrames:New("UnitFrames", {
     title = "Unit Frames",
     description = "Colours the player and target health bars by how much health is left.",
     defaultEnabled = false,
-    color = ns.Theme.hex.win,
+    color = ns.Theme.hex.green,
     settings = {
         { type = "header", text = "Health bar tint" },
         { type = "toggle", key = "player", label = "Tint player health bar", default = true },
         { type = "toggle", key = "target", label = "Tint target health bar", default = true },
 
         { type = "header", text = "Colours" },
-        { type = "color", key = "endColor",   label = "Full health", default = DEF_END },
-        { type = "color", key = "midColor",   label = "Mid health",  default = DEF_MID },
-        { type = "color", key = "startColor", label = "Low health",  default = DEF_START },
+        { type = "color", key = "endColor",   label = "Full health", default = DEF_END,   dependsOn = { "player", "target" } },
+        { type = "color", key = "midColor",   label = "Mid health",  default = DEF_MID,   dependsOn = { "player", "target" } },
+        { type = "color", key = "startColor", label = "Low health",  default = DEF_START, dependsOn = { "player", "target" } },
         { type = "note", text = "Health fades from Full at 100% through Mid to Low at 30% and below." },
     },
 }))

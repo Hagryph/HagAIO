@@ -15,9 +15,9 @@ local Theme = ns.Theme
 local LEVELS = {
     DEBUG   = { order = 10, tag = "DEBUG",   key = "textFaint", glyph = ""  },
     INFO    = { order = 20, tag = "INFO",    key = "text",      glyph = ""  },
-    SUCCESS = { order = 25, tag = "OK",      key = "win",       glyph = "+" },
-    WARN    = { order = 30, tag = "WARN",    key = "warn",      glyph = "!" },
-    ERROR   = { order = 40, tag = "ERROR",   key = "loss",      glyph = "x" },
+    SUCCESS = { order = 25, tag = "OK",      key = "green",     glyph = "+" },
+    WARN    = { order = 30, tag = "WARN",    key = "amber",     glyph = "!" },
+    ERROR   = { order = 40, tag = "ERROR",   key = "red",       glyph = "x" },
 }
 ns.LogLevel = LEVELS
 
@@ -150,4 +150,6 @@ function Logger:Record(channel, level, text)
     return entry
 end
 
-ns.Logger = Logger
+-- Logging is core functionality (not a Service): instantiate the singleton at
+-- load so every Service/Module can register a channel as soon as it starts.
+ns.Logger = Logger:New()

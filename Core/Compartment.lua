@@ -8,9 +8,9 @@ local Class = ns.Class
 -- right-click jumps to the activity log. This is NOT the legacy standalone
 -- minimap button (LibDBIcon) — it's an entry in the compartment menu.
 
-local Compartment = Class.new("Compartment")
+local Compartment = Class.new("Compartment", ns.Service)
 
-function Compartment:Initialize()
+function Compartment:OnInitialize()
     self:_p().registered = false
 end
 
@@ -76,4 +76,4 @@ function Compartment:OnClick(button, owner)
     end
 end
 
-ns.Compartment = Compartment
+ns.ServiceManager:Register(Compartment:New("Compartment", { deps = { "SavedVars", "SettingsWindow" } }))

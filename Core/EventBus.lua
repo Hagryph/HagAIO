@@ -6,9 +6,9 @@ local Class = ns.Class
 -- events (RegisterEvent) and custom in-addon messages so modules never have to
 -- create their own frames or collide on OnEvent handlers.
 
-local EventBus = Class.new("EventBus")
+local EventBus = Class.new("EventBus", ns.Service)
 
-function EventBus:Initialize()
+function EventBus:OnInitialize()
     local p = self:_p()
     p.frame = CreateFrame("Frame", "HagAIOEventDriver")
     p.events = {}      -- [event]   = { [token] = fn }
@@ -80,4 +80,4 @@ function EventBus:Emit(message, ...)
     end
 end
 
-ns.EventBus = EventBus
+ns.ServiceManager:Register(EventBus:New("EventBus"))

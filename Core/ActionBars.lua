@@ -8,7 +8,7 @@ local Class = ns.Class
 -- button FRAMES, so features can grey / highlight them. Consumers watch the bar
 -- events themselves (ACTIONBAR_SLOT_CHANGED, etc.) and re-query on change.
 
-local ActionBars = Class.new("ActionBars")
+local ActionBars = Class.new("ActionBars", ns.Service)
 
 -- The standard retail action bars (8 x 12 buttons). Pet/stance bars are excluded
 -- (class abilities don't live there).
@@ -24,7 +24,7 @@ local BAR_PREFIXES = {
 }
 local SLOTS_PER_BAR = 12
 
-function ActionBars:Initialize() end
+function ActionBars:OnInitialize() end
 
 local function buttonSlot(btn)
     if not btn then return nil end
@@ -113,4 +113,4 @@ function ActionBars:SetGrey(button, on)
     end
 end
 
-ns.ActionBars = ActionBars
+ns.ServiceManager:Register(ActionBars:New("ActionBars"))

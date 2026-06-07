@@ -51,6 +51,9 @@ Core/
   Range.lua                Enemies-in-range by yardage (C_Item.IsItemInRange brackets)
   Cooldowns.lua            Secret-safe spell cooldown watcher (cast + base-CD timer)
   Secrets.lua              12.0 Secret Value helpers (Is / Number / Restricted / Text)
+  Scaling.lua              Health-based "up to X%" damage/heal scaling (linear ramp + plateau; mirrors SimC)
+  DependencyGraph.lua      Generic dependency forest: AND/OR/at-least conditions, cycle detection, online/active/satisfied queries
+  Dev.lua                  Developer tools: dump every CVar into the copy window each patch (/hag dev cvars; needs -console)
   EditMode.lua             Framework: register a frame for Blizzard Edit Mode (drag + grid/element snap)
   Init.lua                 Core initializer: builds singletons in order + wires startup (ADDON_LOADED → PLAYER_LOGIN)
 UI/
@@ -62,6 +65,7 @@ Modules/
   Class.lua                Per-class helpers — generic core (spec submodule registry)
   Class/Monk.lua           Monk class file (Expel Harm marker, Tiger Palm, AoE helper)
   Misc.lua                 Miscellaneous: flight-path timers, sell junk
+  CVars.lua                Force console variables on every character (/hag cvar dump/set/get/clear/list)
 deploy.ps1                 Mirror the addon into the live WoW AddOns folder
 ```
 

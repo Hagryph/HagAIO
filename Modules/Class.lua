@@ -133,6 +133,6 @@ ns.ModuleManager:Register(ClassModule:New("Class", {
     description = "Helpers for your current class.",
     defaultEnabled = false,
     perChar = true,  -- class/spec differ per character, so store state per char
-    color = ns.Theme.hex.class,  -- distinct log tag (Misc keeps the default accent)
+    color = ns.Theme.hex.purple,
     settings = {},   -- built per class/spec in OnInitialize
 }))

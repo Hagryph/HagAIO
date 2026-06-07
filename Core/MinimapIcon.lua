@@ -6,11 +6,11 @@ local Class = ns.Class
 -- icon pinned to the minimap edge at a saved angle and draggable around the rim.
 -- Default OFF. Left-click toggles the settings window; right-click opens the log.
 
-local MinimapIcon = Class.new("MinimapIcon")
+local MinimapIcon = Class.new("MinimapIcon", ns.Service)
 
 local DEFAULT_ANGLE = 225   -- degrees, measured from the minimap centre
 
-function MinimapIcon:Initialize() end
+function MinimapIcon:OnInitialize() end
 
 function MinimapIcon:_DB()
     return ns.SavedVars:Namespace("minimap", { shown = false, angle = DEFAULT_ANGLE })
@@ -115,4 +115,4 @@ function MinimapIcon:SetShown(on)
     self:Refresh()
 end
 
-ns.MinimapIcon = MinimapIcon
+ns.ServiceManager:Register(MinimapIcon:New("MinimapIcon", { deps = { "SavedVars", "SettingsWindow" } }))

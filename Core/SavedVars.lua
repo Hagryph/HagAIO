@@ -6,7 +6,7 @@ local Class = ns.Class
 -- declared in the .toc. Hands modules a namespaced, default-merged sub-table
 -- so persistence is uniform and collision-free.
 
-local SavedVars = Class.new("SavedVars")
+local SavedVars = Class.new("SavedVars", ns.Service)
 
 -- Recursively seed missing keys from `defaults` without clobbering saved data.
 local function applyDefaults(target, defaults)
@@ -21,7 +21,7 @@ local function applyDefaults(target, defaults)
     return target
 end
 
-function SavedVars:Initialize()
+function SavedVars:OnInitialize()
     self:_p().loaded = false
 end
 
@@ -66,4 +66,4 @@ function SavedVars:SetModuleState(name, enabled, perChar)
     self:_Root(perChar).modules[name] = enabled and true or false
 end
 
-ns.SavedVars = SavedVars
+ns.ServiceManager:Register(SavedVars:New("SavedVars"))

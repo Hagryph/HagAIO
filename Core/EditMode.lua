@@ -17,12 +17,12 @@ local Class = ns.Class
 --       onExit  = function(frame) ... end,           -- restore (opt)
 --   })
 
-local EditMode = Class.new("EditMode")
+local EditMode = Class.new("EditMode", ns.Service)
 
 local SNAP = 10  -- snap threshold in pixels
 local function round(n) return math.floor(n + 0.5) end
 
-function EditMode:Initialize()
+function EditMode:OnInitialize()
     local p = self:_p()
     p.regs = {}
     p.editing = false
@@ -126,8 +126,19 @@ function EditMode:_SnapAndSave(reg)
     cx, cy = self:_GridSnap(cx, cy)
     cx, cy = self:_ElementSnap(reg, cx, cy, hw, hh)
 
-    local ux, uy = UIParent:GetCenter()
-    self:_Positions()[reg.key] = { point = "CENTER", x = cx - ux, y = cy - uy }
+    -- Most frames store a CENTER offset (resize grows both ways). A frame can opt
+    -- into a TOPLEFT anchor (reg.anchor) so its top-left stays put and it grows
+    -- downward/rightward on resize -- used by the Task List.
+    if reg.anchor == "TOPLEFT" then
+        self:_Positions()[reg.key] = {
+            point = "TOPLEFT",
+            x = (cx - hw) - UIParent:GetLeft(),
+            y = (cy + hh) - UIParent:GetTop(),
+        }
+    else
+        local ux, uy = UIParent:GetCenter()
+        self:_Positions()[reg.key] = { point = "CENTER", x = cx - ux, y = cy - uy }
+    end
     self:Apply(reg)
     if reg.onMoved then reg.onMoved() end
 end
@@ -164,4 +175,4 @@ function EditMode:_OnExit()
     end
 end
 
-ns.EditMode = EditMode
+ns.ServiceManager:Register(EditMode:New("EditMode", { deps = { "SavedVars" } }))

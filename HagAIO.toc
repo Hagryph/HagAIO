@@ -13,31 +13,51 @@
 # Interface 120005 = patch 12.0.5 (current live, Midnight). Bump to 120007
 # once 12.0.7 "Revelations" goes live (2026-06-16).
 
+# --- foundation (plain libraries + core singletons) ---
 Core\Namespace.lua
 Core\Class.lua
 Core\Theme.lua
-Core\EventBus.lua
-Core\SavedVars.lua
+# DependencyGraph + Logger are core (used by/needed before the service layer).
+# Service/ServiceManager + ModuleManager self-instantiate at load.
+Core\DependencyGraph.lua
 Core\Logger.lua
+Core\Service.lua
+Core\ServiceManager.lua
 Core\Module.lua
 Core\ModuleManager.lua
+Core\Submodule.lua
+Core\SubmoduleManager.lua
+
+# --- services (each self-registers with the ServiceManager; order here is
+#     irrelevant -- the ServiceManager resolves load order from declared deps) ---
+Core\EventBus.lua
+Core\SavedVars.lua
 Core\SlashCommand.lua
-Core\Compartment.lua
-Core\MinimapIcon.lua
 Core\Hooks.lua
 Core\ActionBars.lua
 Core\Range.lua
 Core\Cooldowns.lua
 Core\Secrets.lua
+Core\Scaling.lua
+Core\Dev.lua
 Core\EditMode.lua
+Core\Compartment.lua
+Core\MinimapIcon.lua
+
+# --- UI (Widgets is a static factory; the windows are UI services) ---
 UI\Widgets.lua
+UI\CopyWindow.lua
 UI\SettingsWindow.lua
-# Core initializer: builds all service singletons in order, then wires startup.
-# Loads AFTER the UI but BEFORE the modules (so ModuleManager exists when each
-# module registers itself at load).
+
+# Core initializer: one StartAll() boots every service in dependency order, then
+# wires the runtime startup. Loads after the services/UI, before the modules.
 Core\Init.lua
 Modules\Questing.lua
 Modules\UnitFrames.lua
 Modules\Class.lua
 Modules\Class\Monk.lua
 Modules\Misc.lua
+Modules\CVars.lua
+Modules\Tasklist.lua
+Modules\Collection.lua
+Modules\Collection\ATT.lua

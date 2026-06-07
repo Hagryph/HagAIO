@@ -4,8 +4,12 @@ local addonName, ns = ...
 -- Static design system ported from the LoL Game Helper desktop app's
 -- "dark + blue" language: near-black blue-tinted panels, a single cyan accent
 -- (#4ab3e6, descendant of GrepolisMod's #4ad), restrained 1px accent borders,
--- uppercase dim section labels, and win/warn/loss signal colours so results
+-- uppercase dim section labels, and green/amber/red signal colours so results
 -- read before words.
+--
+-- Palette keys are named by ROLE (accent, text*) or by HUE (green, amber, red,
+-- grey, gold, purple); the Logger maps its levels onto the hues and feature
+-- modules pick a hue for their log tag.
 --
 -- Exposes BOTH representations because WoW needs each in a different place:
 --   * `hex`  RRGGBB strings  -> chat colour escape codes  |cffRRGGBB..|r
@@ -20,12 +24,12 @@ Theme.hex = {
     text      = "e7ecf3",
     textDim   = "8a93a3",
     textFaint = "5b6473",
-    win       = "3fb27f",
-    warn      = "e0a955",
-    loss      = "e0556b",
-    neutral   = "8a93a3",
+    green     = "3fb27f",  -- success / positive
+    amber     = "e0a955",  -- warning
+    red       = "e0556b",  -- error / negative
+    grey      = "8a93a3",  -- muted / neutral
     gold      = "e0b34a",
-    class     = "b483e0",  -- Class module tag (distinct from accent/win/gold + log levels)
+    purple    = "b483e0",
 }
 
 -- {r, g, b, a} in 0..1 (hex values above converted).
@@ -40,14 +44,14 @@ Theme.rgb = {
     accent       = { 0.290, 0.702, 0.902, 1.00 },  -- #4ab3e6
     accentDim    = { 0.184, 0.498, 0.690, 1.00 },  -- #2f7fb0
     accentSoft   = { 0.290, 0.702, 0.902, 0.12 },  -- active-nav tint
-    win          = { 0.247, 0.698, 0.498, 1.00 },  -- #3fb27f
-    warn         = { 0.878, 0.663, 0.333, 1.00 },  -- #e0a955
-    loss         = { 0.878, 0.333, 0.420, 1.00 },  -- #e0556b
-    neutral      = { 0.541, 0.576, 0.639, 1.00 },
+    green        = { 0.247, 0.698, 0.498, 1.00 },  -- #3fb27f
+    amber        = { 0.878, 0.663, 0.333, 1.00 },  -- #e0a955
+    red          = { 0.878, 0.333, 0.420, 1.00 },  -- #e0556b
+    grey         = { 0.541, 0.576, 0.639, 1.00 },  -- #8a93a3
     text         = { 0.906, 0.925, 0.953, 1.00 },  -- #e7ecf3
     textDim      = { 0.541, 0.576, 0.639, 1.00 },  -- #8a93a3
     textFaint    = { 0.357, 0.392, 0.451, 1.00 },  -- #5b6473
-    class        = { 0.706, 0.514, 0.878, 1.00 },  -- #b483e0
+    purple       = { 0.706, 0.514, 0.878, 1.00 },  -- #b483e0
 }
 
 -- Flat 8x8 white texture: tinted to any colour for solid fills + hairline

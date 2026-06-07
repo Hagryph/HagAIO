@@ -5,9 +5,9 @@ local Class = ns.Class
 -- Singleton slash-command router for /hagaio (alias /hag). Sub-commands are
 -- registered as { fn, help } entries; an empty command opens the options panel.
 
-local SlashCommand = Class.new("SlashCommand")
+local SlashCommand = Class.new("SlashCommand", ns.Service)
 
-function SlashCommand:Initialize()
+function SlashCommand:OnInitialize()
     local p = self:_p()
     p.handlers = {}      -- subcommand -> { fn = fn, help = string }
     p.registered = false
@@ -74,4 +74,4 @@ function SlashCommand:Activate()
     end, "list feature modules and their state")
 end
 
-ns.SlashCommand = SlashCommand
+ns.ServiceManager:Register(SlashCommand:New("SlashCommand"))

@@ -11,8 +11,14 @@ local Module = Class.new("Module")
 -- Constructor. Subclasses that need their own constructor should override
 -- Initialize and call Module.Initialize(self, name, opts) first.
 --   opts = { title = string, description = string, defaultEnabled = bool,
---            color = "RRGGBB", dbDefaults = table,
+--            color = "RRGGBB", dbDefaults = table, deps = { "Service", ... },
 --            settings = { <schema entries> } }
+-- `deps` names the SERVICES this module needs; the ModuleManager won't start the
+-- module until every one of them is loaded.
+-- `addonDeps` names EXTERNAL addons that must be loaded for this module to be
+-- available at all (e.g. "AllTheThings"); unavailable modules are hidden.
+-- `moduleDeps` names other HagAIO MODULES that must be ENABLED for this one to
+-- run; a module whose module-deps aren't met is shown greyed-out and can't enable.
 --
 -- Each settings schema entry drives one auto-generated control on the module's
 -- settings page (and seeds its saved-var default):
@@ -30,6 +36,9 @@ function Module:Initialize(name, opts)
     p.defaultEnabled = opts.defaultEnabled ~= false
     p.perChar = opts.perChar and true or false  -- store db + enable state per character
     p.color = opts.color or ns.Theme.hex.accent  -- log/tag colour
+    p.serviceDeps = opts.deps or {}               -- services that must be loaded first
+    p.addonDeps = opts.addonDeps or {}            -- external addons required to be available
+    p.moduleDeps = opts.moduleDeps or {}          -- other modules that must be enabled
     p.settings = opts.settings or {}
 
     -- Seed saved-var defaults from the settings schema, then layer any explicit
@@ -54,6 +63,21 @@ function Module:GetTitle() return self:_p().title end
 function Module:GetDescription() return self:_p().description end
 function Module:GetColor() return self:_p().color end
 function Module:GetSettings() return self:_p().settings end
+function Module:GetServiceDeps() return self:_p().serviceDeps end
+function Module:GetAddonDeps() return self:_p().addonDeps end
+function Module:GetModuleDeps() return self:_p().moduleDeps end
+
+-- Available = every required external addon is loaded (gates DISPLAY).
+-- Deps-met = prerequisite modules enabled + required services loaded (gates GREY).
+-- Both are resolved by the shared DependencyGraph the ModuleManager owns -- no
+-- bespoke checks live here.
+function Module:IsAvailable()
+    return ns.ModuleManager:IsModuleAvailable(self:_p().name)
+end
+
+function Module:AreModuleDepsMet()
+    return ns.ModuleManager:AreModuleDepsMet(self:_p().name)
+end
 function Module:IsEnabled() return self:_p().enabled end
 function Module:IsDefaultEnabled() return self:_p().defaultEnabled end
 function Module:IsPerChar() return self:_p().perChar end
@@ -96,10 +120,16 @@ function Module:LogError(...)   self:_p().log:Error(...)   end
 function Module:Enable()
     local p = self:_p()
     if p.enabled then return end
+    if not self:IsAvailable() then return end                 -- required addon missing
+    if not self:AreModuleDepsMet() then                        -- a prerequisite module is off
+        ns.Logger:Core():Warn(("%s needs another module enabled first."):format(p.name))
+        return
+    end
     p.enabled = true
     if self.OnEnable then self:OnEnable() end
     ns.SavedVars:SetModuleState(p.name, true, p.perChar)
     if p.log then p.log:Success("enabled") end
+    if ns.EventBus and ns.EventBus.Emit then ns.EventBus:Emit("HagAIO_ModuleState", p.name, true) end
 end
 
 function Module:Disable()
@@ -109,6 +139,8 @@ function Module:Disable()
     if self.OnDisable then self:OnDisable() end
     ns.SavedVars:SetModuleState(p.name, false, p.perChar)
     if p.log then p.log:Info("disabled") end
+    ns.ModuleManager:DisableDependents(p.name)  -- cascade: modules that needed this one
+    if ns.EventBus and ns.EventBus.Emit then ns.EventBus:Emit("HagAIO_ModuleState", p.name, false) end
 end
 
 function Module:Toggle()
