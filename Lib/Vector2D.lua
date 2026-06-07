@@ -1,27 +1,20 @@
 local addonName, ns = ...
-local Class = ns.Class
 local sqrt, huge = math.sqrt, math.huge
 
 -- Lib/Vector2D.lua
--- A pure 2D vector value-CLASS -- no WoW API. Unlike the singleton libs in this folder you
--- INSTANTIATE it (ns.Vector2D:New(x, y)); it carries the usual 2D math (add / sub / scale /
--- length / distance) plus Nearest(), which finds the closest vector in a list. It replaces
--- the old x/y-pair Geometry helper with typed instances. Callers still do their own
--- coordinate-space filtering (e.g. same continent) before handing in candidates.
+-- A pure 2D vector value-TYPE (ns.Type) -- no WoW API. Unlike the singleton libs in this
+-- folder you INSTANTIATE it (ns.Vector2D:New(x, y)); it carries the usual 2D math (add /
+-- sub / scale / length / distance) plus Nearest(), which finds the closest vector in a list.
+-- Callers still do their own coordinate-space filtering (e.g. same continent) before handing
+-- in candidates.
 --
 --   local here = ns.Vector2D:New(px, py)
 --   local closest, dist, i = here:Nearest(candidateVectors, 40)
 
-local Vector2D = Class.new("Vector2D")
+-- ns.Type gives New(x, y), the :X()/:Y() accessors, value-equality and a readable tostring;
+-- x/y default to 0 and live in the private :_p() table (immutable -- no setters).
+local Vector2D = ns.Type.new("Vector2D", { "x", "y" }, { x = 0, y = 0 })
 
-function Vector2D:Initialize(x, y)
-    local p = self:_p()
-    p.x = x or 0
-    p.y = y or 0
-end
-
-function Vector2D:X() return self:_p().x end
-function Vector2D:Y() return self:_p().y end
 function Vector2D:Unpack() local p = self:_p(); return p.x, p.y end
 
 -- Arithmetic -- each returns a NEW vector (instances are treated as immutable).

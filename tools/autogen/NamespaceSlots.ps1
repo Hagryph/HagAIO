@@ -11,6 +11,8 @@
 $script:CoreSlots = [ordered]@{
     'Class'            = 'Core\Class.lua'
     'Object'           = 'Core\Class.lua'
+    'Type'             = 'Core\Type.lua'
+    'Enum'             = 'Core\Enum.lua'
     'Theme'            = 'Core\Theme.lua'
     'Registry'         = 'Core\Registry.lua'
     'Loggable'         = 'Core\Loggable.lua'

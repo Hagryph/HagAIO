@@ -84,6 +84,8 @@ HagAIO.toc                 Load manifest — header tracked; file list filled on
 Core/
   Namespace.lua            Root namespace module
   Class.lua                Minimal metatable-based OOP system with true per-instance encapsulation
+  Type.lua                 VALUE-TYPE factory -- a sibling of ns.Class for immutable value objects (e.g
+  Enum.lua                 ENUM factory -- a sibling of ns.Class for FROZEN constant tables
   Theme.lua                Static design system ported from the LoL Game Helper desktop app's
   DependencyGraph.lua      A generic dependency forest
   Logger.lua               Central logging service
@@ -109,7 +111,7 @@ Lib/
   Format.lua               Pure time formatters -- no WoW API
   Helpers.lua              Small pure-logic helpers shared across the addon -- no WoW API, no state
   SpellTooltipParser.lua   Pure parsers for the numbers embedded in a spell's description text
-  Vector2D.lua             A pure 2D vector value-CLASS -- no WoW API
+  Vector2D.lua             A pure 2D vector value-TYPE (ns.Type) -- no WoW API
 Services/
   ActionBars.lua           Service for locating action buttons by what they cast and annotating them
   Cache.lua                Central caching service

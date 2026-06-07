@@ -9,7 +9,8 @@ $script:ScanDirs = @('Core', 'Lib', 'Services', 'UI', 'Modules')
 # that extends it at load time; UI\Widgets is pinned here too because the UI windows +
 # several modules alias ns.UI.Widgets at file scope.
 $script:PinnedHead = @(
-    'Core\Namespace.lua', 'Core\Class.lua', 'Core\Theme.lua', 'Core\DependencyGraph.lua',
+    'Core\Namespace.lua', 'Core\Class.lua', 'Core\Type.lua', 'Core\Enum.lua',
+    'Core\Theme.lua', 'Core\DependencyGraph.lua',
     'Core\Logger.lua', 'Core\Registry.lua', 'Core\Loggable.lua', 'Core\Component.lua',
     'Core\Service.lua', 'Core\ServiceManager.lua', 'Core\Module.lua', 'Core\ModuleManager.lua',
     'Core\Submodule.lua', 'Core\SubmoduleManager.lua', 'Core\Lib.lua', 'Core\LibManager.lua',

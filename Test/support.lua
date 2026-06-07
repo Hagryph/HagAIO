@@ -67,6 +67,8 @@ end
 function M.newNs()
     local ns = { UI = {} }
     assert(loadfile("Core/Class.lua"))("HagAIO", ns)
+    assert(loadfile("Core/Type.lua"))("HagAIO", ns)   -- value-type factory (e.g. Vector2D)
+    assert(loadfile("Core/Enum.lua"))("HagAIO", ns)   -- frozen-enum factory
     ns.Theme = { hex = setmetatable({}, { __index = function() return "ffffff" end }) }
     local noop = function() end
     local channel = { Debug = noop, Info = noop, Success = noop, Warn = noop, Error = noop }
