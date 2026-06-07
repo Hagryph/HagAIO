@@ -8,6 +8,9 @@ local addonName, ns = ...
 
 local ClassModule = ns.ClassModule
 
+-- Upvalue the globals the combat tickers hit each tick.
+local InCombatLockdown = InCombatLockdown
+
 -- ---- tunables (spell IDs, marker colours, AoE breakpoint) -----------------
 local EXPEL_HARM = 322101
 -- Expel Harm bar colours. Ready = cyan accent (stands out against the green->yellow->red
@@ -20,6 +23,7 @@ local GIFT_OF_THE_OX = 124502    -- Brewmaster talent: spheres on damage taken
 local SPIRIT_OF_THE_OX = 400629  -- Brewmaster talent: spheres from Blackout Kick
 local TIGER_PALM = 100780
 local KEG_SMASH  = 121253
+local TIGER_COST_SPELLS = { TIGER_PALM, KEG_SMASH }  -- hoisted: no per-call table alloc
 local SPINNING_CRANE_KICK = 101546   -- 8-yd PBAoE; efficient at 3+ targets
 local SCK_RADIUS = 8                  -- yards; the Range service resolves the checker
 -- SCK must out-damage Tiger Palm by this factor to be "worth it" -- Tiger Palm also
@@ -197,26 +201,17 @@ local Brewmaster = {
         p.tigerActive = true
         self:On("UNIT_MAXPOWER",        function(_, u) if u == "player" then self:_ScheduleTiger() end end, "spec")
         self:On("UNIT_DISPLAYPOWER",    function(_, u) if u == "player" then self:_ScheduleTiger() end end, "spec")
-        self:On("TRAIT_CONFIG_UPDATED", function() self:_ScheduleTiger() end, "spec")
+        self:On("TRAIT_CONFIG_UPDATED", function() self:_p().tigerCost = nil; self:_ScheduleTiger() end, "spec")
         self:On("PLAYER_LEVEL_UP",      function() self:_ScheduleTiger() end, "spec")
         self:_ScheduleTiger()
         self:_LoadAoE()
 
         -- The sphere count changes with no event of its own (orbs spawn/get absorbed as
-        -- you move), so poll to keep the orb-count ladder colour live: fast (0.1s) in
-        -- combat where it actually changes, lazy (0.5s) out of combat. Self-reschedules
-        -- (NewTicker can't vary its rate); a generation token retires a stale loop on a
-        -- re-Load so two never run at once. Self-gates on the talent; _ScheduleUpdate
-        -- debounces to one repaint per frame.
-        p.orbPollGen = (p.orbPollGen or 0) + 1
-        local gen = p.orbPollGen
-        local function poll()
-            local pp = self:_p()
-            if pp.orbPollGen ~= gen then return end   -- superseded / unloaded
-            if pp.orbTalented then self:_ScheduleUpdate() end
-            C_Timer.After(InCombatLockdown() and 0.1 or 0.5, poll)
-        end
-        poll()
+        -- you move), so poll to keep the orb-count colour live. The poll STOPS when it's
+        -- pointless -- out of combat with zero orbs left (new ones only spawn in combat) --
+        -- and is kicked off again when combat starts, rather than spinning forever.
+        self:On("PLAYER_REGEN_DISABLED", function() self:_StartOrbPoll() end, "spec")
+        self:_StartOrbPoll()
     end,
     Unload = function(self)
         self:_UnloadAoE()
@@ -290,6 +285,33 @@ function ClassModule:_ScheduleUpdate()
         p.updateScheduled = false
         self:_UpdateMarker()
     end)
+end
+
+-- Poll the orb count to keep the colour live: fast (0.1s) in combat where the count
+-- changes; out of combat keep the slow (0.5s) poll ONLY while orbs remain, then stop --
+-- no new orbs spawn out of combat, so spinning forever is pointless. A generation token
+-- means a re-Load (or a fresh PLAYER_REGEN_DISABLED) retires any prior loop, so only one
+-- ever runs. Restarted on combat start (see the Brewmaster Load subscription).
+function ClassModule:_StartOrbPoll()
+    local p = self:_p()
+    p.orbPollGen = (p.orbPollGen or 0) + 1
+    local gen = p.orbPollGen
+    local function poll()
+        local pp = self:_p()
+        if pp.orbPollGen ~= gen then return end        -- superseded / unloaded
+        if pp.orbTalented then self:_ScheduleUpdate() end
+        if InCombatLockdown() then
+            C_Timer.After(0.1, poll)                   -- combat: orbs change fast
+            return
+        end
+        -- Out of combat: the count is readable in the open world; stop once it hits 0.
+        -- In restricted content it stays secret (Number -> nil), so keep the slow poll.
+        local n = ns.Secrets and ns.Secrets:Number(
+            C_Spell and C_Spell.GetSpellCastCount and C_Spell.GetSpellCastCount(EXPEL_HARM))
+        if n == 0 then return end                      -- no orbs left -> stop until next combat
+        C_Timer.After(0.5, poll)
+    end
+    poll()
 end
 
 -- Cache UnitHealthMax while it is readable (non-secret). In restricted content the
@@ -473,11 +495,16 @@ function ClassModule:_LoadAoE()
     p.aoeActive = true
     -- prime the 8-yd checker (the Range service caches the item data)
     ns.Range:UnitInRange("player", SCK_RADIUS)
-    -- re-find the spell buttons whenever the bars change
-    self:On("ACTIONBAR_SLOT_CHANGED", function() self:_ScanAoEButtons() end, "spec")
-    self:On("ACTIONBAR_PAGE_CHANGED", function() self:_ScanAoEButtons() end, "spec")
-    self:On("UPDATE_BONUS_ACTIONBAR", function() self:_ScanAoEButtons() end, "spec")
-    self:On("PLAYER_ENTERING_WORLD",  function() self:_ScanAoEButtons() end, "spec")
+    -- Re-find the spell buttons whenever the bars change. These events arrive in bursts
+    -- (drag one spell -> several SLOT_CHANGED), and a rescan just re-reads the FULL bar
+    -- state, so coalescing to at most once a second loses nothing (the trailing call still
+    -- captures the final layout). Safe to throttle precisely because it's an idempotent
+    -- full-state rescan, not a one-shot signal -- unlike game events in general.
+    local scan = self:Throttled(1, function() self:_ScanAoEButtons() end, "spec")
+    self:On("ACTIONBAR_SLOT_CHANGED", scan, "spec")
+    self:On("ACTIONBAR_PAGE_CHANGED", scan, "spec")
+    self:On("UPDATE_BONUS_ACTIONBAR", scan, "spec")
+    self:On("PLAYER_ENTERING_WORLD",  scan, "spec")
     self:_ScanAoEButtons()
 
     -- breakpoint between Tiger Palm and Spinning Crane Kick, recomputed when gear /
@@ -521,6 +548,7 @@ function ClassModule:_ScanAoEButtons()
     local p = self:_p()
     p.tpButtons  = ns.ActionBars:FindSpell(TIGER_PALM)
     p.sckButtons = ns.ActionBars:FindSpell(SPINNING_CRANE_KICK)
+    p.aoeGreyState = nil   -- button set may have changed -> force re-apply next update
 end
 
 function ClassModule:_UpdateAoE()
@@ -529,14 +557,20 @@ function ClassModule:_UpdateAoE()
         return self:_ClearAoEGrey()
     end
     -- enemies within SCK's 8 yd (Range uses the item check; TP ~5yd is the fallback);
-    -- grey TP once that count reaches the live SCK-beats-TP breakpoint.
-    local greyTP = ns.Range:CountEnemies(SCK_RADIUS, TIGER_PALM) >= (p.aoeThreshold or 3)
+    -- grey TP once that count reaches the live SCK-beats-TP breakpoint. We only test
+    -- "count >= threshold", so CountEnemies early-exits at the threshold.
+    local threshold = p.aoeThreshold or 3
+    local greyTP = ns.Range:CountEnemies(SCK_RADIUS, TIGER_PALM, threshold) >= threshold
+    if greyTP == p.aoeGreyState then return end   -- unchanged -> skip the per-button work
+    p.aoeGreyState = greyTP
     for _, b in ipairs(p.tpButtons or {})  do ns.ActionBars:SetGrey(b, greyTP) end
     for _, b in ipairs(p.sckButtons or {}) do ns.ActionBars:SetGrey(b, not greyTP) end
 end
 
 function ClassModule:_ClearAoEGrey()
     local p = self:_p()
+    if p.aoeGreyState == nil then return end   -- already clear -> no per-button work
+    p.aoeGreyState = nil
     for _, b in ipairs(p.tpButtons or {})  do ns.ActionBars:SetGrey(b, false) end
     for _, b in ipairs(p.sckButtons or {}) do ns.ActionBars:SetGrey(b, false) end
 end
@@ -544,10 +578,14 @@ end
 
 -- ---- Tiger Palm energy marker (Brewmaster) --------------------------------
 -- Combined energy cost of Tiger Palm + Keg Smash (non-secret spell data).
+-- Combined energy cost is static for a talent build, so it's cached and only recomputed
+-- after TRAIT_CONFIG_UPDATED (which clears p.tigerCost) -- not on every power tick.
 function ClassModule:_TigerCost()
+    local p = self:_p()
+    if p.tigerCost ~= nil then return p.tigerCost end
     local energy = Enum and Enum.PowerType and Enum.PowerType.Energy
     local total = 0
-    for _, id in ipairs({ TIGER_PALM, KEG_SMASH }) do
+    for _, id in ipairs(TIGER_COST_SPELLS) do
         local costs = C_Spell and C_Spell.GetSpellPowerCost and C_Spell.GetSpellPowerCost(id)
         if costs then
             for _, c in ipairs(costs) do
@@ -557,6 +595,7 @@ function ClassModule:_TigerCost()
             end
         end
     end
+    p.tigerCost = total
     return total
 end
 

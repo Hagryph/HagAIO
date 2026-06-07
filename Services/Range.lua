@@ -11,6 +11,11 @@ local Class = ns.Class
 
 local Range = Class.new("Range", ns.Service)
 
+-- Upvalue ipairs (the per-tick combat count's loop). UnitCanAttack/UnitIsDead/C_NamePlate
+-- stay global lookups: they're swapped by the test harness, and an upvalue would capture
+-- their load-time value -- the real win here is the closure-free loop + early exit anyway.
+local ipairs = ipairs
+
 -- Harm items by exact yardage (first cached one is used). From LibRangeCheck.
 local HARM_ITEMS = {
     [5]  = { 8149 },                          -- Voodoo Charm
@@ -51,27 +56,39 @@ function Range:UnitInRange(unit, yards)
     return nil
 end
 
--- Iterate attackable, alive enemy nameplate units as fn(unit).
+-- Iterate attackable, alive enemy nameplate units as fn(unit). Kept for callers that
+-- want every enemy; CountEnemies has its own closure-free path below.
 function Range:EachEnemy(fn)
-    if not (C_NamePlate and C_NamePlate.GetNamePlates) then return end
-    for _, plate in ipairs(C_NamePlate.GetNamePlates()) do
+    local plates = C_NamePlate and C_NamePlate.GetNamePlates and C_NamePlate.GetNamePlates()
+    if not plates then return end
+    for _, plate in ipairs(plates) do
         local u = plate.namePlateUnitToken or (plate.UnitFrame and plate.UnitFrame.unit)
         if u and UnitCanAttack("player", u) and not UnitIsDead(u) then fn(u) end
     end
 end
 
 -- Count attackable enemies within `yards`. `fallbackSpellID` (a TARGETED harm spell)
--- covers units the item can't resolve (nil).
-function Range:CountEnemies(yards, fallbackSpellID)
+-- covers units the item can't resolve (nil). `maxNeeded`, if given, stops counting once
+-- reached (callers that only test "count >= threshold" pass the threshold). Walks the
+-- nameplates inline -- no per-call closure -- since this runs on a combat ticker.
+function Range:CountEnemies(yards, fallbackSpellID, maxNeeded)
+    local plates = C_NamePlate and C_NamePlate.GetNamePlates and C_NamePlate.GetNamePlates()
+    if not plates then return 0 end
     local item = self:_ItemFor(yards)
     local itemFn = C_Item and C_Item.IsItemInRange
     local spellFn = C_Spell and C_Spell.IsSpellInRange
     local n = 0
-    self:EachEnemy(function(u)
-        local r = item and itemFn and itemFn(item, u)
-        if r == nil and fallbackSpellID and spellFn then r = spellFn(fallbackSpellID, u) == true end
-        if r == true then n = n + 1 end
-    end)
+    for _, plate in ipairs(plates) do
+        local u = plate.namePlateUnitToken or (plate.UnitFrame and plate.UnitFrame.unit)
+        if u and UnitCanAttack("player", u) and not UnitIsDead(u) then
+            local r = item and itemFn and itemFn(item, u)
+            if r == nil and fallbackSpellID and spellFn then r = spellFn(fallbackSpellID, u) == true end
+            if r == true then
+                n = n + 1
+                if maxNeeded and n >= maxNeeded then return n end   -- early exit
+            end
+        end
+    end
     return n
 end
 

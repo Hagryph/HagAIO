@@ -70,6 +70,7 @@ end
 function Questing:OnDisable()
     local p = self:_p()
     wipe(p.skipTurnIn)
+    if p.xpTicker then p.xpTicker:Cancel(); p.xpTicker = nil end
     if p.overlay then
         p.overlay:Hide()
         if GameTooltip:IsOwned(p.overlay) then GameTooltip:Hide() end
@@ -188,18 +189,18 @@ function Questing:_EnsureOverlay()
         overlay:EnableMouse(true)
     end
 
+    -- Refresh the tooltip on a 0.5s ticker only WHILE hovered (started on enter,
+    -- cancelled on leave) -- no per-frame OnUpdate burning cycles when not hovering.
     overlay:SetScript("OnEnter", function()
         p.hovering = true
         self:_ShowTooltip()
+        if p.xpTicker then p.xpTicker:Cancel() end
+        p.xpTicker = C_Timer.NewTicker(0.5, function() self:_ShowTooltip() end)
     end)
     overlay:SetScript("OnLeave", function()
         p.hovering = false
+        if p.xpTicker then p.xpTicker:Cancel(); p.xpTicker = nil end
         if GameTooltip:IsOwned(overlay) then GameTooltip:Hide() end
-    end)
-    overlay:SetScript("OnUpdate", function(_, dt)
-        if not p.hovering then return end
-        p.acc = (p.acc or 0) + dt
-        if p.acc >= 0.5 then p.acc = 0; self:_ShowTooltip() end
     end)
 
     p.overlay = overlay

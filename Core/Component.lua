@@ -55,6 +55,17 @@ function Component:On(event, fn, scope)
     return token
 end
 
+-- Subscribe to a game event for SPECIFIC units only (RegisterUnitEvent) so the handler
+-- never fires for irrelevant units; auto-released on scope release. `units` is a list,
+-- e.g. self:OnUnit("UNIT_HEALTH", { "player", "target" }, fn).
+function Component:OnUnit(event, units, fn, scope)
+    local token = ns.EventBus:OnUnit(event, fn, unpack(units))
+    if token ~= nil then
+        self:OnTeardown(function() ns.EventBus:OffUnit(token) end, scope)
+    end
+    return token
+end
+
 -- Subscribe to a custom in-addon message; auto-Unsubscribe on scope release.
 function Component:Subscribe(message, fn, scope)
     local token = ns.EventBus:Subscribe(message, fn)

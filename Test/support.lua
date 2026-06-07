@@ -105,7 +105,13 @@ function M.stubFrames()
             if e == "BOGUS_EVENT" then error("unknown event") end
             self.registered[e] = true
         end
+        function f:RegisterUnitEvent(e, ...)
+            if e == "BOGUS_EVENT" then error("unknown event") end
+            self.registered[e] = true
+            self.units = { ... }
+        end
         function f:UnregisterEvent(e) self.registered[e] = nil end
+        function f:UnregisterAllEvents() self.registered = {} end
         function f:Fire(event, ...) if self.scripts.OnEvent then self.scripts.OnEvent(self, event, ...) end end
         frames[#frames + 1] = f
         return f

@@ -77,10 +77,12 @@ function UnitFrames:OnEnable()
         installed = true
     end
 
-    -- Drive recolouring on health changes (the example's UNIT_HEALTH approach).
-    -- Subscriptions are auto-released on disable.
-    self:On("UNIT_HEALTH",           function(_, u) self:_Color(u) end)
-    self:On("UNIT_MAXHEALTH",        function(_, u) self:_Color(u) end)
+    -- Drive recolouring on health changes (the example's UNIT_HEALTH approach). Filtered
+    -- to player/target at REGISTRATION (RegisterUnitEvent) so these high-churn events
+    -- never dispatch for the dozens of other units in a raid. Auto-released on disable.
+    local units = { "player", "target" }
+    self:OnUnit("UNIT_HEALTH",    units, function(_, u) self:_Color(u) end)
+    self:OnUnit("UNIT_MAXHEALTH", units, function(_, u) self:_Color(u) end)
     self:On("PLAYER_TARGET_CHANGED", function() self:_Color("target") end)
 
     self:_Color("player")

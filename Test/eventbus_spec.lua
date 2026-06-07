@@ -47,4 +47,28 @@ describe("EventBus", function()
         local bus = S.newBus()
         assert.is_true(pcall(function() bus:Off("E", nil); bus:Unsubscribe("M", nil) end))
     end)
+
+    it("OnUnit registers a dedicated unit-filtered frame; OffUnit stops it", function()
+        local bus, frames = S.newBus()
+        local got = 0
+        local tok = bus:OnUnit("UNIT_HEALTH", function() got = got + 1 end, "player", "target")
+        local uf = frames[#frames]                       -- the dedicated unit frame
+        assert.is_true(uf.registered["UNIT_HEALTH"])
+        assert.are.equal("player", uf.units[1]); assert.are.equal("target", uf.units[2])
+        uf:Fire("UNIT_HEALTH", "player"); assert.are.equal(1, got)
+        bus:OffUnit(tok)
+        uf:Fire("UNIT_HEALTH", "player"); assert.are.equal(1, got)   -- handler detached
+    end)
+
+    it("a handler that unsubscribes another mid-dispatch doesn't skip it this fire", function()
+        local bus, frames = S.newBus()
+        local ran = {}
+        local tokB
+        bus:On("E", function() ran[#ran + 1] = "A"; bus:Off("E", tokB) end)  -- removes B mid-dispatch
+        tokB = bus:On("E", function() ran[#ran + 1] = "B" end)
+        frames[1]:Fire("E")
+        assert.are.equal(2, #ran)   -- B was in the fire's snapshot, so it still ran
+        frames[1]:Fire("E")
+        assert.are.equal(3, #ran)   -- B now unsubscribed -> only A
+    end)
 end)

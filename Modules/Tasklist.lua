@@ -398,7 +398,7 @@ function Tasklist:_BuildFrame()
     grab:Hide()
     p.grab = grab
 
-    p.frame, p.rows = f, {}
+    p.frame = f
 
     if ns.EditMode then
         -- TOPLEFT anchor: the top stays fixed and the list grows down. A fresh key
@@ -420,10 +420,40 @@ function Tasklist:_Refresh()
     if not self:IsEnabled() then return end
     self:_BuildFrame()
     local p = self:_p()
-    for _, r in ipairs(p.rows) do r:Hide() end
-    wipe(p.rows)
-
     local f = p.frame
+
+    -- Reuse pooled widgets instead of creating fresh ones each rebuild: WoW can't GC
+    -- frames, so the old "CreateFrame every refresh" leaked a Button per task on every
+    -- change. Each kind (texture / fontstring / button) has a free-list; we hand them out
+    -- by a per-kind cursor and hide whatever's left over from a previous, larger build.
+    p.pool = p.pool or { tex = {}, fs = {}, btn = {} }
+    local pool, n = p.pool, { tex = 0, fs = 0, btn = 0 }
+    local function tex()
+        n.tex = n.tex + 1
+        local w = pool.tex[n.tex]
+        if not w then w = f:CreateTexture(nil, "ARTWORK"); pool.tex[n.tex] = w end
+        w:ClearAllPoints(); w:Show(); return w
+    end
+    local function fs(font)
+        n.fs = n.fs + 1
+        local w = pool.fs[n.fs]
+        if not w then w = f:CreateFontString(nil, "OVERLAY"); pool.fs[n.fs] = w end
+        w:ClearAllPoints(); w:SetWidth(0); w:SetFontObject(font); w:Show(); return w
+    end
+    local function btn()
+        n.btn = n.btn + 1
+        local w = pool.btn[n.btn]
+        if not w then
+            w = CreateFrame("Button", nil, f)
+            w.label = w:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+            pool.btn[n.btn] = w
+        end
+        w:ClearAllPoints()
+        w:SetScript("OnEnter", nil); w:SetScript("OnLeave", nil); w:SetScript("OnClick", nil)
+        w.label:ClearAllPoints(); w.label:SetPoint("CENTER"); w.label:SetText("")
+        w:Show(); return w
+    end
+
     local width = f:GetWidth()
     local showDone = self:GetSetting("showCompleted") ~= false
     local headerFont = _G.ObjectiveTrackerHeaderFont or _G.GameFontNormal
@@ -442,54 +472,47 @@ function Tasklist:_Refresh()
     local function header(text)
         -- The quest header bar, desaturated and re-tinted blue-black (solid, not a
         -- fade), with the title CENTERED.
-        local bar = f:CreateTexture(nil, "ARTWORK")
+        local bar = tex()
         bar:SetPoint("TOPLEFT", 0, y)
         bar:SetPoint("TOPRIGHT", 0, y)
         bar:SetHeight(HEADER_H)
         bar:SetAtlas(HEADER_ATLAS, false)
         bar:SetDesaturated(true)
         bar:SetVertexColor(HEADER_TINT[1], HEADER_TINT[2], HEADER_TINT[3])
-        p.rows[#p.rows + 1] = bar
 
-        local t = f:CreateFontString(nil, "OVERLAY")
-        t:SetFontObject(headerFont)
+        local t = fs(headerFont)
         t:SetPoint("CENTER", bar, "CENTER", 0, 0)
         t:SetText(text)
         t:SetTextColor(Theme.Unpack("accent"))
-        p.rows[#p.rows + 1] = t
         y = y - HEADER_H - 2
     end
 
     local function objective(def, done)
-        local t = f:CreateFontString(nil, "OVERLAY")
-        t:SetFontObject(lineFont)
+        local t = fs(lineFont)
         t:SetPoint("TOPLEFT", INDENT, y)
         t:SetWidth(width - INDENT - 14)
         t:SetJustifyH("LEFT")
         t:SetText("- " .. (def.title or def.key))
         if done then t:SetTextColor(0.5, 0.5, 0.5) else t:SetTextColor(0.95, 0.95, 0.95) end
-        p.rows[#p.rows + 1] = t
         local h = t:GetStringHeight()
 
         -- Remove (x) at the right edge
-        local x = CreateFrame("Button", nil, f)
+        local x = btn()
         x:SetSize(14, 14)
         x:SetPoint("TOPRIGHT", f, "TOPRIGHT", 0, y)
-        local xfs = x:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-        xfs:SetPoint("CENTER"); xfs:SetText("x"); xfs:SetTextColor(Theme.Unpack("textFaint"))
+        local xfs = x.label
+        xfs:SetText("x"); xfs:SetTextColor(Theme.Unpack("textFaint"))
         x:SetScript("OnEnter", function() xfs:SetTextColor(Theme.Unpack("red")) end)
         x:SetScript("OnLeave", function() xfs:SetTextColor(Theme.Unpack("textFaint")) end)
         x:SetScript("OnClick", function() self:Remove(def.key) end)
-        p.rows[#p.rows + 1] = x
 
         -- manual tasks: click the text to toggle done
         if def.manual then
-            local btn = CreateFrame("Button", nil, f)
-            btn:SetPoint("TOPLEFT", t, "TOPLEFT", 0, 0)
-            btn:SetPoint("RIGHT", x, "LEFT", -2, 0)
-            btn:SetHeight(h + 4)
-            btn:SetScript("OnClick", function() self:SetDone(def.key, not done) end)
-            p.rows[#p.rows + 1] = btn
+            local mbtn = btn()
+            mbtn:SetPoint("TOPLEFT", t, "TOPLEFT", 0, 0)
+            mbtn:SetPoint("RIGHT", x, "LEFT", -2, 0)
+            mbtn:SetHeight(h + 4)
+            mbtn:SetScript("OnClick", function() self:SetDone(def.key, not done) end)
         end
         y = y - (h + LINE_GAP)
     end
@@ -506,12 +529,15 @@ function Tasklist:_Refresh()
     end
 
     if not any then
-        local t = f:CreateFontString(nil, "OVERLAY")
-        t:SetFontObject(lineFont)
+        local t = fs(lineFont)
         t:SetPoint("TOPLEFT", 2, y); t:SetText("No active tasks."); t:SetTextColor(0.6, 0.6, 0.6)
-        p.rows[#p.rows + 1] = t
         y = y - 18
     end
+
+    -- hide any widgets left over from a previous, larger build
+    for i = n.tex + 1, #pool.tex do pool.tex[i]:Hide() end
+    for i = n.fs  + 1, #pool.fs  do pool.fs[i]:Hide() end
+    for i = n.btn + 1, #pool.btn do pool.btn[i]:Hide() end
 
     f:SetHeight(math.max(20, -y + 4))
 end

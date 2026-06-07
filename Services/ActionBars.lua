@@ -32,14 +32,28 @@ local function buttonSlot(btn)
     return btn.GetAttribute and btn:GetAttribute("action")
 end
 
--- Visit every known action button as fn(buttonFrame, slot).
-function ActionBars:_Each(fn)
+-- The action-button FRAMES are created once by Blizzard and never change, so resolve the
+-- 96 _G[name] lookups a single time and cache the frame list. (The slot each button shows
+-- still varies -- that's read live per visit.) Cached only once the bars exist.
+function ActionBars:_Buttons()
+    local p = self:_p()
+    if p.buttons then return p.buttons end
+    local list = {}
     for _, prefix in ipairs(BAR_PREFIXES) do
         for i = 1, SLOTS_PER_BAR do
             local btn = _G[prefix .. i]
-            local slot = btn and buttonSlot(btn)
-            if slot then fn(btn, slot) end
+            if btn then list[#list + 1] = btn end
         end
+    end
+    if #list > 0 then p.buttons = list end   -- don't cache an empty pre-load result
+    return list
+end
+
+-- Visit every known action button as fn(buttonFrame, slot).
+function ActionBars:_Each(fn)
+    for _, btn in ipairs(self:_Buttons()) do
+        local slot = buttonSlot(btn)
+        if slot then fn(btn, slot) end
     end
 end
 
