@@ -715,7 +715,7 @@ ns.ModuleManager:Register(Misc:New("Misc", {
     description = "Flight-path timers and selling junk.",
     defaultEnabled = false,
     color = ns.Theme.hex.grey,  -- distinct tag (accent=Core, green=UnitFrames, purple=Class, gold=Questing, red=CVars)
-    deps = { "EventBus", "EditMode", "FlightGraph", "Geometry" },  -- recording/timer + pure route + proximity solvers
+    deps = { "EventBus", "EditMode" },  -- recording/timer; route + proximity solvers are pure Libs (ns.FlightGraph / ns.Geometry, always available)
     dbSchema = { flights = {} },        -- recorded route times (seeded on bind, before OnInitialize)
     settingsWatch = { sellJunk = "_OnSellJunkChanged" },
     settings = {

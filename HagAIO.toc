@@ -33,6 +33,9 @@ Core\Module.lua
 Core\ModuleManager.lua
 Core\Submodule.lua
 Core\SubmoduleManager.lua
+# Lib tier: pure-logic helpers (no deps/lifecycle); LibManager just publishes them.
+Core\Lib.lua
+Core\LibManager.lua
 
 # --- services (top-level Services/; each self-registers with the ServiceManager;
 #     order here is irrelevant -- the ServiceManager resolves load order from deps) ---
@@ -41,7 +44,7 @@ Services\Memoize.lua
 Services\Scheduler.lua
 Services\Serializer.lua
 Services\Profiles.lua
-# pure-logic helpers (no WoW API; extracted from modules so they're unit-testable)
+# pure-logic LIBS (ns.Lib: no WoW API, no deps/lifecycle; published at load, not started)
 Services\FlightGraph.lua
 Services\Geometry.lua
 Services\SpellTooltipParser.lua

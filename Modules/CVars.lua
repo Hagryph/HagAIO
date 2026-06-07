@@ -460,7 +460,7 @@ ns.ModuleManager:Register(CVars:New("CVars", {
     description = "Force useful console variables on every character. Grouped, typed controls plus custom CVars.",
     defaultEnabled = false,
     color = ns.Theme.hex.red,
-    deps = { "SlashCommand", "Dev", "SettingsWindow", "CVarHelper" },  -- routing + enumeration + page refresh + type inference
+    deps = { "SlashCommand", "Dev", "SettingsWindow" },  -- routing + enumeration + page refresh (type inference is a pure Lib: ns.CVarHelper, always available)
     commands = { cvar = { handler = "_Slash", help = "console variables: dump / set / get / clear / list" } },
     -- Persisted structure (seeded on bind, before OnInitialize):
     dbSchema = {

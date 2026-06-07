@@ -66,20 +66,15 @@ function ServiceManager:StartAll()
 
     local g = self:_Graph()  -- validates: a cycle or dangling dep is fatal
     p.startOrder = g:TopologicalOrder()
-    for _, name in ipairs(p.startOrder) do
-        self:_Start(self:Get(name), true)  -- ordered: deps already loaded, skip the pre-load loop
-    end
+    -- ordered: deps already loaded, so each _Start skips its pre-load loop
+    self:_StartEach(function(s) self:_Start(s, true) end, p.startOrder)
 end
 
--- Run each service's optional OnShutdown in REVERSE dependency order (dependents
--- before the services they rely on). Guarded per service.
+-- Run each service's OnShutdown in REVERSE dependency order (dependents before the
+-- services they rely on). The iteration + per-item guard live in ns.Registry.
 function ServiceManager:ShutdownAll()
     local p = self:_p()
-    local order = p.startOrder or p.order
-    for i = #order, 1, -1 do
-        local s = self:Get(order[i])
-        if s and s.OnShutdown then pcall(function() s:OnShutdown() end) end
-    end
+    self:_ShutdownEach("OnShutdown", { order = p.startOrder or p.order, reverse = true })
 end
 
 ns.ServiceManager = ServiceManager:New()

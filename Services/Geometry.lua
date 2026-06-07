@@ -7,7 +7,7 @@ local Class = ns.Class
 -- frame snapping, ...). Callers do their own coordinate-space filtering (e.g. same
 -- continent) before handing in a flat list of candidate points.
 
-local Geometry = Class.new("Geometry", ns.Service)
+local Geometry = Class.new("Geometry", ns.Lib)
 
 -- Squared distance (cheap; use for comparisons to avoid sqrt).
 function Geometry:Dist2(ax, ay, bx, by)
@@ -37,4 +37,4 @@ function Geometry:Nearest(x, y, points, maxDist)
     return best, math.sqrt(bestD2)
 end
 
-ns.ServiceManager:Register(Geometry:New("Geometry"))
+ns.LibManager:Register(Geometry:New("Geometry"))

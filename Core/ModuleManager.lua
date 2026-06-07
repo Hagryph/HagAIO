@@ -105,18 +105,14 @@ end
 -- Run once on PLAYER_LOGIN.
 function ModuleManager:StartAll()
     if not self:_BeginStart() then return end
-    for m in self:Iterate() do
-        self:_Start(m)
-    end
+    self:_StartEach(function(m) self:_Start(m) end)  -- registration order (deps gate enable)
 end
 
--- Called on PLAYER_LOGOUT (reload OR exit). Runs each module's optional OnShutdown
--- cleanup so nothing leaks across a reload (e.g. a module playing a sound). Does
--- NOT change persisted enable state.
+-- Called on PLAYER_LOGOUT (reload OR exit). Runs each module's OnShutdown cleanup so
+-- nothing leaks across a reload (e.g. a module playing a sound). Does NOT change
+-- persisted enable state. The iteration + per-item guard live in ns.Registry.
 function ModuleManager:Shutdown()
-    for m in self:Iterate() do
-        if m.OnShutdown then pcall(function() m:OnShutdown() end) end
-    end
+    self:_ShutdownEach("OnShutdown")
 end
 
 -- Right-click context menu shared by the compartment + minimap buttons: a checkbox

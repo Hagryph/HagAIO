@@ -84,4 +84,35 @@ function Registry:_BeginStart()
     return true
 end
 
+-- ---- lifecycle sweeps -----------------------------------------------------
+-- The two managers with an OnShutdown lifecycle (Service / Module) used to each
+-- re-implement these loops; they live here so the iteration (and its guards) has one
+-- home, while the per-item work stays in the subclass.
+
+-- Start each item via startFn(item). Without `order`, walks registration order; pass an
+-- explicit name list (e.g. a resolved topological order) to control sequencing.
+function Registry:_StartEach(startFn, order)
+    local p = self:_p()
+    order = order or p.order
+    for _, name in ipairs(order) do
+        local item = p.items[name]
+        if item then startFn(item) end
+    end
+end
+
+-- Call `hookName` on each item, guarded so one item's teardown error never aborts the
+-- rest. Default walks registration order; opts.order overrides the name list and
+-- opts.reverse walks it back-to-front (reverse-dependency teardown). The hook is assumed
+-- present -- Module and Service both declare a base no-op OnShutdown -- so there's no
+-- per-item presence guard.
+function Registry:_ShutdownEach(hookName, opts)
+    local p = self:_p()
+    local order = (opts and opts.order) or p.order
+    local n = #order
+    for k = 1, n do
+        local item = p.items[order[(opts and opts.reverse) and (n - k + 1) or k]]
+        if item then pcall(function() item[hookName](item) end) end
+    end
+end
+
 ns.Registry = Registry

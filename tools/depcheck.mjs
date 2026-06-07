@@ -35,7 +35,8 @@ const EXEMPT = new Set([
   "Core/Namespace.lua", "Core/Class.lua", "Core/Theme.lua", "Core/DependencyGraph.lua",
   "Core/Logger.lua", "Core/Loggable.lua", "Core/Service.lua", "Core/ServiceManager.lua",
   "Core/Component.lua", "Core/Module.lua", "Core/ModuleManager.lua", "Core/Submodule.lua",
-  "Core/SubmoduleManager.lua", "Core/Registry.lua", "Core/Init.lua", "UI/Widgets.lua",
+  "Core/SubmoduleManager.lua", "Core/Registry.lua", "Core/Lib.lua", "Core/LibManager.lua",
+  "Core/Init.lua", "UI/Widgets.lua",
 ]);
 
 function luaFiles(dir, out = []) {
@@ -57,11 +58,15 @@ const ALL_FILES = SCAN.flatMap((s) => luaFiles(join(ROOT, s)));
 // ---- discover the registry from source (no hardcoded lists) ----------------
 const SERVICES = new Set();
 const MODULES = new Set();
+const LIBS = new Set();   // pure-logic helpers (ns.Lib): always available, never a dep
 const ALIASES = {}; // ns.<global> -> canonical module name
 for (const path of ALL_FILES) {
   const code = stripComments(readFileSync(path, "utf8")); // ignore comment examples
   for (const m of code.matchAll(/ServiceManager:Register\(\s*\w+:New\(\s*["'](\w+)["']/g)) {
     SERVICES.add(m[1]);
+  }
+  for (const m of code.matchAll(/LibManager:Register\(\s*\w+:New\(\s*["'](\w+)["']/g)) {
+    LIBS.add(m[1]);
   }
   const reg = code.match(/ModuleManager:Register\(\s*\w+:New\(\s*["'](\w+)["']/);
   if (reg) {
@@ -108,6 +113,7 @@ function declaredIn(code, listName) {
 const findings = [];  // [rel, line, dep, absPath]  -- used but not declared
 const unused = [];     // [rel, dep, absPath]         -- declared but never used
 const unregistered = []; // [rel, kind, expectedCall] -- defines but never registers
+const libDeps = [];    // [rel, dep]                  -- lib wrongly listed as a service dep
 for (const path of ALL_FILES) {
   const rel = relative(ROOT, path).replace(/\\/g, "/");
   if (EXEMPT.has(rel)) continue;
@@ -130,6 +136,8 @@ for (const path of ALL_FILES) {
       unregistered.push([rel, "module", "ModuleManager:Register"]);
     if (/ns\.Submodule:New\(/.test(code) && !/SubmoduleManager:Register\(/.test(code))
       unregistered.push([rel, "submodule", "SubmoduleManager:Register"]);
+    if (/Class\.new\(\s*["']\w+["']\s*,\s*ns\.Lib\b/.test(code) && !/LibManager:Register\(/.test(code))
+      unregistered.push([rel, "lib", "LibManager:Register"]);
   }
   const quoted = new Set([...code.matchAll(/["'](\w+)["']/g)].map((x) => x[1]));
   const acc = accesses(code);
@@ -147,13 +155,16 @@ for (const path of ALL_FILES) {
   // enable-order / availability without an ns.* access, so they're left alone.
   const seenU = new Set();
   for (const dep of [...declaredIn(code, "deps"), ...declaredIn(code, "serviceDeps")]) {
+    // A lib is always available (published at load, not started), so gating a module's
+    // enable on it via the service-dep graph would never be satisfied -- flag it.
+    if (LIBS.has(dep)) { libDeps.push([rel, dep]); continue; }
     if (!SERVICES.has(dep) || accessed.has(dep) || allow.has(dep) || seenU.has(dep)) continue;
     seenU.add(dep);
     unused.push([rel, dep, path]);
   }
 }
 
-if (findings.length === 0 && unused.length === 0 && unregistered.length === 0) {
+if (findings.length === 0 && unused.length === 0 && unregistered.length === 0 && libDeps.length === 0) {
   console.log("depcheck: OK — declared dependencies match actual ns.<Service/Module> use, and every defined service/module self-registers.");
   process.exit(0);
 }
@@ -161,6 +172,7 @@ if (findings.length === 0 && unused.length === 0 && unregistered.length === 0) {
 findings.sort((x, y) => x[0].localeCompare(y[0]) || x[1] - y[1]);
 unused.sort((x, y) => x[0].localeCompare(y[0]) || x[1].localeCompare(y[1]));
 unregistered.sort((x, y) => x[0].localeCompare(y[0]));
+libDeps.sort((x, y) => x[0].localeCompare(y[0]) || x[1].localeCompare(y[1]));
 
 // --- --fix: inject the missing names into each file's declaration ------------
 // Services declare service deps in `deps`; modules declare module deps in `moduleDeps`.
@@ -245,6 +257,10 @@ if (unregistered.length) {
   console.log("\ndepcheck: defined but never registered (won't load -- add the registration call):\n");
   for (const [r, kind, call] of unregistered) console.log(`  ${r}  defines a ${kind} but never calls ${call}(...)`);
 }
-const total = findings.length + unused.length + unregistered.length;
-console.log(`\n${total} issue${total === 1 ? "" : "s"} (${findings.length} undeclared, ${unused.length} unused, ${unregistered.length} unregistered).`);
+if (libDeps.length) {
+  console.log("\ndepcheck: libs listed as dependencies (libs are always available; remove from deps):\n");
+  for (const [r, dep] of libDeps) console.log(`  ${r}  lists lib '${dep}' as a dependency`);
+}
+const total = findings.length + unused.length + unregistered.length + libDeps.length;
+console.log(`\n${total} issue${total === 1 ? "" : "s"} (${findings.length} undeclared, ${unused.length} unused, ${unregistered.length} unregistered, ${libDeps.length} lib-deps).`);
 process.exit(1);

@@ -73,20 +73,20 @@ function M.newNs()
     ns.Logger = { Core = function() return channel end, Register = function() return channel end }
     ns.Log = { Print = noop, Warn = noop, Error = noop }  -- static print helpers (Namespace.lua)
     -- Loggable before Component before Service (mirrors the .toc): Component and Service
-    -- both inherit ns.Loggable for the shared logging surface.
+    -- both inherit ns.Loggable for the shared logging surface. Lib is the pure-helper base.
     assert(loadfile("Core/Loggable.lua"))("HagAIO", ns)
+    assert(loadfile("Core/Lib.lua"))("HagAIO", ns)
     assert(loadfile("Core/Component.lua"))("HagAIO", ns)
     assert(loadfile("Core/Service.lua"))("HagAIO", ns)
     ns._captured = {}
-    ns.ServiceManager = {
-        -- mirror the real manager: capture AND publish to ns.<Name> / ns.UI.<Name>
-        Register = function(_, svc)
-            ns._captured[svc:GetName()] = svc
-            if svc._Publish then svc:_Publish() end
-            return svc
-        end,
-        IsLoaded = function() return true end,
-    }
+    -- Both managers mirror the real ones: capture by name AND publish to ns.<Name>.
+    local function captureRegister(_, item)
+        ns._captured[item:GetName()] = item
+        if item._Publish then item:_Publish() end
+        return item
+    end
+    ns.ServiceManager = { Register = captureRegister, IsLoaded = function() return true end }
+    ns.LibManager = { Register = captureRegister }
     return ns
 end
 

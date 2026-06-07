@@ -202,6 +202,10 @@ end
 --   OnInitialize() : run once after db bind, before any enable.
 --   OnEnable()     : run each time the module is enabled.
 --   OnDisable()    : run each time the module is disabled.
+--   OnShutdown()   : run once on logout/reload (cleanup before the Lua state resets).
+-- OnShutdown is declared as a base no-op (like Service's) so the ModuleManager can call
+-- it unconditionally -- no `if m.OnShutdown` guard at the call site.
 function Module:OnInitialize() end
+function Module:OnShutdown() end
 
 ns.Module = Module

@@ -6,7 +6,7 @@ local Class = ns.Class
 -- module fetches the live value (C_CVar.GetCVar) and uses this to pick a control type
 -- when no curated typing exists, so the inference rule is unit-testable on its own.
 
-local CVarHelper = Class.new("CVarHelper", ns.Service)
+local CVarHelper = Class.new("CVarHelper", ns.Lib)
 
 -- Infer a control type from a CVar's string value:
 --   "0"/"1"        -> "boolean"
@@ -18,4 +18,4 @@ function CVarHelper:InferType(value)
     return "string"
 end
 
-ns.ServiceManager:Register(CVarHelper:New("CVarHelper"))
+ns.LibManager:Register(CVarHelper:New("CVarHelper"))

@@ -9,7 +9,7 @@ local Class = ns.Class
 -- module uses penalty = data-imprecision and value = seconds, but nothing here knows
 -- that, so the same solvers work for any "cheapest path, report its cost" problem.
 
-local FlightGraph = Class.new("FlightGraph", ns.Service)
+local FlightGraph = Class.new("FlightGraph", ns.Lib)
 
 -- PathCost: assemble an ORDERED list `items` (1..n) into the least-penalty chain that
 -- reaches item n from item 1, where a hop may skip intermediates. legFn(a, b) returns
@@ -67,4 +67,4 @@ function FlightGraph:GraphCost(src, dst, nodes, legFn)
     end
 end
 
-ns.ServiceManager:Register(FlightGraph:New("FlightGraph"))
+ns.LibManager:Register(FlightGraph:New("FlightGraph"))

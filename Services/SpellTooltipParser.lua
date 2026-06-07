@@ -7,7 +7,7 @@ local Class = ns.Class
 -- so the regex/number extraction is unit-testable in isolation. Locale-dependent
 -- (enUS phrasing); every parser returns nil when the pattern isn't found.
 
-local SpellTooltipParser = Class.new("SpellTooltipParser", ns.Service)
+local SpellTooltipParser = Class.new("SpellTooltipParser", ns.Lib)
 
 -- "12,345" -> 12345 (strips thousands commas); nil for nil/no-match input.
 local function num(s) return s and tonumber((s:gsub(",", ""))) or nil end
@@ -39,4 +39,4 @@ function SpellTooltipParser:Damage(desc)
     return num(n)
 end
 
-ns.ServiceManager:Register(SpellTooltipParser:New("SpellTooltipParser"))
+ns.LibManager:Register(SpellTooltipParser:New("SpellTooltipParser"))

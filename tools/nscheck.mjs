@@ -1,14 +1,14 @@
 #!/usr/bin/env node
-// tools/nscheck.mjs — lint: fail if a registered NON-UI service isn't documented in
-// Core/Namespace.lua's namespace-slot block. Every such service is published at
-// `ns.<Name>`, and that block is the single place the shape of `ns` is documented; it
-// silently rots when a new service is added but the comment isn't. Run: node tools/nscheck.mjs
+// tools/nscheck.mjs — lint: fail if a registered NON-UI service OR a lib isn't documented
+// in Core/Namespace.lua's namespace-slot block. Each is published at `ns.<Name>`, and that
+// block is the single place the shape of `ns` is documented; it silently rots when a new
+// service/lib is added but the comment isn't. Run: node tools/nscheck.mjs
 // CI runs it via .github/workflows/lint.yml. Exit code 1 on any drift.
 //
 // "UI" services (registered with `ui = true`) publish at ns.UI.<Name>, covered by the
-// single `ns.UI` slot, so they're not individually required here. The service registry
-// is DISCOVERED from source (never hardcoded), so a new service is covered the moment
-// it self-registers.
+// single `ns.UI` slot, so they're not individually required here. The registry is
+// DISCOVERED from source (never hardcoded), so a new service/lib is covered the moment it
+// self-registers.
 
 import { readdirSync, readFileSync, statSync } from "node:fs";
 import { join, relative, dirname } from "node:path";
@@ -31,41 +31,41 @@ function luaFiles(dir, out = []) {
 
 const stripComments = (raw) => raw.split("\n").map((l) => l.replace(/--.*$/, "")).join("\n");
 
-// Discover registered services and whether each is a UI service (ui = true in its opts).
-// Match the whole :New("Name", { ... }) so we can inspect its opts for the ui flag.
-function discoverServices() {
-  const services = []; // { name, ui }
+// Discover the names that get published at ns.<Name> and must be documented: every
+// non-UI service (ServiceManager:Register without `ui = true`) and every lib
+// (LibManager:Register). Match the whole :New("Name", { ... }) to inspect opts for `ui`.
+function discoverPublished() {
+  const names = [];
   for (const path of SCAN.flatMap((s) => luaFiles(join(ROOT, s)))) {
     const code = stripComments(readFileSync(path, "utf8"));
     for (const m of code.matchAll(/ServiceManager:Register\(\s*\w+:New\(\s*["'](\w+)["']\s*(,\s*\{([\s\S]*?)\})?/g)) {
-      const opts = m[3] || "";
-      services.push({ name: m[1], ui: /\bui\s*=\s*true\b/.test(opts) });
+      if (!/\bui\s*=\s*true\b/.test(m[3] || "")) names.push(m[1]);  // UI services live under ns.UI
+    }
+    for (const m of code.matchAll(/LibManager:Register\(\s*\w+:New\(\s*["'](\w+)["']/g)) {
+      names.push(m[1]);
     }
   }
-  return services;
+  return names;
 }
 
 function main() {
-  const services = discoverServices();
+  const published = discoverPublished();
   const nsText = readFileSync(NAMESPACE, "utf8");
   // Slots documented as `ns.<Name> = nil` in the namespace block.
   const documented = new Set([...nsText.matchAll(/^\s*ns\.(\w+)\s*=\s*nil\b/gm)].map((m) => m[1]));
 
-  const missing = services
-    .filter((s) => !s.ui && !documented.has(s.name))
-    .map((s) => s.name)
-    .sort();
+  const missing = published.filter((n) => !documented.has(n)).sort();
 
   if (missing.length) {
     console.error(
-      `nscheck: Core/Namespace.lua's slot block is missing these registered services:\n` +
+      `nscheck: Core/Namespace.lua's slot block is missing these registered services/libs:\n` +
         `  ${missing.join("\n  ")}\n\n` +
         `Add a documenting line for each (e.g. \`ns.${missing[0]} = nil -- ...\`).`
     );
     process.exit(1);
   }
 
-  console.log(`nscheck: OK — all ${services.filter((s) => !s.ui).length} non-UI services documented in ${relative(ROOT, NAMESPACE)}.`);
+  console.log(`nscheck: OK — all ${published.length} published services/libs documented in ${relative(ROOT, NAMESPACE)}.`);
 }
 
 main();

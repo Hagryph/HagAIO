@@ -266,11 +266,12 @@ local function registerSpec(name, spec, specKey, serviceDeps)
     }))
 end
 -- Base: Expel Harm marker (event subs, Cooldowns watch, secret-safe paint).
+-- ns.SpellTooltipParser is a pure Lib (always available) -- not a service dep.
 registerSpec("Monk-Base", Base, "none",
-    { "EventBus", "Cooldowns", "Secrets", "SpellTooltipParser" })
+    { "EventBus", "Cooldowns", "Secrets" })
 -- Brewmaster: all of Base + the AoE helper (Range counts, ActionBars greying).
 registerSpec("Monk-Brewmaster", Brewmaster, 1,
-    { "EventBus", "Cooldowns", "Secrets", "Range", "ActionBars", "SpellTooltipParser" })
+    { "EventBus", "Cooldowns", "Secrets", "Range", "ActionBars" })
 
 -- ===========================================================================
 -- Monk behaviour (methods on the shared ClassModule)
