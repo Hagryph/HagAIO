@@ -664,7 +664,11 @@ function Dashboard:_Build()
         autoClose = true,
         onAutoShow = function() self:Show() end,
         onAutoHide = function() self:Hide() end })
-    f:SetScript("OnHide", function() self:_p().shown = false end)
+    -- Whenever the window hides (X / Esc / combat auto-hide / toggle), release every overview page's
+    -- pooled images so their textures don't stay loaded while it's off-screen. Reopening re-renders
+    -- and re-acquires them from the pool. Switching pages WHILE open still caches them (only hiding
+    -- the whole window frees them).
+    f:SetScript("OnHide", function() self:_p().shown = false; self:_ReleaseIcons() end)
     p.frame = f
 
     -- left rail: character card + category nav grid
@@ -936,6 +940,14 @@ function Dashboard:_IconPage(key)
     g:Hide()
     p.iconPages[key] = g
     return g
+end
+
+-- Release every overview page's pooled images (their textures drop to idle). Called when the window
+-- hides, so nothing's kept loaded off-screen; the pages re-acquire from the pool on the next render.
+function Dashboard:_ReleaseIcons()
+    local p = self:_p()
+    if not p.iconPages then return end
+    for _, g in pairs(p.iconPages) do g:ReleaseAll() end
 end
 
 -- Delete an overview page: release its textures and forget it (it's rebuilt lazily if shown again).
