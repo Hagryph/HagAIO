@@ -102,14 +102,6 @@ function Questing:_AbandonQuest(questID)
     C_QuestLog.AbandonQuest()
 end
 
--- /hag questreset -- forget every learned timed quest (account-wide). Handy for testing:
--- afterwards the next encounter re-learns the quest's limit.
-function Questing:_WipeTimed()
-    local reg = self:_TimedRegistry()
-    if reg then wipe(reg) end
-    self:LogInfo("cleared learned timed quests")
-end
-
 -- ---- Advanced quest info: a time-limit banner above the offered-quest window ----------
 -- Pretty duration string for the banner (Blizzard's SecondsToTime, falling back to clock).
 local function timeString(seconds)
@@ -464,10 +456,7 @@ ns.ModuleManager:Register(Questing:New("Questing", {
     defaultEnabled = true,
     color = ns.Theme.hex.gold,
     deps = { "SlashCommand" },  -- for its declarative /hag xp sub-command
-    commands = {
-        xp          = { handler = "_PrintSession", help = "session XP / hour" },
-        questreset  = { handler = "_WipeTimed",    help = "forget learned timed quests" },
-    },
+    commands = { xp = { handler = "_PrintSession", help = "session XP / hour" } },
     events = {
         PLAYER_XP_UPDATE      = "_OnXP",
         PLAYER_LEVEL_UP       = "_OnLevelUp",
