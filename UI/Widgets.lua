@@ -596,7 +596,8 @@ function Widgets.Grid(parent, opts)
         r:SetHeight(rowH)
         r.bg = r:CreateTexture(nil, "BACKGROUND"); r.bg:SetAllPoints()
         r.bar = r:CreateTexture(nil, "OVERLAY")
-        r.bar:SetPoint("TOPLEFT"); r.bar:SetPoint("BOTTOMLEFT"); r.bar:SetWidth(3)
+        local barX = opts.barOffset or 0   -- shift the active bar into the left margin if asked
+        r.bar:SetPoint("TOPLEFT", barX, 0); r.bar:SetPoint("BOTTOMLEFT", barX, 0); r.bar:SetWidth(3)
         r.bar:SetColorTexture(Theme.Unpack("accent")); r.bar:Hide()
         r.cells = {}
         r.sectionFS = Widgets.SectionLabel(r, ""); r.sectionFS:SetPoint("LEFT", 6, 0); r.sectionFS:Hide()
@@ -689,7 +690,7 @@ function Widgets.Nav(parent, opts)
     opts = opts or {}
     local nav = Widgets.Grid(parent, {
         columns = { {} }, scroll = opts.scroll or false, name = opts.name,
-        rowHeight = opts.rowHeight or 30,
+        rowHeight = opts.rowHeight or 30, barOffset = opts.barOffset,
     })
     nav._items = opts.items or {}
     nav._onSelect = opts.onSelect
