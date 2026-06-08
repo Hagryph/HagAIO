@@ -41,31 +41,6 @@ local function vaultDone(e)
     return done .. "/" .. #v.slots
 end
 
--- A lockout column-set built from the union of every character's saved instances matching
--- `predicate(lockout)`; each cell shows that character's boss progress for the instance.
-local function lockoutColumns(chars, predicate)
-    local seen, cols = {}, {}
-    for _, e in pairs(chars) do
-        for _, lk in ipairs(e.lockouts or {}) do
-            local key = lk.name .. "|" .. (lk.diff or "")
-            if predicate(lk) and not seen[key] then
-                seen[key] = true
-                local name, diff = lk.name, lk.diff
-                cols[#cols + 1] = { label = diff and (name .. " (" .. diff .. ")") or name,
-                    width = 110, cell = function(entry)
-                        for _, l in ipairs(entry.lockouts or {}) do
-                            if l.name == name and l.diff == diff then
-                                return (l.progress or 0) .. "/" .. (l.total or "?")
-                            end
-                        end
-                        return "-"
-                    end }
-            end
-        end
-    end
-    table.sort(cols, function(a, b) return a.label < b.label end)
-    return cols
-end
 
 -- A quest column-set from the union of recorded weekly/daily turn-ins of the given `freq`.
 local function questColumns(chars, freq)
@@ -99,10 +74,8 @@ local CATEGORIES = {
         }
     end },
     { key = "lockouts", label = "Lockouts", header = true },
-    { key = "raids",    label = "Raids",    indent = true,
-      columns = function(chars) return lockoutColumns(chars, function(lk) return lk.isRaid end) end },
-    { key = "dungeons", label = "Dungeons", indent = true,
-      columns = function(chars) return lockoutColumns(chars, function(lk) return not lk.isRaid end) end },
+    { key = "raids",    label = "Raids",    indent = true },   -- lockout columns resolved per-key below
+    { key = "dungeons", label = "Dungeons", indent = true },
     { key = "weekly", label = "Weekly Quests",
       columns = function(chars) return questColumns(chars, "weekly") end },
     { key = "daily",  label = "Daily Quests",
@@ -143,9 +116,14 @@ function Dashboard:OnDisable()
 end
 
 -- ---- account-wide store ---------------------------------------------------
-function Dashboard:_Chars()
-    return ns.SavedVars:Namespace("dashboard", { chars = {} }).chars
+-- `chars` = per-character snapshots; `instances` = a SELF-CURATING registry of every instance
+-- ever locked (key "name|difficulty" -> { name, diff, isRaid, total, expansion }), so the
+-- dashboard remembers and keeps showing a dungeon/raid even after its lockout expires.
+function Dashboard:_Store()
+    return ns.SavedVars:Namespace("dashboard", { chars = {}, instances = {} })
 end
+function Dashboard:_Chars()     return self:_Store().chars end
+function Dashboard:_Instances() return self:_Store().instances end
 
 function Dashboard:_SelfKey()
     local realm = (GetNormalizedRealmName and GetNormalizedRealmName()) or GetRealmName()
@@ -213,12 +191,19 @@ end
 function Dashboard:_CollectLockouts()
     local e = self:_SelfEntry()
     local n = (GetNumSavedInstances and GetNumSavedInstances()) or 0
-    local locks = {}
+    local locks, inst = {}, self:_Instances()
     for i = 1, n do
         local name, _, reset, _, locked, _, _, isRaid, _, diff, numEnc, prog = GetSavedInstanceInfo(i)
         if locked and reset and reset > 0 then
             locks[#locks + 1] = { name = name, diff = diff, total = numEnc, progress = prog,
                 isRaid = isRaid, reset = reset }
+            -- remember this instance forever in the self-curating registry
+            local key = name .. "|" .. (diff or "")
+            local r = inst[key]
+            if not r then r = { name = name, diff = diff, isRaid = isRaid and true or false }; inst[key] = r end
+            r.total = numEnc or r.total
+            local exp = self:_InstanceExpansion(name)
+            if exp ~= "Other" then r.expansion = exp end   -- fill the tier once the journal map is ready
         end
     end
     e.lockouts = locks
@@ -292,16 +277,12 @@ function Dashboard:_InstanceExpansion(name)
     return (m and m[name]) or "Other"
 end
 
--- Distinct expansions among locked instances of one kind (raids if wantRaid, else dungeons),
--- the current expansion first then A-Z. Only expansions you actually hold a lock in appear.
-function Dashboard:_SavedExpansions(wantRaid)
+-- Distinct expansions in the registry for one kind (raids if wantRaid, else dungeons), the
+-- current expansion first then A-Z. Persists -- an expansion stays once anything in it is known.
+function Dashboard:_KnownExpansions(wantRaid)
     local set = {}
-    for _, e in pairs(self:_Chars()) do
-        for _, lk in ipairs(e.lockouts or {}) do
-            if (lk.isRaid and true or false) == wantRaid then
-                set[self:_InstanceExpansion(lk.name)] = true
-            end
-        end
+    for _, r in pairs(self:_Instances()) do
+        if r.isRaid == wantRaid then set[r.expansion or "Other"] = true end
     end
     local list, cur = {}, self:_p().currentExpansion
     for exp in pairs(set) do list[#list + 1] = exp end
@@ -310,6 +291,28 @@ function Dashboard:_SavedExpansions(wantRaid)
         return a < b
     end)
     return list
+end
+
+-- Columns from the self-curating registry, filtered by predicate(registryEntry). Each cell is the
+-- character's CURRENT lock for that instance (boss progress) or "-" when not currently locked.
+function Dashboard:_LockoutColumns(predicate)
+    local cols = {}
+    for _, r in pairs(self:_Instances()) do
+        if predicate(r) then
+            local name, diff, total = r.name, r.diff, r.total
+            cols[#cols + 1] = { label = diff and (name .. " (" .. diff .. ")") or name,
+                width = 110, cell = function(e)
+                    for _, l in ipairs(e.lockouts or {}) do
+                        if l.name == name and l.diff == diff then
+                            return (l.progress or 0) .. "/" .. (l.total or total or "?")
+                        end
+                    end
+                    return "-"
+                end }
+        end
+    end
+    table.sort(cols, function(a, b) return a.label < b.label end)
+    return cols
 end
 
 -- ===========================================================================
@@ -414,11 +417,11 @@ function Dashboard:_NavItems()
             items[#items + 1] = { key = cat.key, label = cat.label, indent = cat.indent and 1 or 0 }
             -- a deeper sub-node per expansion you hold a lock in (current first), for Raids/Dungeons
             if cat.key == "raids" then
-                for _, exp in ipairs(self:_SavedExpansions(true)) do
+                for _, exp in ipairs(self:_KnownExpansions(true)) do
                     items[#items + 1] = { key = "raid:" .. exp, label = exp, indent = 2 }
                 end
             elseif cat.key == "dungeons" then
-                for _, exp in ipairs(self:_SavedExpansions(false)) do
+                for _, exp in ipairs(self:_KnownExpansions(false)) do
                     items[#items + 1] = { key = "dungeon:" .. exp, label = exp, indent = 2 }
                 end
             end
@@ -436,21 +439,24 @@ function Dashboard:_NavItems()
     return out
 end
 
--- Resolve a nav key to (title, columns(chars)). Dynamic "raid:<exp>" / "dungeon:<exp>" keys filter
--- the lockouts to one expansion of that kind; everything else is a static CATEGORIES entry.
+-- Resolve a nav key to (title, columns()). "raids"/"dungeons" show every known instance of that
+-- kind; "raid:<exp>"/"dungeon:<exp>" filter to one expansion; the rest are static CATEGORIES.
 function Dashboard:_ResolveCategory(key)
+    if key == "raids" then
+        return "Raids", function() return self:_LockoutColumns(function(r) return r.isRaid end) end
+    elseif key == "dungeons" then
+        return "Dungeons", function() return self:_LockoutColumns(function(r) return not r.isRaid end) end
+    end
     local rexp = key and key:match("^raid:(.+)$")
     if rexp then
-        return rexp .. " Raids", function(chars)
-            return lockoutColumns(chars, function(lk)
-                return lk.isRaid and self:_InstanceExpansion(lk.name) == rexp end)
+        return rexp .. " Raids", function()
+            return self:_LockoutColumns(function(r) return r.isRaid and (r.expansion or "Other") == rexp end)
         end
     end
     local dexp = key and key:match("^dungeon:(.+)$")
     if dexp then
-        return dexp .. " Dungeons", function(chars)
-            return lockoutColumns(chars, function(lk)
-                return not lk.isRaid and self:_InstanceExpansion(lk.name) == dexp end)
+        return dexp .. " Dungeons", function()
+            return self:_LockoutColumns(function(r) return not r.isRaid and (r.expansion or "Other") == dexp end)
         end
     end
     for _, c in ipairs(CATEGORIES) do
@@ -478,6 +484,13 @@ function Dashboard:_Render()
     self:_UpdateHeader()
     self:_UpdateCountdown()
     self:_ExpansionMap()                 -- build the raid->expansion map (no-op once cached)
+    -- backfill the tier on any registry entry recorded before the journal map was ready
+    local map = self:_p().ejMap
+    if map then
+        for _, r in pairs(self:_Instances()) do
+            if (not r.expansion or r.expansion == "Other") and map[r.name] then r.expansion = map[r.name] end
+        end
+    end
 
     local items = self:_NavItems()
     -- keep the selection valid: if the active category was hidden, fall back to the first one
