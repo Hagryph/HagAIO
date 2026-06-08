@@ -258,6 +258,7 @@ function Dashboard:_ExpansionMap()
     if not (EJ_GetNumTiers and EJ_SelectTier and EJ_GetInstanceByIndex and EJ_GetTierInfo) then return nil end
     if C_AddOns and C_AddOns.LoadAddOn then pcall(C_AddOns.LoadAddOn, "Blizzard_EncounterJournal") end
     local map, raidsByTier, dungeonsByTier, tierOrder, found = {}, {}, {}, {}, false
+    local tierLevel = {}   -- tier name -> expansionLevel (EJ tier index 1 = Classic = expansion 0)
     local prev = EJ_GetCurrentTier and EJ_GetCurrentTier()
     local function walk(tier, tierName, isRaid, sink)
         EJ_SelectTier(tier)
@@ -275,6 +276,7 @@ function Dashboard:_ExpansionMap()
     for tier = EJ_GetNumTiers(), 1, -1 do   -- newest tier first
         local tierName = EJ_GetTierInfo(tier)
         if tierName then
+            tierLevel[tierName] = tier - 1   -- EJ tier 1 == Classic == expansion level 0
             local raids, dungeons = {}, {}
             walk(tier, tierName, true, raids)
             walk(tier, tierName, false, dungeons)
@@ -291,6 +293,7 @@ function Dashboard:_ExpansionMap()
         p.ejRaidsByTier = raidsByTier         -- tier -> { all raid names } (every raid has a weekly lock)
         p.ejDungeonsByTier = dungeonsByTier   -- tier -> { all dungeon names }
         p.ejTierOrder = tierOrder             -- tiers with raids, newest first
+        p.ejTierLevel = tierLevel             -- tier name -> expansionLevel (for native logos)
         p.currentExpansion = tierOrder[1] or EJ_GetTierInfo(EJ_GetNumTiers())   -- newest raid tier = current
     end
     return p.ejMap
@@ -300,6 +303,15 @@ end
 function Dashboard:_InstanceExpansion(name)
     local m = self:_p().ejMap
     return (m and m[name]) or "Other"
+end
+
+-- The native expansion logo texture for a tier (the icon WoW ships per expansion), or nil. Used
+-- for the overview's icon tiles. GetExpansionDisplayInfo(expansionLevel) -> { logo, banner }.
+function Dashboard:_ExpansionLogo(tierName)
+    local lvl = self:_p().ejTierLevel and self:_p().ejTierLevel[tierName]
+    if not (lvl and GetExpansionDisplayInfo) then return nil end
+    local info = GetExpansionDisplayInfo(lvl)
+    return info and info.logo or nil
 end
 
 -- Distinct expansions in the registry for one kind (raids if wantRaid, else dungeons), the
@@ -506,6 +518,14 @@ function Dashboard:_Build()
     grid:SetPoint("BOTTOMRIGHT", content, "BOTTOMRIGHT", -10, 12)
     p.grid = grid
 
+    -- the overview: a journal-style icon grid (one tile per expansion) shown over the same area
+    -- as the data grid; selecting Raids/Dungeons shows this, picking a tile drills into the grid.
+    local iconGrid = W.IconGrid(content, { name = "HagAIODashboardIcons" })
+    iconGrid:SetPoint("TOPLEFT", catTitle, "BOTTOMLEFT", 0, -12)
+    iconGrid:SetPoint("BOTTOMRIGHT", content, "BOTTOMRIGHT", -10, 12)
+    iconGrid:Hide()
+    p.iconGrid = iconGrid
+
     p.built = true
     p.nav:Select(p.category)   -- highlight the default category + render it via onSelect
 end
@@ -607,6 +627,32 @@ function Dashboard:_SortedChars()
     return keys, chars
 end
 
+-- The overview's icon tiles: one per expansion (native logo + name), clicking drills into that
+-- expansion's data grid. "raids" lists every raid tier; "dungeons" lists Current Season, the
+-- current expansion, then the legacy expansions we hold dungeon records for.
+function Dashboard:_OverviewTiles(key)
+    local p = self:_p()
+    local tiles = {}
+    local function tile(label, logoTier, navKey)
+        tiles[#tiles + 1] = {
+            texture = self:_ExpansionLogo(logoTier),
+            label = label,
+            onClick = function() p.nav:Select(navKey) end,
+        }
+    end
+    if key == "raids" then
+        for _, exp in ipairs(self:_RaidExpansions()) do tile(exp, exp, "raid:" .. exp) end
+    elseif key == "dungeons" then
+        if self:_SeasonDungeons() then tile("Current Season", p.currentExpansion, "dungeon:current") end
+        local cur, dbt = p.currentExpansion, p.ejDungeonsByTier
+        if cur and dbt and dbt[cur] then tile(cur, cur, "dungeon:" .. cur) end
+        for _, exp in ipairs(self:_KnownExpansions(false)) do
+            if exp ~= cur then tile(exp, exp, "dungeon:" .. exp) end
+        end
+    end
+    return tiles
+end
+
 function Dashboard:_Render()
     local p = self:_p()
     if not p.built then return end
@@ -634,6 +680,18 @@ function Dashboard:_Render()
     local keys, chars = self:_SortedChars()
     local label, columnsFn = self:_ResolveCategory(p.category)
     p.catTitle:SetText(label)
+
+    -- the Raids/Dungeons overview is a journal-style icon grid of expansions, not the data grid
+    if p.category == "raids" or p.category == "dungeons" then
+        p.grid:Hide()
+        p.iconGrid:Show()
+        p.iconGrid:SetTiles(self:_OverviewTiles(p.category))
+        p.iconGrid:ScrollTop()
+        return
+    end
+    p.iconGrid:Hide()
+    p.grid:Show()
+
     local cols = (columnsFn and columnsFn(chars)) or {}
 
     -- one sticky Character column + one column per category item; the grid aligns header+cells
