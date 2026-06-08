@@ -83,7 +83,14 @@ function SettingsWindow:_Build()
     -- shared chrome: movable HIGH-strata frame + draggable bar (title + version) + close X.
     local f = W.Window({ name = "HagAIOSettingsWindow", width = 620, height = 460,
         strata = "HIGH", title = "HAGAIO", subtitle = "v" .. tostring(ns.version),
-        onClose = function() self:Hide() end })
+        onClose = function() self:Hide() end,
+        autoClose = true,   -- hide in combat / Edit Mode, reopen to the same page after
+        onAutoShow = function()
+            local key = p.reopenKey or p.current or "modules"
+            p.reopenKey = nil
+            self:Show(key)
+        end,
+    })
     local bar = f.bar
     p.frame = f
 
@@ -134,41 +141,7 @@ function SettingsWindow:_Build()
         end
     end)
 
-    -- auto-close while fighting OR in Edit Mode, reopen after if it was open
-    -- (the two never overlap — Edit Mode is blocked in combat)
-    local bus = ns.EventBus
-    bus:On("PLAYER_REGEN_DISABLED", function() self:_Suspend() end)
-    bus:On("PLAYER_REGEN_ENABLED",  function() self:_Resume() end)
-    if EventRegistry then
-        EventRegistry:RegisterCallback("EditMode.Enter", function() self:_Suspend() end, self)
-        EventRegistry:RegisterCallback("EditMode.Exit",  function() self:_Resume() end, self)
-    end
-    -- a manual close (X / Esc) clears any pending reopen; an auto-close keeps it
-    f:SetScript("OnHide", function()
-        if p.autoClosed then p.autoClosed = false else p.reopenKey = nil end
-    end)
-
     p.built = true
-end
-
-function SettingsWindow:_Suspend()
-    local p = self:_p()
-    if p.frame and p.frame:IsShown() then
-        p.reopenKey = p.current or "modules"
-        p.autoClosed = true
-        p.frame:Hide()  -- direct, so OnHide keeps reopenKey
-    end
-end
-
-function SettingsWindow:_Resume()
-    local p = self:_p()
-    if p.reopenKey then
-        local key = p.reopenKey
-        p.reopenKey = nil
-        -- defer a frame: on EditMode.Exit, IsEditModeActive() can still be true,
-        -- which would make Show() re-defer and never reopen.
-        C_Timer.After(0, function() self:Show(key) end)
-    end
 end
 
 -- ---- pages ----------------------------------------------------------------
@@ -732,6 +705,7 @@ function SettingsWindow:Show(key)
         and EditModeManagerFrame:IsEditModeActive()
     if not p.frame:IsShown() and (InCombatLockdown() or editActive) then
         p.reopenKey = key
+        p.frame.__autoReopen = true   -- the factory's auto-close resume reopens it afterwards
         if InCombatLockdown() then
             self:LogWarn("In combat - the settings will open when you leave combat.")
         end

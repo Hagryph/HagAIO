@@ -432,6 +432,9 @@ end
 --         title     bar title text;  titleKey palette key (default "accent")
 --         subtitle  faint text right of the title (e.g. a version);  barHeight (default 38)
 --         onClose   fn(frame) for the X (default frame:Hide())
+--         autoClose true -> hide while in COMBAT or Edit Mode, reopen after (a manual X/Esc
+--                   close cancels the reopen). onAutoShow/onAutoHide(frame) override the
+--                   reopen/hide for windows with custom show logic (default frame:Show/Hide).
 -- Returns the frame with .bar / .titleFS / .subtitleFS / .closeBtn / .body attached and a
 -- :SetWindowTitle(text) method.
 function Widgets.Window(opts)
@@ -482,6 +485,39 @@ function Widgets.Window(opts)
     body:SetPoint("TOPLEFT", bar, "BOTTOMLEFT", 0, -1)
     body:SetPoint("BOTTOMRIGHT", f, "BOTTOMRIGHT", -1, 1)
     f.body = body
+
+    -- Auto-close while fighting OR in Edit Mode, reopening after if it was open. Combat events
+    -- go through ns.EventBus (its driver frame is always shown -- a HIDDEN window's own OnEvent
+    -- wouldn't fire, so it could never hear "combat ended"); Edit Mode uses EventRegistry.
+    -- __autoReopen marks "reopen me later"; the OnHide hook clears it on a manual X/Esc close.
+    if opts.autoClose then
+        local function suspend()
+            if not f:IsShown() then return end
+            f.__autoReopen, f.__autoHiding = true, true
+            if opts.onAutoHide then opts.onAutoHide(f) else f:Hide() end
+        end
+        local function resume()
+            if not f.__autoReopen then return end
+            f.__autoReopen = false
+            -- defer a frame: on EditMode.Exit the manager can still report active, so a
+            -- re-checking show would defer again and never reopen.
+            C_Timer.After(0, function()
+                if opts.onAutoShow then opts.onAutoShow(f) else f:Show() end
+            end)
+        end
+        local bus = ns.EventBus
+        if bus then
+            bus:On("PLAYER_REGEN_DISABLED", suspend)
+            bus:On("PLAYER_REGEN_ENABLED", resume)
+        end
+        if EventRegistry then
+            EventRegistry:RegisterCallback("EditMode.Enter", suspend, f)
+            EventRegistry:RegisterCallback("EditMode.Exit", resume, f)
+        end
+        f:HookScript("OnHide", function()
+            if f.__autoHiding then f.__autoHiding = false else f.__autoReopen = false end
+        end)
+    end
 
     f.SetWindowTitle = function(_, t) title:SetText(t or "") end
     return f
