@@ -404,8 +404,10 @@ function Tasklist:_BuildFrame()
             key = "taskTracker", label = "Task List", anchor = "TOPLEFT",
             default = { point = "TOPLEFT", x = 420, y = -260 },
             active = function() return self:IsEnabled() end,
-            onEnter = function() grab:Show() end,
-            onExit  = function() grab:Hide() end,
+            -- entering Edit Mode renders the sample preview (IsEditing() is already true here); exiting
+            -- clears it and re-checks visibility so an empty tracker hides again.
+            onEnter = function() grab:Show(); self:_Refresh() end,
+            onExit  = function() grab:Hide(); self:_Refresh(); self:_UpdateVisibility() end,
         })
     end
     f:Hide()
@@ -534,10 +536,36 @@ function Tasklist:_Refresh()
         end
     end
 
+    p.hasTasks = any   -- drives visibility: an empty tracker hides itself (see _UpdateVisibility)
+    local editing = ns.EditMode and ns.EditMode:IsEditing()
+
     if not any then
-        local t = fs(lineFont)
-        t:SetPoint("TOPLEFT", 2, y); t:SetText("No active tasks."); t:SetTextColor(0.6, 0.6, 0.6)
-        y = y - 18
+        if editing then
+            -- Edit Mode preview: sample headers + objective lines so the otherwise-empty tracker is
+            -- visible and grabbable, filling at least 500px downward.
+            local TARGET = 500
+            for _, ttype in ipairs(TYPE_ORDER) do
+                header(TYPE_LABEL[ttype])
+                for i = 1, 5 do
+                    local t = fs(lineFont)
+                    t:SetPoint("TOPLEFT", INDENT, y); t:SetWidth(width - INDENT - 14); t:SetJustifyH("LEFT")
+                    t:SetText("- " .. TYPE_LABEL[ttype] .. " sample " .. i)
+                    t:SetTextColor(0.7, 0.7, 0.7)
+                    y = y - (t:GetStringHeight() + LINE_GAP)
+                end
+                y = y - 6
+            end
+            while -y < TARGET do   -- top up to the target height
+                local t = fs(lineFont)
+                t:SetPoint("TOPLEFT", INDENT, y); t:SetWidth(width - INDENT - 14)
+                t:SetText("- Sample task"); t:SetTextColor(0.7, 0.7, 0.7)
+                y = y - (t:GetStringHeight() + LINE_GAP)
+            end
+        else
+            local t = fs(lineFont)
+            t:SetPoint("TOPLEFT", 2, y); t:SetText("No active tasks."); t:SetTextColor(0.6, 0.6, 0.6)
+            y = y - 18
+        end
     end
 
     -- hide any widgets left over from a previous, larger build
@@ -548,13 +576,14 @@ function Tasklist:_Refresh()
     f:SetHeight(math.max(20, -y + 4))
 end
 
--- Show when enabled & out of combat (and not empty); Edit Mode shows it regardless.
+-- Edit Mode shows it regardless (so it can be positioned). Otherwise it shows only when it actually
+-- has tasks AND we're out of combat -- an empty tracker hides itself.
 function Tasklist:_UpdateVisibility()
     local p = self:_p()
     if not p.frame then return end
     local editing = ns.EditMode and ns.EditMode:IsEditing()
-    local show = self:IsEnabled() and (editing or not InCombatLockdown())
-    p.frame:SetShown(show)
+    local show = self:IsEnabled() and (editing or (p.hasTasks and not InCombatLockdown()))
+    p.frame:SetShown(show and true or false)
 end
 
 -- ---- settings page (custom: add/remove tasks) -----------------------------
