@@ -80,24 +80,28 @@ describe("TextureService paint memoisation", function()
     end)
 end)
 
-describe("TextureService original references", function()
-    it("links the original while in use and unlinks on release", function()
+describe("TextureService edits hold no original", function()
+    it("an edit loads the image path itself and references no original", function()
         local ts = setup()
         local tw = ts:Acquire()
         ts:_Paint(tw, 5, false, 0, 1, 0, 1)
-        assert.are.equal(ts:Original(5), tw._original)
-        ts:Release(tw)
-        assert.is_nil(tw._original)
+        assert.are.equal(5, tw._image)               -- loaded the path directly
+        assert.is_nil(tw._original)                  -- ...and links to no original
     end)
-    it("keeps a shared original alive while another edit still holds it", function()
+    it("painting edits never creates an original (no redundant second load)", function()
         local ts = setup()
         local a, b = ts:Acquire(), ts:Acquire()
         ts:_Paint(a, 5, false, 0, 1, 0, 1)
-        ts:_Paint(b, 5, false, 0, 1, 0, 1)
-        assert.are.equal(a._original, b._original)   -- both edits share the one original
-        ts:Release(a)
-        assert.is_nil(a._original)
-        assert(b._original)                          -- still referenced by b -> no early release
+        ts:_Paint(b, 5, false, 0, 0.5, 0, 1)
+        assert.are.equal(0, ts:Stats().originals)
+    end)
+    it("an original is created only on explicit request, then weak-cached + deduped", function()
+        local ts = setup()
+        assert.are.equal(0, ts:Stats().originals)
+        local o = ts:Original(5)
+        assert.are.equal(5, o._image)                -- the original loaded the plain image
+        assert.are.equal(o, ts:Original(5))          -- deduped
+        assert.are.equal(1, ts:Stats().originals)
     end)
 end)
 

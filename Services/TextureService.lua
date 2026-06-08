@@ -9,11 +9,17 @@ local Class = ns.Class
 -- passthroughs that do zero maths -- callers describe WHAT they want and the Service computes the
 -- texcoords / size / anchors and drives the widget's setters.
 --
--- ORIGINAL vs EDIT. For each source image the Service keeps ONE pristine "original" widget (full
--- image, no crop, no zoom), held WEAKLY (p.originals) so it isn't kept alive once nothing uses it.
--- Every request for an edited picture is derived FROM that original onto a SEPARATE pooled "edit"
--- widget -- the original is never cropped/zoomed/mutated. Edit widgets are pooled (p.pool) and held
--- strongly (p.owned) so re-rendering grids reuses them and none are collected out from under a caller.
+-- PATH vs EDIT vs ORIGINAL -- three distinct things:
+--   * PATH   -- an image's identity is just its fileID/path string. Passed by value; holds nothing.
+--   * EDIT   -- a pooled widget that loads the PATH itself and crops/zooms it (see _Paint / Render).
+--     It references NO original: it holds its own texture and frees it on Release (Reset ->
+--     SetTexture(nil)), so an image's GPU memory is held exactly while >=1 edit shows it, and the
+--     engine's own texture cache dedupes the actual upload across edits sharing a path. Edits are
+--     pooled (p.pool) + strongly kept (p.owned, bounded by PEAK concurrent use) so grids reuse them.
+--   * ORIGINAL -- the plain, UNEDITED texture for an image, created LAZILY only when a caller asks
+--     for it (:Original), weak-cached (p.originals) so it frees once unreferenced. Edits do NOT go
+--     through it -- so no redundant second load, nothing pinned. It exists for callers that want the
+--     image as-is.
 --
 --   local img = ns.TextureService:Acquire(parentFrame, { layer = "BACKGROUND", sublevel = 1 })
 --   ns.TextureService:Render(img, box, box:GetWidth(), box:GetHeight(),
@@ -71,8 +77,11 @@ function TextureService:OnInitialize()
     p.originals = setmetatable({}, { __mode = "v" })  -- image-key -> pristine original widget (weak)
 end
 
--- The pristine, never-edited widget for an image (full image, no crop/zoom), weak-cached so it isn't
--- kept alive once no edit references it. Edits always derive FROM this and are applied to a copy.
+-- The plain, UNEDITED texture for an image (full image, no crop/zoom), created LAZILY only when a
+-- caller explicitly asks for the image as-is, and weak-cached (p.originals) so it frees once nothing
+-- references it. EDITS DO NOT GO THROUGH THIS -- they load the path themselves (see _Paint) -- so
+-- rendering grids never creates an original, and an original holds no edit's crop. It exists purely
+-- for a caller that wants the pristine image.
 function TextureService:Original(image, atlas)
     local p = self:_p()
     local isA = atlas or isAtlas(image)
