@@ -548,29 +548,18 @@ function Misc:_UpdateEarlyTarget()
     if not landNode then return end
     p.dst = landNode.name   -- always update the shown destination, even before tracking starts
 
-    -- The countdown needs crossing data; until _Tick begins tracking (crossIdx/crossTimes),
-    -- leave it unknown. From the last node we passed to the stop, estimate the same way the
-    -- full route does -- both directions, fly-over fallback -- so an early stop shows a time
-    -- whenever the whole-route hover would have.
-    local segTotal, lastPassT
-    if cross then
-        lastPassT = p.crossTimes and p.crossTimes[cross - 1]
-        local names = {}
-        for i = cross - 1, p.earlyIdx do names[#names + 1] = p.path[i] and p.path[i].name end
-        local complete = true
-        for _, nm in ipairs(names) do if not nm then complete = false; break end end
-        segTotal = complete and Flight:SumLegs(self:_AtomicLegs(), names) or nil
+    -- Total time from take-off (node 1) to the new finish, via the SAME estimator the rest of
+    -- the route timer uses (Flight:SumLegs over the booked path). No per-leg bookkeeping here --
+    -- just the whole start -> finish total; the countdown subtracts the elapsed duration from it
+    -- in _RefreshDisplay. Falls back to the full-route estimate when a leg on the way is still
+    -- unmeasured, so the bar never blanks.
+    local names = {}
+    for i = 1, p.earlyIdx do
+        local n = p.path[i] and p.path[i].name
+        if not n then names = nil; break end
+        names[i] = n
     end
-    if segTotal and lastPassT then
-        p.known = (lastPassT - (p.startTime or lastPassT)) + segTotal
-    else
-        -- The remaining leg to the early-stop node isn't individually measured (routes usually
-        -- store only an end-to-end span, not its atomic legs) or we have no crossing time for
-        -- the last node yet. Rather than BLANK the bar, fall back to the full-route estimate
-        -- resolved at take-off -- a valid UPPER bound for any earlier stop (you arrive no later
-        -- than the final node). We don't fabricate a new number; we reuse the measured one.
-        p.known = p.fullKnown
-    end
+    p.known = (names and Flight:SumLegs(self:_AtomicLegs(), names)) or p.fullKnown
 end
 
 -- ---- map hover tooltip ----------------------------------------------------
