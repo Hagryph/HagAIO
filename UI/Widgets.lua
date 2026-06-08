@@ -53,6 +53,23 @@ function Widgets.Divider(parent)
     return t
 end
 
+-- A framed portrait/avatar: a themed bordered box whose texture fills it (inset by the border),
+-- with the portrait's baked-in ring trimmed. The single place unit/character portraits are built,
+-- so no surface hand-rolls its own frame+texture. Sized square to `size` if given; anchor like any
+-- widget. Methods: :SetPortrait(unit) (live unit portrait) :SetTexture(file) (an explicit image).
+function Widgets.Avatar(parent, size)
+    local f = Widgets.Panel(parent, "panel2", "borderStrong")
+    if size then f:SetSize(size, size) end
+    local tex = f:CreateTexture(nil, "ARTWORK")   -- above the backdrop fill so it's never hidden
+    tex:SetPoint("TOPLEFT", 2, -2)
+    tex:SetPoint("BOTTOMRIGHT", -2, 2)
+    tex:SetTexCoord(0.08, 0.92, 0.08, 0.92)        -- trim the portrait's baked-in ring
+    f.tex = tex
+    f.SetPortrait = function(_, unit) if SetPortraitTexture then SetPortraitTexture(tex, unit) end end
+    f.SetTexture  = function(_, file) tex:SetTexture(file) end
+    return f
+end
+
 function Widgets.Text(parent, text, key, template)
     local fs = parent:CreateFontString(nil, "ARTWORK", template or "GameFontHighlight")
     fs:SetText(text or "")

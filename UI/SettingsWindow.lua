@@ -646,7 +646,7 @@ function SettingsWindow:_BuildLogPage(parent)
     sf:SetPoint("TOPLEFT", div, "BOTTOMLEFT", 0, -8)
     sf:SetPoint("BOTTOMRIGHT", page, "BOTTOMRIGHT", -16, 14)
 
-    local fs = sf.content:CreateFontString(nil, "ARTWORK", "GameFontHighlightSmall")
+    local fs = W.Text(sf.content, "", "text", "GameFontHighlightSmall")
     fs:SetPoint("TOPLEFT")
     fs:SetJustifyH("LEFT")
     fs:SetJustifyV("TOP")

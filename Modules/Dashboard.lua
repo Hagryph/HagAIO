@@ -726,17 +726,10 @@ function Dashboard:_Build()
     rail:SetPoint("TOPLEFT", 0, 0)
     rail:SetPoint("BOTTOMLEFT", 0, 0)
 
-    -- character card: avatar (portrait on the bordered frame's ARTWORK layer, above its
-    -- backdrop so the fill never hides it) + name / level-ilvl / rating.
-    local avFrame = CreateFrame("Frame", nil, rail, "BackdropTemplate")
-    avFrame:SetSize(AVATAR, AVATAR)
+    -- character card: avatar (framed portrait widget) + name / level-ilvl / rating.
+    local avFrame = W.Avatar(rail, AVATAR)
     avFrame:SetPoint("TOPLEFT", 14, -14)
-    W.Style(avFrame, "panel2", "borderStrong")
-    local av = avFrame:CreateTexture(nil, "ARTWORK")
-    av:SetPoint("TOPLEFT", 2, -2)
-    av:SetPoint("BOTTOMRIGHT", -2, 2)
-    av:SetTexCoord(0.08, 0.92, 0.08, 0.92)   -- trim the portrait's baked-in ring
-    p.avatar = av
+    p.avatar = avFrame
 
     local hName = W.Text(rail, "", "text", "GameFontNormal")
     hName:SetPoint("TOPLEFT", avFrame, "TOPRIGHT", 10, -1)
@@ -1095,9 +1088,7 @@ function Dashboard:_UpdateHeader()
     if cc then p.hName:SetTextColor(cc.r, cc.g, cc.b) end
     p.hInfo:SetText(("Level %s   iLvl %s"):format(tostring(e.level or "-"), tostring(e.ilvl or "-")))
     p.hRating:SetText(e.rating and ("Mythic+ " .. e.rating) or "")
-    if SetPortraitTexture and p.avatar then
-        SetPortraitTexture(p.avatar, "player")   -- the viewing character's portrait
-    end
+    if p.avatar then p.avatar:SetPortrait("player") end   -- the viewing character's portrait
 end
 
 function Dashboard:_RenderIfShown()
