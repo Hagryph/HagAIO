@@ -122,9 +122,10 @@ local CATEGORIES = {
     { key = "lockouts", label = "Lockouts", header = true },
     { key = "raids",    label = "Raids",    indent = true },   -- lockout columns resolved per-key below
     { key = "dungeons", label = "Dungeons", indent = true },
-    { key = "weekly", label = "Weekly Quests",
+    { key = "quests", label = "Quests", header = true },
+    { key = "weekly", label = "Weekly", indent = true,
       columns = function(chars) return questColumns(chars, "weekly") end },
-    { key = "daily",  label = "Daily Quests",
+    { key = "daily",  label = "Daily",  indent = true,
       columns = function(chars) return questColumns(chars, "daily") end },
 }
 
