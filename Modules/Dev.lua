@@ -9,7 +9,7 @@ local W = ns.UI.Widgets
 -- For now it live-tunes the Dashboard's scene art: a Zoom slider and X/Y offset sliders, separately
 -- for Dungeon and Raid tiles. The values are PER SESSION -- they drive Dashboard:SetArtTune (which
 -- re-renders immediately) but are NOT saved; every reload they re-seed from the code defaults
--- (the EJ_BG_* constants in Dashboard). Find good numbers here, then bake them into the constants.
+-- (the EJ_LORE_* constants in Dashboard). Find good numbers here, then bake them into the constants.
 
 local Dev = Class.new("Dev", ns.Module)
 

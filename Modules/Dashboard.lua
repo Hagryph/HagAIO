@@ -86,14 +86,15 @@ local EJ_TILE_TC = { 0, 0.68359375, 0, 0.7421875 }
 -- The banner crop lands on the art region but still carries a little padding, so we zoom in a touch
 -- (zoom = fraction of the region shown; 0.8 = 20% in) to eat it. See TextureService for the model.
 local EJ_TILE_ZOOM = 0.8
--- The scene (bgImage) is a 1024x512 file (px aspect 2) padded only on the RIGHT (~32%); it fills the
--- full height. The cover-fit auto-crops the WHOLE image to the tile by aspect, then we zoom in and
--- pan left to push the right-side padding out of view. Zoom = fraction of the fitted region shown
--- (1.0 = as-is, <1 = zoom in, >1 = zoom out); pan is in texcoord units (- x = shift the window left).
-local EJ_BG_ASPECT = 2
-local EJ_BG_ZOOM   = 0.74
-local EJ_BG_PAN_X  = -0.16
-local EJ_BG_PAN_Y  = 0
+-- The instance SPLASH (loreImage) -- the big scene the journal shows on the RIGHT when you open an
+-- instance. It's a 1024x1024 (square) file with the art in the top-left ~76% x 66%; the right and
+-- bottom are transparent padding (the journal crops to {0,0.7617,0,0.65625}). The cover-fit treats
+-- the whole square file, then we zoom in and pan UP-LEFT onto the art region. Zoom = fraction of the
+-- fitted region shown (1.0 = as-is, <1 = zoom in, >1 = zoom out); pan is in texcoord units (- = up/left).
+local EJ_LORE_ASPECT = 1
+local EJ_LORE_ZOOM   = 0.72
+local EJ_LORE_PAN_X  = -0.12
+local EJ_LORE_PAN_Y  = -0.17
 
 -- Copy an art descriptor ({texture, cover, texCoord, zoom, aspect, panX, panY} from _InstanceArt)
 -- onto a tile.
@@ -288,20 +289,20 @@ function Dashboard:_ExpansionMap()
     if C_AddOns and C_AddOns.LoadAddOn then pcall(C_AddOns.LoadAddOn, "Blizzard_EncounterJournal") end
     local map, raidsByTier, dungeonsByTier, tierOrder, found = {}, {}, {}, {}, false
     local tierLevel = {}   -- tier name -> expansionLevel (EJ tier index 1 = Classic = expansion 0)
-    local image = {}       -- instance name -> EJ buttonImage1 (compact tile art)
-    local bg = {}          -- instance name -> EJ bgImage (full-bleed scene; fills a wide tile)
+    local image = {}       -- instance name -> EJ buttonImage1 (compact tile art; banner fallback)
+    local lore = {}        -- instance name -> EJ loreImage (the big right-side splash; preferred art)
     local prev = EJ_GetCurrentTier and EJ_GetCurrentTier()
     local function walk(tier, tierName, isRaid, sink)
         EJ_SelectTier(tier)
         local i = 1
         while true do
-            local instID, name, _, bgImage, buttonImage = EJ_GetInstanceByIndex(i, isRaid)
+            local instID, name, _, _, buttonImage, loreImage = EJ_GetInstanceByIndex(i, isRaid)
             if not instID then break end
             if name == "Keystone Dungeons" then name = nil end   -- meta-entry, never a real instance
             if name and tierName then
                 map[name] = tierName; found = true
                 if buttonImage then image[name] = buttonImage end
-                if bgImage then bg[name] = bgImage end
+                if loreImage then lore[name] = loreImage end
                 if sink then sink[#sink + 1] = name end
             end
             i = i + 1
@@ -328,8 +329,8 @@ function Dashboard:_ExpansionMap()
         p.ejDungeonsByTier = dungeonsByTier   -- tier -> { all dungeon names }
         p.ejTierOrder = tierOrder             -- tiers with raids, newest first
         p.ejTierLevel = tierLevel             -- tier name -> expansionLevel (for native logos)
-        p.ejImage = image                     -- instance name -> EJ tile art (buttonImage1)
-        p.ejBg = bg                           -- instance name -> EJ full-bleed scene (bgImage)
+        p.ejImage = image                     -- instance name -> EJ tile art (buttonImage1; banner fallback)
+        p.ejLore = lore                       -- instance name -> EJ splash (loreImage; preferred art)
         p.currentExpansion = tierOrder[1] or EJ_GetTierInfo(EJ_GetNumTiers())   -- newest raid tier = current
     end
     return p.ejMap
@@ -350,28 +351,24 @@ function Dashboard:_ExpansionLogo(tierName)
     return info and info.logo or nil
 end
 
--- The art for an instance as (texture, texCoord). The buttonImage1 banner (the picture the journal
--- shows in its instance list, names baked in) cropped with the journal's own EJ_TILE_TC fills the
--- tile edge-to-edge -> preferred. bgImage is only a fallback (it's a centred scene with padding, so
--- it leaves a margin) for the rare instance with no banner.
--- An art descriptor for an instance tile. Prefer the full-bleed, high-def SCENE (bgImage) and
--- cover-crop it to the box -- it has no padding, so it fills crisply. The low-def buttonImage1
--- banner is only a fallback (cropped + zoomed) for an instance that has no scene.
--- Per-kind ("raid"/"dungeon") cover zoom + pan for the scene art, seeded from the code defaults.
--- These are RUNTIME (per session): the Dev module live-tunes them via SetArtTune; they reset to the
--- EJ_BG_* defaults every load. On a normal character nothing changes them, so the art is identical.
+-- An art descriptor for an instance tile. Prefer the big SPLASH (loreImage) -- the scene the journal
+-- shows on the right when you open the instance -- cover-fitted + zoomed/panned onto its art region.
+-- The low-def buttonImage1 banner is only a fallback (cropped + zoomed) for an instance with no splash.
+-- Per-kind ("raid"/"dungeon") cover zoom + pan for the splash, seeded from the code defaults. These
+-- are RUNTIME (per session): the Dev module live-tunes them via SetArtTune; they reset to the
+-- EJ_LORE_* defaults every load. On a normal character nothing changes them, so the art is identical.
 function Dashboard:_ArtTune(kind)
     local p = self:_p()
     if not p.artTune then
         p.artTune = {
-            raid    = { zoom = EJ_BG_ZOOM, panX = EJ_BG_PAN_X, panY = EJ_BG_PAN_Y },
-            dungeon = { zoom = EJ_BG_ZOOM, panX = EJ_BG_PAN_X, panY = EJ_BG_PAN_Y },
+            raid    = { zoom = EJ_LORE_ZOOM, panX = EJ_LORE_PAN_X, panY = EJ_LORE_PAN_Y },
+            dungeon = { zoom = EJ_LORE_ZOOM, panX = EJ_LORE_PAN_X, panY = EJ_LORE_PAN_Y },
         }
     end
     return p.artTune[kind] or p.artTune.dungeon
 end
 
--- Read / live-update the scene art tuning for a kind. SetArtTune re-renders if the Dashboard is open
+-- Read / live-update the splash art tuning for a kind. SetArtTune re-renders if the Dashboard is open
 -- so a Dev slider drag is reflected immediately. field is "zoom" | "panX" | "panY".
 function Dashboard:GetArtTune(kind) return self:_ArtTune(kind) end
 function Dashboard:SetArtTune(kind, field, value)
@@ -382,9 +379,9 @@ end
 function Dashboard:_InstanceArt(name, kind)
     local p = self:_p()
     if not name then return nil end
-    if p.ejBg and p.ejBg[name] then
+    if p.ejLore and p.ejLore[name] then
         local t = self:_ArtTune(kind or "dungeon")
-        return { texture = p.ejBg[name], cover = true, aspect = EJ_BG_ASPECT,
+        return { texture = p.ejLore[name], cover = true, aspect = EJ_LORE_ASPECT,
                  zoom = t.zoom, panX = t.panX, panY = t.panY }
     end
     if p.ejImage and p.ejImage[name] then return { texture = p.ejImage[name], texCoord = EJ_TILE_TC, zoom = EJ_TILE_ZOOM } end
@@ -413,7 +410,7 @@ function Dashboard:_SeasonDungeonArt()
     if not s then return nil end
     local cand = {}
     for _, name in ipairs(s.list) do
-        if (p.ejImage and p.ejImage[name]) or (p.ejBg and p.ejBg[name]) then cand[#cand + 1] = name end
+        if (p.ejLore and p.ejLore[name]) or (p.ejImage and p.ejImage[name]) then cand[#cand + 1] = name end
     end
     if #cand == 0 then return nil end
     p.seasonPicName = cand[math.random(#cand)]
