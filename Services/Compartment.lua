@@ -68,10 +68,10 @@ function Compartment:Register()
                 lines[#lines + 1] = { text = "Left-click: open settings", key = "text" }
             end
             lines[#lines + 1] = { text = "Right-click: enable/disable modules" }
-            ns.UI.Widgets.IconTooltip(button, lines)
+            ns.UI.Widgets.Tooltip:Show(button, lines)
         end,
         funcOnLeave = function()
-            GameTooltip:Hide()
+            ns.UI.Widgets.Tooltip:Hide()
         end,
     })
 

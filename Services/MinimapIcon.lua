@@ -76,7 +76,7 @@ function MinimapIcon:_Build()
 
     b:SetScript("OnClick", function(_, btn) self:_OnClick(btn) end)
     b:SetScript("OnEnter", function() self:_OnEnter(b) end)
-    b:SetScript("OnLeave", function() GameTooltip:Hide() end)
+    b:SetScript("OnLeave", function() ns.UI.Widgets.Tooltip:Hide() end)
 
     p.button = b
     self:_Reposition()
@@ -113,7 +113,7 @@ function MinimapIcon:_OnEnter(b)
     end
     lines[#lines + 1] = { text = "Right-click: enable/disable modules" }
     lines[#lines + 1] = { text = "Drag: move around the minimap" }
-    ns.UI.Widgets.IconTooltip(b, lines)
+    ns.UI.Widgets.Tooltip:Show(b, lines)
 end
 
 -- Show/hide per the saved setting (builds lazily on first show).

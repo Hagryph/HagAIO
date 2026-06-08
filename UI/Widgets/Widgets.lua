@@ -156,19 +156,6 @@ function Widgets.DependencyGroup()
     return group
 end
 
--- Shared HagAIO icon tooltip (addon-compartment + minimap buttons): an accent title plus
--- a list of { text, key } lines coloured from the Theme palette (key defaults to "textDim").
--- Keeps the two icon services from each hand-rolling the same block + magic RGBs.
-function Widgets.IconTooltip(owner, lines)
-    GameTooltip:SetOwner(owner, "ANCHOR_LEFT")
-    GameTooltip:AddLine(Theme.Colorize("accent", "HagAIO"))
-    for _, ln in ipairs(lines) do
-        local r, g, b = Theme.Unpack(ln.key or "textDim")
-        GameTooltip:AddLine(ln.text, r, g, b)
-    end
-    GameTooltip:Show()
-end
-
 -- Shared private base layer for the per-widget files (NOT public API).
 ns.UI._wb = {
     Widget = Widget, FrameWidget = FrameWidget, TextWidget = TextWidget, TextureWidget = TextureWidget,
