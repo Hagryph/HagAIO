@@ -330,6 +330,9 @@ function Dashboard:_ExpansionMap()
     end
     for tier = EJ_GetNumTiers(), 1, -1 do   -- newest tier first
         local tierName = EJ_GetTierInfo(tier)
+        -- "World Raids" is a cross-expansion world-boss bucket, not a real expansion -- drop it so it
+        -- doesn't sit among the expansion tiles (Midnight, Pandaria, ...). (enUS, like the other labels.)
+        if tierName == "World Raids" then tierName = nil end
         if tierName then
             tierLevel[tierName] = tier - 1   -- EJ tier 1 == Classic == expansion level 0
             local raids, dungeons = {}, {}
