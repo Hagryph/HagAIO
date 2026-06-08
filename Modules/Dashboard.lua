@@ -402,7 +402,7 @@ function Dashboard:_LatestDungeonArt()
     if d and #d > 0 then return self:_InstanceArt(d[#d], "dungeon") end
 end
 
--- A RANDOM current-season dungeon's art for the Home "Dungeons" tile. Picked once, then cached.
+-- A RANDOM current-season dungeon's art for the Current Season tile. Picked once, then cached.
 function Dashboard:_SeasonDungeonArt()
     local p = self:_p()
     if p.seasonPicName then return self:_InstanceArt(p.seasonPicName, "dungeon") end
@@ -484,6 +484,23 @@ function Dashboard:_SeasonDungeons()
     table.sort(list)
     p.season = { list = list, set = set }
     return p.season
+end
+
+-- One column per current-season dungeon; cell = the character's Mythic 0 lock ("x/y") or "-".
+function Dashboard:_SeasonColumns()
+    local s = self:_SeasonDungeons()
+    if not s then return {} end
+    local cols = {}
+    for _, name in ipairs(s.list) do
+        local dname = name
+        cols[#cols + 1] = { label = dname, width = 130, cell = function(e)
+            for _, l in ipairs(e.lockouts or {}) do
+                if l.name == dname and l.diff == M0 then return (l.progress or 0) .. "/" .. (l.total or "?") end
+            end
+            return "-"
+        end }
+    end
+    return cols
 end
 
 -- A dungeon's Mythic 0 exists only while it's in the current season; once it rotates out it has no
@@ -644,7 +661,10 @@ function Dashboard:_NavItems()
                     items[#items + 1] = { key = "raid:" .. exp, label = exp, indent = 2 }
                 end
             elseif c.key == "dungeons" and dungeonsOpen then
-                -- the current expansion's FULL dungeon catalog (season dungeons included)
+                if self:_SeasonDungeons() then
+                    items[#items + 1] = { key = "dungeon:current", label = "Current Season", indent = 2 }
+                end
+                -- the current expansion's FULL dungeon catalog (not just the M+ season subset)
                 local cur, dbt = self:_p().currentExpansion, self:_p().ejDungeonsByTier
                 if cur and dbt and dbt[cur] then
                     items[#items + 1] = { key = "dungeon:" .. cur, label = cur, indent = 2 }
@@ -680,12 +700,16 @@ function Dashboard:_ResolveCategory(key)
         return rexp .. " Raids", function() return self:_CatalogColumns(rexp, true) end
     end
     local dexp = key and key:match("^dungeon:(.+)$")
-    if dexp == self:_p().currentExpansion then
+    if dexp == "current" then
+        return "Current Season", function() return self:_SeasonColumns() end
+    elseif dexp == self:_p().currentExpansion then
         return dexp .. " Dungeons", function() return self:_CatalogColumns(dexp, false) end   -- full catalog
     elseif dexp then
         return dexp .. " Dungeons", function()
+            local s = self:_SeasonDungeons()
             return self:_LockoutColumns(function(r)
-                return not r.isRaid and (r.expansion or "Other") == dexp   -- every dungeon of this expansion
+                if r.isRaid or (r.expansion or "Other") ~= dexp then return false end
+                return not (r.diff == M0 and s and s.set[r.name])   -- season M0 lives in Current Season
             end)
         end
     end
@@ -740,8 +764,8 @@ function Dashboard:_CategoryTiles()
 end
 
 -- The overview's icon tiles: one per expansion (native logo + name), clicking drills into that
--- expansion's data grid. "raids" lists every raid tier; "dungeons" lists the current expansion,
--- then the legacy expansions we hold dungeon records for.
+-- expansion's data grid. "raids" lists every raid tier; "dungeons" lists Current Season, the
+-- current expansion, then the legacy expansions we hold dungeon records for.
 function Dashboard:_OverviewTiles(key)
     local p = self:_p()
     local tiles = {}
@@ -762,6 +786,12 @@ function Dashboard:_OverviewTiles(key)
             end
         end
     elseif key == "dungeons" then
+        if self:_SeasonDungeons() then
+            tile("Current Season", p.currentExpansion, "dungeon:current")
+            -- Current Season shows a random season-dungeon scene, distinct from the expansion logo
+            local art = self:_SeasonDungeonArt()
+            if art then applyArt(tiles[#tiles], art) end
+        end
         local cur, dbt = p.currentExpansion, p.ejDungeonsByTier
         if cur and dbt and dbt[cur] then tile(cur, cur, "dungeon:" .. cur) end
         for _, exp in ipairs(self:_KnownExpansions(false)) do
