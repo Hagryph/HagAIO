@@ -102,6 +102,22 @@ function Dev:BuildSettingsPage(sf)
         return sy - 32
     end)
     buildGroup("raid", "Raid")
+
+    -- Advanced Quest Info: live-tune the timed-quest banner's vertical position on the quest
+    -- window (per session -- bake the chosen value into Questing's BANNER_Y once it looks right).
+    local quest = ns.ModuleManager:GetModule("Questing")
+    if quest and quest.SetBannerY then
+        local g = W.SettingsGroup(content, "Advanced Quest Info")
+        local gc = g:GetContent()
+        local s = W.Slider(gc, { label = "Banner Y", min = -60, max = 10, step = 1, width = (width - 20) - 4 })
+        s:SetPoint("TOPLEFT", gc, "TOPLEFT", 0, 0)
+        s:SetValue(quest:GetBannerY())
+        s:SetOnChange(function(v) quest:SetBannerY(v) end)
+        g:SetContentHeight(ROW_H - 6)
+        g:SetOnToggle(function() relayout() end)
+        groups[#groups + 1] = g
+    end
+
     relayout()
 end
 

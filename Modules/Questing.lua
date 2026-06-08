@@ -111,22 +111,40 @@ end
 
 -- The banner FontString sits in the dark inset band at the top of the quest window, just
 -- below the NPC name and horizontally centred on it (anchored to QuestNpcNameFrame, so it
--- doesn't scroll with the text). Created lazily the first time it's needed.
+-- doesn't scroll with the text). Its vertical offset is dev-tunable (see Set/GetBannerY).
+-- Created lazily the first time it's needed.
+local BANNER_Y = -14   -- default y offset below the NPC name (more negative = lower)
+
+function Questing:_PositionBanner(fs)
+    fs:ClearAllPoints()
+    local y = self:_p().bannerY or BANNER_Y
+    if QuestNpcNameFrame then
+        fs:SetPoint("TOP", QuestNpcNameFrame, "BOTTOM", 0, y)
+    else
+        fs:SetPoint("TOP", QuestFrame, "TOP", 0, -22 + y)
+    end
+end
+
 function Questing:_EnsureQuestBanner()
     local p = self:_p()
     if p.questBanner then return p.questBanner end
     if not QuestFrame then return nil end
     local fs = QuestFrame:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge", 7)
-    if QuestNpcNameFrame then
-        fs:SetPoint("TOP", QuestNpcNameFrame, "BOTTOM", 0, -2)
-    else
-        fs:SetPoint("TOP", QuestFrame, "TOP", 0, -24)
-    end
+    self:_PositionBanner(fs)
     fs:SetShadowColor(0, 0, 0, 1)
     fs:SetShadowOffset(1, -1)
     fs:Hide()
     p.questBanner = fs
     return fs
+end
+
+-- Dev hooks: live-tune the banner's vertical position (per session -- bake the chosen value
+-- into BANNER_Y once it looks right).
+function Questing:GetBannerY() return self:_p().bannerY or BANNER_Y end
+function Questing:SetBannerY(y)
+    self:_p().bannerY = y
+    local fs = self:_p().questBanner
+    if fs then self:_PositionBanner(fs) end
 end
 
 function Questing:_HideQuestBanner()
