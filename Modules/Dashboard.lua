@@ -708,7 +708,12 @@ function Dashboard:_OverviewTiles(key)
             end
         end
     elseif key == "dungeons" then
-        if self:_SeasonDungeons() then tile("Current Season", p.currentExpansion, "dungeon:current") end
+        if self:_SeasonDungeons() then
+            tile("Current Season", p.currentExpansion, "dungeon:current")
+            -- Current Season shows dungeon art, so it's distinct from the current-expansion logo tile
+            local img = self:_LatestDungeonImage()
+            if img then tiles[#tiles].texture = img end
+        end
         local cur, dbt = p.currentExpansion, p.ejDungeonsByTier
         if cur and dbt and dbt[cur] then tile(cur, cur, "dungeon:" .. cur) end
         for _, exp in ipairs(self:_KnownExpansions(false)) do
