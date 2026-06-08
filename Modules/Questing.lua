@@ -22,7 +22,7 @@ end
 function Questing:_MaxLevel()
     if GetMaxLevelForPlayerExpansion then return GetMaxLevelForPlayerExpansion() end
     if GetMaxPlayerLevel then return GetMaxPlayerLevel() end
-    return 80
+    return 90   -- Midnight cap (fallback only; the APIs above are authoritative)
 end
 
 function Questing:_FindXPBar()
@@ -127,7 +127,9 @@ end
 function Questing:_ShowTooltip()
     local p = self:_p()
     if not p.overlay then return end
-    if not self:GetSetting("showTooltip") then
+    -- No tooltip when it's turned off, or at max level (no XP to track) -- just hide and bail.
+    if not self:GetSetting("showTooltip")
+        or UnitLevel("player") >= self:_MaxLevel() or UnitXPMax("player") == 0 then
         if GameTooltip:IsOwned(p.overlay) then GameTooltip:Hide() end
         return
     end
@@ -136,11 +138,6 @@ function Questing:_ShowTooltip()
     tt:ClearLines()
     tt:AddLine("|cff" .. Theme.hex.accent .. "HagAIO|r  |cff" .. Theme.hex.gold .. "Questing|r")
 
-    if UnitLevel("player") >= self:_MaxLevel() or UnitXPMax("player") == 0 then
-        tt:AddLine("Max level - no experience to track.", Theme.Unpack("textDim"))
-        tt:Show()
-        return
-    end
     if IsXPUserDisabled and IsXPUserDisabled() then
         tt:AddLine("XP gain is disabled.", Theme.Unpack("amber"))
     end

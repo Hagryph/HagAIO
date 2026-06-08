@@ -38,15 +38,20 @@ function Loggable:_AttachLogger()
     p.log = ns.Logger:Register(p.name, p.color or ns.Theme.hex.accent)
 end
 
+-- Record-only (never echo): debug/info/success.
 function Loggable:LogDebug(...)   local l = self:_p().log; if l then l:Debug(...)   end end
 function Loggable:LogInfo(...)    local l = self:_p().log; if l then l:Info(...)    end end
 function Loggable:LogSuccess(...) local l = self:_p().log; if l then l:Success(...) end end
-function Loggable:LogWarn(...)    local l = self:_p().log; if l then l:Warn(...)    end end
-function Loggable:LogError(...)   local l = self:_p().log; if l then l:Error(...)   end end
 
--- Echo-to-chat variants (see ns.Logger's echo policy): LogEchoInfo / LogEchoSuccess
--- reach chat only when the player's "Echo to Chat" setting is on; LogAnnounce reaches
--- chat even when it's off. Plain Log* above never echo.
+-- Warnings/errors come in TWO tiers (default is echo): LogWarn/LogError ECHO to chat when the
+-- "Echo to Chat" setting is on; LogWarnAlways/LogErrorAlways reach chat even when it's off.
+function Loggable:LogWarn(...)        local l = self:_p().log; if l then l:Warn(...)        end end
+function Loggable:LogError(...)       local l = self:_p().log; if l then l:Error(...)       end end
+function Loggable:LogWarnAlways(...)  local l = self:_p().log; if l then l:WarnAlways(...)  end end
+function Loggable:LogErrorAlways(...) local l = self:_p().log; if l then l:ErrorAlways(...) end end
+
+-- Info/success echo variants: LogEchoInfo / LogEchoSuccess reach chat only when "Echo to Chat"
+-- is on; LogAnnounce reaches chat even when it's off (e.g. a level-up announcement).
 function Loggable:LogEchoInfo(...)    local l = self:_p().log; if l then l:EchoInfo(...)    end end
 function Loggable:LogEchoSuccess(...) local l = self:_p().log; if l then l:EchoSuccess(...) end end
 function Loggable:LogAnnounce(...)     local l = self:_p().log; if l then l:Announce(...)    end end

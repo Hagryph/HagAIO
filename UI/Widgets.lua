@@ -9,6 +9,20 @@ local Theme = ns.Theme
 ns.UI = ns.UI or {}
 local Widgets = {}
 
+-- Frame levels claimed by Widgets.Window, so two windows never share one (a tie would let them
+-- z-fight on overlap). A requested level that's taken steps DOWN to the highest free level below
+-- it. Windows are persistent singletons, so claims are never released.
+local usedLevels = {}
+local function claimLevel(requested)
+    local level = requested
+    while level > 0 and usedLevels[level] do level = level - 1 end
+    if level ~= requested then
+        ns.Logger:Core():Warn(("window level %d is already in use; using %d instead"):format(requested, level))
+    end
+    usedLevels[level] = true
+    return level
+end
+
 -- Shared "needs a /reload to apply" flag, appended to an option's label so the
 -- marker looks the same everywhere it's used.
 Widgets.RELOAD_FLAG = "  |cff" .. Theme.hex.amber .. "(reload)|r"
@@ -447,7 +461,7 @@ function Widgets.Window(opts)
     f:SetPoint(opts.point or "CENTER")
     Widgets.Style(f, "bg1", "borderStrong")
     f:SetFrameStrata(opts.strata or "HIGH")
-    if opts.level then f:SetFrameLevel(opts.level) end
+    if opts.level then f:SetFrameLevel(claimLevel(opts.level)) end
     f:EnableMouse(true)
     f:SetMovable(true)
     f:SetClampedToScreen(true)

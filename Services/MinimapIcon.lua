@@ -10,11 +10,11 @@ local MinimapIcon = Class.new("MinimapIcon", ns.Service, { mixins = { ns.Persist
 
 local DEFAULT_ANGLE = 225   -- degrees, measured from the minimap centre
 
--- The Reset Radar module IFF it's enabled. When it is, LEFT-click opens it and settings move to
+-- The Dashboard module IFF it's enabled. When it is, LEFT-click opens it and settings move to
 -- MIDDLE-click; when it's off, the icon keeps the default LEFT-click = settings (and middle does
 -- nothing). Resolved lazily so the icon never hard-depends on the optional module.
 -- depcheck-allow: Dashboard
-local function activeResets()
+local function activeDashboard()
     local m = ns.ModuleManager and ns.ModuleManager:GetModule("Dashboard")
     return (m and m:IsEnabled()) and m or nil
 end
@@ -96,16 +96,16 @@ function MinimapIcon:_OnClick(btn)
     if btn == "RightButton" then
         ns.ModuleManager:OpenContextMenu(self:_p().button)
     elseif btn == "MiddleButton" then
-        if activeResets() then ns.UI.SettingsWindow:Toggle() end  -- settings only while Reset Radar owns left-click
-    else  -- LeftButton: Reset Radar if it's on, otherwise settings
-        local m = activeResets()
+        if activeDashboard() then ns.UI.SettingsWindow:Toggle() end  -- settings only while Dashboard owns left-click
+    else  -- LeftButton: Dashboard if it's on, otherwise settings
+        local m = activeDashboard()
         if m then m:Toggle() else ns.UI.SettingsWindow:Toggle() end
     end
 end
 
 function MinimapIcon:_OnEnter(b)
     local lines = {}
-    if activeResets() then
+    if activeDashboard() then
         lines[#lines + 1] = { text = "Left-click: Dashboard", key = "text" }
         lines[#lines + 1] = { text = "Middle-click: open settings" }
     else

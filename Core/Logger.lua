@@ -52,12 +52,16 @@ end
 function Channel:_Log(level, echo, ...)
     self:_p().logger:Record(self, level, joinArgs(...), echo)
 end
--- Record-only helpers (never echo to chat) -- the default for all logging.
+-- Record-only helpers (never echo to chat) -- the default for ordinary info-level logging.
 function Channel:Debug(...)   self:_Log(LEVELS.DEBUG,   ECHO.NEVER, ...) end
 function Channel:Info(...)    self:_Log(LEVELS.INFO,    ECHO.NEVER, ...) end
 function Channel:Success(...) self:_Log(LEVELS.SUCCESS, ECHO.NEVER, ...) end
-function Channel:Warn(...)    self:_Log(LEVELS.WARN,    ECHO.NEVER, ...) end
-function Channel:Error(...)   self:_Log(LEVELS.ERROR,   ECHO.NEVER, ...) end
+-- Warnings and errors have TWO tiers, no record-only mode: the plain method ECHOES to chat
+-- when "Echo to Chat" is on (the default), the *Always variant reaches chat even when it's off.
+function Channel:Warn(...)        self:_Log(LEVELS.WARN,  ECHO.NORMAL, ...) end
+function Channel:Error(...)       self:_Log(LEVELS.ERROR, ECHO.NORMAL, ...) end
+function Channel:WarnAlways(...)  self:_Log(LEVELS.WARN,  ECHO.ALWAYS, ...) end
+function Channel:ErrorAlways(...) self:_Log(LEVELS.ERROR, ECHO.ALWAYS, ...) end
 -- Echo to chat WHEN "Echo to Chat" is on (e.g. welcome line, quest accept/turn-in).
 function Channel:EchoInfo(...)    self:_Log(LEVELS.INFO,    ECHO.NORMAL, ...) end
 function Channel:EchoSuccess(...) self:_Log(LEVELS.SUCCESS, ECHO.NORMAL, ...) end

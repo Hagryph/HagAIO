@@ -10,10 +10,10 @@ local Class = ns.Class
 
 local Compartment = Class.new("Compartment", ns.Service, { mixins = { ns.Persisted } })
 
--- The Reset Radar module IFF enabled: then LEFT-click opens it and settings move to MIDDLE-click;
+-- The Dashboard module IFF enabled: then LEFT-click opens it and settings move to MIDDLE-click;
 -- otherwise the icon keeps LEFT-click = settings and middle does nothing. Lazy lookup so the
 -- service never hard-depends on the optional module. depcheck-allow: Dashboard
-local function activeResets()
+local function activeDashboard()
     local m = ns.ModuleManager and ns.ModuleManager:GetModule("Dashboard")
     return (m and m:IsEnabled()) and m or nil
 end
@@ -61,7 +61,7 @@ function Compartment:Register()
         end,
         funcOnEnter = function(button)
             local lines = {}
-            if activeResets() then
+            if activeDashboard() then
                 lines[#lines + 1] = { text = "Left-click: Dashboard", key = "text" }
                 lines[#lines + 1] = { text = "Middle-click: open settings" }
             else
@@ -83,9 +83,9 @@ function Compartment:OnClick(button, owner)
     if button == "RightButton" then
         ns.ModuleManager:OpenContextMenu(owner or AddonCompartmentFrame)
     elseif button == "MiddleButton" then
-        if activeResets() then ns.UI.SettingsWindow:Toggle() end  -- settings only while Reset Radar owns left-click
-    else  -- LeftButton: Reset Radar if it's on, otherwise settings
-        local m = activeResets()
+        if activeDashboard() then ns.UI.SettingsWindow:Toggle() end  -- settings only while Dashboard owns left-click
+    else  -- LeftButton: Dashboard if it's on, otherwise settings
+        local m = activeDashboard()
         if m then m:Toggle() else ns.UI.SettingsWindow:Toggle() end
     end
 end

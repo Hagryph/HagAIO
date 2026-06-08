@@ -129,7 +129,11 @@ function Dashboard:OnEnable()
     self:On("QUEST_TURNED_IN",            function(_, questID) self:_RecordQuest(questID) end)
     self:_Snapshot()
     if RequestRaidInfo then RequestRaidInfo() end   -- async -> UPDATE_INSTANCE_INFO fills lockouts
-    if self:GetSetting("openOnLogin") then self:Show() end
+end
+
+-- A settings change (a category toggled on/off) re-renders so the nav tree reflects it.
+function Dashboard:OnSettingChanged()
+    self:_RenderIfShown()
 end
 
 function Dashboard:OnDisable()
@@ -380,13 +384,21 @@ function Dashboard:_Build()
     p.nav:Select(p.category)   -- highlight the default category + render it via onSelect
 end
 
+-- Is a category enabled in the settings? Dynamic "raid:<exp>" keys follow the Raids toggle.
+function Dashboard:_CategoryVisible(key)
+    if key:match("^raid:") then return self:GetSetting("show_raids") ~= false end
+    return self:GetSetting("show_" .. key) ~= false
+end
+
 -- The navigation items: a section header per group, a selectable (indented) item otherwise.
+-- Categories the player has hidden in the settings are skipped, and a section header with no
+-- visible items beneath it is dropped.
 function Dashboard:_NavItems()
     local items = {}
     for _, cat in ipairs(CATEGORIES) do
         if cat.header then
             items[#items + 1] = { section = cat.label }
-        else
+        elseif self:_CategoryVisible(cat.key) then
             items[#items + 1] = { key = cat.key, label = cat.label, indent = cat.indent and 1 or 0 }
             -- under Raids, a deeper sub-node per expansion you hold a raid lock in (current first)
             if cat.key == "raids" then
@@ -396,7 +408,16 @@ function Dashboard:_NavItems()
             end
         end
     end
-    return items
+    local out = {}
+    for i, it in ipairs(items) do
+        if it.section then
+            local nxt = items[i + 1]
+            if nxt and not nxt.section then out[#out + 1] = it end  -- keep only non-empty sections
+        else
+            out[#out + 1] = it
+        end
+    end
+    return out
 end
 
 -- Resolve a nav key to (title, columns(chars)). A dynamic "raid:<exp>" key filters the raid
@@ -435,7 +456,16 @@ function Dashboard:_Render()
     self:_UpdateHeader()
     self:_UpdateCountdown()
     self:_ExpansionMap()                 -- build the raid->expansion map (no-op once cached)
-    p.nav:SetItems(self:_NavItems())     -- reflect any newly-saved expansions in the tree
+
+    local items = self:_NavItems()
+    -- keep the selection valid: if the active category was hidden, fall back to the first one
+    local valid
+    for _, it in ipairs(items) do if it.key == p.category then valid = true; break end end
+    if not valid then
+        for _, it in ipairs(items) do if it.key then p.category = it.key; break end end
+    end
+    p.nav:SetItems(items)
+    p.nav:Select(p.category, true)       -- reflect the (possibly changed) active selection silently
 
     local keys, chars = self:_SortedChars()
     local label, columnsFn = self:_ResolveCategory(p.category)
@@ -525,8 +555,12 @@ ns.ModuleManager:Register(Dashboard:New("Dashboard", {
         dashboard = { handler = "Toggle", help = "open the cross-character Dashboard" },
     },
     settings = {
-        { type = "header", text = "Dashboard" },
-        { type = "toggle", key = "openOnLogin", label = "Open automatically on login", default = false },
-        { type = "note", text = "Each character you log into adds itself to the dashboard. Open it any time with /hag resets." },
+        { type = "header", text = "Categories" },
+        { type = "toggle", key = "show_mplus",    label = "Mythic+",       default = true },
+        { type = "toggle", key = "show_raids",    label = "Raids",         default = true },
+        { type = "toggle", key = "show_dungeons", label = "Dungeons",      default = true },
+        { type = "toggle", key = "show_weekly",   label = "Weekly Quests", default = true },
+        { type = "toggle", key = "show_daily",    label = "Daily Quests",  default = true },
+        { type = "note", text = "Choose which categories appear in the Dashboard. Open it with /hag dashboard." },
     },
 }))
