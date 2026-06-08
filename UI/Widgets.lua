@@ -848,13 +848,30 @@ function Widgets.Texture(parent, opts)
         return type(image) == "string" and C_Texture and C_Texture.GetAtlasInfo
             and C_Texture.GetAtlasInfo(image) ~= nil
     end
+    -- re-apply the base crop shrunk toward its centre by the zoom (WeakAuras' icon zoom:
+    -- texWidth = 1 - 0.5*zoom). zoom>0 eats the source's padding so the art fills the box.
+    function tw:_ApplyCoords()
+        local b = tw._base; if not b then return end
+        local l, r, t, btm = b[1], b[2], b[3], b[4]
+        local cx, cy = (l + r) / 2, (t + btm) / 2
+        local k = 1 - 0.5 * (tw._zoom or 0)
+        local hx, hy = (r - l) / 2 * k, (btm - t) / 2 * k
+        tex:SetTexCoord(cx - hx, cx + hx, cy - hy, cy + hy)
+    end
     function tw:SetImage(image, coord, asAtlas)
         if asAtlas or isAtlas(image) then
             tex:SetAtlas(image, false)          -- atlas carries its own coords
+            tw._base = nil
         else
             tex:SetTexture(image)
-            if coord then tex:SetTexCoord(coord[1], coord[2], coord[3], coord[4]) else tex:SetTexCoord(0, 1, 0, 1) end
+            tw._base = coord or { 0, 1, 0, 1 }  -- base crop; zoom shrinks it toward the centre
+            tw:_ApplyCoords()
         end
+        return self
+    end
+    function tw:SetZoom(zoom)
+        tw._zoom = zoom or 0
+        tw:_ApplyCoords()
         return self
     end
     function tw:Fill(frame, inset)
@@ -873,6 +890,7 @@ function Widgets.Texture(parent, opts)
     function tw:Show()              tex:Show();             return self end
     function tw:Hide()              tex:Hide();             return self end
     function tw:Reset()
+        tw._base, tw._zoom = nil, 0
         tex:Hide(); tex:ClearAllPoints(); tex:SetTexture(nil); tex:SetTexCoord(0, 1, 0, 1)
         return self
     end
@@ -888,7 +906,8 @@ end
 --         gap (12), titleHeight (22)
 -- A tile in :SetTiles is { texture=path|fileID, atlas=bool, label=string, labelKey=paletteKey,
 --   badge=string, badgeKey=paletteKey, selected=bool, onClick=function(tile),
---   texCoord={l,r,t,b} (crop padded source art, e.g. EJ buttonImage1),
+--   texCoord={l,r,t,b} (base crop of padded source art, e.g. EJ buttonImage1),
+--   zoom=number (WeakAuras-style: shrink the crop toward its centre to eat residual padding),
 --   contain=bool (centre a square icon at the image's height instead of stretching to fill) }.
 -- Methods: :SetTiles(list)  :Refresh()  :ScrollTop()
 function Widgets.IconGrid(parent, opts)
@@ -959,6 +978,7 @@ function Widgets.IconGrid(parent, opts)
             end
             if d.texture then
                 t.img:SetImage(d.texture, d.texCoord, d.atlas)   -- handles atlas + crop + full-fill
+                t.img:SetZoom(d.zoom or 0)                        -- WeakAuras zoom: eat source padding
                 t.img:Show()
             else
                 t.img:Hide()

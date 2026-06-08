@@ -82,6 +82,9 @@ local HOME_ICON = "|TInterface\\Icons\\INV_Misc_Rune_01:20:20|t"
 -- see Blizzard_EncounterJournal.xml "EncounterInstanceButtonTemplate" bgImage TexCoords. We reuse
 -- it so our instance tiles fill the same way the journal's do instead of rendering tiny.
 local EJ_TILE_TC = { 0, 0.68359375, 0, 0.7421875 }
+-- The journal crop lands on the art region but these textures still carry a little padding inside
+-- it, so we additionally ZOOM (WeakAuras style) toward the centre to eat it and let the art fill.
+local EJ_TILE_ZOOM = 0.4
 
 local CATEGORIES = {
     { key = "mplus", label = "Mythic+", columns = function()
