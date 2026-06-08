@@ -25,6 +25,13 @@ local Dashboard = Class.new("Dashboard", ns.Module)
 local RAIL_W = 178            -- left category-tree / character-header rail
 local AVATAR = 46            -- character portrait size
 
+-- Raid difficulty -> short tag + rank (highest rank wins when a char is locked at several). enUS
+-- names; an unknown locale falls back to the first letter, so it degrades, never breaks.
+local DIFF = {
+    ["Looking For Raid"] = { abbr = "LFR", rank = 1 }, ["Raid Finder"] = { abbr = "LFR", rank = 1 },
+    Normal = { abbr = "N", rank = 2 }, Heroic = { abbr = "H", rank = 3 }, Mythic = { abbr = "M", rank = 4 },
+}
+
 -- ===========================================================================
 -- Category descriptors. Each yields the COLUMNS for the selected dataset; a column's cell(entry)
 -- is PURE (reads only a stored snapshot) so it renders the current character and every alt the
@@ -246,27 +253,39 @@ function Dashboard:_ExpansionMap()
     if p.ejMap then return p.ejMap end
     if not (EJ_GetNumTiers and EJ_SelectTier and EJ_GetInstanceByIndex and EJ_GetTierInfo) then return nil end
     if C_AddOns and C_AddOns.LoadAddOn then pcall(C_AddOns.LoadAddOn, "Blizzard_EncounterJournal") end
-    local map, found = {}, false
+    local map, raidsByTier, tierOrder, found = {}, {}, {}, false
     local prev = EJ_GetCurrentTier and EJ_GetCurrentTier()
-    local function walk(tier, tierName, isRaid)
+    local function walk(tier, tierName, isRaid, sink)
         EJ_SelectTier(tier)
         local i = 1
         while true do
             local instID, name = EJ_GetInstanceByIndex(i, isRaid)
             if not instID then break end
-            if name and tierName then map[name] = tierName; found = true end
+            if name and tierName then
+                map[name] = tierName; found = true
+                if sink then sink[#sink + 1] = name end
+            end
             i = i + 1
         end
     end
-    for tier = 1, EJ_GetNumTiers() do
+    for tier = EJ_GetNumTiers(), 1, -1 do   -- newest tier first
         local tierName = EJ_GetTierInfo(tier)
-        walk(tier, tierName, true)    -- raids
-        walk(tier, tierName, false)   -- dungeons -> same name->expansion map
+        if tierName then
+            local raids = {}
+            walk(tier, tierName, true, raids)   -- raids: also catalogued per tier
+            walk(tier, tierName, false, nil)    -- dungeons: only into the name->expansion map
+            if #raids > 0 then
+                raidsByTier[tierName] = raids
+                tierOrder[#tierOrder + 1] = tierName
+            end
+        end
     end
     if prev then pcall(EJ_SelectTier, prev) end   -- restore the journal's selected tier
     if found then
         p.ejMap = map
-        p.currentExpansion = EJ_GetTierInfo(EJ_GetNumTiers())   -- newest tier = current expansion
+        p.ejRaidsByTier = raidsByTier   -- tier -> { all raid names } (every raid has a weekly lock)
+        p.ejTierOrder = tierOrder       -- tiers with raids, newest first
+        p.currentExpansion = tierOrder[1] or EJ_GetTierInfo(EJ_GetNumTiers())   -- newest raid tier = current
     end
     return p.ejMap
 end
@@ -291,6 +310,39 @@ function Dashboard:_KnownExpansions(wantRaid)
         return a < b
     end)
     return list
+end
+
+-- ---- raids: the FULL catalog (every raid has a weekly lockout, so show them all) -----------
+-- Tiers that have raids, newest first (from the Encounter Journal catalog).
+function Dashboard:_RaidExpansions()
+    return self:_p().ejTierOrder or {}
+end
+
+-- One column per raid in `tierName` (defaults to the current tier).
+function Dashboard:_RaidColumns(tierName)
+    local byTier = self:_p().ejRaidsByTier
+    tierName = tierName or self:_p().currentExpansion
+    local list = (byTier and byTier[tierName]) or {}
+    local cols = {}
+    for _, name in ipairs(list) do
+        local rname = name
+        cols[#cols + 1] = { label = rname, width = 130, cell = function(e) return self:_RaidLockText(e, rname) end }
+    end
+    return cols
+end
+
+-- A character's lockout for one raid: the HIGHEST difficulty it's saved at, as "D x/y", else "-".
+function Dashboard:_RaidLockText(e, name)
+    local best, bestRank
+    for _, l in ipairs(e.lockouts or {}) do
+        if l.isRaid and l.name == name then
+            local rank = (DIFF[l.diff] and DIFF[l.diff].rank) or 0
+            if not best or rank > bestRank then best, bestRank = l, rank end
+        end
+    end
+    if not best then return "-" end
+    local d = (DIFF[best.diff] and DIFF[best.diff].abbr) or (best.diff and best.diff:sub(1, 1)) or ""
+    return (d ~= "" and d .. " " or "") .. (best.progress or 0) .. "/" .. (best.total or "?")
 end
 
 -- Columns from the self-curating registry, filtered by predicate(registryEntry). Each cell is the
@@ -417,7 +469,7 @@ function Dashboard:_NavItems()
             items[#items + 1] = { key = cat.key, label = cat.label, indent = cat.indent and 1 or 0 }
             -- a deeper sub-node per expansion you hold a lock in (current first), for Raids/Dungeons
             if cat.key == "raids" then
-                for _, exp in ipairs(self:_KnownExpansions(true)) do
+                for _, exp in ipairs(self:_RaidExpansions()) do      -- all raid tiers (full catalog)
                     items[#items + 1] = { key = "raid:" .. exp, label = exp, indent = 2 }
                 end
             elseif cat.key == "dungeons" then
@@ -443,15 +495,13 @@ end
 -- kind; "raid:<exp>"/"dungeon:<exp>" filter to one expansion; the rest are static CATEGORIES.
 function Dashboard:_ResolveCategory(key)
     if key == "raids" then
-        return "Raids", function() return self:_LockoutColumns(function(r) return r.isRaid end) end
+        return "Raids", function() return self:_RaidColumns() end          -- current tier, full catalog
     elseif key == "dungeons" then
         return "Dungeons", function() return self:_LockoutColumns(function(r) return not r.isRaid end) end
     end
     local rexp = key and key:match("^raid:(.+)$")
     if rexp then
-        return rexp .. " Raids", function()
-            return self:_LockoutColumns(function(r) return r.isRaid and (r.expansion or "Other") == rexp end)
-        end
+        return rexp .. " Raids", function() return self:_RaidColumns(rexp) end
     end
     local dexp = key and key:match("^dungeon:(.+)$")
     if dexp then
