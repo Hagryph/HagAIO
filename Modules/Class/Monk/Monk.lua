@@ -221,9 +221,9 @@ function ClassModule:_StartOrbPoll()
         local pp = self:_p()
         if pp.orbPollGen ~= gen then return end        -- superseded / unloaded
         -- The orb count is secret (can't be compared), so each poll assumes it MAY have changed
-        -- and flags the geometry for a SetValue refresh. Health ticks don't set this, so they
-        -- stay cheap (colour-only). This is the orb-count refresh cadence.
-        if pp.orbTalented then pp.orbGeomDirty = true; self:_ScheduleUpdate() end
+        -- and flags a SetValue-only refresh (not a full geometry rebuild). Health ticks don't set
+        -- this, so they stay colour-only. This is the orb-count refresh cadence.
+        if pp.orbTalented then pp.orbCountDirty = true; self:_ScheduleUpdate() end
         if InCombatLockdown() then
             C_Timer.After(0.1, poll)                   -- combat: orbs change fast
             return
@@ -261,7 +261,7 @@ function ClassModule:_RefreshHeal()
     -- Scaling spec and applied per-draw, since the factor depends on the live health %.
     p.sosBonus = strengthOfSpiritBonus()
     p.sosSpec = p.sosBonus and { bonus = p.sosBonus, highPct = 100, lowPct = 0, direction = "missing" } or nil
-    p.orbGeomDirty = true   -- heal/orb/SoS changed -> orb-bar geometry must rebuild next draw
+    p.orbLayoutDirty = true   -- heal/orb/SoS changed -> orb-bar min/max/width must rebuild
     self:_SnapshotMaxHP()
     if not p.baseHeal then
         -- description may not be loaded yet; retry shortly
@@ -362,39 +362,49 @@ end
 -- THE orb display (one unified path -- no separate "single bar" any more). `bands` is the
 -- number of health steps, derived from the bonus (1 per 1% of healing increase, see
 -- _LadderBands), or 0 without Strength of Spirit / when the colour-curve APIs are missing (a
--- single bar, no health scaling). The GEOMETRY (min/max, width, anchor, SetValue) is
--- health-INDEPENDENT, so we only rebuild it when an input that affects it changed -- the orb
--- count (orbGeomDirty, set by the poll since the count is secret and can't be compared), the
--- heal/SoS (orbGeomDirty), or the layout (maxHP/width/band-count, compared here). SetValue
--- redraws the fill texture, so health ticks skip this and only re-colour. Always returns true.
+-- single bar, no health scaling).
+--
+-- Performance, two ways:
+--   * Frames are created OUT of combat only -- building dozens of StatusBars mid-fight hitches.
+--     The orb bar draws continuously, so out-of-combat draws pre-grow the pool to full size
+--     before you pull; in combat we use whatever already exists (no growth).
+--   * Work is split by what each input touches. min/max/width/anchor are health- AND
+--     count-INDEPENDENT -> rebuilt only on a LAYOUT change (heal/maxHP/width/band-count: rare,
+--     mostly out of combat). SetValue (a fill redraw) refreshes the secret count at the poll
+--     cadence. Colour/visibility (cheap, no redraw) runs every refresh. So a health tick only
+--     re-colours; an orb-count poll only SetValues; a full rebuild is rare. Always returns true.
 function ClassModule:_DrawOrbLadder(fill, maxHP, width)
     local p = self:_p()
     local curveOK = C_CurveUtil and C_CurveUtil.CreateColorCurve and UnitHealthPercent
         and CreateColor and Enum and Enum.LuaCurveType
-    local sos   = p.sosSpec and curveOK
-    local bands = self:_LadderBands(sos)
-    local L = self:_EnsureOrbLadder(bands)
+    local sos     = p.sosSpec and curveOK
+    local desired = self:_LadderBands(sos)
+    local L = self:_EnsureOrbLadder(InCombatLockdown() and 0 or desired)  -- grow OOC only
+    local bands = math.min(desired, L.created)
 
-    if p.orbGeomDirty or L.maxHP ~= maxHP or L.width ~= width or L.bands ~= bands then
+    local layoutDirty = p.orbLayoutDirty or L.maxHP ~= maxHP or L.width ~= width or L.bands ~= bands
+    if layoutDirty or p.orbCountDirty then
         local count = C_Spell.GetSpellCastCount(Spell.EXPEL_HARM)   -- SECRET -> SetValue
         for i = 0, L.created do
             local sb = L.bars[i]
             if i <= bands then
-                -- band health % -> SoS multiplier (a plain constant); 1 when no SoS
-                local mult = sos and ns.Scaling:Multiplier(p.sosSpec, (i / bands) * 100) or 1
-                local minV, maxV, span = MonkMath:OrbFill(p.baseHeal * mult, p.orbHeal * mult, ORB_MAX_COUNT, maxHP, width)
-                sb:SetMinMaxValues(minV, maxV)
-                sb:ClearAllPoints()
-                sb:SetPoint("TOPLEFT",    fill, "TOPRIGHT",    0, 0)   -- start AT current health
-                sb:SetPoint("BOTTOMLEFT", fill, "BOTTOMRIGHT", 0, 0)
-                sb:SetWidth(span)
-                sb:SetValue(count)
-            else
-                sb:Hide()   -- band beyond the current count -> stays hidden
+                if layoutDirty then
+                    -- band health % -> SoS multiplier (a plain constant); 1 when no SoS
+                    local mult = sos and ns.Scaling:Multiplier(p.sosSpec, (i / bands) * 100) or 1
+                    local minV, maxV, span = MonkMath:OrbFill(p.baseHeal * mult, p.orbHeal * mult, ORB_MAX_COUNT, maxHP, width)
+                    sb:SetMinMaxValues(minV, maxV)
+                    sb:ClearAllPoints()
+                    sb:SetPoint("TOPLEFT",    fill, "TOPRIGHT",    0, 0)   -- start AT current health
+                    sb:SetPoint("BOTTOMLEFT", fill, "BOTTOMRIGHT", 0, 0)
+                    sb:SetWidth(span)
+                end
+                sb:SetValue(count)   -- refresh the (secret) count fill -- the one per-poll redraw
+            elseif layoutDirty then
+                sb:Hide()            -- band beyond the current count -> stays hidden
             end
         end
         L.maxHP, L.width, L.bands = maxHP, width, bands
-        p.orbGeomDirty = false
+        p.orbLayoutDirty, p.orbCountDirty = false, false
     end
 
     self:_RefreshLadderColors(bands)
