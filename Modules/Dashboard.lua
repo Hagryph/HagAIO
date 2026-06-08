@@ -289,7 +289,7 @@ function Dashboard:_Snapshot()
     self:_CollectKeystone()
     self:_CollectVault()
     self:_CollectLockouts()
-    self:_PruneRegistry()   -- drop saved instances whose difficulty no longer exists (e.g. left M+ season)
+    self:_PruneRegistry()   -- drop saved dungeons whose difficulty Blizzard removed (id no longer resolves)
     self:_RenderIfShown()
 end
 
@@ -599,16 +599,16 @@ function Dashboard:_SeasonColumns()
     return cols
 end
 
--- Auto-cleanup, run on login (via _Snapshot): a DUNGEON only offers a lockable difficulty while it's
--- in the current M+ season, so any dungeon NOT in the season set has lost its difficulty and is
--- dropped -- it doesn't matter which difficulty or which expansion it is. RAIDS keep their difficulties
--- forever, so the registry still remembers them across weekly resets. Season not known yet -> no-op.
+-- Auto-cleanup, run on login (via _Snapshot): drop any DUNGEON whose difficulty Blizzard has REMOVED
+-- from the game, i.e. its difficulty id no longer resolves via GetDifficultyInfo. One uniform rule --
+-- it doesn't care which difficulty or which expansion the dungeon is, only whether that difficulty
+-- still exists. RAIDS are left alone (their difficulties aren't retired). Entries with no known diffID,
+-- or before GetDifficultyInfo is available, are kept (can't prove the difficulty is gone -> no-op).
 function Dashboard:_PruneRegistry()
-    local s = self:_SeasonDungeons()
-    if not s then return end
+    if not GetDifficultyInfo then return end
     local inst = self:_Instances()
     for key, r in pairs(inst) do
-        if not r.isRaid and not s.set[r.name] then inst[key] = nil end
+        if not r.isRaid and r.diffID and not GetDifficultyInfo(r.diffID) then inst[key] = nil end
     end
 end
 
