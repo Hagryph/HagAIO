@@ -330,32 +330,36 @@ function Dashboard:_ExpansionLogo(tierName)
     return info and info.logo or nil
 end
 
--- The EJ banner art (buttonImage1, or the bgImage scene as a fallback) for an instance. Always
--- cropped with EJ_TILE_TC and stretched to fill the tile box (see IconGrid).
-function Dashboard:_InstanceImage(name)
+-- The art for an instance as (texture, texCoord) so it ALWAYS fills the box, no margins:
+--   buttonImage1 is a padded banner -> crop with EJ_TILE_TC and stretch (the banner fills).
+--   bgImage is a full-bleed scene  -> NO crop, just stretch 0-1 (the scene fills).
+-- Applying the banner crop to the scene is what left the dark margin; this keeps them separate.
+function Dashboard:_InstanceArt(name)
     local p = self:_p()
     if not name then return nil end
-    return (p.ejImage and p.ejImage[name]) or (p.ejBg and p.ejBg[name]) or nil
+    if p.ejImage and p.ejImage[name] then return p.ejImage[name], EJ_TILE_TC end
+    if p.ejBg and p.ejBg[name] then return p.ejBg[name], nil end
+    return nil
 end
 
 -- The last (newest) raid / dungeon in the current expansion's catalog -- the picture used for the
 -- current-tier tile, so it shows the real instance art instead of the generic expansion logo.
-function Dashboard:_LatestRaidImage()
+function Dashboard:_LatestRaidArt()
     local p = self:_p()
     local r = p.ejRaidsByTier and p.currentExpansion and p.ejRaidsByTier[p.currentExpansion]
-    return (r and #r > 0) and self:_InstanceImage(r[#r]) or nil
+    return (r and #r > 0) and self:_InstanceArt(r[#r]) or nil
 end
 
-function Dashboard:_LatestDungeonImage()
+function Dashboard:_LatestDungeonArt()
     local p = self:_p()
     local d = p.ejDungeonsByTier and p.currentExpansion and p.ejDungeonsByTier[p.currentExpansion]
-    return (d and #d > 0) and self:_InstanceImage(d[#d]) or nil
+    return (d and #d > 0) and self:_InstanceArt(d[#d]) or nil
 end
 
--- A RANDOM current-season dungeon's banner for the Current Season tile. Picked once, then cached.
-function Dashboard:_SeasonDungeonImage()
+-- A RANDOM current-season dungeon's art for the Current Season tile. Picked once, then cached.
+function Dashboard:_SeasonDungeonArt()
     local p = self:_p()
-    if p.seasonPicName then return self:_InstanceImage(p.seasonPicName) end
+    if p.seasonPicName then return self:_InstanceArt(p.seasonPicName) end
     local s = self:_SeasonDungeons()
     if not s then return nil end
     local cand = {}
@@ -364,7 +368,7 @@ function Dashboard:_SeasonDungeonImage()
     end
     if #cand == 0 then return nil end
     p.seasonPicName = cand[math.random(#cand)]
-    return self:_InstanceImage(p.seasonPicName)
+    return self:_InstanceArt(p.seasonPicName)
 end
 
 -- Distinct expansions in the registry for one kind (raids if wantRaid, else dungeons), the
@@ -687,13 +691,14 @@ function Dashboard:_CategoryTiles()
     local p = self:_p()
     local function go(key) return function() p.nav:Select(key) end end
     local logo = self:_ExpansionLogo(p.currentExpansion)
-    local raidImg = self:_LatestRaidImage()
-    local dunImg = self:_SeasonDungeonImage() or self:_LatestDungeonImage()
+    local raidTex, raidTc = self:_LatestRaidArt()
+    local dunTex, dunTc = self:_SeasonDungeonArt()
+    if not dunTex then dunTex, dunTc = self:_LatestDungeonArt() end
     local defs = {
         { key = "mplus",    label = "Mythic+",       contain = true,
           texture = "Interface\\Icons\\Achievement_ChallengeMode_Gold" },
-        { key = "raids",    label = "Raids",         texture = raidImg or logo, texCoord = raidImg and EJ_TILE_TC },
-        { key = "dungeons", label = "Dungeons",      texture = dunImg or logo,  texCoord = dunImg and EJ_TILE_TC },
+        { key = "raids",    label = "Raids",         texture = raidTex or logo, texCoord = raidTex and raidTc or nil },
+        { key = "dungeons", label = "Dungeons",      texture = dunTex or logo,  texCoord = dunTex and dunTc or nil },
         { key = "weekly",   label = "Weekly Quests", contain = true,
           texture = "Interface\\Icons\\Achievement_Quests_Completed_06" },
         { key = "daily",    label = "Daily Quests",  contain = true,
@@ -727,16 +732,16 @@ function Dashboard:_OverviewTiles(key)
             tile(exp, exp, "raid:" .. exp)
             -- the current tier's tile shows the latest raid's picture, not the expansion logo
             if exp == p.currentExpansion then
-                local img = self:_LatestRaidImage()
-                if img then tiles[#tiles].texture, tiles[#tiles].texCoord = img, EJ_TILE_TC end
+                local tex, tc = self:_LatestRaidArt()
+                if tex then tiles[#tiles].texture, tiles[#tiles].texCoord = tex, tc end
             end
         end
     elseif key == "dungeons" then
         if self:_SeasonDungeons() then
             tile("Current Season", p.currentExpansion, "dungeon:current")
             -- Current Season shows a random season-dungeon banner, distinct from the expansion logo
-            local img = self:_SeasonDungeonImage()
-            if img then tiles[#tiles].texture, tiles[#tiles].texCoord = img, EJ_TILE_TC end
+            local tex, tc = self:_SeasonDungeonArt()
+            if tex then tiles[#tiles].texture, tiles[#tiles].texCoord = tex, tc end
         end
         local cur, dbt = p.currentExpansion, p.ejDungeonsByTier
         if cur and dbt and dbt[cur] then tile(cur, cur, "dungeon:" .. cur) end
