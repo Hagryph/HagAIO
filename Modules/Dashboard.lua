@@ -921,15 +921,19 @@ function Dashboard:_OverviewTiles(key)
             end
         end
     elseif key == "dungeons" then
+        local curTier = self:_CurrentExpansionTier()
         if self:_SeasonDungeons() then
-            tile(SEASON_LABEL, p.currentExpansion, "dungeon:current")
+            -- The Current Season belongs to the LATEST expansion (the live client expansion), not the
+            -- newest raid tier -- those diverge when a new expansion ships before its first raid. Its
+            -- title stays "Current Season"; its expansion/logo resolves to the latest.
+            tile(SEASON_LABEL, curTier or p.currentExpansion, "dungeon:current")
+            tiles[#tiles].texture = self:_CurrentExpansionLogo() or tiles[#tiles].texture
             -- Current Season shows a random season-dungeon scene, distinct from the expansion logo
             local art = self:_SeasonDungeonArt()
             if art then applyArt(tiles[#tiles], art) end
         end
         -- Current Expansion: every dungeon released in it (a superset of the M+ season). Auto-named
         -- and pictured from the live expansion -- the emblem, like the raid tiles use.
-        local curTier = self:_CurrentExpansionTier()
         if curTier then
             tiles[#tiles + 1] = {
                 texture = self:_CurrentExpansionLogo() or self:_ExpansionLogo(curTier),
