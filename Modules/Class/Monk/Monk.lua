@@ -360,24 +360,24 @@ function ClassModule:_BuildOrbLadderCurves(c, N)
 end
 
 -- THE orb display (one unified path -- no separate "single bar" any more). `bands` is the
--- number of health steps: ORB_LADDER_BANDS with Strength of Spirit (each step bakes its band's
--- multiplier), or 0 without it / when the colour-curve APIs are missing (a single bar, no
--- health scaling). The GEOMETRY (min/max, width, anchor, SetValue) is health-INDEPENDENT, so we
--- only rebuild it when an input that affects it changed -- the orb count (orbGeomDirty, set by
--- the poll since the count is secret and can't be compared), the heal/SoS (orbGeomDirty), or the
--- layout (maxHP/width/band-count, compared here). SetValue redraws the fill texture, so health
--- ticks must skip this and only re-colour (see _RefreshLadderColors). Always returns true.
+-- number of health steps, derived from the bonus (1 per 1% of healing increase, see
+-- _LadderBands), or 0 without Strength of Spirit / when the colour-curve APIs are missing (a
+-- single bar, no health scaling). The GEOMETRY (min/max, width, anchor, SetValue) is
+-- health-INDEPENDENT, so we only rebuild it when an input that affects it changed -- the orb
+-- count (orbGeomDirty, set by the poll since the count is secret and can't be compared), the
+-- heal/SoS (orbGeomDirty), or the layout (maxHP/width/band-count, compared here). SetValue
+-- redraws the fill texture, so health ticks skip this and only re-colour. Always returns true.
 function ClassModule:_DrawOrbLadder(fill, maxHP, width)
     local p = self:_p()
     local curveOK = C_CurveUtil and C_CurveUtil.CreateColorCurve and UnitHealthPercent
         and CreateColor and Enum and Enum.LuaCurveType
     local sos   = p.sosSpec and curveOK
-    local bands = sos and ORB_LADDER_BANDS or 0
-    local L = self:_EnsureOrbLadder()
+    local bands = self:_LadderBands(sos)
+    local L = self:_EnsureOrbLadder(bands)
 
     if p.orbGeomDirty or L.maxHP ~= maxHP or L.width ~= width or L.bands ~= bands then
         local count = C_Spell.GetSpellCastCount(Spell.EXPEL_HARM)   -- SECRET -> SetValue
-        for i = 0, ORB_LADDER_BANDS do
+        for i = 0, L.created do
             local sb = L.bars[i]
             if i <= bands then
                 -- band health % -> SoS multiplier (a plain constant); 1 when no SoS
@@ -390,7 +390,7 @@ function ClassModule:_DrawOrbLadder(fill, maxHP, width)
                 sb:SetWidth(span)
                 sb:SetValue(count)
             else
-                sb:Hide()   -- band not in use (no SoS) -> stays hidden
+                sb:Hide()   -- band beyond the current count -> stays hidden
             end
         end
         L.maxHP, L.width, L.bands = maxHP, width, bands
@@ -417,9 +417,9 @@ function ClassModule:_RefreshLadderColors(bands)
         L.bars[0]:Show()
         return
     end
-    if not L.curves or L.cr ~= c[1] or L.cg ~= c[2] or L.cb ~= c[3] then
-        L.curves = self:_BuildOrbLadderCurves(c)
-        L.cr, L.cg, L.cb = c[1], c[2], c[3]
+    if not L.curves or L.cr ~= c[1] or L.cg ~= c[2] or L.cb ~= c[3] or L.curveBands ~= bands then
+        L.curves = self:_BuildOrbLadderCurves(c, bands)
+        L.cr, L.cg, L.cb, L.curveBands = c[1], c[2], c[3], bands
     end
     for i = 0, bands do
         local sb = L.bars[i]
