@@ -429,6 +429,9 @@ end
 -- region under the bar) or anchor your own content to `.bar`.
 --   opts: name      global frame name -> ESC closes it (UISpecialFrames); omit for none
 --         width/height/point/strata   geometry (defaults 560x440, CENTER, "HIGH")
+--         level     explicit frame level -- within a strata, a higher level draws on top, so
+--                   two same-strata windows can be stacked deterministically (gap them so one
+--                   window's nested children never interleave with the other's)
 --         title     bar title text;  titleKey palette key (default "accent")
 --         subtitle  faint text right of the title (e.g. a version);  barHeight (default 38)
 --         onClose   fn(frame) for the X (default frame:Hide())
@@ -444,6 +447,7 @@ function Widgets.Window(opts)
     f:SetPoint(opts.point or "CENTER")
     Widgets.Style(f, "bg1", "borderStrong")
     f:SetFrameStrata(opts.strata or "HIGH")
+    if opts.level then f:SetFrameLevel(opts.level) end
     f:EnableMouse(true)
     f:SetMovable(true)
     f:SetClampedToScreen(true)

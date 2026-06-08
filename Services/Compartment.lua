@@ -12,9 +12,9 @@ local Compartment = Class.new("Compartment", ns.Service, { mixins = { ns.Persist
 
 -- The Reset Radar module IFF enabled: then LEFT-click opens it and settings move to MIDDLE-click;
 -- otherwise the icon keeps LEFT-click = settings and middle does nothing. Lazy lookup so the
--- service never hard-depends on the optional module. depcheck-allow: ResetRadar
+-- service never hard-depends on the optional module. depcheck-allow: Dashboard
 local function activeResets()
-    local m = ns.ModuleManager and ns.ModuleManager:GetModule("ResetRadar")
+    local m = ns.ModuleManager and ns.ModuleManager:GetModule("Dashboard")
     return (m and m:IsEnabled()) and m or nil
 end
 

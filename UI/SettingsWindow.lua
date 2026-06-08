@@ -82,7 +82,7 @@ function SettingsWindow:_Build()
 
     -- shared chrome: movable HIGH-strata frame + draggable bar (title + version) + close X.
     local f = W.Window({ name = "HagAIOSettingsWindow", width = 620, height = 460,
-        strata = "HIGH", title = "HAGAIO", subtitle = "v" .. tostring(ns.version),
+        strata = "HIGH", level = 600, title = "HAGAIO", subtitle = "v" .. tostring(ns.version),
         onClose = function() self:Hide() end,
         autoClose = true,   -- hide in combat / Edit Mode, reopen to the same page after
         onAutoShow = function()

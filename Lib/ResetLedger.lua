@@ -2,7 +2,7 @@ local addonName, ns = ...
 local Class = ns.Class
 
 -- Lib/ResetLedger.lua
--- Pure data-shaping for the ResetRadar dashboard -- no WoW API. Extracted so the bits that
+-- Pure data-shaping for the Dashboard module -- no WoW API. Extracted so the bits that
 -- decide what's stale and how a cell reads are unit-testable:
 --   * CharKey         -- the stable cross-character store key ("Name-Realm").
 --   * NeedsWeeklyReset / NeedsDailyReset -- has a reset passed since a char was last seen?

@@ -13,9 +13,9 @@ local DEFAULT_ANGLE = 225   -- degrees, measured from the minimap centre
 -- The Reset Radar module IFF it's enabled. When it is, LEFT-click opens it and settings move to
 -- MIDDLE-click; when it's off, the icon keeps the default LEFT-click = settings (and middle does
 -- nothing). Resolved lazily so the icon never hard-depends on the optional module.
--- depcheck-allow: ResetRadar
+-- depcheck-allow: Dashboard
 local function activeResets()
-    local m = ns.ModuleManager and ns.ModuleManager:GetModule("ResetRadar")
+    local m = ns.ModuleManager and ns.ModuleManager:GetModule("Dashboard")
     return (m and m:IsEnabled()) and m or nil
 end
 

@@ -5,7 +5,7 @@ local W = ns.UI.Widgets
 local Ledger = ns.ResetLedger
 local clock = ns.Format.Clock   -- "3h 04m" duration formatter (Lib/Format.lua)
 
--- Modules/ResetRadar.lua
+-- Modules/Dashboard.lua
 -- Account-wide, cross-character RESET dashboard. Every character snapshots its own reset-timer
 -- state (Great Vault, M+ keystone + rating, raid/dungeon lockouts, weekly/daily quest turn-ins,
 -- item level) into a shared account-wide saved table keyed by "Name-Realm"; a themed window
@@ -20,7 +20,7 @@ local clock = ns.Format.Clock   -- "3h 04m" duration formatter (Lib/Format.lua)
 -- instance the character is locked to, incl. legacy raids), and weekly/daily quests are RECORDED
 -- as they're turned in (QUEST_TURNED_IN) and classified by frequency -- no curated ID tables.
 
-local ResetRadar = Class.new("ResetRadar", ns.Module)
+local Dashboard = Class.new("Dashboard", ns.Module)
 
 local RAIL_W = 178            -- left category-tree / character-header rail
 local AVATAR = 46            -- character portrait size
@@ -108,14 +108,14 @@ local CATEGORIES = {
 }
 
 -- ---- lifecycle ------------------------------------------------------------
-function ResetRadar:OnInitialize()
+function Dashboard:OnInitialize()
     local p = self:_p()
     p.built = false
     p.shown = false
     p.category = "mplus"
 end
 
-function ResetRadar:OnEnable()
+function Dashboard:OnEnable()
     -- Targeted collectors keep each fire cheap (the never-debounce rule): a bag update only
     -- re-reads the keystone, a quest turn-in only records that quest.
     self:On("PLAYER_ENTERING_WORLD",      function() self:_Snapshot() end)
@@ -132,21 +132,21 @@ function ResetRadar:OnEnable()
     if self:GetSetting("openOnLogin") then self:Show() end
 end
 
-function ResetRadar:OnDisable()
+function Dashboard:OnDisable()
     self:Hide()
 end
 
 -- ---- account-wide store ---------------------------------------------------
-function ResetRadar:_Chars()
-    return ns.SavedVars:Namespace("resetradar", { chars = {} }).chars
+function Dashboard:_Chars()
+    return ns.SavedVars:Namespace("dashboard", { chars = {} }).chars
 end
 
-function ResetRadar:_SelfKey()
+function Dashboard:_SelfKey()
     local realm = (GetNormalizedRealmName and GetNormalizedRealmName()) or GetRealmName()
     return Ledger:CharKey(UnitName("player"), realm)
 end
 
-function ResetRadar:_SelfEntry()
+function Dashboard:_SelfEntry()
     local chars = self:_Chars()
     local key = self:_SelfKey()
     local e = chars[key]
@@ -156,7 +156,7 @@ function ResetRadar:_SelfEntry()
 end
 
 -- ---- collectors (each guarded so a missing API is a no-op, never an error) -
-function ResetRadar:_CollectInfo()
+function Dashboard:_CollectInfo()
     local e = self:_SelfEntry()
     e.name  = UnitName("player")
     e.realm = (GetNormalizedRealmName and GetNormalizedRealmName()) or GetRealmName()
@@ -169,7 +169,7 @@ function ResetRadar:_CollectInfo()
     end
 end
 
-function ResetRadar:_CollectKeystone()
+function Dashboard:_CollectKeystone()
     local e = self:_SelfEntry()
     local mapID = C_MythicPlus and C_MythicPlus.GetOwnedKeystoneMapID and C_MythicPlus.GetOwnedKeystoneMapID()
     local level = C_MythicPlus and C_MythicPlus.GetOwnedKeystoneLevel and C_MythicPlus.GetOwnedKeystoneLevel()
@@ -184,7 +184,7 @@ function ResetRadar:_CollectKeystone()
     if summary and summary.currentSeasonScore then e.rating = summary.currentSeasonScore end
 end
 
-function ResetRadar:_CollectVault()
+function Dashboard:_CollectVault()
     local e = self:_SelfEntry()
     local acts = C_WeeklyRewards and C_WeeklyRewards.GetActivities and C_WeeklyRewards.GetActivities()
     if not acts then return end
@@ -202,7 +202,7 @@ end
 -- All saved instances the character is locked to (raids AND dungeons, current AND legacy) --
 -- GetSavedInstanceInfo returns every active lock, so legacy raids you're saved to are captured
 -- without any curated per-expansion list.
-function ResetRadar:_CollectLockouts()
+function Dashboard:_CollectLockouts()
     local e = self:_SelfEntry()
     local n = (GetNumSavedInstances and GetNumSavedInstances()) or 0
     local locks = {}
@@ -217,7 +217,7 @@ end
 
 -- Record a turned-in quest under its reset frequency (daily/weekly), so the dashboard shows
 -- which alt did which recurring quest this reset. Non-recurring quests are ignored.
-function ResetRadar:_RecordQuest(questID)
+function Dashboard:_RecordQuest(questID)
     if not questID then return end
     local freq
     local info = C_QuestLog and C_QuestLog.GetQuestInfo  -- title fallback; frequency below
@@ -234,7 +234,7 @@ function ResetRadar:_RecordQuest(questID)
     self:_RenderIfShown()
 end
 
-function ResetRadar:_Snapshot()
+function Dashboard:_Snapshot()
     self:_CollectInfo()
     self:_CollectKeystone()
     self:_CollectVault()
@@ -247,7 +247,7 @@ end
 -- expansion). Built lazily and cached on first success; name-matching is locale-consistent
 -- within a client. A raid the journal doesn't list (or before the journal data loads) resolves
 -- to "Other". The reference addons hand-curate this; we derive it dynamically instead.
-function ResetRadar:_ExpansionMap()
+function Dashboard:_ExpansionMap()
     local p = self:_p()
     if p.ejMap then return p.ejMap end
     if not (EJ_GetNumTiers and EJ_SelectTier and EJ_GetInstanceByIndex and EJ_GetTierInfo) then return nil end
@@ -274,13 +274,13 @@ function ResetRadar:_ExpansionMap()
 end
 
 -- The expansion a saved raid belongs to (cache read only; "Other" until the map is built).
-function ResetRadar:_RaidExpansion(name)
+function Dashboard:_RaidExpansion(name)
     local m = self:_p().ejMap
     return (m and m[name]) or "Other"
 end
 
 -- Distinct expansions across all characters' saved raids, the current expansion first then A-Z.
-function ResetRadar:_SavedRaidExpansions()
+function Dashboard:_SavedRaidExpansions()
     local set = {}
     for _, e in pairs(self:_Chars()) do
         for _, lk in ipairs(e.lockouts or {}) do
@@ -304,12 +304,12 @@ end
 -- ===========================================================================
 local NAME_COL = 150   -- the sticky character-name column (shared by the data grid)
 
-function ResetRadar:_Build()
+function Dashboard:_Build()
     local p = self:_p()
     if p.built then return end
 
-    local f = W.Window({ name = "HagAIOResetRadar", width = 860, height = 520,
-        strata = "HIGH", title = "Dashboard", onClose = function() self:Hide() end,
+    local f = W.Window({ name = "HagAIODashboard", width = 860, height = 520,
+        strata = "HIGH", level = 100, title = "Dashboard", onClose = function() self:Hide() end,
         autoClose = true,
         onAutoShow = function() self:Show() end,
         onAutoHide = function() self:Hide() end })
@@ -371,7 +371,7 @@ function ResetRadar:_Build()
     catTitle:SetPoint("TOPLEFT", resetHdr, "BOTTOMLEFT", 0, -10)
     p.catTitle = catTitle
 
-    local grid = W.Grid(content, { name = "HagAIOResetRadarGrid", header = true, striped = true })
+    local grid = W.Grid(content, { name = "HagAIODashboardGrid", header = true, striped = true })
     grid:SetPoint("TOPLEFT", catTitle, "BOTTOMLEFT", 0, -12)
     grid:SetPoint("BOTTOMRIGHT", content, "BOTTOMRIGHT", -10, 12)
     p.grid = grid
@@ -381,7 +381,7 @@ function ResetRadar:_Build()
 end
 
 -- The navigation items: a section header per group, a selectable (indented) item otherwise.
-function ResetRadar:_NavItems()
+function Dashboard:_NavItems()
     local items = {}
     for _, cat in ipairs(CATEGORIES) do
         if cat.header then
@@ -401,7 +401,7 @@ end
 
 -- Resolve a nav key to (title, columns(chars)). A dynamic "raid:<exp>" key filters the raid
 -- lockouts to one expansion; everything else is a static CATEGORIES entry.
-function ResetRadar:_ResolveCategory(key)
+function Dashboard:_ResolveCategory(key)
     local exp = key and key:match("^raid:(.+)$")
     if exp then
         return exp .. " Raids", function(chars)
@@ -417,7 +417,7 @@ function ResetRadar:_ResolveCategory(key)
 end
 
 -- Sorted character keys: the current character first, then alphabetical.
-function ResetRadar:_SortedChars()
+function Dashboard:_SortedChars()
     local chars = self:_Chars()
     local selfKey = self:_SelfKey()
     local keys = {}
@@ -429,7 +429,7 @@ function ResetRadar:_SortedChars()
     return keys, chars
 end
 
-function ResetRadar:_Render()
+function Dashboard:_Render()
     local p = self:_p()
     if not p.built then return end
     self:_UpdateHeader()
@@ -463,7 +463,7 @@ function ResetRadar:_Render()
     p.grid:SetRows(rows)
 end
 
-function ResetRadar:_UpdateHeader()
+function Dashboard:_UpdateHeader()
     local p = self:_p()
     local chars = self:_Chars()
     local e = chars[self:_SelfKey()]
@@ -478,11 +478,11 @@ function ResetRadar:_UpdateHeader()
     end
 end
 
-function ResetRadar:_RenderIfShown()
+function Dashboard:_RenderIfShown()
     if self:_p().shown then self:_Render() end
 end
 
-function ResetRadar:_UpdateCountdown()
+function Dashboard:_UpdateCountdown()
     local p = self:_p()
     if not p.resetHdr then return end
     local weekly = C_DateAndTime and C_DateAndTime.GetSecondsUntilWeeklyReset and C_DateAndTime.GetSecondsUntilWeeklyReset()
@@ -492,7 +492,7 @@ function ResetRadar:_UpdateCountdown()
 end
 
 -- ---- show / hide ----------------------------------------------------------
-function ResetRadar:Show()
+function Dashboard:Show()
     self:_Build()
     local p = self:_p()
     p.shown = true
@@ -503,26 +503,26 @@ function ResetRadar:Show()
     C_Timer.After(0, function() self:_Render() end)   -- re-measure once on screen
 end
 
-function ResetRadar:Hide()
+function Dashboard:Hide()
     local p = self:_p()
     p.shown = false
     if p.ticker then p.ticker:Cancel(); p.ticker = nil end
     if p.frame then p.frame:Hide() end
 end
 
-function ResetRadar:Toggle()
+function Dashboard:Toggle()
     if self:_p().shown then self:Hide() else self:Show() end
 end
 
 -- ---- registration ---------------------------------------------------------
-ns.ModuleManager:Register(ResetRadar:New("ResetRadar", {
+ns.ModuleManager:Register(Dashboard:New("Dashboard", {
     title = "Dashboard",
     description = "A cross-character view of weekly/daily resets: Great Vault, M+ keystone, lockouts and recurring quests.",
     defaultEnabled = false,
     color = ns.Theme.hex.accent,
     deps = { "SavedVars", "SlashCommand", "Secrets" },
     commands = {
-        resets = { handler = "Toggle", help = "open the cross-character Dashboard" },
+        dashboard = { handler = "Toggle", help = "open the cross-character Dashboard" },
     },
     settings = {
         { type = "header", text = "Dashboard" },
