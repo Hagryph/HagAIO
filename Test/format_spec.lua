@@ -16,6 +16,14 @@ describe("Format.Clock", function()
         assert.are.equal("10m 05s", F.Clock(605))
         assert.are.equal("1h 01m", F.Clock(3661))
     end)
+
+    it("uses days + hours from 25h up, hours + minutes below it", function()
+        local F = fmt()
+        assert.are.equal("24h 00m", F.Clock(24 * 3600))           -- still hours+minutes at 24h
+        assert.are.equal("24h 59m", F.Clock(24 * 3600 + 59 * 60)) -- just under the day threshold
+        assert.are.equal("1d 01h", F.Clock(25 * 3600))            -- 25h -> smallest day form
+        assert.are.equal("6d 23h", F.Clock(6 * 86400 + 23 * 3600))-- a near-full weekly reset
+    end)
 end)
 
 describe("Format.MMSS", function()
