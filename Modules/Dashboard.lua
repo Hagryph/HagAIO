@@ -625,6 +625,26 @@ function Dashboard:_PruneRegistry()
     end
 end
 
+-- Sort the current M+ season's dungeons into the registry under their HOME expansion (Mythic 0), so a
+-- season dungeon from a PAST expansion (e.g. Magister's Terrace) makes that expansion appear as a tile
+-- and renders under it -- not only under Current Season. Idempotent; needs the journal map for the
+-- home lookup (skips a dungeon whose expansion isn't known yet); _PruneRegistry removes these again
+-- when the dungeon rotates out of the season.
+function Dashboard:_SeedSeasonDungeons()
+    local s = self:_SeasonDungeons()
+    if not s then return end
+    local inst = self:_Instances()
+    for _, name in ipairs(s.list) do
+        local exp = self:_InstanceExpansion(name)
+        if exp ~= "Other" then
+            local key = name .. "|" .. M0
+            local r = inst[key]
+            if not r then r = { name = name, diff = M0, diffID = M0_ID, isRaid = false }; inst[key] = r end
+            r.expansion = exp
+        end
+    end
+end
+
 -- Columns from the self-curating registry, filtered by predicate(registryEntry). Each cell is the
 -- character's CURRENT lock for that instance (boss progress) or "-" when not currently locked.
 function Dashboard:_LockoutColumns(predicate)
@@ -966,6 +986,7 @@ function Dashboard:_Render()
     self:_UpdateHeader()
     self:_UpdateCountdown()
     self:_ExpansionMap()                 -- build the raid->expansion map (no-op once cached)
+    self:_SeedSeasonDungeons()           -- place season dungeons under their home expansion (legacy ones + their tile)
     -- backfill the tier on any registry entry recorded before the journal map was ready
     local map = self:_p().ejMap
     if map then
