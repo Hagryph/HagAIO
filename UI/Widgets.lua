@@ -827,15 +827,15 @@ function Widgets.Nav(parent, opts)
     return nav
 end
 
--- TEXTURE WIDGET -- a thin wrapper over a WoW Texture that renders crisp and FILLS its region.
--- Two fixes most hand-rolled textures miss: WeakAuras' texel trick (SetSnapToPixelGrid(false) +
--- SetTexelSnappingBias(0)), so the art isn't biased inward and snapped, leaving a faint margin;
--- and a single SetImage that hides the file-vs-atlas + "SetAtlas resets the texcoord" gotchas.
--- :Fill anchors it flush (no inset) so it covers the box edge-to-edge. Textures are pooled and
--- kept alive by ns.TextureService (a long-lived Service), so they aren't garbage-collected.
+-- TEXTURE WIDGET -- a DUMB thin wrapper over a WoW Texture. It does NO maths and makes NO layout
+-- decisions: it only applies the WeakAuras texel-crisp fix (SetSnapToPixelGrid(false) +
+-- SetTexelSnappingBias(0), so the art isn't biased inward and snapped into a faint margin) and exposes
+-- plain passthrough setters. ALL cropping, fitting and filling lives in ns.TextureService, which drives
+-- these setters -- so the crop maths has a single home. Widgets are pooled and kept alive by that
+-- Service (a long-lived singleton) so they aren't garbage-collected.
 --   opts: layer ("ARTWORK"), sublevel (0)
--- Methods: :SetImage(image[, coord][, isAtlas])  :Fill(frame[, inset])  :SetParent/:SetPoint/
---   :ClearAllPoints/:SetSize/:SetDrawLayer/:Show/:Hide passthroughs  :Reset
+-- Setters (each returns self): :SetTexture :SetAtlas :SetCoords(l,r,t,b) :SetParent :ClearAllPoints
+--   :SetPoint :SetSize :SetDrawLayer :SetVertexColor :Show :Hide :Reset
 function Widgets.Texture(parent, opts)
     opts = opts or {}
     local tw = {}
@@ -843,82 +843,18 @@ function Widgets.Texture(parent, opts)
     if tex.SetSnapToPixelGrid then tex:SetSnapToPixelGrid(false) end
     if tex.SetTexelSnappingBias then tex:SetTexelSnappingBias(0) end
     tw.tex = tex
-
-    local function isAtlas(image)
-        return type(image) == "string" and C_Texture and C_Texture.GetAtlasInfo
-            and C_Texture.GetAtlasInfo(image) ~= nil
-    end
-    -- re-apply the base crop shrunk toward its centre by the zoom (WeakAuras' icon zoom:
-    -- texWidth = 1 - 0.5*zoom). zoom>0 eats the source's padding so the art fills the box.
-    function tw:_ApplyCoords()
-        local b = tw._base; if not b then return end
-        local l, r, t, btm = b[1], b[2], b[3], b[4]
-        local cx, cy = (l + r) / 2, (t + btm) / 2
-        local k = 1 - 0.5 * (tw._zoom or 0)
-        local hx, hy = (r - l) / 2 * k, (btm - t) / 2 * k
-        tex:SetTexCoord(cx - hx, cx + hx, cy - hy, cy + hy)
-    end
-    function tw:SetImage(image, coord, asAtlas)
-        if asAtlas or isAtlas(image) then
-            tex:SetAtlas(image, false)          -- atlas carries its own coords
-            tw._base = nil
-        else
-            tex:SetTexture(image)
-            tw._base = coord or { 0, 1, 0, 1 }  -- base crop; zoom shrinks it toward the centre
-            tw:_ApplyCoords()
-        end
-        return self
-    end
-    function tw:SetZoom(zoom)
-        tw._zoom = zoom or 0
-        tw:_ApplyCoords()
-        return self
-    end
-    -- Cover-crop a texture to FILL `frame`: crop the texture's transparent padding out (opts.bounds
-    -- = the real art rect {l,r,t,b}; default the whole file), then fit that art to the frame's aspect
-    -- by cropping the overflow on ONE axis and showing the other edge-to-edge -- fills the box with no
-    -- padding and no distortion. opts.fileAspect (file px w/h) maps texcoord steps to pixels so the
-    -- fit isn't distorted; opts.offset (frame-pixels, +down/right) nudges the centred crop window along
-    -- the cropped axis. Reads the frame's size, so the texture always follows a frame, not a manual size.
-    function tw:Cover(frame, opts)
-        local w, h = frame:GetWidth(), frame:GetHeight()
-        if not (w and h and w > 0 and h > 0) then return self end
-        opts = opts or {}
-        local b = opts.bounds or { 0, 1, 0, 1 }
-        local l, r, t0, b0 = b[1], b[2], b[3], b[4]
-        local tcW, tcH = r - l, b0 - t0
-        local ratio = (w / h) / (opts.fileAspect or 1)     -- target window tcW:tcH
-        local x0, y0, cw, ch
-        if tcW / tcH >= ratio then          -- art wider than frame -> crop sides, full height
-            ch, cw = tcH, tcH * ratio
-            x0 = math.max(l, math.min(r - cw, l + (tcW - cw) / 2 + (cw / w) * (opts.offset or 0)))
-            y0 = t0
-        else                                -- art taller than frame -> crop top/bottom, full width
-            cw, ch = tcW, tcW / ratio
-            y0 = math.max(t0, math.min(b0 - ch, t0 + (tcH - ch) / 2 + (ch / h) * (opts.offset or 0)))
-            x0 = l
-        end
-        tw._base = { x0, x0 + cw, y0, y0 + ch }
-        tw:_ApplyCoords()                                  -- any zoom still applies on top
-        return self
-    end
-    function tw:Fill(frame, inset)
-        inset = inset or 0
-        tex:ClearAllPoints()
-        tex:SetPoint("TOPLEFT", frame, "TOPLEFT", inset, -inset)
-        tex:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", -inset, inset)
-        return self
-    end
-    function tw:SetParent(p)        tex:SetParent(p);       return self end
-    function tw:ClearAllPoints()    tex:ClearAllPoints();   return self end
-    function tw:SetPoint(...)       tex:SetPoint(...);      return self end
-    function tw:SetSize(...)        tex:SetSize(...);       return self end
-    function tw:SetDrawLayer(...)   tex:SetDrawLayer(...);  return self end
-    function tw:SetVertexColor(...) tex:SetVertexColor(...);return self end
-    function tw:Show()              tex:Show();             return self end
-    function tw:Hide()              tex:Hide();             return self end
+    function tw:SetTexture(file)      tex:SetTexture(file);       return self end
+    function tw:SetAtlas(atlas)       tex:SetAtlas(atlas, false); return self end  -- atlas carries its own coords
+    function tw:SetCoords(l, r, t, b) tex:SetTexCoord(l, r, t, b); return self end
+    function tw:SetParent(p)          tex:SetParent(p);           return self end
+    function tw:ClearAllPoints()      tex:ClearAllPoints();       return self end
+    function tw:SetPoint(...)         tex:SetPoint(...);          return self end
+    function tw:SetSize(...)          tex:SetSize(...);           return self end
+    function tw:SetDrawLayer(...)     tex:SetDrawLayer(...);      return self end
+    function tw:SetVertexColor(...)   tex:SetVertexColor(...);    return self end
+    function tw:Show()                tex:Show();                 return self end
+    function tw:Hide()                tex:Hide();                 return self end
     function tw:Reset()
-        tw._base, tw._zoom = nil, 0
         tex:Hide(); tex:ClearAllPoints(); tex:SetTexture(nil); tex:SetTexCoord(0, 1, 0, 1)
         return self
     end
@@ -975,7 +911,6 @@ function Widgets.IconGrid(parent, opts)
         -- layer so the band border draws over it. The widget applies the WeakAuras texel fix.
         local img = (ns.TextureService and ns.TextureService:Acquire(band, { layer = "BACKGROUND", sublevel = 1 }))
             or Widgets.Texture(band, { layer = "BACKGROUND", sublevel = 1 })
-        img:Fill(band)
         t.img = img
         local label = t:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
         label:SetPoint("LEFT", tb, "LEFT", 6, 0); label:SetPoint("RIGHT", tb, "RIGHT", -6, 0)
@@ -1005,47 +940,15 @@ function Widgets.IconGrid(parent, opts)
             t:SetSize(tw, th)
             t:ClearAllPoints()
             t:SetPoint("TOPLEFT", content, "TOPLEFT", col * (tw + GAP), -(rowi * (th + GAP)))
-            t.img:ClearAllPoints()
-            if d.contain then   -- centre a square icon (no aspect distortion) in the image holder
-                t.img:SetSize(ih, ih)
-                t.img:SetPoint("CENTER", t.band, "CENTER", 0, 0)
-            else                -- the texture fills its holder frame edge-to-edge
-                t.img:Fill(t.band)
-            end
-            if d.texture then
-                if d.cover then
-                    -- COVER: first crop the texture's transparent padding out (d.bounds = the real
-                    -- art rect; default the whole file), then fit that real art to the tile aspect by
-                    -- cropping the overflow on ONE axis and showing the other axis edge-to-edge, so it
-                    -- fills the box with no padding and no distortion. d.fileAspect (file px w/h) maps
-                    -- texcoord steps to pixels so the fit is undistorted; d.offset (frame-pixels,
-                    -- +down/right) nudges the centred crop window along the cropped axis. Computed from
-                    -- the known box size (ih/tw), not a frame read that isn't resolved yet at refresh.
-                    local b = d.bounds or { 0, 1, 0, 1 }
-                    local l, r0, t0, b0 = b[1], b[2], b[3], b[4]
-                    local tcW, tcH = r0 - l, b0 - t0
-                    local ratio = (tw / ih) / (d.fileAspect or 1)   -- target window tcW:tcH
-                    local x0, y0, cw, ch
-                    if tcW / tcH >= ratio then         -- art wider than tile -> crop sides, full height
-                        ch, cw = tcH, tcH * ratio
-                        x0 = l + (tcW - cw) / 2 + (cw / tw) * (d.offset or 0)
-                        x0 = math.max(l, math.min(r0 - cw, x0))
-                        y0 = t0
-                    else                               -- art taller than tile -> crop top/bottom, full width
-                        cw, ch = tcW, tcW / ratio
-                        y0 = t0 + (tcH - ch) / 2 + (ch / ih) * (d.offset or 0)
-                        y0 = math.max(t0, math.min(b0 - ch, y0))
-                        x0 = l
-                    end
-                    t.img:SetImage(d.texture, { x0, x0 + cw, y0, y0 + ch }, d.atlas)
-                else              -- banner: base crop + WeakAuras zoom to eat residual padding
-                    t.img:SetImage(d.texture, d.texCoord, d.atlas)
-                end
-                t.img:SetZoom(d.zoom or 0)
-                t.img:Show()
-            else
-                t.img:Hide()
-            end
+            -- Describe WHAT this tile's image should look like; the TextureService owns every bit of
+            -- the crop/fit/anchor maths (the widget is a dumb passthrough). Box size (tw x ih) is
+            -- passed in because the holder's anchored size isn't resolved yet at refresh time.
+            local mode = d.contain and "contain" or (d.cover and "cover") or "banner"
+            ns.TextureService:Render(t.img, t.band, tw, ih, {
+                texture = d.texture, atlas = d.atlas, mode = mode,
+                bounds = d.bounds, fileAspect = d.fileAspect, offset = d.offset,
+                coord = d.texCoord, zoom = d.zoom,
+            })
             t.label:SetText(d.label or "")
             t.label:SetTextColor(Theme.Unpack(d.labelKey or "text"))
             t.badge:SetText(d.badge or "")
