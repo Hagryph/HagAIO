@@ -362,6 +362,48 @@ function Dashboard:_ExpansionLogo(tierName)
     return info and info.logo or nil
 end
 
+-- The CURRENT expansion's level. LE_EXPANSION_LEVEL_CURRENT is deprecated in Midnight, so prefer the
+-- live getters (the displayable client max), falling back through to the old constant.
+local function currentExpacLevel()
+    if GetClientDisplayExpansionLevel then return GetClientDisplayExpansionLevel() end
+    if GetExpansionLevel then return GetExpansionLevel() end
+    return LE_EXPANSION_LEVEL_CURRENT
+end
+
+-- The current expansion's display name (e.g. "The War Within"), from the game's expansion strings, or
+-- nil. EXPANSION_NAME<level> is the localized name Blizzard also uses for the journal's tier label.
+function Dashboard:_CurrentExpansionName()
+    local lvl = currentExpacLevel()
+    local n = lvl and _G["EXPANSION_NAME" .. lvl]
+    return (n and n ~= "") and n or nil
+end
+
+-- The current expansion's emblem texture (the same picture the raid tiles use), or nil.
+function Dashboard:_CurrentExpansionLogo()
+    local lvl = currentExpacLevel()
+    local info = lvl and GetExpansionDisplayInfo and GetExpansionDisplayInfo(lvl)
+    return info and info.logo or nil
+end
+
+-- The Encounter Journal DUNGEON tier for the current EXPANSION -- i.e. every dungeon released in it,
+-- which is a SUPERSET of (and distinct from) the "Current Season" M+ subset. Found by the expansion's
+-- name (the journal names that tier after the expansion); if the name doesn't line up, fall back to
+-- the dungeon tier whose journal level matches the current expansion level. nil if none is found.
+function Dashboard:_CurrentExpansionTier()
+    local p = self:_p()
+    local dbt = p.ejDungeonsByTier
+    if not dbt then return nil end
+    local name = self:_CurrentExpansionName()
+    if name and dbt[name] then return name end
+    local lvl = currentExpacLevel()
+    if lvl and p.ejTierLevel then
+        for tierName in pairs(dbt) do
+            if tierName ~= SEASON_LABEL and p.ejTierLevel[tierName] == lvl then return tierName end
+        end
+    end
+    return nil
+end
+
 -- An art descriptor for an instance tile. Prefer the big SPLASH (loreImage) -- the scene the journal
 -- shows on the right when you open the instance -- cover-fitted + zoomed/panned onto its art region.
 -- The low-def buttonImage1 banner is only a fallback (cropped + zoomed) for an instance with no splash.
@@ -704,13 +746,13 @@ function Dashboard:_NavItems()
                 if self:_SeasonDungeons() then
                     items[#items + 1] = { key = "dungeon:current", label = SEASON_LABEL, indent = 2 }
                 end
-                -- one node per expansion; skip the "Current Season" pseudo-tier (the entry above covers it)
-                local cur, dbt = self:_p().currentExpansion, self:_p().ejDungeonsByTier
-                if cur and cur ~= SEASON_LABEL and dbt and dbt[cur] then
-                    items[#items + 1] = { key = "dungeon:" .. cur, label = cur, indent = 2 }
+                -- Current Expansion (all its dungeons), auto-named; then the remaining expansions
+                local curTier = self:_CurrentExpansionTier()
+                if curTier then
+                    items[#items + 1] = { key = "dungeon:" .. curTier, label = self:_CurrentExpansionName() or curTier, indent = 2 }
                 end
                 for _, exp in ipairs(self:_KnownExpansions(false)) do
-                    if exp ~= cur and exp ~= SEASON_LABEL then
+                    if exp ~= SEASON_LABEL and exp ~= curTier then
                         items[#items + 1] = { key = "dungeon:" .. exp, label = exp, indent = 2 }
                     end
                 end
@@ -744,8 +786,10 @@ function Dashboard:_ResolveCategory(key)
     local dexp = key and key:match("^dungeon:(.+)$")
     if dexp == "current" then
         return SEASON_LABEL, function() return self:_SeasonColumns() end
-    elseif dexp == self:_p().currentExpansion then
-        return dexp .. " Dungeons", function() return self:_CatalogColumns(dexp, false) end   -- full catalog
+    elseif dexp and dexp == self:_CurrentExpansionTier() then
+        -- the current expansion: every dungeon released in it (the full journal catalog)
+        return (self:_CurrentExpansionName() or dexp) .. " Dungeons",
+            function() return self:_CatalogColumns(dexp, false) end
     elseif dexp then
         -- every dungeon of this expansion, INCLUDING any in the current M+ season (they also appear
         -- under Current Season -- a season dungeon legitimately shows under both).
@@ -834,12 +878,19 @@ function Dashboard:_OverviewTiles(key)
             local art = self:_SeasonDungeonArt()
             if art then applyArt(tiles[#tiles], art) end
         end
-        -- one tile per expansion; skip the "Current Season" pseudo-tier (the entry above covers it,
-        -- and it has no expansion logo, so it would render as an empty tile)
-        local cur, dbt = p.currentExpansion, p.ejDungeonsByTier
-        if cur and cur ~= SEASON_LABEL and dbt and dbt[cur] then tile(cur, cur, "dungeon:" .. cur) end
+        -- Current Expansion: every dungeon released in it (a superset of the M+ season). Auto-named
+        -- and pictured from the live expansion -- the emblem, like the raid tiles use.
+        local curTier = self:_CurrentExpansionTier()
+        if curTier then
+            tiles[#tiles + 1] = {
+                texture = self:_CurrentExpansionLogo() or self:_ExpansionLogo(curTier),
+                label = self:_CurrentExpansionName() or curTier,
+                onClick = function() p.nav:Select("dungeon:" .. curTier) end,
+            }
+        end
+        -- one tile per remaining expansion (skip the "Current Season" pseudo-tier and the current one)
         for _, exp in ipairs(self:_KnownExpansions(false)) do
-            if exp ~= cur and exp ~= SEASON_LABEL then tile(exp, exp, "dungeon:" .. exp) end
+            if exp ~= SEASON_LABEL and exp ~= curTier then tile(exp, exp, "dungeon:" .. exp) end
         end
     end
     return tiles
