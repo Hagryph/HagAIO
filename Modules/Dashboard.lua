@@ -362,7 +362,20 @@ function Dashboard:_ExpansionMap()
         p.ejTierLevel = tierLevel             -- tier name -> expansionLevel (for native logos)
         p.ejImage = image                     -- instance name -> EJ tile art (buttonImage1; banner fallback)
         p.ejLore = lore                       -- instance name -> EJ splash (loreImage; preferred art)
-        p.currentExpansion = tierOrder[1] or EJ_GetTierInfo(EJ_GetNumTiers())   -- newest raid tier = current
+        -- The CURRENT raid tier is the expansion that actually OWNS the newest raids, derived from the
+        -- raids themselves -- not merely the newest journal tier that lists some. A new tier can
+        -- re-list the prior expansion's raids before its own ship (a "Midnight" tier showing TWW
+        -- raids); until a raid whose HOME is the new expansion exists, the current tier is still the
+        -- prior one. map[] holds each raid's oldest/home tier, so take the newest home across them.
+        local curTier, curLvl
+        for _, names in pairs(raidsByTier) do
+            for _, nm in ipairs(names) do
+                local home = map[nm]
+                local l = home and tierLevel[home]
+                if l and (not curLvl or l > curLvl) then curTier, curLvl = home, l end
+            end
+        end
+        p.currentExpansion = curTier or tierOrder[1] or EJ_GetTierInfo(EJ_GetNumTiers())
     end
     return p.ejMap
 end
