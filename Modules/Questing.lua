@@ -102,6 +102,56 @@ function Questing:_AbandonQuest(questID)
     C_QuestLog.AbandonQuest()
 end
 
+-- /hag questreset -- forget every learned timed quest (account-wide). Handy for testing:
+-- afterwards the next encounter re-learns the quest's limit.
+function Questing:_WipeTimed()
+    local reg = self:_TimedRegistry()
+    if reg then wipe(reg) end
+    self:LogInfo("cleared learned timed quests")
+end
+
+-- ---- Advanced quest info: a time-limit banner above the offered-quest window ----------
+-- Pretty duration string for the banner (Blizzard's SecondsToTime, falling back to clock).
+local function timeString(seconds)
+    if SecondsToTime then return SecondsToTime(seconds) end
+    return clock(seconds)
+end
+
+-- The banner FontString floats just above the QuestFrame so it never overlaps the parchment
+-- or scrolls with it. Created lazily the first time a quest window is shown.
+function Questing:_EnsureQuestBanner()
+    local p = self:_p()
+    if p.questBanner then return p.questBanner end
+    if not QuestFrame then return nil end
+    local fs = QuestFrame:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
+    fs:SetPoint("BOTTOM", QuestFrame, "TOP", 0, 6)
+    fs:SetShadowColor(0, 0, 0, 1)
+    fs:SetShadowOffset(1, -1)
+    fs:Hide()
+    p.questBanner = fs
+    return fs
+end
+
+function Questing:_HideQuestBanner()
+    local fs = self:_p().questBanner
+    if fs then fs:Hide() end
+end
+
+-- Show "Timed quest -- <time>" above the window when Advanced Quest Info is on and we know
+-- the quest's limit; hide it otherwise. Independent of the auto-accept settings.
+function Questing:_UpdateQuestBanner(questID)
+    local fs = self:_EnsureQuestBanner()
+    if not fs then return end
+    local secs = self:GetSetting("advancedInfo") and self:_TimedSeconds(questID)
+    if secs then
+        fs:SetText(("|cff%sTimed quest|r  |cff%s%s|r")
+            :format(Theme.hex.amber, Theme.hex.gold, timeString(secs)))
+        fs:Show()
+    else
+        fs:Hide()
+    end
+end
+
 -- ---- lifecycle ------------------------------------------------------------
 function Questing:OnInitialize()
     local p = self:_p()
