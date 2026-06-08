@@ -570,18 +570,8 @@ function Widgets.SettingsGroup(parent, title)
     return g
 end
 
--- Named scroll frame (template needs a name for its $parentScrollBar).
-function Widgets.ScrollFrame(parent, name)
-    local sf = CreateFrame("ScrollFrame", name, parent, "UIPanelScrollFrameTemplate")
-    -- clip the scroll child (and everything in it) to the viewport -- modern ScrollFrames don't do
-    -- this on their own, so over-tall content would otherwise draw outside the frame.
-    if sf.SetClipsChildren then sf:SetClipsChildren(true) end
-    local content = CreateFrame("Frame", nil, sf)
-    content:SetSize(1, 1)
-    sf:SetScrollChild(content)
-    sf.content = content
-    return sf
-end
+-- (Widgets.ScrollFrame -- the Blizzard-template scroll frame -- was removed: every scrollable surface
+-- now uses Widgets.ScrollArea, our themed scrollbar. Pages/modules never define their own scroll.)
 
 -- Themed window CHROME factory: a movable, ESC-closable frame with a draggable title bar
 -- (title + optional subtitle + a red-on-hover close X). The shared shell behind every
