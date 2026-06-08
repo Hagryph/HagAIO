@@ -304,41 +304,50 @@ function ClassModule:_EnsureMarker()
     return p.marker
 end
 
--- The orb-fill bars: ORB_LADDER_BANDS+1 stacked StatusBars (lazily created), all anchored at
--- the current-health edge. With Strength of Spirit each is revealed by its own colour curve so
--- only the band matching your live health is opaque; without it, only bar 0 is used as a plain
--- translucent fill. This is the single orb-display path. See ORB_LADDER_BANDS for the why.
-function ClassModule:_EnsureOrbLadder()
+-- The number of ladder bands for the current bonus: one per 1% of healing increase (round of
+-- bonus*100), clamped to [1, ORB_LADDER_MAX_BANDS]. 0 when there's no Strength of Spirit (or no
+-- colour-curve API) -> a single plain bar.
+function ClassModule:_LadderBands(sos)
+    if not sos then return 0 end
+    local n = math.floor((self:_p().sosBonus or 0) * 100 + 0.5)
+    if n < 1 then n = 1 end
+    if n > ORB_LADDER_MAX_BANDS then n = ORB_LADDER_MAX_BANDS end
+    return n
+end
+
+-- The orb-fill bars: stacked StatusBars (lazily created), all anchored at the current-health
+-- edge. With Strength of Spirit each is revealed by its own colour curve so only the band
+-- matching your live health is opaque; without it, only bar 0 is used as a plain translucent
+-- fill. This is the single orb-display path. Grows the pool to cover `bands` (L.created tracks
+-- the highest index built). See ClassModule:_LadderBands for the count.
+function ClassModule:_EnsureOrbLadder(bands)
     local p = self:_p()
-    if not p.orbLadder then
-        local bars = {}
-        for i = 0, ORB_LADDER_BANDS do
-            local sb = CreateFrame("StatusBar", nil, p.host)
-            sb:SetStatusBarTexture("Interface\\Buttons\\WHITE8X8")
-            local tex = sb:GetStatusBarTexture()
-            if tex and tex.SetDesaturated then tex:SetDesaturated(true) end
-            sb:Hide()
-            bars[i] = sb
-        end
-        p.orbLadder = { bars = bars }
+    local L = p.orbLadder
+    if not L then L = { bars = {}, created = -1 }; p.orbLadder = L end
+    for i = L.created + 1, bands do
+        local sb = CreateFrame("StatusBar", nil, p.host)
+        sb:SetStatusBarTexture("Interface\\Buttons\\WHITE8X8")
+        local tex = sb:GetStatusBarTexture()
+        if tex and tex.SetDesaturated then tex:SetDesaturated(true) end
+        sb:Hide()
+        L.bars[i] = sb
     end
-    return p.orbLadder
+    if bands > L.created then L.created = bands end
+    return L
 end
 
 function ClassModule:_HideOrbLadder()
-    local p = self:_p()
-    if p.orbLadder then
-        for i = 0, ORB_LADDER_BANDS do p.orbLadder.bars[i]:Hide() end
-    end
+    local L = self:_p().orbLadder
+    if L then for i = 0, L.created do L.bars[i]:Hide() end end
 end
 
 -- One triangular alpha curve per band: opaque (ORB_BAND_ALPHA) at this band's health fraction,
 -- fading to 0 at the neighbouring bands. UnitHealthPercent evaluates it against the SECRET
 -- health %, returning a colour whose alpha we apply -- so the engine, untainted, decides which
 -- band shows. Adjacent bands cross-fade, which smooths the heal edge between steps. Rebuilt
--- only when the ready/cooldown colour changes (RGB is baked into the curve points).
-function ClassModule:_BuildOrbLadderCurves(c)
-    local curves, N = {}, ORB_LADDER_BANDS
+-- only when the ready/cooldown colour or the band count changes (RGB + N bake into the points).
+function ClassModule:_BuildOrbLadderCurves(c, N)
+    local curves = {}
     for i = 0, N do
         local curve = C_CurveUtil.CreateColorCurve()
         curve:SetType(Enum.LuaCurveType.Linear)
