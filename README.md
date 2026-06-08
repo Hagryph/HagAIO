@@ -113,6 +113,7 @@ Lib/
   Format.lua               Pure time formatters -- no WoW API
   Helpers.lua              Small pure-logic helpers shared across the addon -- no WoW API, no state
   MonkMath.lua             Pure combat arithmetic for the Monk module -- no WoW API, no state
+  ResetLedger.lua          Pure data-shaping for the ResetRadar dashboard -- no WoW API
   SlashParse.lua           Pure parsing for slash sub-command strings -- no WoW API
   SpellTooltipParser.lua   Pure parsers for the numbers embedded in a spell's description text
   TaskRules.lua            Pure rules for the Task List -- no WoW API
@@ -146,6 +147,7 @@ Modules/
   CVars.lua                Force chosen console variables on every character
   Misc.lua                 Miscellaneous helpers:
   Questing.lua             Everything around levelling through quests, in one module:
+  ResetRadar.lua           Account-wide, cross-character RESET dashboard
   Tasklist.lua             A lightweight objective tracker
   UnitFrames.lua           Colours the player & target health bars by remaining health: green at full,
   Class\Monk\Monk.lua      Monk module entry point (loads before its per-spec siblings): the shared Monk behaviour

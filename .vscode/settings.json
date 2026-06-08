@@ -31,6 +31,7 @@
         "MountListItem_OnClick",
         "MountListDragButton_OnClick",
         "PetJournal_InitPetButton",
-        "ToySpellButton_OnClick"
+        "ToySpellButton_OnClick",
+        "RAID_CLASS_COLORS"
     ]
 }
