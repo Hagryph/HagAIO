@@ -32,8 +32,10 @@ local DIFF = {
     Normal = { abbr = "N", rank = 2 }, Heroic = { abbr = "H", rank = 3 }, Mythic = { abbr = "M", rank = 4 },
 }
 
--- Localized name of Mythic 0 (difficulty 23) -- matches a saved M0 dungeon lock's difficulty.
-local M0 = (GetDifficultyInfo and GetDifficultyInfo(23)) or "Mythic"
+-- Mythic 0 dungeon difficulty (id 23). M0 is the localized NAME (matches a saved M0 lock's
+-- difficulty name); M0_ID is the locale-proof difficulty id the prune keys on.
+local M0_ID = 23
+local M0 = (GetDifficultyInfo and GetDifficultyInfo(M0_ID)) or "Mythic"
 
 -- ===========================================================================
 -- Category descriptors. Each yields the COLUMNS for the selected dataset; a column's cell(entry)
@@ -240,7 +242,7 @@ function Dashboard:_CollectLockouts()
     local n = (GetNumSavedInstances and GetNumSavedInstances()) or 0
     local locks, inst = {}, self:_Instances()
     for i = 1, n do
-        local name, _, reset, _, locked, _, _, isRaid, _, diff, numEnc, prog = GetSavedInstanceInfo(i)
+        local name, _, reset, diffID, locked, _, _, isRaid, _, diff, numEnc, prog = GetSavedInstanceInfo(i)
         if locked and reset and reset > 0 then
             locks[#locks + 1] = { name = name, diff = diff, total = numEnc, progress = prog,
                 isRaid = isRaid, reset = reset }
@@ -248,6 +250,7 @@ function Dashboard:_CollectLockouts()
             local key = name .. "|" .. (diff or "")
             local r = inst[key]
             if not r then r = { name = name, diff = diff, isRaid = isRaid and true or false }; inst[key] = r end
+            r.diffID = diffID or r.diffID   -- the difficulty ID (locale-proof; drives the prune)
             r.total = numEnc or r.total
             local exp = self:_InstanceExpansion(name)
             if exp ~= "Other" then r.expansion = exp end   -- fill the tier once the journal map is ready
@@ -280,7 +283,7 @@ function Dashboard:_Snapshot()
     self:_CollectKeystone()
     self:_CollectVault()
     self:_CollectLockouts()
-    self:_PruneRegistry()   -- drop M0 entries that have rotated out of the current season
+    self:_PruneRegistry()   -- drop saved instances whose difficulty no longer exists (e.g. left M+ season)
     self:_RenderIfShown()
 end
 
@@ -585,14 +588,34 @@ function Dashboard:_SeasonColumns()
     return cols
 end
 
--- A dungeon's Mythic 0 exists only while it's in the current season; once it rotates out it has no
--- Mythic difficulty, so on snapshot we drop any stale M0 registry entry no longer in the lineup.
-function Dashboard:_PruneRegistry()
+-- Is a registry entry a dungeon Mythic-0 lock? Keyed on the difficulty ID (locale-proof); falls back
+-- to the difficulty name for entries saved before the id was recorded.
+local function isDungeonM0(r)
+    if r.isRaid then return false end
+    if r.diffID then return r.diffID == M0_ID end
+    return r.diff == M0
+end
+
+-- Does a registry entry's difficulty still EXIST for its instance? This is the general rule the
+-- auto-prune uses. Almost every instance difficulty is STABLE (raids at any difficulty, dungeons at
+-- Normal/Heroic) -- those never disappear, so the remembered entry is kept. The one difficulty that
+-- comes and goes is a dungeon's Mythic 0: it exists ONLY while that dungeon is in the current M+
+-- season, so an M0 entry is live only while its dungeon is in the season set.
+function Dashboard:_DifficultyLive(r)
+    if not isDungeonM0(r) then return true end      -- stable difficulty -> always kept
     local s = self:_SeasonDungeons()
-    if not s then return end   -- season not known yet -> leave the registry untouched
+    if not s then return true end                   -- season not known yet -> keep, prune a later pass
+    return s.set[r.name] == true
+end
+
+-- Auto-cleanup, run on login (via _Snapshot): drop every saved instance whose difficulty no longer
+-- exists for it. The registry otherwise REMEMBERS instances across weekly resets, so this only ever
+-- removes entries that genuinely lost their difficulty (e.g. a dungeon that left the M+ season), never
+-- ones that merely expired this week.
+function Dashboard:_PruneRegistry()
     local inst = self:_Instances()
     for key, r in pairs(inst) do
-        if (not r.isRaid) and r.diff == M0 and not s.set[r.name] then inst[key] = nil end
+        if not self:_DifficultyLive(r) then inst[key] = nil end
     end
 end
 
