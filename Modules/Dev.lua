@@ -29,9 +29,10 @@ function Dev:BuildSettingsPage(sf)
 
     local dash = ns.ModuleManager:GetModule("Dashboard")
 
-    -- Live icon hold-count: lets us watch the TextureService pool be reused. Healthy reuse = `owned`
-    -- plateaus while grids/pages re-render; `idle` rises as tiles are released, `in use` tracks what's
-    -- on screen, `originals` falls once nothing references a source image. Ticks while the page shows.
+    -- Live icon hold-count. The per-IMAGE counts move as images are shown/replaced: `in use` = images
+    -- held by a tile right now, `idle` = images shown before but now by none (link kept, reused if it
+    -- returns), `total` = distinct images ever. `widgets` is the reused edit-widget pool (X of which Y
+    -- idle). Ticks while the page shows.
     local stat = W.Text(content, "", "textFaint", "GameFontHighlightSmall")
     stat:SetPoint("TOPLEFT", 4, -2)
     local acc = 0
@@ -41,8 +42,8 @@ function Dev:BuildSettingsPage(sf)
         acc = 0
         if ns.TextureService and ns.TextureService.Stats then
             local s = ns.TextureService:Stats()
-            stat:SetText(("Icons  owned %d  \194\183  idle %d  \194\183  in use %d  \194\183  originals %d")
-                :format(s.owned, s.idle, s.inUse, s.originals))
+            stat:SetText(("Images  in use %d  \194\183  idle %d  \194\183  total %d     widgets %d (%d idle)")
+                :format(s.inUse, s.idle, s.owned, s.widgets, s.widgetsIdle))
         end
     end)
 

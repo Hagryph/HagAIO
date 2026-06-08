@@ -9,17 +9,17 @@ local Class = ns.Class
 -- passthroughs that do zero maths -- callers describe WHAT they want and the Service computes the
 -- texcoords / size / anchors and drives the widget's setters.
 --
--- PATH vs EDIT vs ORIGINAL -- three distinct things:
---   * PATH   -- an image's identity is just its fileID/path string. Passed by value; holds nothing.
---   * EDIT   -- a pooled widget that loads the PATH itself and crops/zooms it (see _Paint / Render).
---     It references NO original: it holds its own texture and frees it on Release (Reset ->
---     SetTexture(nil)), so an image's GPU memory is held exactly while >=1 edit shows it, and the
---     engine's own texture cache dedupes the actual upload across edits sharing a path. Edits are
---     pooled (p.pool) + strongly kept (p.owned, bounded by PEAK concurrent use) so grids reuse them.
---   * ORIGINAL -- the plain, UNEDITED texture for an image, created LAZILY only when a caller asks
---     for it (:Original), weak-cached (p.originals) so it frees once unreferenced. Edits do NOT go
---     through it -- so no redundant second load, nothing pinned. It exists for callers that want the
---     image as-is.
+-- PATH vs EDIT vs LINK -- three distinct things:
+--   * PATH -- an image's identity is just its fileID/path string. Passed by value; holds nothing.
+--   * EDIT -- a pooled widget that loads the PATH itself and crops/zooms it (see _Paint / Render). It
+--     holds its own texture and frees it on Release (Reset -> SetTexture(nil)); the engine's own cache
+--     dedupes the GPU upload across edits sharing a path. Edits are pooled (p.pool) + strongly kept
+--     (p.owned, bounded by PEAK concurrent use) so grids reuse the widget objects across images.
+--   * LINK -- a per-IMAGE refcount (p.links): how many edits currently display that image. _Paint
+--     acquires the new image's link and drops the previous one, so an image stays "held" while ANY
+--     edit (on any cached page) shows it, and goes "idle" the moment the last one replaces/releases it
+--     -- the link is then reused if the image returns. A link holds nothing but the count (no second
+--     texture); it's what makes a REPLACED image visibly move the hold counts (see Stats).
 --
 --   local img = ns.TextureService:Acquire(parentFrame, { layer = "BACKGROUND", sublevel = 1 })
 --   ns.TextureService:Render(img, box, box:GetWidth(), box:GetHeight(),
@@ -69,43 +69,39 @@ end
 
 function TextureService:OnInitialize()
     local p = self:_p()
-    -- a hidden, never-shown frame that parks released edits + originals so the C-side objects stay valid
+    -- a hidden, never-shown frame that parks released edits so the C-side objects stay valid
     p.holder = CreateFrame("Frame", nil, UIParent)
     p.holder:Hide()
     p.pool  = {}   -- idle edit widgets, ready to hand back out
     p.owned = {}   -- every edit widget ever created -> strong refs, so none are garbage-collected
-    p.originals = setmetatable({}, { __mode = "v" })  -- image-key -> pristine original widget (weak)
+    p.links = {}   -- image-key -> { refs }: how many edits currently show that image (refcount)
 end
 
--- The plain, UNEDITED texture for an image (full image, no crop/zoom), created LAZILY only when a
--- caller explicitly asks for the image as-is, and weak-cached (p.originals) so it frees once nothing
--- references it. EDITS DO NOT GO THROUGH THIS -- they load the path themselves (see _Paint) -- so
--- rendering grids never creates an original, and an original holds no edit's crop. It exists purely
--- for a caller that wants the pristine image.
-function TextureService:Original(image, atlas)
+-- The LINK record for an image (created on first sight, then kept for reuse). A link counts how many
+-- edits currently display that image (refs). Acquiring/releasing links happens in _Paint / Release;
+-- it's what lets the service KEEP an image alive while ANY edit (on any cached page) still shows it,
+-- and drop it to idle the moment the last one stops -- without ever loading a second copy (the edits
+-- load the path themselves; a link holds nothing but the count).
+function TextureService:_LinkFor(image, atlas)
     local p = self:_p()
-    local isA = atlas or isAtlas(image)
-    local key = (isA and "@" or "") .. tostring(image)
-    local o = p.originals[key]
-    if not o then
-        o = ns.UI.Widgets.Texture(p.holder)
-        if isA then o:SetAtlas(image) else o:SetTexture(image) end
-        o._image, o._isAtlas = image, isA   -- remember the source so edits derive from it
-        o:Hide()
-        p.originals[key] = o
-    end
-    return o
+    local key = (atlas and "@" or "") .. tostring(image)
+    local l = p.links[key]
+    if not l then l = { refs = 0 }; p.links[key] = l end
+    return l
 end
 
--- Live hold counts, for verifying the pool is actually reused (e.g. a Dev readout): `owned` = every
--- edit widget ever made, `idle` = released ones waiting in the pool, `inUse` = owned - idle (handed
--- out right now), `originals` = distinct source images currently cached (weak, so this shrinks once
--- nothing references one). Healthy reuse: `owned` plateaus while grids re-render, `idle`+`inUse` track.
+-- Live hold counts (e.g. the Dev readout). The headline three are per-IMAGE, so a REPLACED image
+-- shows up: `owned` = distinct images ever shown, `inUse` = images held by >=1 edit right now,
+-- `idle` = images shown before but currently by none (their link is kept, reused if the image
+-- returns). `widgets`/`widgetsIdle` are the separate edit-widget pool (reused across images).
 function TextureService:Stats()
     local p = self:_p()
-    local originals = 0
-    for _ in pairs(p.originals) do originals = originals + 1 end
-    return { owned = #p.owned, idle = #p.pool, inUse = #p.owned - #p.pool, originals = originals }
+    local total, held = 0, 0
+    for _, l in pairs(p.links) do
+        total = total + 1
+        if l.refs > 0 then held = held + 1 end
+    end
+    return { owned = total, inUse = held, idle = total - held, widgets = #p.owned, widgetsIdle = #p.pool }
 end
 
 -- Hand out an EDIT widget parented to `parent`. Reuses an idle one when available; otherwise creates
@@ -151,6 +147,15 @@ function TextureService:_Paint(tw, image, atlas, l, r, t, b)
         .. string.format("%.4f,%.4f,%.4f,%.4f", l or 0, r or 1, t or 0, b or 1)
     if tw._paintSig == sig then return tw end   -- same image + same edits already on this widget
     tw._paintSig = sig
+    -- Refcount the IMAGE: hold the new one, drop the previous. When the image actually changes (not
+    -- just the crop), the old image's link loses a ref -- if no other edit/cached page still shows it
+    -- it goes idle, while the new image gets (or reuses) its own link. Never overwrites a link record.
+    local link = self:_LinkFor(image, isA)
+    if tw._link ~= link then
+        if tw._link then tw._link.refs = tw._link.refs - 1 end
+        link.refs = link.refs + 1
+        tw._link = link
+    end
     if isA then
         tw:SetAtlas(image)
     else
@@ -171,7 +176,11 @@ end
 -- anchored frames don't report their size yet at build/refresh time. Hides on a nil texture.
 function TextureService:Render(tw, frame, w, h, spec)
     spec = spec or {}
-    if not spec.texture then tw:Hide(); tw._paintSig = nil; return tw end
+    if not spec.texture then
+        tw:Hide(); tw._paintSig = nil
+        if tw._link then tw._link.refs = tw._link.refs - 1; tw._link = nil end   -- drop the image link
+        return tw
+    end
     local base
     if spec.mode == "contain" then
         tw:ClearAllPoints()
@@ -206,6 +215,7 @@ end
 function TextureService:Release(tw)
     if not tw then return end
     local p = self:_p()
+    if tw._link then tw._link.refs = tw._link.refs - 1; tw._link = nil end   -- drop the image link
     tw._paintSig = nil               -- a recycled widget must repaint, not be skipped by the memo
     tw:Reset()                       -- Reset -> SetTexture(nil) frees this edit's texture file
     tw:SetParent(p.holder)

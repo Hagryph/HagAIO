@@ -43,17 +43,6 @@ describe("TextureService edit pooling", function()
     end)
 end)
 
-describe("TextureService originals (dedupe)", function()
-    it("returns one shared original per image", function()
-        local ts = setup()
-        assert.are.equal(ts:Original(7), ts:Original(7))
-    end)
-    it("returns distinct originals for distinct images", function()
-        local ts = setup()
-        assert.are_not.equal(ts:Original(1), ts:Original(2))
-    end)
-end)
-
 describe("TextureService paint memoisation", function()
     it("skips re-painting the same image + edits, repaints on a change", function()
         local ts = setup()
@@ -80,43 +69,81 @@ describe("TextureService paint memoisation", function()
     end)
 end)
 
-describe("TextureService edits hold no original", function()
-    it("an edit loads the image path itself and references no original", function()
+describe("TextureService edits load the path directly", function()
+    it("an edit loads the image path itself (no second copy)", function()
         local ts = setup()
         local tw = ts:Acquire()
         ts:_Paint(tw, 5, false, 0, 1, 0, 1)
-        assert.are.equal(5, tw._image)               -- loaded the path directly
-        assert.is_nil(tw._original)                  -- ...and links to no original
-    end)
-    it("painting edits never creates an original (no redundant second load)", function()
-        local ts = setup()
-        local a, b = ts:Acquire(), ts:Acquire()
-        ts:_Paint(a, 5, false, 0, 1, 0, 1)
-        ts:_Paint(b, 5, false, 0, 0.5, 0, 1)
-        assert.are.equal(0, ts:Stats().originals)
-    end)
-    it("an original is created only on explicit request, then weak-cached + deduped", function()
-        local ts = setup()
-        assert.are.equal(0, ts:Stats().originals)
-        local o = ts:Original(5)
-        assert.are.equal(5, o._image)                -- the original loaded the plain image
-        assert.are.equal(o, ts:Original(5))          -- deduped
-        assert.are.equal(1, ts:Stats().originals)
+        assert.are.equal(5, tw._image)               -- loaded the path directly onto the widget
     end)
 end)
 
-describe("TextureService hold counts", function()
-    it("reports owned / idle / in-use as widgets are acquired and released", function()
+describe("TextureService image links (refcount)", function()
+    it("counts one image per distinct path, held while any edit shows it", function()
+        local ts = setup()
+        local a, b = ts:Acquire(), ts:Acquire()
+        ts:_Paint(a, 5, false, 0, 1, 0, 1)
+        ts:_Paint(b, 5, false, 0, 1, 0, 1)           -- same image on two edits
+        local s = ts:Stats()
+        assert.are.equal(1, s.owned)                 -- one distinct image
+        assert.are.equal(1, s.inUse)                 -- held
+        assert.are.equal(0, s.idle)
+    end)
+    it("a replaced image idles ONLY when nothing else still shows it", function()
+        local ts = setup()
+        local a, b = ts:Acquire(), ts:Acquire()
+        ts:_Paint(a, 5, false, 0, 1, 0, 1)
+        ts:_Paint(b, 5, false, 0, 1, 0, 1)           -- image 5 shown by a AND b
+        ts:_Paint(a, 9, false, 0, 1, 0, 1)           -- a: 5 -> 9; b still shows 5
+        local s = ts:Stats()
+        assert.are.equal(2, s.owned)                 -- images 5 and 9
+        assert.are.equal(2, s.inUse)                 -- both held (5 by b, 9 by a)
+        assert.are.equal(0, s.idle)
+        ts:_Paint(b, 9, false, 0, 1, 0, 1)           -- b: 5 -> 9; now nothing shows 5
+        s = ts:Stats()
+        assert.are.equal(1, s.inUse)                 -- only image 9 held
+        assert.are.equal(1, s.idle)                  -- image 5 idled
+    end)
+    it("changing only the crop does not churn the link", function()
+        local ts = setup()
+        local a = ts:Acquire()
+        ts:_Paint(a, 5, false, 0, 1, 0, 1)
+        ts:_Paint(a, 5, false, 0, 0.5, 0, 1)         -- same image, different crop
+        local s = ts:Stats()
+        assert.are.equal(1, s.owned); assert.are.equal(1, s.inUse); assert.are.equal(0, s.idle)
+    end)
+    it("re-showing an idled image reuses its link (no new image)", function()
+        local ts = setup()
+        local a = ts:Acquire()
+        ts:_Paint(a, 5, false, 0, 1, 0, 1)
+        ts:_Paint(a, 9, false, 0, 1, 0, 1)           -- 5 idled, 9 in use
+        assert.are.equal(2, ts:Stats().owned)
+        ts:_Paint(a, 5, false, 0, 1, 0, 1)           -- back to 5 (reuse its link), 9 idled
+        local s = ts:Stats()
+        assert.are.equal(2, s.owned)                 -- no new image record
+        assert.are.equal(1, s.inUse); assert.are.equal(1, s.idle)
+    end)
+    it("releasing an edit drops its image to idle", function()
+        local ts = setup()
+        local a = ts:Acquire()
+        ts:_Paint(a, 5, false, 0, 1, 0, 1)
+        assert.are.equal(1, ts:Stats().inUse)
+        ts:Release(a)
+        local s = ts:Stats()
+        assert.are.equal(0, s.inUse); assert.are.equal(1, s.idle)
+    end)
+end)
+
+describe("TextureService widget pool", function()
+    it("reuses widgets: the widget total doesn't grow on release + reacquire", function()
         local ts = setup()
         local a = ts:Acquire(); ts:Acquire()
-        local s = ts:Stats()
-        assert.are.equal(2, s.owned)
-        assert.are.equal(0, s.idle)
-        assert.are.equal(2, s.inUse)
+        assert.are.equal(2, ts:Stats().widgets)
+        assert.are.equal(0, ts:Stats().widgetsIdle)
         ts:Release(a)
-        s = ts:Stats()
-        assert.are.equal(2, s.owned)                 -- pooled, so the total never grew
-        assert.are.equal(1, s.idle)
-        assert.are.equal(1, s.inUse)
+        assert.are.equal(1, ts:Stats().widgetsIdle)
+        ts:Acquire()                                 -- reuse the released one
+        assert.are.equal(2, ts:Stats().widgets)      -- total never grew
+        assert.are.equal(0, ts:Stats().widgetsIdle)
     end)
 end)
