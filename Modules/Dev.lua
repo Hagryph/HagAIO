@@ -29,35 +29,17 @@ function Dev:BuildSettingsPage(sf)
 
     local dash = ns.ModuleManager:GetModule("Dashboard")
 
-    -- Live icon hold-count. The per-IMAGE counts move as images are shown/replaced: `in use` = images
-    -- held by a tile right now, `idle` = images shown before but now by none (link kept, reused if it
-    -- returns), `total` = distinct images ever. `widgets` is the reused edit-widget pool (X of which Y
-    -- idle). Ticks while the page shows.
-    local stat = W.Text:New(content, "", "textFaint", "GameFontHighlightSmall")
-    stat:SetPoint("TOPLEFT", 4, -2)
-    local acc = 0
-    content:SetScript("OnUpdate", function(_, dt)
-        acc = acc + (dt or 0)
-        if acc < 0.5 then return end
-        acc = 0
-        if ns.TextureService and ns.TextureService.Stats then
-            local s = ns.TextureService:Stats()
-            stat:SetText(("Images  in use %d  \194\183  idle %d  \194\183  total %d     widgets %d (%d idle)")
-                :format(s.inUse, s.idle, s.owned, s.widgets, s.widgetsIdle))
-        end
-    end)
-
     local intro = W.Text:New(content,
         "Live-tune the Dashboard scene art. Values are per session and reset to the code defaults on reload.",
         "textDim", "GameFontHighlightSmall")
-    intro:SetPoint("TOPLEFT", stat, "BOTTOMLEFT", 0, -8)
+    intro:SetPoint("TOPLEFT", 4, -2)
     intro:SetWidth(width - 12); intro:SetJustifyH("LEFT")
 
     local groups = {}
     -- Position the groups top-to-bottom from their CURRENT heights (so collapsing one reflows the rest)
     -- and size the scroll child to fit. Run on build and on every group's collapse toggle.
     local function relayout()
-        local y = -(stat:GetStringHeight() + 8 + intro:GetStringHeight() + 14)
+        local y = -(intro:GetStringHeight() + 14)
         for _, g in ipairs(groups) do
             g:ClearAllPoints()
             g:SetPoint("TOPLEFT", content, "TOPLEFT", 0, y)

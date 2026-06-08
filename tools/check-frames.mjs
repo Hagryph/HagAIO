@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // tools/check-frames.mjs — lint: enforce that NOTHING touches a WoW frame or texture directly;
-// everything goes through the Widget layer (UI/Widgets) and the TextureService. Run:
+// everything goes through the Widget layer (UI/Widgets). Run:
 //   node tools/check-frames.mjs            # report violations, exit 1 if any
 //   node tools/check-frames.mjs --summary  # only per-rule counts
 //
@@ -11,10 +11,10 @@
 //     hand back the wrong thing). Helpers that are NOT widgets (FlagReload, IconTooltip,
 //     DependencyGroup) are exempt -- they own no frame.
 //
-//  2. NO RAW TEXTURES ANYWHERE — `CreateTexture` / `CreateMaskTexture` may appear ONLY in the
-//     TextureService. Textures are pooled and SHARED: editing one texture affects every caller that
-//     shows the same source, so the TextureService owns them and -- unlike a Widget -- never hands a
-//     texture out. Code that needs an image acquires/renders through the service; it never holds one.
+//  2. NO RAW TEXTURES OUTSIDE THE WIDGETS LAYER — `CreateTexture` / `CreateMaskTexture` may appear
+//     only in the Widgets layer, which owns the Texture widget (it creates its texture, does its own
+//     crop/fit/zoom, and frees the GPU upload on hide). Modules/overlays show images via Widgets.Texture
+//     / IconGrid; they never create or hold a raw texture.
 //
 //  3. NO RAW FRAMES OUTSIDE THE FRAME-OWNING LAYER — `CreateFrame` / `CreateFontString` /
 //     `CreateLine` / `CreateAnimationGroup` may appear only in the allowlisted frame-owning files
@@ -39,14 +39,10 @@ const SUMMARY_ONLY = process.argv.includes("--summary");
 const FRAME_ALLOW = [
   "UI/Widgets.lua",
   "UI/Widgets/",
-  "Services/TextureService.lua",
   "Services/EventBus.lua",
   "Services/MinimapIcon.lua",
   "Services/Compartment.lua",
 ];
-
-// Files permitted to create raw TEXTURES -- ONLY the TextureService (rule 2).
-const TEXTURE_ALLOW = ["Services/TextureService.lua"];
 
 // Widget CLASS names exposed on ns.UI.Widgets. The call form `Widgets.<Name>(` / `W.<Name>(` is a
 // violation (must be `:New`). NON-widget helpers (FlagReload/IconTooltip/DependencyGroup/RELOAD_FLAG/
@@ -82,8 +78,8 @@ const RULES = [
   {
     id: "raw-texture",
     re: /\b:?(?:CreateTexture|CreateMaskTexture)\s*\(/g,
-    skip: (rel) => allow(rel, TEXTURE_ALLOW),
-    msg: "texture created outside TextureService (all textures go through TextureService)",
+    skip: (rel) => allow(rel, FRAME_ALLOW),
+    msg: "raw texture created outside the Widgets layer (use Widgets.Texture / IconGrid)",
   },
   {
     id: "raw-frame",

@@ -92,7 +92,7 @@ local SEASON_LABEL = "Current Season"
 -- fallback, when an instance has no full-bleed scene).
 local EJ_TILE_TC = { 0, 0.68359375, 0, 0.7421875 }
 -- The banner crop lands on the art region but still carries a little padding, so we zoom in a touch
--- (zoom = fraction of the region shown; 0.8 = 20% in) to eat it. See TextureService for the model.
+-- (zoom = fraction of the region shown; 0.8 = 20% in) to eat it. See Widgets.Texture for the model.
 local EJ_TILE_ZOOM = 0.8
 -- The instance SPLASH (loreImage) -- the big scene the journal shows on the RIGHT when you open an
 -- instance. It's a 1024x1024 (square) file with the art in the top-left ~76% x 66%; the right and
@@ -1036,7 +1036,7 @@ function Dashboard:_Render()
 
     -- the Home/Raids/Dungeons overviews are journal-style icon grids, not the data grid. Each is its
     -- OWN cached page: switching between them just shows one and hides the rest -- the tiles and their
-    -- textures stay loaded and aren't re-edited (the TextureService memoises unchanged tiles).
+    -- textures stay loaded and aren't re-edited (each tile's Texture widget memoises unchanged art).
     if p.category == "home" or p.category == "raids" or p.category == "dungeons" then
         p.grid:Hide()
         local page = self:_IconPage(p.category)

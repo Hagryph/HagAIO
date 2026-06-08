@@ -1150,41 +1150,74 @@ function NavW:Select(key, silent)
 end
 Widgets.Nav = NavW
 
--- TEXTURE WIDGET -- a DUMB thin wrapper over a WoW Texture. It does NO maths and makes NO layout
--- decisions: it only applies the WeakAuras texel-crisp fix (SetSnapToPixelGrid(false) +
--- SetTexelSnappingBias(0), so the art isn't biased inward and snapped into a faint margin) and exposes
--- plain passthrough setters. ALL cropping, fitting and filling lives in ns.TextureService, which drives
--- these setters -- so the crop maths has a single home. Widgets are pooled and kept alive by that
--- Service (a long-lived singleton) so they aren't garbage-collected.
---   opts: layer ("ARTWORK"), sublevel (0)
--- Setters (each returns self): :SetTexture :SetAtlas :SetCoords(l,r,t,b) :SetParent :ClearAllPoints
---   :SetPoint :SetSize :SetDrawLayer :SetVertexColor :Show :Hide :Reset
--- A TEXTURE widget. It does NOT create or own a texture -- it HOLDS a TextureService edit (the
--- service creates the actual texture and pools it) and forwards to it, RELEASING it back to the
--- service on :Hide so a texture is never pinned past its use. Methods no-op once released.
--- Construct with Widgets.Texture:New(parent, opts).
+-- ---- crop / fit / zoom maths (the single home, owned by the Texture widget) ------------------------
+-- Is this string a registered atlas (vs a file path / fileID)?
+local function isAtlas(image)
+    return type(image) == "string" and C_Texture and C_Texture.GetAtlasInfo
+        and C_Texture.GetAtlasInfo(image) ~= nil
+end
+-- Cover-fit the WHOLE image (texcoords 0..1) to a w x h box, centred, no distortion: crop the overflow
+-- on ONE axis from the box/image aspect difference, the other axis edge-to-edge. `aspect` = image px w/h.
+local function coverFit(w, h, aspect)
+    local ratio = (w / h) / (aspect or 1)
+    if ratio <= 1 then local cw = ratio;     return { (1 - cw) / 2, (1 + cw) / 2, 0, 1 }
+    else               local ch = 1 / ratio; return { 0, 1, (1 - ch) / 2, (1 + ch) / 2 } end
+end
+-- Apply zoom (fraction of the region shown; <1 zooms in) + pan (texcoord units) to a base {l,r,t,b}.
+local function zoomPan(b, zoom, panX, panY)
+    zoom = zoom or 1
+    local cx, cy = (b[1] + b[2]) / 2 + (panX or 0), (b[3] + b[4]) / 2 + (panY or 0)
+    local hw, hh = (b[2] - b[1]) / 2 * zoom, (b[4] - b[3]) / 2 * zoom
+    return cx - hw, cx + hw, cy - hh, cy + hh
+end
+
+-- TEXTURE WIDGET -- owns ONE WoW texture and ALL of the crop/fit/zoom maths (moved here from the old
+-- TextureService). :Render(frame, w, h, spec) anchors it into `frame` and paints `spec.texture`:
+--   spec.mode "contain" (centre a square side h) | "cover" (cover-fit by spec.aspect = image px w/h) |
+--   "banner"/default (a fixed base crop spec.coord); spec.zoom + spec.panX/panY zoom/pan ANY mode;
+--   spec.atlas forces atlas mode. A nil texture hides + frees. Repaints are memoised (skip if the
+--   image + crop are unchanged). :Hide FREES the GPU upload (SetTexture(nil)) so a hidden texture isn't
+--   pinned in VRAM; the next :Render reloads it.  opts: layer ("ARTWORK"), sublevel (0).
 local TextureW = ns.Class.new("Texture", Widget)
 function TextureW:Initialize(parent, opts)
-    self:_p().edit = ns.TextureService:Acquire(unwrap(parent), opts)
+    opts = opts or {}
+    local tex = unwrap(parent):CreateTexture(nil, opts.layer or "ARTWORK", nil, opts.sublevel or 0)
+    if tex.SetSnapToPixelGrid then tex:SetSnapToPixelGrid(false) end      -- WeakAuras texel-crisp fix
+    if tex.SetTexelSnappingBias then tex:SetTexelSnappingBias(0) end
+    self:_attach(tex)
 end
-function TextureW:SetTexture(f)       local e = self:_p().edit; if e then e:SetTexture(f) end;        return self end
-function TextureW:SetAtlas(a)         local e = self:_p().edit; if e then e:SetAtlas(a) end;          return self end
-function TextureW:SetCoords(l,r,t,b)  local e = self:_p().edit; if e then e:SetCoords(l,r,t,b) end;   return self end
-function TextureW:SetVertexColor(...) local e = self:_p().edit; if e then e:SetVertexColor(...) end;  return self end
-function TextureW:SetDrawLayer(...)   local e = self:_p().edit; if e then e:SetDrawLayer(...) end;    return self end
-function TextureW:SetSize(w, h)       local e = self:_p().edit; if e then e:SetSize(w, h) end;        return self end
-function TextureW:ClearAllPoints()    local e = self:_p().edit; if e then e:ClearAllPoints() end;     return self end
-function TextureW:SetParent(p)        local e = self:_p().edit; if e then e:SetParent(unwrap(p)) end; return self end
-function TextureW:SetPoint(point, a, b, c, d)
-    local e = self:_p().edit; if not e then return self end
-    if type(a) == "number" or a == nil then e:SetPoint(point, a, b)
-    else e:SetPoint(point, unwrap(a), b, c, d) end
+function TextureW:Render(frame, w, h, spec)
+    spec = spec or {}
+    local tex = self:_frame()
+    if not spec.texture then return self:Hide() end
+    frame = unwrap(frame)
+    local base
+    if spec.mode == "contain" then
+        tex:ClearAllPoints(); tex:SetSize(h, h); tex:SetPoint("CENTER", frame, "CENTER", 0, 0)
+        base = { 0, 1, 0, 1 }
+    else
+        tex:ClearAllPoints()
+        tex:SetPoint("TOPLEFT", frame, "TOPLEFT", 0, 0)
+        tex:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", 0, 0)
+        base = (spec.mode == "cover") and coverFit(w, h, spec.aspect) or (spec.coord or { 0, 1, 0, 1 })
+    end
+    local isA = spec.atlas or isAtlas(spec.texture)
+    local l, r, t, b = zoomPan(base, spec.zoom, spec.panX, spec.panY)
+    local sig = tostring(spec.texture) .. (isA and "@" or "") .. "|"
+        .. string.format("%.4f,%.4f,%.4f,%.4f", l, r, t, b)
+    local p = self:_p()
+    if p.sig ~= sig then                          -- memo: only re-load when the image or crop changed
+        p.sig = sig
+        if isA then tex:SetAtlas(spec.texture, false)   -- atlas carries its own coords
+        else tex:SetTexture(spec.texture); tex:SetTexCoord(l, r, t, b) end
+    end
+    tex:Show()
     return self
 end
-function TextureW:Show() local e = self:_p().edit; if e then e:Show() end; return self end
-function TextureW:Hide()   -- release the edit back to the service so the texture isn't pinned
-    local e = self:_p().edit
-    if e then ns.TextureService:Release(e); self:_p().edit = nil end
+function TextureW:Hide()                          -- free the GPU upload so a hidden texture isn't pinned
+    local tex = self:_frame()
+    tex:Hide(); tex:SetTexture(nil); tex:SetTexCoord(0, 1, 0, 1)
+    self:_p().sig = nil
     return self
 end
 Widgets.Texture = TextureW
@@ -1203,7 +1236,7 @@ Widgets.Texture = TextureW
 --   contain=bool (centre a square icon at the image's height instead of filling),
 --   zoom=number + panX/panY=number (apply to ANY mode: zoom is the fraction of the region shown --
 --     1.0 as-is, <1 zooms in, >1 zooms out; pan re-centres the window in texcoord units).
---   All crop/fit/zoom maths lives in ns.TextureService; the tile just describes the intent. }
+--   All crop/fit/zoom maths lives in the tile's Texture widget; the tile just describes the intent. }
 -- Methods: :SetTiles(list)  :Refresh()  :ScrollTop()
 local IconGridW = ns.Class.new("IconGrid", FrameWidget)
 function IconGridW:Initialize(parent, opts)
@@ -1245,13 +1278,9 @@ function IconGridW:Initialize(parent, opts)
             t.badge = badge
             tiles[i] = t
         end
-        -- (Re)acquire the pooled image widget. Released tiles (see :ReleaseAll) drop theirs so the
-        -- source texture can be collected; this hands a fresh one back filling the band on its
-        -- BACKGROUND layer (so the band border draws over it). Kept alive by the TextureService.
-        if not t.img then
-            t.img = (ns.TextureService and ns.TextureService:Acquire(t.band, { layer = "BACKGROUND", sublevel = 1 }))
-                or TextureW:New(t.band, { layer = "BACKGROUND", sublevel = 1 })
-        end
+        -- One Texture widget per tile, filling the band on its BACKGROUND layer (so the band border
+        -- draws over it). It owns its texture and frees the GPU upload on :Hide (see refresh/ReleaseAll).
+        if not t.img then t.img = TextureW:New(t.band, { layer = "BACKGROUND", sublevel = 1 }) end
         return t
     end
 
@@ -1280,11 +1309,11 @@ function IconGridW:Initialize(parent, opts)
             t:SetSize(tw, th)
             t:ClearAllPoints()
             t:SetPoint("TOPLEFT", content, "TOPLEFT", col * (tw + GAP), -(rowi * (th + GAP)))
-            -- Describe WHAT this tile's image should look like; the TextureService owns every bit of
-            -- the crop/fit/anchor maths (the widget is a dumb passthrough). Box size (tw x ih) is
-            -- passed in because the holder's anchored size isn't resolved yet at refresh time.
+            -- Describe WHAT this tile's image should look like; the Texture widget owns the crop/fit/
+            -- anchor maths. Box size (tw x ih) is passed in because the holder's anchored size isn't
+            -- resolved yet at refresh time.
             local mode = d.contain and "contain" or (d.cover and "cover") or "banner"
-            ns.TextureService:Render(t.img, t.band, tw, ih, {
+            t.img:Render(t.band, tw, ih, {
                 texture = d.texture, atlas = d.atlas, mode = mode,
                 aspect = d.aspect, coord = d.texCoord,
                 zoom = d.zoom, panX = d.panX, panY = d.panY,
@@ -1300,12 +1329,12 @@ function IconGridW:Initialize(parent, opts)
             paint()
             t:Show()
         end
-        -- surplus tiles (the list shrank, e.g. an entry was removed): hide them AND release their
-        -- pooled image, so a deleted entry's texture is let go rather than left pinned. getTile
-        -- re-acquires one if the grid grows again.
+        -- surplus tiles (the list shrank, e.g. an entry was removed): hide them; the image widget's
+        -- :Hide frees its GPU upload so a removed entry's texture isn't left pinned (the tile + its
+        -- image widget are kept for reuse if the grid grows again).
         for i = #data + 1, #tiles do
             local t = tiles[i]
-            if t.img and ns.TextureService then ns.TextureService:Release(t.img); t.img = nil end
+            if t.img then t.img:Hide() end
             t:Hide()
         end
         local rows = math.max(1, math.ceil(#data / cols))
@@ -1321,14 +1350,13 @@ function IconGridW:ScrollTop()    self:_p().scrollArea:ScrollTop(); return self 
 -- Override how many tiles per row (re-lays out on the next Refresh; nil restores the default).
 function IconGridW:SetPerRow(n)   self:_p()._perRow = (n and n >= 1) and math.floor(n) or nil; return self end
 function IconGridW:Refresh()      self:_p().refresh(); return self end
--- Release every tile's pooled image back to the TextureService (dropping the strong link that pins
--- its source texture, so an original can be collected once nothing else shows it). Tile frames are
--- kept for reuse; getTile re-acquires a fresh image on the next Refresh. Call when the owning module
--- is disabled so a grid's textures don't stay pinned for the addon's lifetime.
+-- Free every tile image's GPU upload (each Texture widget's :Hide does SetTexture(nil)); the tile and
+-- its image widget are kept for reuse and reload on the next Refresh. Call when the owning module is
+-- disabled so a grid's textures don't stay pinned in VRAM for the addon's lifetime.
 function IconGridW:ReleaseAll()
     local p = self:_p()
     for _, t in ipairs(p.tiles) do
-        if t.img and ns.TextureService then ns.TextureService:Release(t.img); t.img = nil end
+        if t.img then t.img:Hide() end   -- frees each image's GPU upload; the widget is kept for reuse
         t:Hide()
     end
     return self
