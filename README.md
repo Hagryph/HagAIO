@@ -143,7 +143,6 @@ Services/
   SlashCommand.lua         Singleton slash-command router for /hagaio (alias /hag)
 Modules/
   Class.lua                Generic class-helper module
-  Collection.lua           Adds a "Track in Task List" right-click menu to UNCOLLECTED entries across all
   CVars.lua                Force chosen console variables on every character
   Misc.lua                 Miscellaneous helpers:
   Questing.lua             Everything around levelling through quests, in one module:
@@ -152,7 +151,6 @@ Modules/
   Class\Monk\Monk.lua      Monk module entry point (loads before its per-spec siblings): the shared Monk behaviour
   Class\Monk\Base.lua      The no-specialisation Monk spec (CurrentSpecKey "none"): the Expel Harm heal-threshold
   Class\Monk\Brewmaster.lua The Brewmaster Monk spec (CurrentSpecKey 1): extends MonkBase (Base.lua) with a Tiger
-  Collection\ATT.lua       All The Things integration as a SUBMODULE of the Collection module
 Dev/                       Scratch space (excluded from deploy)
 deploy.ps1                 Mirror the addon into the live WoW AddOns folder + generate the .toc
 ```

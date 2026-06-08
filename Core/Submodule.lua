@@ -18,9 +18,9 @@ local Class = ns.Class
 -- its parent + every declared dependency are themselves online. No bespoke
 -- dependency checks live here.
 --
---   ns.SubmoduleManager:Register(ns.Submodule:New("ATT", {
---       parent = { module = "Collection" },
---       addonDeps = { "AllTheThings" },
+--   ns.SubmoduleManager:Register(ns.Submodule:New("Foo", {
+--       parent = { module = "Bar" },
+--       addonDeps = { "SomeAddon" },
 --       onLoad = function(host) ... end, onUnload = function(host) ... end,
 --   }))
 

@@ -151,7 +151,7 @@ function Module:_Init()
 end
 
 -- Optional public alias: publish this module instance at ns.<opts.publishAs> so other code
--- can reach it directly (e.g. ns.Tasks -> the Tasklist module, ns.Collection). Mirrors
+-- can reach it directly (e.g. ns.Tasks -> the Tasklist module). Mirrors
 -- Service:_Publish; replaces hand-written `ns.X = self` in OnInitialize. The alias is
 -- declared in the module's New opts and documented in the generated Namespace.lua slot block.
 function Module:_Publish()
