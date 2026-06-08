@@ -74,9 +74,9 @@ local function questColumns(chars, freq)
     return cols
 end
 
--- The Home nav entry is icon-only (no text): a hearthstone (the game's "home" symbol) rendered
--- inline. Selecting it shows the overview -- an icon grid of every category.
-local HOME_ICON = "|TInterface\\Icons\\INV_Misc_Rune_01:20:20|t"
+-- The Home nav entry, labelled "Overview". Selecting it shows the overview -- an icon grid of every
+-- category. Re-clicking the already-active category also returns here (see the nav onReselect).
+local HOME_LABEL = "Overview"
 
 -- The Encounter Journal crops its instance buttonImage1 art to this region (the rest is padding);
 -- see Blizzard_EncounterJournal.xml "EncounterInstanceButtonTemplate" bgImage TexCoords. We reuse
@@ -597,6 +597,8 @@ function Dashboard:_Build()
             self:_Render()
             if p.grid then p.grid:ScrollTop() end   -- a new category starts at the top
         end,
+        -- clicking the already-selected category returns to the Overview (Home)
+        onReselect = function() p.nav:Select("home") end,
     })
     nav:SetPoint("TOPLEFT", div, "BOTTOMLEFT", 6, -10)
     nav:SetPoint("BOTTOMRIGHT", rail, "BOTTOMRIGHT", -6, 8)
@@ -647,7 +649,7 @@ function Dashboard:_NavItems()
     -- expansion sub-nodes stay COLLAPSED until that category (or one of its sub-keys) is active
     local raidsOpen = cat == "raids" or cat:match("^raid:") ~= nil
     local dungeonsOpen = cat == "dungeons" or cat:match("^dungeon:") ~= nil
-    local items = { { key = "home", label = HOME_ICON } }   -- icon-only Home, above everything
+    local items = { { key = "home", label = HOME_LABEL } }   -- "Overview" Home entry, above everything
     for _, c in ipairs(CATEGORIES) do
         if c.header then
             items[#items + 1] = { section = c.label }

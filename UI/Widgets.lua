@@ -888,6 +888,7 @@ function Widgets.Nav(parent, opts)
     })
     nav._items = opts.items or {}
     nav._onSelect = opts.onSelect
+    nav._onReselect = opts.onReselect   -- fired when the user CLICKS the already-active item (optional)
 
     local function rebuild()
         local rows = {}
@@ -899,7 +900,12 @@ function Widgets.Nav(parent, opts)
                 rows[#rows + 1] = {
                     cells = { it.label }, indent = it.indent or 0,
                     active = (key == nav._selected),
-                    onClick = function() nav:Select(key) end,
+                    -- re-clicking the active item routes to onReselect (only on a real click, never on
+                    -- a programmatic Select), so callers can e.g. toggle back to a home/overview view.
+                    onClick = function()
+                        if key == nav._selected and nav._onReselect then nav._onReselect(key)
+                        else nav:Select(key) end
+                    end,
                 }
             end
         end
