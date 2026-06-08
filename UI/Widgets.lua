@@ -874,18 +874,32 @@ function Widgets.Texture(parent, opts)
         tw:_ApplyCoords()
         return self
     end
-    -- Cover-crop a full-bleed texture to FILL `frame`: show the FULL width and a vertical band sized
-    -- to the frame's aspect, CENTRED (auto-crop the middle), then nudged by offsetPixels (frame-space
-    -- pixels; +down / -up). Reads the frame's size, so the texture always follows a frame -- never a
-    -- manual size. A scene fills a wide box with no padding (and no distortion for a square source).
-    function tw:Cover(frame, offsetPixels)
+    -- Cover-crop a texture to FILL `frame`: crop the texture's transparent padding out (opts.bounds
+    -- = the real art rect {l,r,t,b}; default the whole file), then fit that art to the frame's aspect
+    -- by cropping the overflow on ONE axis and showing the other edge-to-edge -- fills the box with no
+    -- padding and no distortion. opts.fileAspect (file px w/h) maps texcoord steps to pixels so the
+    -- fit isn't distorted; opts.offset (frame-pixels, +down/right) nudges the centred crop window along
+    -- the cropped axis. Reads the frame's size, so the texture always follows a frame, not a manual size.
+    function tw:Cover(frame, opts)
         local w, h = frame:GetWidth(), frame:GetHeight()
         if not (w and h and w > 0 and h > 0) then return self end
-        local band = math.max(0.01, math.min(1, h / w))
-        local dy = band * (offsetPixels or 0) / h      -- frame pixels -> texcoord along the band
-        local y0 = math.max(0, math.min(1 - band, (1 - band) / 2 + dy))
-        tw._base = { 0, 1, y0, y0 + band }
-        tw:_ApplyCoords()                              -- any zoom still applies on top
+        opts = opts or {}
+        local b = opts.bounds or { 0, 1, 0, 1 }
+        local l, r, t0, b0 = b[1], b[2], b[3], b[4]
+        local tcW, tcH = r - l, b0 - t0
+        local ratio = (w / h) / (opts.fileAspect or 1)     -- target window tcW:tcH
+        local x0, y0, cw, ch
+        if tcW / tcH >= ratio then          -- art wider than frame -> crop sides, full height
+            ch, cw = tcH, tcH * ratio
+            x0 = math.max(l, math.min(r - cw, l + (tcW - cw) / 2 + (cw / w) * (opts.offset or 0)))
+            y0 = t0
+        else                                -- art taller than frame -> crop top/bottom, full width
+            cw, ch = tcW, tcW / ratio
+            y0 = math.max(t0, math.min(b0 - ch, t0 + (tcH - ch) / 2 + (ch / h) * (opts.offset or 0)))
+            x0 = l
+        end
+        tw._base = { x0, x0 + cw, y0, y0 + ch }
+        tw:_ApplyCoords()                                  -- any zoom still applies on top
         return self
     end
     function tw:Fill(frame, inset)
@@ -922,8 +936,10 @@ end
 --   badge=string, badgeKey=paletteKey, selected=bool, onClick=function(tile),
 --   texCoord={l,r,t,b} (base crop of padded source art, e.g. EJ buttonImage1),
 --   zoom=number (WeakAuras-style: shrink the crop toward its centre to eat residual padding),
---   cover=bool + offset=number (cover-crop a full-bleed scene to the box: auto-centred band nudged
---     by `offset` frame-pixels, +down / -up),
+--   cover=bool + bounds={l,r,t,b} (real art rect, padding outside it cropped) + fileAspect=number
+--     (texture file px w/h) + offset=number (cover-crop the scene to the box: crop padding, fit the
+--     real art to the tile aspect undistorted, auto-centred, nudged `offset` frame-pixels along the
+--     cropped axis),
 --   contain=bool (centre a square icon at the image's height instead of stretching to fill) }.
 -- Methods: :SetTiles(list)  :Refresh()  :ScrollTop()
 function Widgets.IconGrid(parent, opts)
@@ -998,14 +1014,30 @@ function Widgets.IconGrid(parent, opts)
             end
             if d.texture then
                 if d.cover then
-                    -- COVER: width hits max (x 0->1); vertically show a centred band sized to the box
-                    -- aspect (the MIDDLE of the scene), nudged by d.offset frame-pixels (+down/-up).
-                    -- Computed from the known box size (ih/tw), not a frame read that isn't resolved
-                    -- yet at refresh time -- that was the bug that left it uncropped/stretched.
-                    local band = math.min(1, ih / tw)
-                    local y0 = (1 - band) / 2 + band * (d.offset or 0) / ih
-                    y0 = math.max(0, math.min(1 - band, y0))
-                    t.img:SetImage(d.texture, { 0, 1, y0, y0 + band }, d.atlas)
+                    -- COVER: first crop the texture's transparent padding out (d.bounds = the real
+                    -- art rect; default the whole file), then fit that real art to the tile aspect by
+                    -- cropping the overflow on ONE axis and showing the other axis edge-to-edge, so it
+                    -- fills the box with no padding and no distortion. d.fileAspect (file px w/h) maps
+                    -- texcoord steps to pixels so the fit is undistorted; d.offset (frame-pixels,
+                    -- +down/right) nudges the centred crop window along the cropped axis. Computed from
+                    -- the known box size (ih/tw), not a frame read that isn't resolved yet at refresh.
+                    local b = d.bounds or { 0, 1, 0, 1 }
+                    local l, r0, t0, b0 = b[1], b[2], b[3], b[4]
+                    local tcW, tcH = r0 - l, b0 - t0
+                    local ratio = (tw / ih) / (d.fileAspect or 1)   -- target window tcW:tcH
+                    local x0, y0, cw, ch
+                    if tcW / tcH >= ratio then         -- art wider than tile -> crop sides, full height
+                        ch, cw = tcH, tcH * ratio
+                        x0 = l + (tcW - cw) / 2 + (cw / tw) * (d.offset or 0)
+                        x0 = math.max(l, math.min(r0 - cw, x0))
+                        y0 = t0
+                    else                               -- art taller than tile -> crop top/bottom, full width
+                        cw, ch = tcW, tcW / ratio
+                        y0 = t0 + (tcH - ch) / 2 + (ch / ih) * (d.offset or 0)
+                        y0 = math.max(t0, math.min(b0 - ch, y0))
+                        x0 = l
+                    end
+                    t.img:SetImage(d.texture, { x0, x0 + cw, y0, y0 + ch }, d.atlas)
                 else              -- banner: base crop + WeakAuras zoom to eat residual padding
                     t.img:SetImage(d.texture, d.texCoord, d.atlas)
                 end
