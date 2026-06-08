@@ -23,7 +23,7 @@ local ROW_H, GROUP_GAP = 40, 14
 
 -- Custom settings page (the shared schema renderer has no slider/group controls -- see SettingsWindow).
 function Dev:BuildSettingsPage(sf)
-    local content = sf.content                     -- the framework's scroll area; we just fill it
+    local content = sf:Content()                     -- the framework's scroll area; we just fill it
     local width = content:GetWidth()
     if not width or width < 1 then width = 420 end
 

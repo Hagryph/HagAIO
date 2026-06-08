@@ -77,6 +77,17 @@ local Changeable = ns.Mixin.new("Changeable", {
     _fireChange = function(self, value) if ns.EventBus then ns.EventBus:Emit(self, value) end end,
 })
 
+-- REGISTRABLE mixin: lets a widget register ITSELF with EditMode (which then positions/moves it). The
+-- widget hands EditMode its OWN private frame, so callers never touch a raw frame to make something
+-- movable. opts is the EditMode descriptor (key/label/default/active/onEnter/...). Mixed into widgets
+-- that can be placed in Edit Mode (Window, Panel). Returns self.
+local Registrable = ns.Mixin.new("Registrable", {
+    RegisterEditMode = function(self, opts)
+        if ns.EditMode then ns.EditMode:Register(self:_frame(), opts) end
+        return self
+    end,
+})
+
 -- Grey this widget out unless `predicate()` holds. Re-checked when one of the given `sources` (a
 -- Changeable widget or a list) changes -- subscribe to each source's own event, so it reacts to just
 -- its dependencies, never a global broadcast -- and once now for the initial state. When this widget's
@@ -204,5 +215,5 @@ end
 ns.UI._wb = {
     Widget = Widget, FrameWidget = FrameWidget, TextWidget = TextWidget, TextureWidget = TextureWidget,
     Container = ContainerW, unwrap = unwrap, style = style, claimLevel = claimLevel, adopt = adopt,
-    Changeable = Changeable,
+    Changeable = Changeable, Registrable = Registrable,
 }

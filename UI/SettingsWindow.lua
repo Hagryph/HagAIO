@@ -91,7 +91,7 @@ function SettingsWindow:_Build()
             self:Show(key)
         end,
     })
-    local bar = f.bar
+    local bar = f:Bar()
     p.frame = f
 
     -- left nav rail
@@ -146,7 +146,7 @@ end
 
 -- ---- pages ----------------------------------------------------------------
 function SettingsWindow:_BuildModulesPage(parent)
-    local page = CreateFrame("Frame", nil, parent)
+    local page = W.Container:New(parent)
     page:SetAllPoints()
 
     local title = W.Text:New(page, "Feature Modules", "text", "GameFontNormalLarge")
@@ -166,7 +166,7 @@ function SettingsWindow:_BuildModulesPage(parent)
     sa:SetPoint("BOTTOMRIGHT", page, "BOTTOMRIGHT", -18, 16)
 
     local p = self:_p()
-    p.moduleHolder = sa.content
+    p.moduleHolder = sa:Content()
     p.moduleScroll = sa
     p.moduleRows = {}
     return page
@@ -194,7 +194,7 @@ function SettingsWindow:_RefreshModules()
         if module:IsAvailable() then
             local depsMet = module:AreModuleDepsMet()
 
-            local row = CreateFrame("Frame", nil, holder)
+            local row = W.Container:New(holder)
             row:SetPoint("TOPLEFT", 2, y)
             row:SetPoint("RIGHT", holder, "RIGHT", -2, 0)
             row:SetHeight(44)
@@ -246,7 +246,7 @@ end
 -- one-way (icons -> window) with no cycle.
 function SettingsWindow:_BuildGeneralPage(parent)
     local p = self:_p()
-    local page = CreateFrame("Frame", nil, parent)
+    local page = W.Container:New(parent)
     page:SetAllPoints()
 
     local title = W.Text:New(page, "General", "text", "GameFontNormalLarge")
@@ -295,7 +295,7 @@ end
 -- ---- Profiles page --------------------------------------------------------
 function SettingsWindow:_BuildProfilesPage(parent)
     local p = self:_p()
-    local page = CreateFrame("Frame", nil, parent)
+    local page = W.Container:New(parent)
     page:SetAllPoints()
 
     local title = W.Text:New(page, "Profiles", "text", "GameFontNormalLarge")
@@ -474,7 +474,7 @@ function SettingsWindow:_EnsureModulePage(name)
     div:SetPoint("RIGHT", page, "RIGHT", -18, 0)
 
     -- the framework hands every module page our themed scroll area, so a module's BuildSettingsPage
-    -- just fills sf.content and never defines a scrollbar of its own.
+    -- just fills sf:Content() and never defines a scrollbar of its own.
     local sf = W.ScrollArea:New(page, "HagAIOModule" .. name:gsub("%s", "") .. "Scroll")
     sf:SetPoint("TOPLEFT", div, "BOTTOMLEFT", 0, -8)
     sf:SetPoint("BOTTOMRIGHT", page, "BOTTOMRIGHT", -16, 14)
@@ -592,7 +592,7 @@ end
 -- ONLY while the submodule is loaded -- e.g. the ATT submodule's option shows
 -- only when AllTheThings is installed. No addon checks live here.
 function SettingsWindow:_BuildModuleControls(sf, module)
-    local content = sf.content
+    local content = sf:Content()
     local width = content:GetWidth()   -- the scroll area keeps the content width synced for us
     if not width or width < 1 then width = 420 end
 
@@ -623,7 +623,7 @@ function SettingsWindow:_BuildModuleControls(sf, module)
 end
 
 function SettingsWindow:_BuildLogPage(parent)
-    local page = CreateFrame("Frame", nil, parent)
+    local page = W.Container:New(parent)
     page:SetAllPoints()
 
     local title = W.Text:New(page, "Activity Log", "text", "GameFontNormalLarge")
@@ -659,7 +659,7 @@ function SettingsWindow:_BuildLogPage(parent)
     sf:SetPoint("TOPLEFT", div, "BOTTOMLEFT", 0, -8)
     sf:SetPoint("BOTTOMRIGHT", page, "BOTTOMRIGHT", -16, 14)
 
-    local fs = W.Text:New(sf.content, "", "text", "GameFontHighlightSmall")
+    local fs = W.Text:New(sf:Content(), "", "text", "GameFontHighlightSmall")
     fs:SetPoint("TOPLEFT")
     fs:SetJustifyH("LEFT")
     fs:SetJustifyV("TOP")
@@ -682,14 +682,14 @@ function SettingsWindow:_RefreshLog()
     p.logFS:SetText(#lines > 0 and table.concat(lines, "\n")
         or ("|cff" .. Theme.hex.textFaint .. "No activity yet.|r"))
 
-    local width = p.logSF.content:GetWidth()
+    local width = p.logSF:Content():GetWidth()
     if not width or width < 1 then width = 380 end
     p.logFS:SetWidth(width)
-    p.logSF.content:SetHeight(p.logFS:GetStringHeight() + 8)
+    p.logSF:Content():SetHeight(p.logFS:GetStringHeight() + 8)
 end
 
 function SettingsWindow:_BuildAboutPage(parent)
-    local page = CreateFrame("Frame", nil, parent)
+    local page = W.Container:New(parent)
     page:SetAllPoints()
 
     local title = W.Text:New(page, "HagAIO", "text", "GameFontNormalLarge")

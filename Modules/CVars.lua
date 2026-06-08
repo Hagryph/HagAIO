@@ -180,7 +180,7 @@ end
 -- ---- settings page (custom builder, called by SettingsWindow) -------------
 function CVars:BuildSettingsPage(sf)
     local p = self:_p()
-    local content = sf.content                     -- the framework's scroll area; we just fill it
+    local content = sf:Content()                     -- the framework's scroll area; we just fill it
     local width = content:GetWidth()
     if not width or width < 1 then width = 420 end
     p.pageContent = content
@@ -303,9 +303,9 @@ function CVars:_PlaceRow(box, def, y, width)
     if def.custom then
         local rm = W.TextButton:New(box, "Remove")
         rm:SetPoint("TOPRIGHT", box, "TOPRIGHT", -cursor, y - 2)
-        rm.text:SetTextColor(Theme.Unpack("red"))
-        rm:SetScript("OnEnter", function() rm.text:SetTextColor(Theme.Unpack("text")) end)
-        rm:SetScript("OnLeave", function() rm.text:SetTextColor(Theme.Unpack("red")) end)
+        rm:SetTextColor(Theme.Unpack("red"))
+        rm:SetScript("OnEnter", function() rm:SetTextColor(Theme.Unpack("text")) end)
+        rm:SetScript("OnLeave", function() rm:SetTextColor(Theme.Unpack("red")) end)
         rm:SetScript("OnClick", function()
             self:GetDB().custom[def.name] = nil
             self:LogInfo("removed custom CVar " .. def.name)

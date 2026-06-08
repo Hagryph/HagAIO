@@ -585,7 +585,7 @@ end
 
 -- ---- settings page (custom: add/remove tasks) -----------------------------
 function Tasklist:BuildSettingsPage(sf)
-    local content = sf.content
+    local content = sf:Content()
     local width = sf:GetWidth(); if not width or width < 1 then width = 420 end
     content:SetWidth(width)
     local y = -4
@@ -649,7 +649,7 @@ function Tasklist:BuildSettingsPage(sf)
             lbl:SetPoint("TOPLEFT", 10, y); lbl:SetWidth(width - 90); lbl:SetJustifyH("LEFT")
             local rm = W.TextButton:New(content, "Remove")
             rm:SetPoint("TOPRIGHT", content, "TOPRIGHT", -6, y)
-            rm.text:SetTextColor(Theme.Unpack("red"))
+            rm:SetTextColor(Theme.Unpack("red"))
             rm:SetScript("OnClick", function()
                 self:Remove(key)
                 if ns.UI.SettingsWindow then ns.UI.SettingsWindow:InvalidateModule(self:GetName()) end

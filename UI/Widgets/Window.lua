@@ -4,6 +4,7 @@ local Widgets = ns.UI.Widgets
 local _wb = ns.UI._wb
 local Widget, FrameWidget, TextWidget, TextureWidget = _wb.Widget, _wb.FrameWidget, _wb.TextWidget, _wb.TextureWidget
 local unwrap, style, claimLevel, adopt = _wb.unwrap, _wb.style, _wb.claimLevel, _wb.adopt
+local Registrable = _wb.Registrable
 
 -- UI/Widgets/Window.lua
 -- Themed window CHROME factory: a movable, ESC-closable frame with a draggable title bar
@@ -25,7 +26,7 @@ local unwrap, style, claimLevel, adopt = _wb.unwrap, _wb.style, _wb.claimLevel, 
 -- Construct with Widgets.Window:New(level, opts). Exposes :Body() / :Bar() / :Title() (widgets) and
 -- :SetWindowTitle(text); the close X and auto-close wiring are internal. onClose / onAutoShow /
 -- onAutoHide callbacks receive the Window widget.
-local WindowW = ns.Class.new("Window", FrameWidget)
+local WindowW = ns.Class.new("Window", FrameWidget, { mixins = { Registrable } })
 function WindowW:Initialize(level, opts)
     opts = opts or {}
     assert(type(level) == "number", "Widgets.Window: a frame level (first argument) is required")

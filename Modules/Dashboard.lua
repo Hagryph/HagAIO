@@ -713,7 +713,7 @@ function Dashboard:_Build()
     p.frame = f
 
     -- left rail: character card + category nav grid
-    local rail = W.Panel:New(f.body, "bg0", "border")
+    local rail = W.Panel:New(f:Body(), "bg0", "border")
     rail:SetWidth(RAIL_W)
     rail:SetPoint("TOPLEFT", 0, 0)
     rail:SetPoint("BOTTOMLEFT", 0, 0)
@@ -754,9 +754,9 @@ function Dashboard:_Build()
     p.nav = nav
 
     -- content: reset header + category title + the data grid
-    local content = W.Panel:New(f.body, "panel", "border")
+    local content = W.Panel:New(f:Body(), "panel", "border")
     content:SetPoint("TOPLEFT", rail, "TOPRIGHT", 1, 0)
-    content:SetPoint("BOTTOMRIGHT", f.body, "BOTTOMRIGHT", 0, 0)
+    content:SetPoint("BOTTOMRIGHT", f:Body(), "BOTTOMRIGHT", 0, 0)
     p.contentPanel = content   -- the icon-grid PAGES (see _IconPage) anchor over the data-grid area
 
     local resetHdr = W.Text:New(content, "", "textDim", "GameFontHighlightSmall")

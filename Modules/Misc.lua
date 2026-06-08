@@ -463,31 +463,25 @@ function Misc:_BuildFrame()
     local time = W.Text:New(f, "", "text", "GameFontNormal")
     time:SetPoint("TOPRIGHT", -12, -8)
 
-    local bar = CreateFrame("StatusBar", nil, f)
+    local bar = W.ProgressBar:New(f, { height = 7, fillKey = "accent", bgKey = "bg0" })
     bar:SetPoint("BOTTOMLEFT", 12, 9)
     bar:SetPoint("BOTTOMRIGHT", -12, 9)
-    bar:SetHeight(7)
-    bar:SetStatusBarTexture(Theme.WHITE)
-    bar:SetStatusBarColor(Theme.Unpack("accent"))
-    bar:SetMinMaxValues(0, 1)
-    bar:SetValue(0)
-    local bg = bar:CreateTexture(nil, "BACKGROUND")
-    bg:SetAllPoints()
-    bg:SetColorTexture(Theme.Unpack("bg0"))
 
     f.dest, f.time, f.bar = dest, time, bar
     f:Hide()
     p.frame = f
 
-    ns.EditMode:Register(f, {
+    -- The Panel widget registers ITSELF with Edit Mode (Registrable mixin) -- EditMode positions its
+    -- frame; we never hand out a raw frame. onEnter drives the widget children (f.dest / f.bar).
+    f:RegisterEditMode({
         key = "flightTimer",
         label = "Flight Timer",
         default = { point = "CENTER", x = 0, y = 210 },
         active = function() return self:IsEnabled() and self:GetSetting("showInFlight") end,
-        onEnter = function(frame)
-            frame.dest:SetText("Flight Timer")
-            frame.time:SetText("1:23")
-            frame.bar:SetValue(0.5)
+        onEnter = function()
+            f.dest:SetText("Flight Timer")
+            f.time:SetText("1:23")
+            f.bar:SetValue(0.5)
         end,
     })
 end
@@ -689,22 +683,11 @@ end
 function Misc:_BuildSellButton()
     local p = self:_p()
     if p.sellBtn or not MerchantFrame then return end
-    local b = CreateFrame("Button", nil, MerchantFrame, "BackdropTemplate")
-    W.Style(b, "panel2", "borderStrong")
-    b:SetSize(86, 22)
-    -- just below the merchant window (its bottom-right), clear of the buyback
-    -- slot and money area
+    -- just below the merchant window (its bottom-right), clear of the buyback slot and money area
+    local b = W.Button:New(MerchantFrame, "Sell Junk", { width = 86, height = 22 })
     b:SetPoint("TOPRIGHT", MerchantFrame, "BOTTOMRIGHT", -4, -2)
     b:SetFrameStrata("HIGH")
-    local fs = W.Text:New(b, "Sell Junk", "accent", "GameFontNormalSmall")
-    fs:SetPoint("CENTER")
-    b:SetScript("OnEnter", function()
-        b:SetBackdropColor(Theme.Unpack("panelHover")); fs:SetTextColor(Theme.Unpack("text"))
-    end)
-    b:SetScript("OnLeave", function()
-        b:SetBackdropColor(Theme.Unpack("panel2")); fs:SetTextColor(Theme.Unpack("accent"))
-    end)
-    b:SetScript("OnClick", function() self:_Sell() end)
+    b:SetOnClick(function() self:_Sell() end)
     p.sellBtn = b
 end
 

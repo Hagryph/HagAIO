@@ -46,9 +46,9 @@ function CopyWindow:_Build()
     -- shared chrome: movable DIALOG-strata frame + draggable bar + close X (Widgets.Window).
     local f = W.Window:New(100, { name = "HagAIOCopyWindow", width = 560, height = 440,
         strata = "DIALOG", title = "Copy", onClose = function() self:Hide() end })
-    local bar = f.bar
+    local bar = f:Bar()
     p.frame = f
-    p.title = f.titleFS
+    p.title = f:Title()
 
     -- hint line
     local hint = W.Text:New(f, "Press Ctrl+C to copy, then Esc to close.", "textDim", "GameFontHighlightSmall")
@@ -66,7 +66,7 @@ function CopyWindow:_Build()
     div:SetPoint("RIGHT", f, "RIGHT", -16, 0)
 
     -- footer with page navigation (only shown when there's more than one page)
-    local footer = CreateFrame("Frame", nil, f)
+    local footer = W.Container:New(f)
     footer:SetHeight(22)
     footer:SetPoint("BOTTOMLEFT", f, "BOTTOMLEFT", 16, 12)
     footer:SetPoint("BOTTOMRIGHT", f, "BOTTOMRIGHT", -16, 12)
@@ -91,27 +91,11 @@ function CopyWindow:_Build()
     box:SetPoint("TOPLEFT", div, "BOTTOMLEFT", 0, -8)
     box:SetPoint("BOTTOMRIGHT", footer, "TOPRIGHT", 0, 6)
 
-    local sf = CreateFrame("ScrollFrame", "HagAIOCopyWindowScroll", box, "UIPanelScrollFrameTemplate")
-    sf:SetPoint("TOPLEFT", 6, -6)
-    sf:SetPoint("BOTTOMRIGHT", -28, 6)  -- leave room for the scrollbar
-
-    local eb = CreateFrame("EditBox", nil, sf)
-    eb:SetMultiLine(true)
-    eb:SetAutoFocus(false)              -- don't steal focus until Show() asks
-    eb:SetMaxLetters(0)                 -- 0 = unlimited; never truncate the body
-    eb:SetMaxBytes(0)                   -- 0 = unlimited; same for the byte cap
-    eb:SetFontObject("ChatFontNormal")
-    eb:SetTextColor(Theme.Unpack("text"))
-    eb:SetWidth(1)                      -- real width set when the scroll frame sizes
-    eb:SetScript("OnEscapePressed", function() self:Hide() end)
-    -- keep the caret/highlight from collapsing when the box is clicked: re-select all
-    eb:SetScript("OnEditFocusGained", function(self) self:HighlightText() end)
-    eb:SetScript("OnTextChanged", function() sf:UpdateScrollChildRect() end)
-    sf:SetScrollChild(eb)
-    p.editBox = eb
-    p.scroll = sf
-
-    sf:SetScript("OnSizeChanged", function(_, w) eb:SetWidth(w) end)
+    local edit = W.MultilineEdit:New(box, "HagAIOCopyWindowScroll")
+    edit:SetPoint("TOPLEFT", 6, -6)
+    edit:SetPoint("BOTTOMRIGHT", -28, 6)  -- leave room for the scrollbar
+    edit:SetOnEscape(function() self:Hide() end)
+    p.edit = edit
 
     p.built = true
 end
@@ -141,8 +125,8 @@ function CopyWindow:_Goto(index)
     if total == 0 then return end
     index = math.max(1, math.min(total, index))
     p.page = index
-    p.editBox:SetText(p.pages[index] or "")
-    p.scroll:SetVerticalScroll(0)
+    p.edit:SetText(p.pages[index] or "")
+    p.edit:ScrollTop()
 
     local multi = total > 1
     p.footer:SetShown(multi)
@@ -150,8 +134,8 @@ function CopyWindow:_Goto(index)
         local base = p.titleText or "Copy"
         p.title:SetText(("%s  -  part %d/%d"):format(base, index, total))
         p.pageLabel:SetText(("Page %d of %d"):format(index, total))
-        p.prev.text:SetTextColor(Theme.Unpack(index > 1 and "accent" or "textFaint"))
-        p.next.text:SetTextColor(Theme.Unpack(index < total and "accent" or "textFaint"))
+        p.prev:SetTextColor(Theme.Unpack(index > 1 and "accent" or "textFaint"))
+        p.next:SetTextColor(Theme.Unpack(index < total and "accent" or "textFaint"))
     else
         p.title:SetText(p.titleText or "Copy")
     end
@@ -162,10 +146,7 @@ end
 -- Re-focus the edit box and select everything in it.
 function CopyWindow:_SelectAll()
     local p = self:_p()
-    if not p.editBox then return end
-    p.editBox:SetFocus()
-    p.editBox:HighlightText()
-    p.editBox:SetCursorPosition(0)
+    if p.edit then p.edit:SelectAll() end
 end
 
 -- ---- show / hide ----------------------------------------------------------
@@ -197,14 +178,14 @@ function CopyWindow:Prompt(title, onAccept)
     p.prev:Hide(); p.next:Hide(); p.pageLabel:Hide()
     p.acceptBtn:Show()
     p.acceptBtn:SetScript("OnClick", function()
-        local text = p.editBox:GetText()
+        local text = p.edit:GetText()
         self:Hide()
         p.prev:Show(); p.next:Show(); p.pageLabel:Show()  -- restore for copy-out
         if onAccept then onAccept(text) end
     end)
     p.frame:Show()
-    p.editBox:SetText("")
-    p.editBox:SetFocus()
+    p.edit:SetText("")
+    p.edit:Focus()
 end
 
 function CopyWindow:Hide()
