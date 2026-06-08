@@ -88,6 +88,17 @@ function TextureService:Original(image, atlas)
     return o
 end
 
+-- Live hold counts, for verifying the pool is actually reused (e.g. a Dev readout): `owned` = every
+-- edit widget ever made, `idle` = released ones waiting in the pool, `inUse` = owned - idle (handed
+-- out right now), `originals` = distinct source images currently cached (weak, so this shrinks once
+-- nothing references one). Healthy reuse: `owned` plateaus while grids re-render, `idle`+`inUse` track.
+function TextureService:Stats()
+    local p = self:_p()
+    local originals = 0
+    for _ in pairs(p.originals) do originals = originals + 1 end
+    return { owned = #p.owned, idle = #p.pool, inUse = #p.owned - #p.pool, originals = originals }
+end
+
 -- Hand out an EDIT widget parented to `parent`. Reuses an idle one when available; otherwise creates
 -- one and records it for its lifetime.
 function TextureService:Acquire(parent, opts)

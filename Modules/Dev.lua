@@ -30,19 +30,47 @@ function Dev:BuildSettingsPage(sf)
 
     local dash = ns.ModuleManager:GetModule("Dashboard")
 
+    -- Live icon hold-count: lets us watch the TextureService pool be reused. Healthy reuse = `owned`
+    -- plateaus while grids/pages re-render; `idle` rises as tiles are released, `in use` tracks what's
+    -- on screen, `originals` falls once nothing references a source image. Ticks while the page shows.
+    local stat = W.Text(content, "", "textFaint", "GameFontHighlightSmall")
+    stat:SetPoint("TOPLEFT", 4, -2)
+    local acc = 0
+    content:SetScript("OnUpdate", function(_, dt)
+        acc = acc + (dt or 0)
+        if acc < 0.5 then return end
+        acc = 0
+        if ns.TextureService and ns.TextureService.Stats then
+            local s = ns.TextureService:Stats()
+            stat:SetText(("Icons  owned %d  \194\183  idle %d  \194\183  in use %d  \194\183  originals %d")
+                :format(s.owned, s.idle, s.inUse, s.originals))
+        end
+    end)
+
     local intro = W.Text(content,
         "Live-tune the Dashboard scene art. Values are per session and reset to the code defaults on reload.",
         "textDim", "GameFontHighlightSmall")
-    intro:SetPoint("TOPLEFT", 4, -2)
+    intro:SetPoint("TOPLEFT", stat, "BOTTOMLEFT", 0, -8)
     intro:SetWidth(width - 12); intro:SetJustifyH("LEFT")
-    local y = -(intro:GetStringHeight() + 14)
 
-    -- One titled group (Dungeon / Raid) of the three sliders, anchored at the running y. `extra(gc, sy)`
-    -- (optional) adds controls under the sliders and returns the new running sy.
+    local groups = {}
+    -- Position the groups top-to-bottom from their CURRENT heights (so collapsing one reflows the rest)
+    -- and size the scroll child to fit. Run on build and on every group's collapse toggle.
+    local function relayout()
+        local y = -(stat:GetStringHeight() + 8 + intro:GetStringHeight() + 14)
+        for _, g in ipairs(groups) do
+            g:ClearAllPoints()
+            g:SetPoint("TOPLEFT", content, "TOPLEFT", 0, y)
+            g:SetPoint("TOPRIGHT", content, "TOPRIGHT", 0, y)
+            y = y - (g:GetHeight() + GROUP_GAP)
+        end
+        content:SetHeight(math.max(30, -y + 8))
+    end
+
+    -- A collapsible group (Dungeon / Raid) of the three sliders. `extra(gc, sy)` (optional) adds
+    -- controls under the sliders and returns the new running sy.
     local function buildGroup(kind, title, extra)
         local g = W.SettingsGroup(content, title)
-        g:SetPoint("TOPLEFT", content, "TOPLEFT", 0, y)
-        g:SetPoint("TOPRIGHT", content, "TOPRIGHT", 0, y)
         local gc = g:GetContent()
         local sliderW = (width - 20) - 4                 -- group content (PAD 10 each side) minus a hair
         local tune = dash and dash:GetArtTune(kind)
@@ -57,7 +85,8 @@ function Dev:BuildSettingsPage(sf)
         end
         if extra then sy = extra(gc, sy) end
         g:SetContentHeight(-sy - 6)                      -- rows height (drop the trailing gap)
-        y = y - (g:GetHeight() + GROUP_GAP)
+        g:SetOnToggle(function() relayout() end)         -- reflow + resize when collapsed/expanded
+        groups[#groups + 1] = g
     end
 
     -- Dungeon group gets a "next image" stepper: the Current Season tile cycles through every season
@@ -74,8 +103,7 @@ function Dev:BuildSettingsPage(sf)
         return sy - 32
     end)
     buildGroup("raid", "Raid")
-
-    content:SetHeight(math.max(30, -y + 8))
+    relayout()
 end
 
 -- Registered (always-on) ONLY on a whitelisted dev character. The `not ns.IsDevChar` arm keeps the

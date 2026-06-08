@@ -525,28 +525,48 @@ function Widgets.Slider(parent, opts)
     return f
 end
 
--- A titled settings GROUP: a bordered panel with a header strip (the `title`) and a content area
--- below it that callers fill. Returns the container Frame; anchor it like any widget. Methods:
--- :GetContent() (parent your controls into it) and :SetContentHeight(h) (sizes the group to fit).
+-- A titled settings GROUP: a bordered panel with a clickable header strip (chevron + `title`) and a
+-- content area below it that callers fill. COLLAPSIBLE -- clicking the header toggles the body (the
+-- group shrinks to just its header when collapsed). Returns the container Frame; anchor it like any
+-- widget. Methods: :GetContent() (parent your controls into it), :SetContentHeight(h) (the expanded
+-- body height), :SetExpanded(bool), :IsExpanded(), :SetOnToggle(fn) fn(expanded), :SetTitle(s).
 function Widgets.SettingsGroup(parent, title)
     local HEADER, PAD = 24, 10
     local g = Widgets.Panel(parent, "panel2", "border")
 
-    local strip = g:CreateTexture(nil, "ARTWORK")
-    strip:SetColorTexture(Theme.Unpack("bg1"))
-    strip:SetPoint("TOPLEFT", 1, -1); strip:SetPoint("TOPRIGHT", -1, -1); strip:SetHeight(HEADER)
-    local label = Widgets.Text(g, title, "text", "GameFontNormal")
-    label:SetPoint("LEFT", strip, "LEFT", 10, 0)
+    local header = CreateFrame("Button", nil, g)
+    header:SetPoint("TOPLEFT", 1, -1); header:SetPoint("TOPRIGHT", -1, -1); header:SetHeight(HEADER)
+    local strip = header:CreateTexture(nil, "ARTWORK"); strip:SetAllPoints(); strip:SetColorTexture(Theme.Unpack("bg1"))
+    local chevron = Widgets.Text(header, "-", "accent", "GameFontNormal")
+    chevron:SetPoint("LEFT", 8, 0)
+    local label = Widgets.Text(header, title, "text", "GameFontNormal")
+    label:SetPoint("LEFT", chevron, "RIGHT", 6, 0)
 
     local content = CreateFrame("Frame", nil, g)
     content:SetPoint("TOPLEFT", g, "TOPLEFT", PAD, -(HEADER + PAD))
     content:SetPoint("TOPRIGHT", g, "TOPRIGHT", -PAD, -(HEADER + PAD))
     content:SetHeight(1)
 
+    local expanded, contentH, onToggle = true, 0, nil
+    local function apply()
+        chevron:SetText(expanded and "-" or "+")
+        content:SetShown(expanded)
+        g:SetHeight(expanded and (HEADER + PAD + math.max(0, contentH) + PAD) or HEADER)
+    end
+    header:SetScript("OnEnter", function() g:SetBackdropBorderColor(Theme.Unpack("accent")) end)
+    header:SetScript("OnLeave", function() g:SetBackdropBorderColor(Theme.Unpack("border")) end)
+    header:SetScript("OnClick", function()
+        expanded = not expanded; apply()
+        if onToggle then onToggle(expanded) end
+    end)
+
     g.GetContent       = function() return content end
-    g.SetContentHeight = function(_, h) g:SetHeight(HEADER + PAD + math.max(0, h or 0) + PAD) end
+    g.SetContentHeight = function(_, h) contentH = math.max(0, h or 0); apply() end
     g.SetTitle         = function(_, t) label:SetText(t) end
-    g:SetHeight(HEADER + PAD + PAD)
+    g.SetExpanded      = function(_, v) expanded = v and true or false; apply() end
+    g.IsExpanded       = function() return expanded end
+    g.SetOnToggle      = function(_, fn) onToggle = fn end
+    apply()
     return g
 end
 
