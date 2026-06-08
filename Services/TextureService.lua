@@ -41,6 +41,17 @@ function TextureService:Acquire(parent, opts)
     return tw
 end
 
+-- Convenience: acquire a texture, anchor it to FILL `frame` flush (so it auto-resizes with the
+-- frame), set its image, and return it. Callers just hand over a frame + image (+ optional crop).
+--   ns.TextureService:Fill(box, fileID, coord)
+function TextureService:Fill(frame, image, coord, opts)
+    local tw = self:Acquire(frame, opts)
+    tw:Fill(frame)
+    if image then tw:SetImage(image, coord) end
+    tw:Show()
+    return tw
+end
+
 -- Return a widget to the pool: cleared, hidden, and parked on the holder (still strongly held).
 function TextureService:Release(tw)
     if not tw then return end
