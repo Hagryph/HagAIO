@@ -15,8 +15,10 @@ local Module = Class.new("Module", ns.Component)
 -- Constructor. Subclasses that need their own constructor should override
 -- Initialize and call Module.Initialize(self, name, opts) first.
 --   opts = { title = string, description = string, defaultEnabled = bool,
---            color = "RRGGBB", dbDefaults = table, deps = { "Service", ... },
+--            alwaysOn = bool, color = "RRGGBB", dbDefaults = table, deps = { "Service", ... },
 --            settings = { <schema entries> } }
+-- `alwaysOn` makes the module MANDATORY: it enables at start, can't be disabled, and the
+-- settings UI shows no on/off toggle (used for always-active tooling like the Dev module).
 -- `deps` names the SERVICES this module needs; the ModuleManager won't start the
 -- module until every one of them is loaded.
 -- `addonDeps` names EXTERNAL addons that must be loaded for this module to be
@@ -53,7 +55,8 @@ function Module:Initialize(name, opts)
     local p = self:_p()
     p.title = opts.title or name
     p.description = opts.description or ""
-    p.defaultEnabled = opts.defaultEnabled ~= false
+    p.alwaysOn = opts.alwaysOn and true or false  -- mandatory module: always enabled, no on/off toggle
+    p.defaultEnabled = p.alwaysOn or (opts.defaultEnabled ~= false)
     p.perChar = opts.perChar and true or false  -- store db + enable state per character
     p.serviceDeps = opts.deps or {}               -- services that must be loaded first
     p.addonDeps = opts.addonDeps or {}            -- external addons required to be available
@@ -100,6 +103,8 @@ function Module:AreModuleDepsMet()
 end
 function Module:IsEnabled() return self:_p().enabled end
 function Module:IsDefaultEnabled() return self:_p().defaultEnabled end
+-- Always-on (mandatory): enabled at start, can't be disabled, and shows no on/off toggle.
+function Module:IsAlwaysOn() return self:_p().alwaysOn end
 function Module:IsPerChar() return self:_p().perChar end
 function Module:GetDB() return self:_p().db end
 -- GetLog + the Log* helpers are inherited from ns.Component (shared logging surface).
@@ -186,6 +191,7 @@ end
 
 function Module:Disable()
     local p = self:_p()
+    if p.alwaysOn then return end   -- mandatory module: stays enabled regardless of any toggle
     if not p.enabled then return end
     p.enabled = false
     local ok, err = pcall(self.OnDisable, self)  -- base no-op unless the subclass overrides

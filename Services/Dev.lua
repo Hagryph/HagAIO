@@ -74,9 +74,13 @@ function Dev:_Slash(rest)
     end
 end
 
--- Dev declares its "/hag dev" sub-command (the Service base registers it after
--- SlashCommand is up) and shows its dumps in the shared CopyWindow.
-ns.ServiceManager:Register(Dev:New("Dev", {
-    deps = { "SlashCommand", "CopyWindow" },
-    commands = { dev = { handler = "_Slash", help = "developer tools" } },
-}))
+-- Dev declares its "/hag dev" sub-command (the Service base registers it after SlashCommand is up)
+-- and shows its dumps in the shared CopyWindow. Registered ONLY on a whitelisted dev character
+-- (ns.IsDevChar) so "/hag dev" never reaches normal users. The `not ns.IsDevChar` arm keeps the
+-- headless test harness -- which doesn't load Core/Namespace.lua -- able to load this file.
+if (not ns.IsDevChar) or ns.IsDevChar() then
+    ns.ServiceManager:Register(Dev:New("Dev", {
+        deps = { "SlashCommand", "CopyWindow" },
+        commands = { dev = { handler = "_Slash", help = "developer tools" } },
+    }))
+end

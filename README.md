@@ -147,6 +147,7 @@ Modules/
   Class.lua                Generic class-helper module
   CVars.lua                Force chosen console variables on every character
   Dashboard.lua            Account-wide, cross-character RESET dashboard
+  Dev.lua                  Developer settings module
   Misc.lua                 Miscellaneous helpers:
   Questing.lua             Everything around levelling through quests, in one module:
   Tasklist.lua             A lightweight objective tracker

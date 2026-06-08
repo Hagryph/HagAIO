@@ -80,10 +80,12 @@ function ModuleManager:_Start(module)
     -- is gated by Module:Enable (addon + service + module deps), so a module with
     -- unmet deps simply stays disabled, not uninitialised.
     module:_Init()
-    local saved = ns.SavedVars:GetModuleState(module:GetName(), module:IsPerChar())
-    local shouldEnable = saved
-    if shouldEnable == nil then
-        shouldEnable = module:IsDefaultEnabled()
+    local shouldEnable
+    if module:IsAlwaysOn() then
+        shouldEnable = true   -- mandatory module: always enabled, persisted state ignored
+    else
+        shouldEnable = ns.SavedVars:GetModuleState(module:GetName(), module:IsPerChar())
+        if shouldEnable == nil then shouldEnable = module:IsDefaultEnabled() end
     end
     if shouldEnable then
         module:Enable()
@@ -126,9 +128,11 @@ function ModuleManager:OpenContextMenu(owner)
     MenuUtil.CreateContextMenu(owner, function(_, root)
         root:CreateTitle("HagAIO")
         for module in mm:Iterate() do
-            root:CreateCheckbox(module:GetTitle(),
-                function() return module:IsEnabled() end,
-                function() module:Toggle() end)
+            if not module:IsAlwaysOn() then   -- mandatory modules have no toggle
+                root:CreateCheckbox(module:GetTitle(),
+                    function() return module:IsEnabled() end,
+                    function() module:Toggle() end)
+            end
         end
         root:CreateDivider()
         root:CreateButton("Open Menu", function() ns.UI.SettingsWindow:Show("modules") end)

@@ -430,6 +430,99 @@ function Widgets.Input(parent, width)
     return box
 end
 
+-- Themed horizontal slider with a track, an accent fill, a draggable thumb, and a live numeric
+-- readout (right of an optional label). The widget is a container Frame -- anchor it like any other.
+--   opts: min, max, step, width (track px, 160), label (string), format (readout fmt, "%.2f")
+-- Methods: :SetValue(v) :GetValue() :SetOnChange(fn)  fn(newValue) on user drag  :SetEnabled(bool)
+function Widgets.Slider(parent, opts)
+    opts = opts or {}
+    local minV, maxV = opts.min or 0, opts.max or 1
+    local step  = opts.step or 0.01
+    local width = opts.width or 160
+    local fmt   = opts.format or "%.2f"
+
+    local f = CreateFrame("Frame", nil, parent)
+    f:SetSize(width, 34)
+
+    if opts.label then
+        local label = Widgets.Text(f, opts.label, "text", "GameFontHighlightSmall")
+        label:SetPoint("TOPLEFT", 0, 0)
+    end
+    local readout = Widgets.Text(f, "", "accent", "GameFontHighlightSmall")
+    readout:SetPoint("TOPRIGHT", 0, 0)
+
+    local slider = CreateFrame("Slider", nil, f)
+    slider:SetOrientation("HORIZONTAL")
+    slider:SetPoint("TOPLEFT", 0, -16)
+    slider:SetSize(width, 16)
+    slider:SetMinMaxValues(minV, maxV)
+    slider:SetValueStep(step)
+    slider:SetObeyStepOnDrag(true)
+
+    local track = f:CreateTexture(nil, "ARTWORK")
+    track:SetColorTexture(Theme.Unpack("panel2"))
+    track:SetHeight(4)
+    track:SetPoint("LEFT", slider, "LEFT", 0, 0)
+    track:SetPoint("RIGHT", slider, "RIGHT", 0, 0)
+    local fill = f:CreateTexture(nil, "OVERLAY")
+    fill:SetColorTexture(Theme.Unpack("accent"))
+    fill:SetHeight(4)
+    fill:SetPoint("LEFT", track, "LEFT", 0, 0)
+
+    local thumb = slider:CreateTexture(nil, "OVERLAY")
+    thumb:SetColorTexture(Theme.Unpack("accent"))
+    thumb:SetSize(10, 16)
+    slider:SetThumbTexture(thumb)
+
+    local onChange, enabled, suppress = nil, true, false
+    local function render(v)
+        readout:SetText(fmt:format(v))
+        local frac = (maxV > minV) and ((v - minV) / (maxV - minV)) or 0
+        fill:SetWidth(math.max(0.01, width * math.max(0, math.min(1, frac))))
+    end
+    slider:SetScript("OnValueChanged", function(_, v)
+        render(v)
+        if onChange and enabled and not suppress then onChange(v) end
+    end)
+
+    f.SetValue    = function(_, v) suppress = true; slider:SetValue(v); suppress = false; render(slider:GetValue()) end
+    f.GetValue    = function() return slider:GetValue() end
+    f.SetOnChange = function(_, fn) onChange = fn end
+    f.SetEnabled  = function(_, on)
+        enabled = on and true or false
+        slider:EnableMouse(enabled)
+        f:SetAlpha(enabled and 1 or 0.5)
+    end
+    f.slider = slider
+    render(minV)
+    return f
+end
+
+-- A titled settings GROUP: a bordered panel with a header strip (the `title`) and a content area
+-- below it that callers fill. Returns the container Frame; anchor it like any widget. Methods:
+-- :GetContent() (parent your controls into it) and :SetContentHeight(h) (sizes the group to fit).
+function Widgets.SettingsGroup(parent, title)
+    local HEADER, PAD = 24, 10
+    local g = Widgets.Panel(parent, "panel2", "border")
+
+    local strip = g:CreateTexture(nil, "ARTWORK")
+    strip:SetColorTexture(Theme.Unpack("bg1"))
+    strip:SetPoint("TOPLEFT", 1, -1); strip:SetPoint("TOPRIGHT", -1, -1); strip:SetHeight(HEADER)
+    local label = Widgets.Text(g, title, "text", "GameFontNormal")
+    label:SetPoint("LEFT", strip, "LEFT", 10, 0)
+
+    local content = CreateFrame("Frame", nil, g)
+    content:SetPoint("TOPLEFT", g, "TOPLEFT", PAD, -(HEADER + PAD))
+    content:SetPoint("TOPRIGHT", g, "TOPRIGHT", -PAD, -(HEADER + PAD))
+    content:SetHeight(1)
+
+    g.GetContent       = function() return content end
+    g.SetContentHeight = function(_, h) g:SetHeight(HEADER + PAD + math.max(0, h or 0) + PAD) end
+    g.SetTitle         = function(_, t) label:SetText(t) end
+    g:SetHeight(HEADER + PAD + PAD)
+    return g
+end
+
 -- Named scroll frame (template needs a name for its $parentScrollBar).
 function Widgets.ScrollFrame(parent, name)
     local sf = CreateFrame("ScrollFrame", name, parent, "UIPanelScrollFrameTemplate")

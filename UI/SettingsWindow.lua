@@ -198,12 +198,17 @@ function SettingsWindow:_RefreshModules()
 
             local toggle = W.Toggle(row, nil)
             toggle:SetPoint("TOPLEFT", 0, -4)
-            toggle:SetChecked(module:IsEnabled())
-            toggle:SetEnabled(depsMet)
-            toggle:SetOnToggle(function(on)
-                if on then module:Enable() else module:Disable() end
-                self:_RefreshModules()  -- dependents may need to grey/ungrey
-            end)
+            if module:IsAlwaysOn() then       -- mandatory: show it ticked but locked (no toggling)
+                toggle:SetChecked(true)
+                toggle:SetEnabled(false)
+            else
+                toggle:SetChecked(module:IsEnabled())
+                toggle:SetEnabled(depsMet)
+                toggle:SetOnToggle(function(on)
+                    if on then module:Enable() else module:Disable() end
+                    self:_RefreshModules()  -- dependents may need to grey/ungrey
+                end)
+            end
 
             local name = W.Text(row, module:GetTitle(), depsMet and "text" or "textFaint", "GameFontNormal")
             name:SetPoint("TOPLEFT", toggle, "TOPRIGHT", 12, 2)
@@ -437,13 +442,20 @@ function SettingsWindow:_EnsureModulePage(name)
     local title = W.Text(page, module:GetTitle(), "text", "GameFontNormalLarge")
     title:SetPoint("TOPLEFT", back, "BOTTOMLEFT", 0, -8)
 
-    -- enable toggle on the header row
-    local enable = W.Toggle(page, "Enabled")
-    enable:SetPoint("TOPRIGHT", page, "TOPRIGHT", -84, -16)
-    enable:SetChecked(module:IsEnabled())
-    enable:SetOnToggle(function(on)
-        if on then module:Enable() else module:Disable() end
-    end)
+    -- enable toggle on the header row -- omitted for a mandatory (always-on) module, which shows a
+    -- faint "Always on" tag instead since it can't be turned off.
+    local enable
+    if module:IsAlwaysOn() then
+        local tag = W.Text(page, "Always on", "textFaint", "GameFontHighlightSmall")
+        tag:SetPoint("TOPRIGHT", page, "TOPRIGHT", -18, -20)
+    else
+        enable = W.Toggle(page, "Enabled")
+        enable:SetPoint("TOPRIGHT", page, "TOPRIGHT", -84, -16)
+        enable:SetChecked(module:IsEnabled())
+        enable:SetOnToggle(function(on)
+            if on then module:Enable() else module:Disable() end
+        end)
+    end
 
     local desc = W.Text(page, module:GetDescription(), "textDim", "GameFontHighlightSmall")
     desc:SetPoint("TOPLEFT", title, "BOTTOMLEFT", 0, -6)

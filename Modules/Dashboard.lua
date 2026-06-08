@@ -357,12 +357,35 @@ end
 -- An art descriptor for an instance tile. Prefer the full-bleed, high-def SCENE (bgImage) and
 -- cover-crop it to the box -- it has no padding, so it fills crisply. The low-def buttonImage1
 -- banner is only a fallback (cropped + zoomed) for an instance that has no scene.
-function Dashboard:_InstanceArt(name)
+-- Per-kind ("raid"/"dungeon") cover zoom + pan for the scene art, seeded from the code defaults.
+-- These are RUNTIME (per session): the Dev module live-tunes them via SetArtTune; they reset to the
+-- EJ_BG_* defaults every load. On a normal character nothing changes them, so the art is identical.
+function Dashboard:_ArtTune(kind)
+    local p = self:_p()
+    if not p.artTune then
+        p.artTune = {
+            raid    = { zoom = EJ_BG_ZOOM, panX = EJ_BG_PAN_X, panY = EJ_BG_PAN_Y },
+            dungeon = { zoom = EJ_BG_ZOOM, panX = EJ_BG_PAN_X, panY = EJ_BG_PAN_Y },
+        }
+    end
+    return p.artTune[kind] or p.artTune.dungeon
+end
+
+-- Read / live-update the scene art tuning for a kind. SetArtTune re-renders if the Dashboard is open
+-- so a Dev slider drag is reflected immediately. field is "zoom" | "panX" | "panY".
+function Dashboard:GetArtTune(kind) return self:_ArtTune(kind) end
+function Dashboard:SetArtTune(kind, field, value)
+    self:_ArtTune(kind)[field] = value
+    self:_RenderIfShown()
+end
+
+function Dashboard:_InstanceArt(name, kind)
     local p = self:_p()
     if not name then return nil end
     if p.ejBg and p.ejBg[name] then
+        local t = self:_ArtTune(kind or "dungeon")
         return { texture = p.ejBg[name], cover = true, aspect = EJ_BG_ASPECT,
-                 zoom = EJ_BG_ZOOM, panX = EJ_BG_PAN_X, panY = EJ_BG_PAN_Y }
+                 zoom = t.zoom, panX = t.panX, panY = t.panY }
     end
     if p.ejImage and p.ejImage[name] then return { texture = p.ejImage[name], texCoord = EJ_TILE_TC, zoom = EJ_TILE_ZOOM } end
     return nil
@@ -373,19 +396,19 @@ end
 function Dashboard:_LatestRaidArt()
     local p = self:_p()
     local r = p.ejRaidsByTier and p.currentExpansion and p.ejRaidsByTier[p.currentExpansion]
-    if r and #r > 0 then return self:_InstanceArt(r[#r]) end
+    if r and #r > 0 then return self:_InstanceArt(r[#r], "raid") end
 end
 
 function Dashboard:_LatestDungeonArt()
     local p = self:_p()
     local d = p.ejDungeonsByTier and p.currentExpansion and p.ejDungeonsByTier[p.currentExpansion]
-    if d and #d > 0 then return self:_InstanceArt(d[#d]) end
+    if d and #d > 0 then return self:_InstanceArt(d[#d], "dungeon") end
 end
 
 -- A RANDOM current-season dungeon's art for the Current Season tile. Picked once, then cached.
 function Dashboard:_SeasonDungeonArt()
     local p = self:_p()
-    if p.seasonPicName then return self:_InstanceArt(p.seasonPicName) end
+    if p.seasonPicName then return self:_InstanceArt(p.seasonPicName, "dungeon") end
     local s = self:_SeasonDungeons()
     if not s then return nil end
     local cand = {}
@@ -394,7 +417,7 @@ function Dashboard:_SeasonDungeonArt()
     end
     if #cand == 0 then return nil end
     p.seasonPicName = cand[math.random(#cand)]
-    return self:_InstanceArt(p.seasonPicName)
+    return self:_InstanceArt(p.seasonPicName, "dungeon")
 end
 
 -- Distinct expansions in the registry for one kind (raids if wantRaid, else dungeons), the

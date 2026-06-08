@@ -17,6 +17,28 @@ ns.version = (C_AddOns and C_AddOns.GetAddOnMetadata
 -- button; also set as ## IconTexture in the .toc for the addon list.
 ns.ICON = "Interface\\AddOns\\HagAIO\\Media\\icon"
 
+-- Developer-character whitelist. Dev-only surfaces (the Dev service's "/hag dev" command, the
+-- always-on Dev settings module, and "/hag cvar dump") register/run ONLY on these characters, so
+-- they never reach normal users. Keyed "Name-Realm" (realm normalised: spaces stripped).
+ns.DEV_WHITELIST = {
+    ["Hagryph-Stormscale"] = true,
+}
+
+-- True on a whitelisted developer character. Safe to call at file-load time: UnitName/realm are
+-- available once the player unit exists (before PLAYER_LOGIN). The answer is cached once the
+-- identity resolves; while it's still unknown we return false WITHOUT caching, so a later call
+-- (e.g. at PLAYER_LOGIN) can still resolve it.
+function ns.IsDevChar()
+    if ns._isDevChar ~= nil then return ns._isDevChar end
+    local name = UnitName and UnitName("player")
+    if not name or name == "" then return false end          -- identity not ready yet; don't cache
+    local realm = (GetNormalizedRealmName and GetNormalizedRealmName())
+        or (GetRealmName and GetRealmName()) or ""
+    realm = realm:gsub("%s+", "")
+    ns._isDevChar = ns.DEV_WHITELIST[name .. "-" .. realm] == true
+    return ns._isDevChar
+end
+
 -- Registry slots (ns.<Name>) documenting the shape of the namespace. GENERATED at deploy
 -- by tools/autogen/NamespaceSlots.ps1 and injected below this marker into the DEPLOYED
 -- copy; the repo source keeps only the marker so it stays free of the derived block.

@@ -378,7 +378,10 @@ end
 -- ---- slash ----------------------------------------------------------------
 function CVars:_Slash(rest)
     local cmd, arg = ns.SlashParse:Split(rest)   -- pure tokeniser (Lib/SlashParse.lua)
-    if cmd == "dump" then
+    -- "dump" (enumerate every CVar) is a developer-only command: available only on a whitelisted dev
+    -- character. Off-whitelist it isn't handled or advertised; the rest of /hag cvar works for everyone.
+    local devChar = ns.IsDevChar and ns.IsDevChar()
+    if cmd == "dump" and devChar then
         self:_Dump(arg)
     elseif cmd == "set" then
         local name, value = ns.SlashParse:Pair(arg)
@@ -394,7 +397,8 @@ function CVars:_Slash(rest)
     elseif cmd == "list" then
         self:_List()
     else
-        self:LogInfo("|cffffff00/hag cvar|r dump [filter] | set <name> <value> | get <name> | clear <name> | list")
+        local dumpHint = devChar and "dump [filter] | " or ""
+        self:LogInfo("|cffffff00/hag cvar|r " .. dumpHint .. "set <name> <value> | get <name> | clear <name> | list")
     end
 end
 
@@ -460,8 +464,10 @@ ns.ModuleManager:Register(CVars:New("CVars", {
     description = "Force useful console variables on every character. Grouped, typed controls plus custom CVars.",
     defaultEnabled = false,
     color = ns.Theme.hex.red,
-    deps = { "SlashCommand", "Dev", "SettingsWindow" },  -- routing + enumeration + page refresh (type inference is a pure Lib: ns.CVarHelper, always available)
-    commands = { cvar = { handler = "_Slash", help = "console variables: dump / set / get / clear / list" } },
+    deps = { "SlashCommand", "SettingsWindow" },  -- routing + page refresh (type inference is a pure Lib: ns.CVarHelper, always available). The full-dump enumeration (ns.Dev) is dev-only and optional, so it isn't a hard dep.
+    -- "dump" is dev-only (see _Slash); don't advertise it to normal users in /hag help.
+    commands = { cvar = { handler = "_Slash",
+        help = "console variables: " .. ((ns.IsDevChar and ns.IsDevChar()) and "dump / " or "") .. "set / get / clear / list" } },
     -- Persisted structure (seeded on bind, before OnInitialize):
     dbSchema = {
         managed = {},  -- name -> value (account-wide, re-applied each login)
