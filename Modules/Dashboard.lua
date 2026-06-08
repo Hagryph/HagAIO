@@ -85,14 +85,24 @@ local EJ_TILE_TC = { 0, 0.68359375, 0, 0.7421875 }
 -- The journal crop lands on the art region but these textures still carry a little padding inside
 -- it, so we additionally ZOOM (WeakAuras style) toward the centre to eat it and let the art fill.
 local EJ_TILE_ZOOM = 0.4
--- Vertical nudge (frame-pixels, +down / -up) for the auto-centred cover-crop of the scene. 0 keeps
--- the middle of the scene; bump it to shift the visible band up or down.
+-- The scene (bgImage) is stored in a power-of-two file with transparent padding ONLY on the right
+-- (~32%); it fills the full height (no bottom padding). The real art ends at these texcoords. The
+-- cover-crop crops this padding out first, then fits the real art to the tile -- otherwise the
+-- padding shows as empty space and the art only fills part of the width.
+local EJ_BG_BOUNDS = { 0, 0.68359375, 0, 1 }
+-- The art file is 1024x512 (px width/height = 2), so a texcoord step in x covers twice the pixels
+-- of one in y. The cover-crop needs this to fit the real art to the tile without distortion.
+local EJ_BG_FILE_AR = 2
+-- Nudge (frame-pixels, + = down/right / - = up/left) for the auto-centred cover-crop of the scene,
+-- applied along whichever axis gets cropped. 0 keeps the middle of the scene.
 local EJ_FOCUS_OFFSET = 0
 
--- Copy an art descriptor ({texture, cover, offset, texCoord, zoom} from _InstanceArt) onto a tile.
+-- Copy an art descriptor ({texture, cover, offset, texCoord, zoom, bounds, fileAspect} from
+-- _InstanceArt) onto a tile.
 local function applyArt(tile, art)
     tile.texture, tile.cover, tile.offset, tile.texCoord, tile.zoom =
         art.texture, art.cover, art.offset, art.texCoord, art.zoom
+    tile.bounds, tile.fileAspect = art.bounds, art.fileAspect
 end
 
 local CATEGORIES = {
@@ -352,7 +362,10 @@ end
 function Dashboard:_InstanceArt(name)
     local p = self:_p()
     if not name then return nil end
-    if p.ejBg and p.ejBg[name] then return { texture = p.ejBg[name], cover = true, offset = EJ_FOCUS_OFFSET } end
+    if p.ejBg and p.ejBg[name] then
+        return { texture = p.ejBg[name], cover = true, offset = EJ_FOCUS_OFFSET,
+                 bounds = EJ_BG_BOUNDS, fileAspect = EJ_BG_FILE_AR }
+    end
     if p.ejImage and p.ejImage[name] then return { texture = p.ejImage[name], texCoord = EJ_TILE_TC, zoom = EJ_TILE_ZOOM } end
     return nil
 end
