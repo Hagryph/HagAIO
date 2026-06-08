@@ -150,6 +150,7 @@ function Misc:_OnTakeTaxi(slot)
     -- resolve the expected time NOW, while the flight map (taxi data) is still
     -- open -- GetNumRoutes/TaxiGetNodeSlot stop working once it closes.
     p.known = (self:_RouteTime(p.src, dst, slot, dst))
+    p.fullKnown = p.known                 -- baseline full-route estimate; early-stop falls back to it
     p.path = self:_BuildPath(slot, dst)   -- ordered nodes (+world pos) for timing/landing
     p.earlyLanding = false                -- reset any prior Request-Stop redirect
     p.phase = "boarding"
@@ -563,7 +564,12 @@ function Misc:_UpdateEarlyTarget()
     if segTotal and lastPassT then
         p.known = (lastPassT - (p.startTime or lastPassT)) + segTotal
     else
-        p.known = nil
+        -- The remaining leg to the early-stop node isn't individually measured (routes usually
+        -- store only an end-to-end span, not its atomic legs) or we have no crossing time for
+        -- the last node yet. Rather than BLANK the bar, fall back to the full-route estimate
+        -- resolved at take-off -- a valid UPPER bound for any earlier stop (you arrive no later
+        -- than the final node). We don't fabricate a new number; we reuse the measured one.
+        p.known = p.fullKnown
     end
 end
 
