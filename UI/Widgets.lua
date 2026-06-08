@@ -581,14 +581,17 @@ function Widgets.ScrollArea(parent, name)
 
     function sa:Update()
         local vh, ch = sf:GetHeight() or 1, content:GetHeight() or 1
+        local m = math.max(0, ch - vh)
+        if sf:GetVerticalScroll() > m then sf:SetVerticalScroll(m) end   -- clamp when content shrank
         if ch <= vh + 1 then track:Hide(); thumb:Hide(); return end
         track:Show(); thumb:Show()
         local th = math.max(20, vh * vh / ch)
         thumb:SetHeight(th)
-        local m = maxScroll()
         local y = (m > 0) and -((vh - th) * (sf:GetVerticalScroll() / m)) or 0
         thumb:ClearAllPoints(); thumb:SetPoint("TOPRIGHT", sa, "TOPRIGHT", 0, y)
     end
+
+    sa.ScrollTop = function() sf:SetVerticalScroll(0); sa:Update() end
 
     sf:SetScript("OnSizeChanged", function(_, w) content:SetWidth(w); sa:Update() end)
     sf:EnableMouseWheel(true)
@@ -705,6 +708,7 @@ function Widgets.Grid(parent, opts)
 
     function g:SetColumns(cols) g.columns = cols or {}; g:Refresh() end
     function g:SetRows(data)    g._data = data; g:Refresh() end
+    function g:ScrollTop()      if g.scrollArea then g.scrollArea:ScrollTop() end end
 
     function g:Refresh()
         local width = bodyWidth()   -- the ScrollArea keeps content width = viewport (no manual set)

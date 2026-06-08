@@ -477,7 +477,11 @@ function Dashboard:_Build()
         items = self:_NavItems(),
         scroll = true, name = "HagAIODashboardNav",   -- themed scrollbar; bounded to the rail
         cellPad = 7,   -- 3px bar + 4px gap, so the label clears the active bar
-        onSelect = function(key) p.category = key; self:_Render() end,
+        onSelect = function(key)
+            p.category = key
+            self:_Render()
+            if p.grid then p.grid:ScrollTop() end   -- a new category starts at the top
+        end,
     })
     nav:SetPoint("TOPLEFT", div, "BOTTOMLEFT", 6, -10)
     nav:SetPoint("BOTTOMRIGHT", rail, "BOTTOMRIGHT", -6, 8)
