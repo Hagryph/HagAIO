@@ -475,6 +475,7 @@ function Dashboard:_Build()
     -- the category tree is a Navigation widget; selecting a category re-renders the data grid
     local nav = W.Nav(rail, {
         items = self:_NavItems(),
+        scroll = true, name = "HagAIODashboardNav",   -- themed scrollbar; bounded to the rail
         cellPad = 7,   -- 3px bar + 4px gap, so the label clears the active bar
         onSelect = function(key) p.category = key; self:_Render() end,
     })
@@ -515,18 +516,22 @@ end
 -- Categories the player has hidden in the settings are skipped, and a section header with no
 -- visible items beneath it is dropped.
 function Dashboard:_NavItems()
+    local cat = self:_p().category or ""
+    -- expansion sub-nodes stay COLLAPSED until that category (or one of its sub-keys) is active
+    local raidsOpen = cat == "raids" or cat:match("^raid:") ~= nil
+    local dungeonsOpen = cat == "dungeons" or cat:match("^dungeon:") ~= nil
     local items = {}
-    for _, cat in ipairs(CATEGORIES) do
-        if cat.header then
-            items[#items + 1] = { section = cat.label }
-        elseif self:_CategoryVisible(cat.key) then
-            items[#items + 1] = { key = cat.key, label = cat.label, indent = cat.indent and 1 or 0 }
-            -- a deeper sub-node per expansion you hold a lock in (current first), for Raids/Dungeons
-            if cat.key == "raids" then
+    for _, c in ipairs(CATEGORIES) do
+        if c.header then
+            items[#items + 1] = { section = c.label }
+        elseif self:_CategoryVisible(c.key) then
+            items[#items + 1] = { key = c.key, label = c.label, indent = c.indent and 1 or 0 }
+            -- a deeper sub-node per expansion, only while this category is open (collapsible tree)
+            if c.key == "raids" and raidsOpen then
                 for _, exp in ipairs(self:_RaidExpansions()) do      -- all raid tiers (full catalog)
                     items[#items + 1] = { key = "raid:" .. exp, label = exp, indent = 2 }
                 end
-            elseif cat.key == "dungeons" then
+            elseif c.key == "dungeons" and dungeonsOpen then
                 if self:_SeasonDungeons() then
                     items[#items + 1] = { key = "dungeon:current", label = "Current Season", indent = 2 }
                 end

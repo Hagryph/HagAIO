@@ -547,6 +547,73 @@ function Widgets.Window(level, opts)
     return f
 end
 
+-- A vertically scrollable area with a CUSTOM themed scrollbar (no Blizzard template, so no grey
+-- arrows). Mouse-wheel + draggable thumb; the thumb auto-sizes to the content/viewport ratio and
+-- hides when everything fits. Fill `.content` (the scroll child, auto-matched to the viewport
+-- width so only the vertical axis scrolls), then call :Update() after its height changes.
+function Widgets.ScrollArea(parent, name)
+    local BAR = 5
+    local sa = CreateFrame("Frame", nil, parent)
+
+    local sf = CreateFrame("ScrollFrame", name, sa)
+    sf:SetPoint("TOPLEFT", 0, 0)
+    sf:SetPoint("BOTTOMRIGHT", -(BAR + 3), 0)
+    local content = CreateFrame("Frame", nil, sf)
+    content:SetSize(1, 1)
+    sf:SetScrollChild(content)
+    sa.scroll, sa.content = sf, content
+
+    local track = sa:CreateTexture(nil, "BACKGROUND")
+    track:SetColorTexture(Theme.Unpack("panel2", 0.6))
+    track:SetWidth(BAR)
+    track:SetPoint("TOPRIGHT"); track:SetPoint("BOTTOMRIGHT")
+
+    local thumb = CreateFrame("Frame", nil, sa)
+    thumb:SetWidth(BAR)
+    local thumbTex = thumb:CreateTexture(nil, "ARTWORK"); thumbTex:SetAllPoints()
+    thumbTex:SetColorTexture(Theme.Unpack("borderStrong"))
+
+    local function maxScroll() return math.max(0, (content:GetHeight() or 0) - (sf:GetHeight() or 0)) end
+    local function set(v)
+        sf:SetVerticalScroll(math.max(0, math.min(maxScroll(), v)))
+        sa:Update()
+    end
+
+    function sa:Update()
+        local vh, ch = sf:GetHeight() or 1, content:GetHeight() or 1
+        if ch <= vh + 1 then track:Hide(); thumb:Hide(); return end
+        track:Show(); thumb:Show()
+        local th = math.max(20, vh * vh / ch)
+        thumb:SetHeight(th)
+        local m = maxScroll()
+        local y = (m > 0) and -((vh - th) * (sf:GetVerticalScroll() / m)) or 0
+        thumb:ClearAllPoints(); thumb:SetPoint("TOPRIGHT", sa, "TOPRIGHT", 0, y)
+    end
+
+    sf:SetScript("OnSizeChanged", function(_, w) content:SetWidth(w); sa:Update() end)
+    sf:EnableMouseWheel(true)
+    sf:SetScript("OnMouseWheel", function(_, d) set(sf:GetVerticalScroll() - d * 32) end)
+
+    thumb:EnableMouse(true)
+    thumb:SetScript("OnEnter", function() thumbTex:SetColorTexture(Theme.Unpack("accent")) end)
+    thumb:SetScript("OnLeave", function() thumbTex:SetColorTexture(Theme.Unpack("borderStrong")) end)
+    thumb:RegisterForDrag("LeftButton")
+    thumb:SetScript("OnDragStart", function()
+        local _, cy0 = GetCursorPosition()
+        local s0 = sf:GetVerticalScroll()
+        thumb:SetScript("OnUpdate", function()
+            local _, cy = GetCursorPosition()
+            local travel = (sf:GetHeight() or 0) - thumb:GetHeight()
+            if travel > 0 then
+                set(s0 + ((cy0 - cy) / UIParent:GetEffectiveScale() / travel) * maxScroll())
+            end
+        end)
+    end)
+    thumb:SetScript("OnDragStop", function() thumb:SetScript("OnUpdate", nil) end)
+
+    return sa
+end
+
 -- Column-aligned GRID -- the one row/column layout engine. Define columns ONCE (width +
 -- header label + justify); the optional sticky header AND every data row derive their cell
 -- x-positions from the SAME column spec, so alignment is structural, never hand-offset. The
@@ -600,10 +667,10 @@ function Widgets.Grid(parent, opts)
 
     local content
     if opts.scroll ~= false then
-        local sf = Widgets.ScrollFrame(g, opts.name)
-        sf:SetPoint("TOPLEFT", header and headerDiv or g, header and "BOTTOMLEFT" or "TOPLEFT", 0, header and -6 or 0)
-        sf:SetPoint("BOTTOMRIGHT", -22, 0)
-        g.scroll, content = sf, sf.content
+        local sa = Widgets.ScrollArea(g, opts.name)   -- custom themed scrollbar
+        sa:SetPoint("TOPLEFT", header and headerDiv or g, header and "BOTTOMLEFT" or "TOPLEFT", 0, header and -6 or 0)
+        sa:SetPoint("BOTTOMRIGHT", g, "BOTTOMRIGHT", 0, 0)
+        g.scrollArea, g.scroll, content = sa, sa.scroll, sa.content
     else
         content = CreateFrame("Frame", nil, g)
         content:SetPoint("TOPLEFT", header and headerDiv or g, header and "BOTTOMLEFT" or "TOPLEFT", 0, header and -6 or 0)
@@ -640,8 +707,7 @@ function Widgets.Grid(parent, opts)
     function g:SetRows(data)    g._data = data; g:Refresh() end
 
     function g:Refresh()
-        local width = bodyWidth()
-        if g.scroll then content:SetWidth(width) end
+        local width = bodyWidth()   -- the ScrollArea keeps content width = viewport (no manual set)
         local xs = colX(width)
 
         if header then
@@ -661,7 +727,7 @@ function Widgets.Grid(parent, opts)
             for ci = #r.cells + 1, #g.columns do
                 r.cells[ci] = Widgets.Text(r, "", "text", "GameFontHighlightSmall")
             end
-            r:ClearAllPoints(); r:SetPoint("TOPLEFT", 0, y); r:SetPoint("RIGHT", g, "RIGHT", g.scroll and -22 or 0, 0)
+            r:ClearAllPoints(); r:SetPoint("TOPLEFT", 0, y); r:SetPoint("RIGHT", content, "RIGHT", 0, 0)
             r:SetScript("OnClick", nil); r:SetScript("OnEnter", nil); r:SetScript("OnLeave", nil); r:EnableMouse(false)
             r.bar:Hide(); r.sectionFS:Hide(); r.bg:SetColorTexture(0, 0, 0, 0)
             for _, fs in ipairs(r.cells) do fs:Hide() end
@@ -704,6 +770,7 @@ function Widgets.Grid(parent, opts)
         end
         for i = #data + 1, #rows do rows[i]:Hide() end
         content:SetHeight(math.max(1, -y))
+        if g.scrollArea then g.scrollArea:Update() end   -- resize/position the custom scrollbar
     end
 
     return g
