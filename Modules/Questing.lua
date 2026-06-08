@@ -44,22 +44,23 @@ function Questing:_CurrentQuestID()
     return GetQuestID and GetQuestID() or nil
 end
 
--- The account-wide set of known-timed questIDs ({ [questID] = true }), or nil before
--- SavedVariables load. Learned over time (see _OnQuestAccepted); shared across characters.
+-- The account-wide registry of known-timed quests ({ [questID] = totalSeconds }), or nil
+-- before SavedVariables load. Learned over time (see _OnQuestAccepted), shared across
+-- characters. (Older entries may be the boolean `true` -- pre-seconds; still truthy.)
 function Questing:_TimedRegistry()
     local store = self:_Store()
     return store and store.timed or nil
 end
 
--- A quest's live time limit is only readable once it's in your log -- this returns true
--- only then (offered quests always report nothing). C_QuestLog.GetTimeAllowed gives a
--- positive total for timed quests and nothing for ordinary ones.
-function Questing:_LiveTimed(questID)
+-- A quest's live time limit, in seconds, is only readable once it's in your log (offered
+-- quests always report nothing). C_QuestLog.GetTimeAllowed gives a positive total for timed
+-- quests and nothing for ordinary ones. Returns the number or nil.
+function Questing:_LiveSeconds(questID)
     if questID and C_QuestLog and C_QuestLog.GetTimeAllowed then
         local total = C_QuestLog.GetTimeAllowed(questID)
-        if total and total > 0 then return true end
+        if total and total > 0 then return total end
     end
-    return false
+    return nil
 end
 
 -- The pre-accept gate: a quest is treated as timed if we've LEARNED it is (account-wide
@@ -69,17 +70,23 @@ function Questing:_IsTimedQuest(questID)
     if not questID then return false end
     local reg = self:_TimedRegistry()
     if reg and reg[questID] then return true end
-    return self:_LiveTimed(questID)
+    return self:_LiveSeconds(questID) ~= nil
 end
 
--- Record a questID as timed in the account-wide registry. Returns true if newly added.
-function Questing:_RememberTimed(questID)
+-- The known time limit (seconds) for a timed quest, or nil. Prefers a live in-log timer,
+-- falls back to the learned registry value (a number; an older boolean entry yields nil).
+function Questing:_TimedSeconds(questID)
+    local live = self:_LiveSeconds(questID)
+    if live then return live end
     local reg = self:_TimedRegistry()
-    if reg and questID and not reg[questID] then
-        reg[questID] = true
-        return true
-    end
-    return false
+    local v = reg and questID and reg[questID]
+    return type(v) == "number" and v or nil
+end
+
+-- Record a questID as timed in the account-wide registry, storing its time limit (seconds).
+function Questing:_RememberTimed(questID, seconds)
+    local reg = self:_TimedRegistry()
+    if reg and questID then reg[questID] = seconds or true end
 end
 
 function Questing:_QuestTitle(questID)

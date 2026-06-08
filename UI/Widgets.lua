@@ -782,6 +782,9 @@ end
 function Widgets.Grid(parent, opts)
     opts = opts or {}
     local g = CreateFrame("Frame", nil, parent)
+    -- clip everything (the sticky header's columns + the scrolled rows) to the grid's own bounds, so a
+    -- table wider/taller than its area is cut at the edge instead of spilling over the rest of the UI.
+    if g.SetClipsChildren then g:SetClipsChildren(true) end
     g.columns = opts.columns or {}
     local rowH       = opts.rowHeight or 22
     local indentStep = opts.indentStep or 12

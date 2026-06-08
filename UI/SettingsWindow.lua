@@ -159,12 +159,15 @@ function SettingsWindow:_BuildModulesPage(parent)
     div:SetPoint("TOPLEFT", note, "BOTTOMLEFT", 0, -12)
     div:SetPoint("RIGHT", page, "RIGHT", -18, 0)
 
-    local holder = CreateFrame("Frame", nil, page)
-    holder:SetPoint("TOPLEFT", div, "BOTTOMLEFT", 0, -12)
-    holder:SetPoint("BOTTOMRIGHT", page, "BOTTOMRIGHT", -18, 16)
+    -- the rows live in a scroll area so a long module list scrolls (and clips) instead of spilling
+    -- past the window. ScrollArea syncs its content width + clips the viewport for us.
+    local sa = W.ScrollArea(page, "HagAIOModulesScroll")
+    sa:SetPoint("TOPLEFT", div, "BOTTOMLEFT", 0, -12)
+    sa:SetPoint("BOTTOMRIGHT", page, "BOTTOMRIGHT", -18, 16)
 
     local p = self:_p()
-    p.moduleHolder = holder
+    p.moduleHolder = sa.content
+    p.moduleScroll = sa
     p.moduleRows = {}
     return page
 end
@@ -231,6 +234,10 @@ function SettingsWindow:_RefreshModules()
             y = y - 48
         end
     end
+    -- size the scroll child to the rows so it scrolls when the list outgrows the viewport (the
+    -- ScrollArea keeps the content WIDTH synced + shows/hides its bar from this height)
+    holder:SetHeight(math.max(1, -y))
+    if p.moduleScroll then p.moduleScroll:Update() end
 end
 
 -- Static "General" page: addon-wide options. Its contents are CONTRIBUTED by
