@@ -279,9 +279,10 @@ end
 
 function Questing:_OnDetail()
     if not self:GetSetting("autoAccept") or self:_Paused() then return end
-    -- Never auto-accept a timed quest, regardless of the other accept settings -- leave it
-    -- open for a manual choice. This is the universal gate: gossip/greeting selections all
-    -- open the quest-detail window before any quest is accepted.
+    -- Skip quests we already KNOW are timed (learned account-wide) before accepting. This is
+    -- the universal gate: gossip/greeting selections all open the quest-detail window before
+    -- any quest is accepted. A first-seen timed quest is unknown here and gets caught
+    -- post-accept by _OnQuestAccepted, then remembered so it lands here next time.
     local qid = self:_CurrentQuestID()
     if self:_IsTimedQuest(qid) then
         self:LogEchoInfo("skipped timed quest:", GetTitleText())
