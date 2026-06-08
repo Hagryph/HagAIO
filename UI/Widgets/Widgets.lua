@@ -62,35 +62,33 @@ function Widget:SetAlpha(a)        self:_p().frame:SetAlpha(a);             retu
 
 -- ---- reactive enable/disable (declarative grey-out) ------------------------------------------------
 -- CHANGEABLE mixin: makes an interactive widget an OBSERVABLE change source -- through ns.EventBus, NOT
--- a hand-rolled callback list. Each widget owns a UNIQUE EventBus message (its identity), so a
--- dependent subscribes to exactly the widget(s) it cares about, never a global broadcast. :OnChange(fn)
--- subscribes (fn gets (message, self, value) -- the event carries the widget + its new value, EventBus
--- style); the widget Emits via :_fireChange(value) after a user OR programmatic state change. Mixed
--- into Toggle/Segmented/Input/Slider/ColorSwatch.
-local nextChangeMsg = 0
+-- a hand-rolled callback list. There is ONE shared message, "Widget.Changed", and the changing widget
+-- ITSELF is the argument (plus its new value) -- so a subscriber gets the real widget back and can read
+-- it, instead of decoding identity from a message name. :OnChange(fn) is the convenience that filters
+-- that message to THIS widget (fn gets (self, value)); the widget Emits via :_fireChange(value) after a
+-- user OR programmatic state change. Mixed into Toggle/Segmented/Input/Slider/ColorSwatch.
+local CHANGED = "Widget.Changed"
 local Changeable = ns.Mixin.new("Changeable", {
-    -- this widget's unique EventBus message name (lazily assigned on first use)
-    _changeMsg = function(self)
-        local p = self:_p()
-        if not p.changeMsg then nextChangeMsg = nextChangeMsg + 1; p.changeMsg = "Widget.Change#" .. nextChangeMsg end
-        return p.changeMsg
+    OnChange = function(self, fn)
+        return ns.EventBus and ns.EventBus:Subscribe(CHANGED, function(_, widget, value)
+            if widget == self then fn(widget, value) end
+        end)
     end,
-    -- subscribe to THIS widget's change message; returns the EventBus token (for Unsubscribe)
-    OnChange = function(self, fn) return ns.EventBus and ns.EventBus:Subscribe(self:_changeMsg(), fn) end,
-    -- broadcast this widget's change through the EventBus (carries the widget + its new value)
     _fireChange = function(self, value)
-        if ns.EventBus then ns.EventBus:Emit(self:_changeMsg(), self, value) end
+        if ns.EventBus then ns.EventBus:Emit(CHANGED, self, value) end
     end,
 })
 
--- Grey this widget out unless `predicate()` holds. Re-checked when ANY of the given `sources` (one
--- Changeable widget or a list) fires a change -- so it watches ONLY the widgets it depends on, never a
--- global broadcast -- and once now for the initial state. When this widget's own enabled state flips
--- it propagates a change too, so a dependency CHAIN cascades (the graph is acyclic, so no loop). No-op
--- without :SetEnabled (labels/notes). Returns self.
+-- Grey this widget out unless `predicate()` holds. Re-checked when one of the given `sources` (a
+-- Changeable widget or a list) changes -- subscribe ONCE to "Widget.Changed" and act only when the
+-- changed widget is one we watch, so it reacts to its dependencies, not a global broadcast -- and once
+-- now for the initial state. When this widget's own enabled state flips it emits a change too, so a
+-- dependency CHAIN cascades (the graph is acyclic, so no loop). No-op without :SetEnabled. Returns self.
 function Widget:EnableWhen(sources, predicate)
     if not (self.SetEnabled and type(predicate) == "function") then return self end
     local list = (type(sources) == "table" and sources.IsInstanceOf) and { sources } or (sources or {})
+    local watch = {}
+    for _, s in ipairs(list) do watch[s] = true end
     local last
     local function reeval()
         local ok, on = pcall(predicate)
@@ -102,8 +100,8 @@ function Widget:EnableWhen(sources, predicate)
             if self._fireChange then self:_fireChange() end   -- cascade to widgets depending on me
         end
     end
-    for _, src in ipairs(list) do
-        if src.OnChange then src:OnChange(reeval) end
+    if next(watch) and ns.EventBus then
+        ns.EventBus:Subscribe(CHANGED, function(_, widget) if watch[widget] then reeval() end end)
     end
     reeval()
     return self
