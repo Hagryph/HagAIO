@@ -708,7 +708,7 @@ function Dashboard:_Build()
     local p = self:_p()
     if p.built then return end
 
-    local f = W.Window(100, { name = "HagAIODashboard", width = 860, height = 520,
+    local f = W.Window:New(100, { name = "HagAIODashboard", width = 860, height = 520,
         strata = "HIGH", title = "Dashboard", onClose = function() self:Hide() end,
         autoClose = true,
         onAutoShow = function() self:Show() end,
@@ -721,31 +721,31 @@ function Dashboard:_Build()
     p.frame = f
 
     -- left rail: character card + category nav grid
-    local rail = W.Panel(f.body, "bg0", "border")
+    local rail = W.Panel:New(f.body, "bg0", "border")
     rail:SetWidth(RAIL_W)
     rail:SetPoint("TOPLEFT", 0, 0)
     rail:SetPoint("BOTTOMLEFT", 0, 0)
 
     -- character card: avatar (framed portrait widget) + name / level-ilvl / rating.
-    local avFrame = W.Avatar(rail, AVATAR)
+    local avFrame = W.Avatar:New(rail, AVATAR)
     avFrame:SetPoint("TOPLEFT", 14, -14)
     p.avatar = avFrame
 
-    local hName = W.Text(rail, "", "text", "GameFontNormal")
+    local hName = W.Text:New(rail, "", "text", "GameFontNormal")
     hName:SetPoint("TOPLEFT", avFrame, "TOPRIGHT", 10, -1)
     hName:SetWidth(RAIL_W - AVATAR - 30); hName:SetJustifyH("LEFT"); hName:SetWordWrap(false)
-    local hInfo = W.Text(rail, "", "textDim", "GameFontHighlightSmall")
+    local hInfo = W.Text:New(rail, "", "textDim", "GameFontHighlightSmall")
     hInfo:SetPoint("TOPLEFT", hName, "BOTTOMLEFT", 0, -5)
-    local hRating = W.Text(rail, "", "accent", "GameFontHighlightSmall")
+    local hRating = W.Text:New(rail, "", "accent", "GameFontHighlightSmall")
     hRating:SetPoint("TOPLEFT", hInfo, "BOTTOMLEFT", 0, -3)
     p.hName, p.hInfo, p.hRating = hName, hInfo, hRating
 
-    local div = W.Divider(rail)
+    local div = W.Divider:New(rail)
     div:SetPoint("TOPLEFT", avFrame, "BOTTOMLEFT", 0, -14)
     div:SetPoint("RIGHT", rail, "RIGHT", -12, 0)
 
     -- the category tree is a Navigation widget; selecting a category re-renders the data grid
-    local nav = W.Nav(rail, {
+    local nav = W.Nav:New(rail, {
         items = self:_NavItems(),
         scroll = true, name = "HagAIODashboardNav",   -- themed scrollbar; bounded to the rail
         cellPad = 7,   -- 3px bar + 4px gap, so the label clears the active bar
@@ -762,21 +762,21 @@ function Dashboard:_Build()
     p.nav = nav
 
     -- content: reset header + category title + the data grid
-    local content = W.Panel(f.body, "panel", "border")
+    local content = W.Panel:New(f.body, "panel", "border")
     content:SetPoint("TOPLEFT", rail, "TOPRIGHT", 1, 0)
     content:SetPoint("BOTTOMRIGHT", f.body, "BOTTOMRIGHT", 0, 0)
     p.contentPanel = content   -- the icon-grid PAGES (see _IconPage) anchor over the data-grid area
 
-    local resetHdr = W.Text(content, "", "textDim", "GameFontHighlightSmall")
+    local resetHdr = W.Text:New(content, "", "textDim", "GameFontHighlightSmall")
     resetHdr:SetPoint("TOPLEFT", 16, -12); resetHdr:SetPoint("RIGHT", content, "RIGHT", -16, 0)
     resetHdr:SetJustifyH("LEFT")
     p.resetHdr = resetHdr
 
-    local catTitle = W.Text(content, "", "text", "GameFontNormalLarge")
+    local catTitle = W.Text:New(content, "", "text", "GameFontNormalLarge")
     catTitle:SetPoint("TOPLEFT", resetHdr, "BOTTOMLEFT", 0, -10)
     p.catTitle = catTitle
 
-    local grid = W.Grid(content, { name = "HagAIODashboardGrid", header = true, striped = true })
+    local grid = W.Grid:New(content, { name = "HagAIODashboardGrid", header = true, striped = true })
     grid:SetPoint("TOPLEFT", catTitle, "BOTTOMLEFT", 0, -12)
     grid:SetPoint("BOTTOMRIGHT", content, "BOTTOMRIGHT", -10, 12)
     p.grid = grid
@@ -980,7 +980,7 @@ function Dashboard:_IconPage(key)
     local p = self:_p()
     local g = p.iconPages[key]
     if g then return g end
-    g = W.IconGrid(p.contentPanel, { name = "HagAIODashboardIcons_" .. key, perRow = (key == "home") and 3 or 4 })
+    g = W.IconGrid:New(p.contentPanel, { name = "HagAIODashboardIcons_" .. key, perRow = (key == "home") and 3 or 4 })
     g:SetPoint("TOPLEFT", p.catTitle, "BOTTOMLEFT", 0, -12)
     g:SetPoint("BOTTOMRIGHT", p.contentPanel, "BOTTOMRIGHT", -10, 12)
     g:Hide()

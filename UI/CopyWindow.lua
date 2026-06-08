@@ -44,24 +44,24 @@ function CopyWindow:_Build()
     if p.built then return end
 
     -- shared chrome: movable DIALOG-strata frame + draggable bar + close X (Widgets.Window).
-    local f = W.Window(100, { name = "HagAIOCopyWindow", width = 560, height = 440,
+    local f = W.Window:New(100, { name = "HagAIOCopyWindow", width = 560, height = 440,
         strata = "DIALOG", title = "Copy", onClose = function() self:Hide() end })
     local bar = f.bar
     p.frame = f
     p.title = f.titleFS
 
     -- hint line
-    local hint = W.Text(f, "Press Ctrl+C to copy, then Esc to close.", "textDim", "GameFontHighlightSmall")
+    local hint = W.Text:New(f, "Press Ctrl+C to copy, then Esc to close.", "textDim", "GameFontHighlightSmall")
     hint:SetPoint("TOPLEFT", bar, "BOTTOMLEFT", 16, -10)
 
     -- a "Select all" convenience (text is auto-selected on Show, but a click can
     -- lose the highlight). Re-focuses and re-highlights.
-    local selectAll = W.TextButton(f, "Select all")
+    local selectAll = W.TextButton:New(f, "Select all")
     selectAll:SetPoint("RIGHT", f, "RIGHT", -32, 0)
     selectAll:SetPoint("TOP", hint, "TOP", 0, 3)
     selectAll:SetScript("OnClick", function() self:_SelectAll() end)
 
-    local div = W.Divider(f)
+    local div = W.Divider:New(f)
     div:SetPoint("TOPLEFT", hint, "BOTTOMLEFT", 0, -10)
     div:SetPoint("RIGHT", f, "RIGHT", -16, 0)
 
@@ -72,22 +72,22 @@ function CopyWindow:_Build()
     footer:SetPoint("BOTTOMRIGHT", f, "BOTTOMRIGHT", -16, 12)
     p.footer = footer
 
-    local prev = W.TextButton(footer, "< Prev")
+    local prev = W.TextButton:New(footer, "< Prev")
     prev:SetPoint("LEFT", footer, "LEFT", 0, 0)
     prev:SetScript("OnClick", function() self:_Goto(p.page - 1) end)
     p.prev = prev
 
-    local nextBtn = W.TextButton(footer, "Next >")
+    local nextBtn = W.TextButton:New(footer, "Next >")
     nextBtn:SetPoint("RIGHT", footer, "RIGHT", 0, 0)
     nextBtn:SetScript("OnClick", function() self:_Goto(p.page + 1) end)
     p.next = nextBtn
 
-    local pageLabel = W.Text(footer, "", "textDim", "GameFontHighlightSmall")
+    local pageLabel = W.Text:New(footer, "", "textDim", "GameFontHighlightSmall")
     pageLabel:SetPoint("CENTER", footer, "CENTER", 0, 0)
     p.pageLabel = pageLabel
 
     -- bordered panel housing the scrollable edit box (bottom anchors above footer)
-    local box = W.Panel(f, "panel", "border")
+    local box = W.Panel:New(f, "panel", "border")
     box:SetPoint("TOPLEFT", div, "BOTTOMLEFT", 0, -8)
     box:SetPoint("BOTTOMRIGHT", footer, "TOPRIGHT", 0, 6)
 
@@ -187,7 +187,7 @@ function CopyWindow:Prompt(title, onAccept)
     self:_Build()
     local p = self:_p()
     if not p.acceptBtn then
-        local b = W.TextButton(p.frame, "Import")
+        local b = W.TextButton:New(p.frame, "Import")
         b:SetPoint("CENTER", p.footer, "CENTER", 0, 0)
         p.acceptBtn = b
     end

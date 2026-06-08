@@ -33,7 +33,7 @@ function Dev:BuildSettingsPage(sf)
     -- held by a tile right now, `idle` = images shown before but now by none (link kept, reused if it
     -- returns), `total` = distinct images ever. `widgets` is the reused edit-widget pool (X of which Y
     -- idle). Ticks while the page shows.
-    local stat = W.Text(content, "", "textFaint", "GameFontHighlightSmall")
+    local stat = W.Text:New(content, "", "textFaint", "GameFontHighlightSmall")
     stat:SetPoint("TOPLEFT", 4, -2)
     local acc = 0
     content:SetScript("OnUpdate", function(_, dt)
@@ -47,7 +47,7 @@ function Dev:BuildSettingsPage(sf)
         end
     end)
 
-    local intro = W.Text(content,
+    local intro = W.Text:New(content,
         "Live-tune the Dashboard scene art. Values are per session and reset to the code defaults on reload.",
         "textDim", "GameFontHighlightSmall")
     intro:SetPoint("TOPLEFT", stat, "BOTTOMLEFT", 0, -8)
@@ -70,14 +70,14 @@ function Dev:BuildSettingsPage(sf)
     -- A collapsible group (Dungeon / Raid) of the three sliders. `extra(gc, sy)` (optional) adds
     -- controls under the sliders and returns the new running sy.
     local function buildGroup(kind, title, extra)
-        local g = W.SettingsGroup(content, title)
+        local g = W.SettingsGroup:New(content, title)
         local gc = g:GetContent()
         local sliderW = (width - 20) - 4                 -- group content (PAD 10 each side) minus a hair
         local tune = dash and dash:GetArtTune(kind)
 
         local sy = 0
         for _, r in ipairs(ROWS) do
-            local s = W.Slider(gc, { label = r.label, min = r.min, max = r.max, step = r.step, width = sliderW })
+            local s = W.Slider:New(gc, { label = r.label, min = r.min, max = r.max, step = r.step, width = sliderW })
             s:SetPoint("TOPLEFT", gc, "TOPLEFT", 0, sy)
             s:SetValue(tune and tune[r.field] or r.min)
             s:SetOnChange(function(v) if dash then dash:SetArtTune(kind, r.field, v) end end)
@@ -92,9 +92,9 @@ function Dev:BuildSettingsPage(sf)
     -- Dungeon group gets a "next image" stepper: the Current Season tile cycles through every season
     -- dungeon's splash so each can be inspected (and tuned) in turn. The label shows which is showing.
     buildGroup("dungeon", "Dungeon", function(gc, sy)
-        local btn = W.Button(gc, "Next dungeon image  >")
+        local btn = W.Button:New(gc, "Next dungeon image  >")
         btn:SetPoint("TOPLEFT", gc, "TOPLEFT", 0, sy)
-        local nameFS = W.Text(gc, "", "accent", "GameFontHighlightSmall")
+        local nameFS = W.Text:New(gc, "", "accent", "GameFontHighlightSmall")
         nameFS:SetPoint("LEFT", btn, "RIGHT", 12, 0)
         nameFS:SetPoint("RIGHT", gc, "RIGHT", 0, 0); nameFS:SetJustifyH("LEFT"); nameFS:SetWordWrap(false)
         local function refresh() nameFS:SetText((dash and dash:CurrentSeasonDungeon()) or "open the Dashboard's Dungeons view") end
@@ -108,9 +108,9 @@ function Dev:BuildSettingsPage(sf)
     -- window (per session -- bake the chosen value into Questing's BANNER_Y once it looks right).
     local quest = ns.ModuleManager:GetModule("Questing")
     if quest and quest.SetBannerY then
-        local g = W.SettingsGroup(content, "Advanced Quest Info")
+        local g = W.SettingsGroup:New(content, "Advanced Quest Info")
         local gc = g:GetContent()
-        local s = W.Slider(gc, { label = "Banner Y", min = -60, max = 10, step = 1, width = (width - 20) - 4 })
+        local s = W.Slider:New(gc, { label = "Banner Y", min = -60, max = 10, step = 1, width = (width - 20) - 4 })
         s:SetPoint("TOPLEFT", gc, "TOPLEFT", 0, 0)
         s:SetValue(quest:GetBannerY())
         s:SetOnChange(function(v) quest:SetBannerY(v) end)

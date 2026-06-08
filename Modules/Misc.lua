@@ -450,17 +450,17 @@ end
 function Misc:_BuildFrame()
     local p = self:_p()
     if p.frame then return end
-    local f = W.Panel(UIParent, "panel", "borderStrong")
+    local f = W.Panel:New(UIParent, "panel", "borderStrong")
     f:SetSize(230, 42)
     f:SetFrameStrata("HIGH")
 
-    local dest = W.Text(f, "", "accent", "GameFontNormal")
+    local dest = W.Text:New(f, "", "accent", "GameFontNormal")
     dest:SetPoint("TOPLEFT", 12, -8)
     dest:SetPoint("RIGHT", f, "RIGHT", -70, 0)
     dest:SetJustifyH("LEFT")
     dest:SetWordWrap(false)
 
-    local time = W.Text(f, "", "text", "GameFontNormal")
+    local time = W.Text:New(f, "", "text", "GameFontNormal")
     time:SetPoint("TOPRIGHT", -12, -8)
 
     local bar = CreateFrame("StatusBar", nil, f)
@@ -696,7 +696,7 @@ function Misc:_BuildSellButton()
     -- slot and money area
     b:SetPoint("TOPRIGHT", MerchantFrame, "BOTTOMRIGHT", -4, -2)
     b:SetFrameStrata("HIGH")
-    local fs = W.Text(b, "Sell Junk", "accent", "GameFontNormalSmall")
+    local fs = W.Text:New(b, "Sell Junk", "accent", "GameFontNormalSmall")
     fs:SetPoint("CENTER")
     b:SetScript("OnEnter", function()
         b:SetBackdropColor(Theme.Unpack("panelHover")); fs:SetTextColor(Theme.Unpack("text"))

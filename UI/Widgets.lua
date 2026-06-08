@@ -9,6 +9,96 @@ local Theme = ns.Theme
 ns.UI = ns.UI or {}
 local Widgets = {}
 
+-- ===========================================================================
+-- BASE WIDGET CLASS -- every widget inherits this. It OWNS a private WoW frame (kept in :_p(), never
+-- handed out) and defines only the GENERAL capabilities every widget needs to be placed in a layout:
+-- anchoring, sizing and visibility. Anything frame-specific (scale, colour, text, a portrait, ...) is
+-- NOT here -- a subclass that wants such a power defines its own method exposing exactly it, so each
+-- widget controls its own surface and a raw frame is never reachable from outside this module.
+--
+-- Cross-widget anchoring: SetPoint/SetParent/SetAllPoints accept either a raw region or another
+-- Widget; `unwrap` resolves a Widget to its private frame so WoW still receives a real region.
+local Widget = ns.Class.new("Widget", nil, { abstract = true })
+ns.UI.Widget = Widget
+
+-- Resolve a value that MIGHT be a Widget to the underlying WoW region; pass anything else through.
+local function unwrap(x)
+    if type(x) == "table" and x.IsInstanceOf and x:IsInstanceOf(Widget) then return x:_frame() end
+    return x
+end
+
+-- Subclasses call this once, from :Initialize, with the region they created (after unwrapping their
+-- own parent via `unwrap`). Stores it privately; everything below drives it through :_frame().
+function Widget:_attach(frame) self:_p().frame = frame; return frame end
+
+-- PROTECTED: the private region, for subclasses building their own exposing methods. Not for callers
+-- (the lint forbids :_frame() outside this module) -- it is the single seam other widgets unwrap through.
+function Widget:_frame() return self:_p().frame end
+
+-- ---- general layout / sizing / visibility (every widget) -------------------------------------------
+function Widget:SetPoint(point, a, b, c, d)
+    local f = self:_p().frame
+    if type(a) == "number" or a == nil then f:SetPoint(point, a, b)               -- SetPoint(point [, x, y])
+    else f:SetPoint(point, unwrap(a), b, c, d) end                                -- SetPoint(point, rel, relPoint, x, y)
+    return self
+end
+function Widget:SetAllPoints(rel)  self:_p().frame:SetAllPoints(unwrap(rel)); return self end
+function Widget:ClearAllPoints()   self:_p().frame:ClearAllPoints();         return self end
+function Widget:SetParent(p)       self:_p().frame:SetParent(unwrap(p));     return self end
+function Widget:SetSize(w, h)      self:_p().frame:SetSize(w, h);            return self end
+function Widget:SetWidth(w)        self:_p().frame:SetWidth(w);              return self end
+function Widget:SetHeight(h)       self:_p().frame:SetHeight(h);             return self end
+function Widget:GetWidth()         return self:_p().frame:GetWidth()  end
+function Widget:GetHeight()        return self:_p().frame:GetHeight() end
+function Widget:Show()             self:_p().frame:Show();                   return self end
+function Widget:Hide()             self:_p().frame:Hide();                   return self end
+function Widget:SetShown(b)        self:_p().frame:SetShown(b);              return self end
+function Widget:IsShown()          return self:_p().frame:IsShown() end
+function Widget:SetAlpha(a)        self:_p().frame:SetAlpha(a);             return self end
+
+-- ---- FrameWidget: a widget backed by a real Frame/Button/etc. -- adds the general FRAME powers
+-- (event wiring, mouse, strata). Visual extras (scale, colour) stay opt-in: a subclass that wants
+-- one defines its own method. Interactive widgets (Button, Toggle, Window, ...) extend this.
+local FrameWidget = ns.Class.new("FrameWidget", Widget, { abstract = true })
+function FrameWidget:SetScript(s, fn)      self:_p().frame:SetScript(s, fn);        return self end
+function FrameWidget:HookScript(s, fn)     self:_p().frame:HookScript(s, fn);       return self end
+function FrameWidget:EnableMouse(b)        self:_p().frame:EnableMouse(b);          return self end
+function FrameWidget:EnableMouseWheel(b)   self:_p().frame:EnableMouseWheel(b);     return self end
+function FrameWidget:RegisterForDrag(...)  self:_p().frame:RegisterForDrag(...);    return self end
+function FrameWidget:SetFrameStrata(s)     self:_p().frame:SetFrameStrata(s);       return self end
+function FrameWidget:SetFrameLevel(l)      self:_p().frame:SetFrameLevel(l);        return self end
+
+-- ---- TextWidget: a widget backed by a FontString -- adds text content/justify/colour/measurement.
+local TextWidget = ns.Class.new("TextWidget", Widget, { abstract = true })
+function TextWidget:SetText(s)          self:_p().frame:SetText(s);                 return self end
+function TextWidget:GetText()           return self:_p().frame:GetText() end
+function TextWidget:SetTextColor(...)   self:_p().frame:SetTextColor(...);          return self end
+function TextWidget:SetJustifyH(j)      self:_p().frame:SetJustifyH(j);             return self end
+function TextWidget:SetJustifyV(j)      self:_p().frame:SetJustifyV(j);             return self end
+function TextWidget:SetWordWrap(b)      self:_p().frame:SetWordWrap(b);             return self end
+function TextWidget:SetSpacing(n)       self:_p().frame:SetSpacing(n);              return self end
+function TextWidget:GetStringWidth()    return self:_p().frame:GetStringWidth()  end
+function TextWidget:GetStringHeight()   return self:_p().frame:GetStringHeight() end
+
+-- ---- TextureWidget: a widget backed by a Texture -- adds fill/colour/coords.
+local TextureWidget = ns.Class.new("TextureWidget", Widget, { abstract = true })
+function TextureWidget:SetColorTexture(...) self:_p().frame:SetColorTexture(...);   return self end
+function TextureWidget:SetTexture(...)      self:_p().frame:SetTexture(...);        return self end
+function TextureWidget:SetTexCoord(...)     self:_p().frame:SetTexCoord(...);       return self end
+function TextureWidget:SetVertexColor(...)  self:_p().frame:SetVertexColor(...);    return self end
+function TextureWidget:SetDrawLayer(...)    self:_p().frame:SetDrawLayer(...);      return self end
+
+-- A plain (unstyled) container Frame -- the generic surface other widgets expose as their content /
+-- body region, and the only way a caller gets a parentable area without a raw frame leaking. Pass a
+-- parent to create one under it, or an existing raw region (template = "__adopt__") to wrap in place.
+local ContainerW = ns.Class.new("Container", FrameWidget)
+function ContainerW:Initialize(parent, template)
+    if template == "__adopt__" then self:_attach(parent)   -- internal: wrap an already-created region
+    else self:_attach(CreateFrame("Frame", nil, unwrap(parent))) end
+end
+Widgets.Container = ContainerW
+local function adopt(region) return ContainerW:New(region, "__adopt__") end   -- wrap an existing raw region
+
 -- Frame levels claimed by Widgets.Window, PER STRATA (a level only governs draw order among
 -- frames in the SAME strata), so two windows in one strata never share a level and z-fight. A
 -- requested level that's taken steps DOWN to the highest free level below it and warns with the
@@ -40,95 +130,121 @@ function Widgets.Style(frame, bgKey, borderKey, edgeSize)
     return frame
 end
 
-function Widgets.Panel(parent, bgKey, borderKey)
-    local f = CreateFrame("Frame", nil, parent, "BackdropTemplate")
-    return Widgets.Style(f, bgKey or "panel", borderKey or "border")
+-- A bordered, themed container Frame. Opt-in colour methods (:SetBackdropColor/Border) let the
+-- panels that change tint on hover/state drive their own look.
+local PanelW = ns.Class.new("Panel", FrameWidget)
+function PanelW:Initialize(parent, bgKey, borderKey)
+    local f = CreateFrame("Frame", nil, unwrap(parent), "BackdropTemplate")
+    Widgets.Style(f, bgKey or "panel", borderKey or "border")
+    self:_attach(f)
 end
+function PanelW:SetBackdropColor(...)       self:_frame():SetBackdropColor(...);       return self end
+function PanelW:SetBackdropBorderColor(...) self:_frame():SetBackdropBorderColor(...); return self end
+Widgets.Panel = PanelW   -- construct with Widgets.Panel:New(parent, ...)
 
 -- 1px horizontal hairline (anchor + width set by caller).
-function Widgets.Divider(parent)
-    local t = parent:CreateTexture(nil, "ARTWORK")
+local DividerW = ns.Class.new("Divider", TextureWidget)
+function DividerW:Initialize(parent)
+    local t = unwrap(parent):CreateTexture(nil, "ARTWORK")
     t:SetColorTexture(Theme.Unpack("border"))
     t:SetHeight(1)
-    return t
+    self:_attach(t)
 end
+Widgets.Divider = DividerW
 
 -- A framed portrait/avatar: a themed bordered box whose texture fills it (inset by the border),
 -- with the portrait's baked-in ring trimmed. The single place unit/character portraits are built,
 -- so no surface hand-rolls its own frame+texture. Sized square to `size` if given; anchor like any
 -- widget. Methods: :SetPortrait(unit) (live unit portrait) :SetTexture(file) (an explicit image).
-function Widgets.Avatar(parent, size)
-    local f = Widgets.Panel(parent, "panel2", "borderStrong")
+local AvatarW = ns.Class.new("Avatar", FrameWidget)
+function AvatarW:Initialize(parent, size)
+    local f = CreateFrame("Frame", nil, unwrap(parent), "BackdropTemplate")
+    Widgets.Style(f, "panel2", "borderStrong")
     if size then f:SetSize(size, size) end
     local tex = f:CreateTexture(nil, "ARTWORK")   -- above the backdrop fill so it's never hidden
     tex:SetPoint("TOPLEFT", 2, -2)
     tex:SetPoint("BOTTOMRIGHT", -2, 2)
     tex:SetTexCoord(0.08, 0.92, 0.08, 0.92)        -- trim the portrait's baked-in ring
-    f.tex = tex
-    f.SetPortrait = function(_, unit) if SetPortraitTexture then SetPortraitTexture(tex, unit) end end
-    f.SetTexture  = function(_, file) tex:SetTexture(file) end
-    return f
+    self:_attach(f)
+    self:_p().tex = tex
 end
+function AvatarW:SetPortrait(unit) if SetPortraitTexture then SetPortraitTexture(self:_p().tex, unit) end; return self end
+function AvatarW:SetTexture(file)  self:_p().tex:SetTexture(file); return self end
+Widgets.Avatar = AvatarW
 
-function Widgets.Text(parent, text, key, template)
-    local fs = parent:CreateFontString(nil, "ARTWORK", template or "GameFontHighlight")
+local TextW = ns.Class.new("Text", TextWidget)
+function TextW:Initialize(parent, text, key, template)
+    local fs = unwrap(parent):CreateFontString(nil, "ARTWORK", template or "GameFontHighlight")
     fs:SetText(text or "")
     fs:SetTextColor(Theme.Unpack(key or "text"))
-    return fs
+    self:_attach(fs)
 end
+Widgets.Text = TextW
 
 -- Uppercase, dim, lightly spaced section label (LoL's letter-spaced caps).
-function Widgets.SectionLabel(parent, text)
-    local fs = parent:CreateFontString(nil, "ARTWORK", "GameFontNormalSmall")
+local SectionLabelW = ns.Class.new("SectionLabel", TextWidget)
+function SectionLabelW:Initialize(parent, text)
+    local fs = unwrap(parent):CreateFontString(nil, "ARTWORK", "GameFontNormalSmall")
     fs:SetText(string.upper(text or ""))
     fs:SetTextColor(Theme.Unpack("textFaint"))
     fs:SetSpacing(2)
-    return fs
+    self:_attach(fs)
 end
+Widgets.SectionLabel = SectionLabelW
 
--- Inline accent text button (Clear / links). Returns the Button; its label is
--- at `.text`.
-function Widgets.TextButton(parent, text)
-    local b = CreateFrame("Button", nil, parent)
-    local fs = Widgets.Text(b, text, "accent", "GameFontNormalSmall")
+-- Inline accent text button (Clear / links). :SetText / :SetTextColor recolour the label,
+-- :SetOnClick wires the click (:SetScript is also available from FrameWidget).
+local TextButtonW = ns.Class.new("TextButton", FrameWidget)
+function TextButtonW:Initialize(parent, text)
+    local b = CreateFrame("Button", nil, unwrap(parent))
+    local fs = TextW:New(b, text, "accent", "GameFontNormalSmall")
     fs:SetPoint("CENTER")
     b:SetSize(math.max(40, fs:GetStringWidth() + 12), 20)
     b:SetScript("OnEnter", function() fs:SetTextColor(Theme.Unpack("text")) end)
     b:SetScript("OnLeave", function() fs:SetTextColor(Theme.Unpack("accent")) end)
-    b.text = fs
-    return b
+    self:_attach(b)
+    self:_p().label = fs
 end
+function TextButtonW:SetText(s)        self:_p().label:SetText(s);        return self end
+function TextButtonW:SetTextColor(...) self:_p().label:SetTextColor(...); return self end
+function TextButtonW:SetOnClick(fn)    self:_frame():SetScript("OnClick", fn); return self end
+Widgets.TextButton = TextButtonW
 
 -- A themed PUSH button: a bordered box with a centred label that lights to accent on hover.
 -- Auto-sizes to the text (override with opts.width / opts.height). Methods: :SetText(s)
 -- :SetOnClick(fn) :SetEnabled(bool).
-function Widgets.Button(parent, text, opts)
+local ButtonW = ns.Class.new("Button", FrameWidget)
+function ButtonW:Initialize(parent, text, opts)
     opts = opts or {}
-    local b = CreateFrame("Button", nil, parent, "BackdropTemplate")
+    local b = CreateFrame("Button", nil, unwrap(parent), "BackdropTemplate")
     Widgets.Style(b, "panel2", "borderStrong")
     b:SetHeight(opts.height or 24)
-    local fs = Widgets.Text(b, text, "text", "GameFontHighlight")
+    local fs = TextW:New(b, text, "text", "GameFontHighlight")
     fs:SetPoint("CENTER")
     local function fit() b:SetWidth(opts.width or math.max(opts.minWidth or 70, fs:GetStringWidth() + 24)) end
     fit()
-
-    local onClick, enabled = nil, true
-    b:SetScript("OnEnter", function() if enabled then b:SetBackdropBorderColor(Theme.Unpack("accent")) end end)
+    local p = self:_p()
+    p.label, p.fit, p.enabled = fs, fit, true
+    b:SetScript("OnEnter", function() if p.enabled then b:SetBackdropBorderColor(Theme.Unpack("accent")) end end)
     b:SetScript("OnLeave", function() b:SetBackdropBorderColor(Theme.Unpack("borderStrong")) end)
-    b:SetScript("OnClick", function() if enabled and onClick then onClick() end end)
-    b.SetText    = function(_, s) fs:SetText(s); fit() end
-    b.SetOnClick = function(_, fn) onClick = fn end
-    b.SetEnabled = function(_, on)
-        enabled = on and true or false
-        fs:SetTextColor(Theme.Unpack(enabled and "text" or "textFaint"))
-        b:SetAlpha(enabled and 1 or 0.6)
-    end
-    return b
+    b:SetScript("OnClick", function() if p.enabled and p.onClick then p.onClick() end end)
+    self:_attach(b)
 end
+function ButtonW:SetText(s)     local p = self:_p(); p.label:SetText(s); p.fit(); return self end
+function ButtonW:SetOnClick(fn) self:_p().onClick = fn; return self end
+function ButtonW:SetEnabled(on)
+    local p = self:_p(); p.enabled = on and true or false
+    p.label:SetTextColor(Theme.Unpack(p.enabled and "text" or "textFaint"))
+    self:_frame():SetAlpha(p.enabled and 1 or 0.6)
+    return self
+end
+Widgets.Button = ButtonW
 
--- Themed checkbox. Methods: :SetChecked(bool) :GetChecked() :SetOnToggle(fn).
-function Widgets.Toggle(parent, labelText)
-    local btn = CreateFrame("Button", nil, parent)
+-- Themed checkbox. Methods: :SetChecked(bool) :GetChecked() :SetOnToggle(fn) :SetEnabled(bool).
+local ToggleW = ns.Class.new("Toggle", FrameWidget)
+function ToggleW:Initialize(parent, labelText)
+    local rawParent = unwrap(parent)
+    local btn = CreateFrame("Button", nil, rawParent)
     btn:SetSize(18, 18)
 
     local box = CreateFrame("Frame", nil, btn, "BackdropTemplate")
@@ -143,23 +259,24 @@ function Widgets.Toggle(parent, labelText)
 
     local label
     if labelText then
-        label = Widgets.Text(parent, labelText, "text", "GameFontHighlight")
+        label = TextW:New(rawParent, labelText, "text", "GameFontHighlight")
         label:SetPoint("LEFT", btn, "RIGHT", 8, 0)
     end
 
-    local state, onToggle, enabled = false, nil, true
+    local p = self:_p()
+    p.state, p.enabled = false, true
     local function render()
-        if not enabled then  -- greyed out: dim, show state faintly, ignore input
+        if not p.enabled then  -- greyed out: dim, show state faintly, ignore input
             box:SetBackdropColor(Theme.Unpack("panel2", 0.5))
             box:SetBackdropBorderColor(Theme.Unpack("border"))
             check:SetVertexColor(0.5, 0.5, 0.5)
-            check:SetShown(state)
+            check:SetShown(p.state)
             if label then label:SetTextColor(Theme.Unpack("textFaint")) end
             return
         end
         check:SetVertexColor(1, 1, 1)
         if label then label:SetTextColor(Theme.Unpack("text")) end
-        if state then
+        if p.state then
             box:SetBackdropColor(Theme.Unpack("accent", 0.85))
             box:SetBackdropBorderColor(Theme.Unpack("accent"))
             check:Show()
@@ -169,31 +286,33 @@ function Widgets.Toggle(parent, labelText)
             check:Hide()
         end
     end
+    p.render = render
 
     btn:SetScript("OnEnter", function()
-        if enabled and not state then box:SetBackdropBorderColor(Theme.Unpack("accent")) end
+        if p.enabled and not p.state then box:SetBackdropBorderColor(Theme.Unpack("accent")) end
     end)
     btn:SetScript("OnLeave", render)
     btn:SetScript("OnClick", function()
-        if not enabled then return end
-        state = not state
+        if not p.enabled then return end
+        p.state = not p.state
         render()
-        if onToggle then onToggle(state) end
+        if p.onToggle then p.onToggle(p.state) end
     end)
 
-    btn.SetChecked   = function(_, v) state = v and true or false; render() end
-    btn.GetChecked   = function() return state end
-    btn.SetOnToggle  = function(_, fn) onToggle = fn end
-    btn.SetEnabled   = function(_, on) enabled = on and true or false; render() end
-    btn.label = label
+    self:_attach(btn)
     render()
-    return btn
 end
+function ToggleW:SetChecked(v)   local p = self:_p(); p.state = v and true or false; p.render(); return self end
+function ToggleW:GetChecked()    return self:_p().state end
+function ToggleW:SetOnToggle(fn) self:_p().onToggle = fn; return self end
+function ToggleW:SetEnabled(on)  local p = self:_p(); p.enabled = on and true or false; p.render(); return self end
+Widgets.Toggle = ToggleW
 
 -- Left-rail navigation item with active accent bar + tint. Methods:
--- :SetActive(bool). Use :SetScript("OnClick", ...) to handle selection.
-function Widgets.NavItem(parent, text)
-    local b = CreateFrame("Button", nil, parent, "BackdropTemplate")
+-- :SetActive(bool). Use :SetScript("OnClick", ...) (from FrameWidget) to handle selection.
+local NavItemW = ns.Class.new("NavItem", FrameWidget)
+function NavItemW:Initialize(parent, text)
+    local b = CreateFrame("Button", nil, unwrap(parent), "BackdropTemplate")
     b:SetHeight(34)
     b:SetBackdrop(Theme.Backdrop(1))
     b:SetBackdropColor(0, 0, 0, 0)
@@ -211,9 +330,10 @@ function Widgets.NavItem(parent, text)
     fs:SetText(text)
     fs:SetTextColor(Theme.Unpack("textDim"))
 
-    local active = false
+    local p = self:_p()
+    p.active = false
     local function render()
-        if active then
+        if p.active then
             b:SetBackdropColor(Theme.Unpack("accentSoft"))
             fs:SetTextColor(Theme.Unpack("accent"))
             bar:Show()
@@ -223,42 +343,47 @@ function Widgets.NavItem(parent, text)
             bar:Hide()
         end
     end
+    p.render = render
     b:SetScript("OnEnter", function()
-        if not active then
+        if not p.active then
             b:SetBackdropColor(Theme.Unpack("panel2"))
             fs:SetTextColor(Theme.Unpack("text"))
         end
     end)
     b:SetScript("OnLeave", render)
 
-    b.SetActive = function(_, v) active = v and true or false; render() end
+    self:_attach(b)
     render()
-    return b
 end
+function NavItemW:SetActive(v) local p = self:_p(); p.active = v and true or false; p.render(); return self end
+Widgets.NavItem = NavItemW
 
 -- Segmented selector (LoL "view-switch"): a row of option buttons, active one
 -- accent-highlighted. options = { { value = v, text = "..." }, ... }.
--- Methods: :SetValue(v) :GetValue() :SetOnChange(fn).
-function Widgets.Segmented(parent, options)
-    local c = CreateFrame("Frame", nil, parent, "BackdropTemplate")
+-- Methods: :SetValue(v) :GetValue() :SetOnChange(fn) :SetEnabled(bool).
+local SegmentedW = ns.Class.new("Segmented", FrameWidget)
+function SegmentedW:Initialize(parent, options)
+    local c = CreateFrame("Frame", nil, unwrap(parent), "BackdropTemplate")
     Widgets.Style(c, "panel2", "border")
     c:SetHeight(24)
 
-    local btns, value, onChange, enabled = {}, nil, nil, true
+    local p = self:_p()
+    p.btns, p.enabled = {}, true
     local function render()
-        for _, e in ipairs(btns) do
-            if e.value == value then
+        for _, e in ipairs(p.btns) do
+            if e.value == p.value then
                 e.bg:Show(); e.fs:SetTextColor(Theme.Unpack("accent"))
             else
                 e.bg:Hide(); e.fs:SetTextColor(Theme.Unpack("textDim"))
             end
         end
     end
+    p.render = render
 
     local x = 2
     for _, opt in ipairs(options) do
         local b = CreateFrame("Button", nil, c)
-        local fs = Widgets.Text(b, opt.text, "textDim", "GameFontNormalSmall")
+        local fs = TextW:New(b, opt.text, "textDim", "GameFontNormalSmall")
         fs:SetPoint("CENTER")
         local w = math.max(46, fs:GetStringWidth() + 18)
         b:SetSize(w, 20)
@@ -269,32 +394,35 @@ function Widgets.Segmented(parent, options)
         bg:SetColorTexture(Theme.Unpack("accentSoft"))
         bg:Hide()
 
-        b.bg, b.fs, b.value = bg, fs, opt.value
+        p.btns[#p.btns + 1] = { bg = bg, fs = fs, value = opt.value }
         b:SetScript("OnClick", function()
-            if not enabled then return end
-            value = opt.value; render()
-            if onChange then onChange(value) end
+            if not p.enabled then return end
+            p.value = opt.value; render()
+            if p.onChange then p.onChange(p.value) end
         end)
-        b:SetScript("OnEnter", function() if enabled and opt.value ~= value then fs:SetTextColor(Theme.Unpack("text")) end end)
+        b:SetScript("OnEnter", function() if p.enabled and opt.value ~= p.value then fs:SetTextColor(Theme.Unpack("text")) end end)
         b:SetScript("OnLeave", render)
-
-        btns[#btns + 1] = b
         x = x + w + 2
     end
     c:SetWidth(x)
 
-    c.SetValue    = function(_, v) value = v; render() end
-    c.GetValue    = function() return value end
-    c.SetOnChange = function(_, fn) onChange = fn end
-    c.SetEnabled  = function(_, on) enabled = on and true or false; c:SetAlpha(enabled and 1 or 0.4); render() end
+    self:_attach(c)
     render()
-    return c
 end
+function SegmentedW:SetValue(v)     local p = self:_p(); p.value = v; p.render(); return self end
+function SegmentedW:GetValue()      return self:_p().value end
+function SegmentedW:SetOnChange(fn) self:_p().onChange = fn; return self end
+function SegmentedW:SetEnabled(on)
+    local p = self:_p(); p.enabled = on and true or false
+    self:_frame():SetAlpha(p.enabled and 1 or 0.4); p.render(); return self
+end
+Widgets.Segmented = SegmentedW
 
 -- Colour swatch button: shows the current colour, opens the Blizzard colour
--- picker on click. Methods: :SetColor(r,g,b) :GetColor() :SetOnChange(fn).
-function Widgets.ColorSwatch(parent)
-    local btn = CreateFrame("Button", nil, parent, "BackdropTemplate")
+-- picker on click. Methods: :SetColor(r,g,b) :GetColor() :SetOnChange(fn) :SetDefault :SetEnabled.
+local ColorSwatchW = ns.Class.new("ColorSwatch", FrameWidget)
+function ColorSwatchW:Initialize(parent)
+    local btn = CreateFrame("Button", nil, unwrap(parent), "BackdropTemplate")
     btn:SetSize(26, 16)
     Widgets.Style(btn, "panel2", "borderStrong")
 
@@ -303,25 +431,27 @@ function Widgets.ColorSwatch(parent)
     sw:SetPoint("BOTTOMRIGHT", -2, 2)
     sw:SetColorTexture(1, 1, 1)
 
-    local cr, cg, cb, onChange, enabled = 1, 1, 1, nil, true
-    local function set(r, g, b) cr, cg, cb = r, g, b; sw:SetColorTexture(r, g, b) end
+    local p = self:_p()
+    p.r, p.g, p.b, p.enabled = 1, 1, 1, true
+    local function set(r, g, b) p.r, p.g, p.b = r, g, b; sw:SetColorTexture(r, g, b) end
+    p.set = set
 
-    btn:SetScript("OnEnter", function() if enabled then btn:SetBackdropBorderColor(Theme.Unpack("accent")) end end)
+    btn:SetScript("OnEnter", function() if p.enabled then btn:SetBackdropBorderColor(Theme.Unpack("accent")) end end)
     btn:SetScript("OnLeave", function() btn:SetBackdropBorderColor(Theme.Unpack("borderStrong")) end)
     btn:SetScript("OnClick", function()
-        if not enabled then return end
-        local prevR, prevG, prevB = cr, cg, cb
+        if not p.enabled then return end
+        local prevR, prevG, prevB = p.r, p.g, p.b
         local info = {
             hasOpacity = false,
-            r = cr, g = cg, b = cb,
+            r = p.r, g = p.g, b = p.b,
             swatchFunc = function()
                 local r, g, b = ColorPickerFrame:GetColorRGB()
                 set(r, g, b)
-                if onChange then onChange(r, g, b) end
+                if p.onChange then p.onChange(r, g, b) end
             end,
             cancelFunc = function()
                 set(prevR, prevG, prevB)
-                if onChange then onChange(prevR, prevG, prevB) end
+                if p.onChange then p.onChange(prevR, prevG, prevB) end
             end,
         }
         if ColorPickerFrame.SetupColorPickerAndShow then
@@ -330,34 +460,38 @@ function Widgets.ColorSwatch(parent)
             ColorPickerFrame.func = info.swatchFunc
             ColorPickerFrame.cancelFunc = info.cancelFunc
             ColorPickerFrame.hasOpacity = false
-            ColorPickerFrame:SetColorRGB(cr, cg, cb)
+            ColorPickerFrame:SetColorRGB(p.r, p.g, p.b)
             ColorPickerFrame:Show()
         end
     end)
 
     -- Inline reset: a small button left of the swatch that restores the default colour.
     -- Hidden until SetDefault gives it one. Fires onChange so the setting persists + applies.
-    local dr, dg, db
-    local reset = Widgets.TextButton(btn, "Reset")
+    local reset = TextButtonW:New(btn, "Reset")
     reset:SetPoint("RIGHT", btn, "LEFT", -8, 0)
     reset:Hide()
     reset:SetScript("OnClick", function()
-        if not enabled or not dr then return end
-        set(dr, dg, db)
-        if onChange then onChange(dr, dg, db) end
+        if not p.enabled or not p.dr then return end
+        set(p.dr, p.dg, p.db)
+        if p.onChange then p.onChange(p.dr, p.dg, p.db) end
     end)
-
-    btn.SetColor    = function(_, r, g, b) set(r, g, b) end
-    btn.GetColor    = function() return cr, cg, cb end
-    btn.SetOnChange = function(_, fn) onChange = fn end
-    btn.SetDefault  = function(_, r, g, b) dr, dg, db = r, g, b; reset:SetShown(enabled and r ~= nil) end
-    btn.SetEnabled  = function(_, on)
-        enabled = on and true or false
-        btn:SetAlpha(enabled and 1 or 0.4)     -- dims the swatch + its Reset child
-        reset:SetShown(enabled and dr ~= nil)  -- and hides Reset while greyed out
-    end
-    return btn
+    p.reset = reset
+    self:_attach(btn)
 end
+function ColorSwatchW:SetColor(r, g, b) self:_p().set(r, g, b); return self end
+function ColorSwatchW:GetColor()        local p = self:_p(); return p.r, p.g, p.b end
+function ColorSwatchW:SetOnChange(fn)   self:_p().onChange = fn; return self end
+function ColorSwatchW:SetDefault(r, g, b)
+    local p = self:_p(); p.dr, p.dg, p.db = r, g, b
+    p.reset:SetShown(p.enabled and r ~= nil); return self
+end
+function ColorSwatchW:SetEnabled(on)
+    local p = self:_p(); p.enabled = on and true or false
+    self:_frame():SetAlpha(p.enabled and 1 or 0.4)     -- dims the swatch + its Reset child
+    p.reset:SetShown(p.enabled and p.dr ~= nil)        -- and hides Reset while greyed out
+    return self
+end
+Widgets.ColorSwatch = ColorSwatchW
 
 -- Dependency group: lets a settings page grey out controls whose parent option is off.
 -- Add(control, predicate) registers any widget that supports :SetEnabled(bool); Refresh()
@@ -388,9 +522,10 @@ end
 -- expand/collapse so the page can re-stack the sections below it.
 -- Methods: :GetContent() :SetContentHeight(h) :SetExpanded(b) :IsExpanded()
 --          :SetOnToggle(fn)   (read current total height with :GetHeight()).
-function Widgets.CollapsibleSection(parent, titleText)
+local CollapsibleSectionW = ns.Class.new("CollapsibleSection", FrameWidget)
+function CollapsibleSectionW:Initialize(parent, titleText)
     local HEADER, GAP = 26, 4
-    local sec = CreateFrame("Frame", nil, parent)
+    local sec = CreateFrame("Frame", nil, unwrap(parent))
     sec:SetHeight(HEADER)
 
     local header = CreateFrame("Button", nil, sec, "BackdropTemplate")
@@ -399,48 +534,52 @@ function Widgets.CollapsibleSection(parent, titleText)
     header:SetPoint("TOPRIGHT")
     Widgets.Style(header, "panel2", "border")
 
-    local chevron = Widgets.Text(header, "+", "accent", "GameFontNormalLarge")
+    local chevron = TextW:New(header, "+", "accent", "GameFontNormalLarge")
     chevron:SetPoint("LEFT", 10, 0)
-    local label = Widgets.Text(header, titleText, "text", "GameFontNormal")
+    local label = TextW:New(header, titleText, "text", "GameFontNormal")
     label:SetPoint("LEFT", chevron, "RIGHT", 8, 0)
 
-    local content = CreateFrame("Frame", nil, sec)
+    local content = ContainerW:New(sec)
     content:SetPoint("TOPLEFT", header, "BOTTOMLEFT", 0, -GAP)
     content:SetPoint("RIGHT", sec, "RIGHT", 0, 0)
     content:SetHeight(1)
     content:Hide()
 
-    local expanded, contentH, onToggle = false, 0, nil
+    local p = self:_p()
+    p.content, p.contentH, p.expanded = content, 0, false
     local function apply()
-        chevron:SetText(expanded and "-" or "+")
-        content:SetShown(expanded)
-        sec:SetHeight(expanded and (HEADER + GAP + contentH) or HEADER)
+        chevron:SetText(p.expanded and "-" or "+")
+        content:SetShown(p.expanded)
+        sec:SetHeight(p.expanded and (HEADER + GAP + p.contentH) or HEADER)
     end
+    p.apply = apply
 
     header:SetScript("OnEnter", function() header:SetBackdropBorderColor(Theme.Unpack("accent")) end)
     header:SetScript("OnLeave", function() header:SetBackdropBorderColor(Theme.Unpack("border")) end)
     header:SetScript("OnClick", function()
-        expanded = not expanded
+        p.expanded = not p.expanded
         apply()
-        if onToggle then onToggle(expanded) end
+        if p.onToggle then p.onToggle(p.expanded) end
     end)
-
-    sec.GetContent       = function() return content end
-    sec.SetContentHeight = function(_, h) contentH = math.max(0, h or 0); apply() end
-    sec.SetExpanded      = function(_, v) expanded = v and true or false; apply() end
-    sec.IsExpanded       = function() return expanded end
-    sec.SetOnToggle      = function(_, fn) onToggle = fn end
-    sec.SetTitle         = function(_, t) label:SetText(t) end
+    p.label = label
+    self:_attach(sec)
     apply()
-    return sec
 end
+function CollapsibleSectionW:GetContent()        return self:_p().content end
+function CollapsibleSectionW:SetContentHeight(h) local p = self:_p(); p.contentH = math.max(0, h or 0); p.apply(); return self end
+function CollapsibleSectionW:SetExpanded(v)      local p = self:_p(); p.expanded = v and true or false; p.apply(); return self end
+function CollapsibleSectionW:IsExpanded()        return self:_p().expanded end
+function CollapsibleSectionW:SetOnToggle(fn)     self:_p().onToggle = fn; return self end
+function CollapsibleSectionW:SetTitle(t)         self:_p().label:SetText(t); return self end
+Widgets.CollapsibleSection = CollapsibleSectionW
 
 -- Themed single-line EditBox. `numeric` only affects which characters look valid
 -- to us; we never SetNumeric (that would block decimals/negatives many CVars
 -- need) -- callers validate on change. Commits on Enter or focus-loss; Esc
 -- reverts. Methods: :SetValue(v) :GetValue() :SetOnChange(fn) :SetEnabled(b).
-function Widgets.Input(parent, width)
-    local box = CreateFrame("EditBox", nil, parent, "BackdropTemplate")
+local InputW = ns.Class.new("Input", FrameWidget)
+function InputW:Initialize(parent, width)
+    local box = CreateFrame("EditBox", nil, unwrap(parent), "BackdropTemplate")
     box:SetAutoFocus(false)
     box:SetHeight(20)
     box:SetWidth(width or 90)
@@ -450,49 +589,51 @@ function Widgets.Input(parent, width)
     box:SetTextColor(Theme.Unpack("text"))
     box:SetMaxLetters(0)
 
-    local value, onChange, enabled = "", nil, true
+    local p = self:_p()
+    p.value, p.enabled = "", true
     local function commit()
         local v = box:GetText()
-        if v == value then return end
-        value = v
-        if onChange then onChange(v) end
+        if v == p.value then return end
+        p.value = v
+        if p.onChange then p.onChange(v) end
     end
-    box:SetScript("OnEnterPressed",    function(self) self:ClearFocus() end)  -- triggers focus-lost commit
-    box:SetScript("OnEscapePressed",   function(self) self:SetText(value); self:ClearFocus() end)
+    box:SetScript("OnEnterPressed",    function(s) s:ClearFocus() end)  -- triggers focus-lost commit
+    box:SetScript("OnEscapePressed",   function(s) s:SetText(p.value); s:ClearFocus() end)
     box:SetScript("OnEditFocusGained", function() box:SetBackdropBorderColor(Theme.Unpack("accent")) end)
     box:SetScript("OnEditFocusLost",   function() box:SetBackdropBorderColor(Theme.Unpack("borderStrong")); commit() end)
-
-    box.SetValue    = function(_, v) value = tostring(v == nil and "" or v); box:SetText(value) end
-    box.GetValue    = function() return box:GetText() end
-    box.SetOnChange = function(_, fn) onChange = fn end
-    box.SetEnabled  = function(_, on)
-        enabled = on and true or false
-        box:EnableMouse(enabled)
-        box:EnableKeyboard(enabled)
-        box:SetAlpha(enabled and 1 or 0.4)
-    end
-    return box
+    self:_attach(box)
 end
+function InputW:SetValue(v)     local p = self:_p(); p.value = tostring(v == nil and "" or v); self:_frame():SetText(p.value); return self end
+function InputW:GetValue()      return self:_frame():GetText() end
+function InputW:SetOnChange(fn) self:_p().onChange = fn; return self end
+function InputW:SetEnabled(on)
+    local p, box = self:_p(), self:_frame()
+    p.enabled = on and true or false
+    box:EnableMouse(p.enabled); box:EnableKeyboard(p.enabled); box:SetAlpha(p.enabled and 1 or 0.4)
+    return self
+end
+Widgets.Input = InputW
 
 -- Themed horizontal slider with a track, an accent fill, a draggable thumb, and a live numeric
 -- readout (right of an optional label). The widget is a container Frame -- anchor it like any other.
 --   opts: min, max, step, width (track px, 160), label (string), format (readout fmt, "%.2f")
 -- Methods: :SetValue(v) :GetValue() :SetOnChange(fn)  fn(newValue) on user drag  :SetEnabled(bool)
-function Widgets.Slider(parent, opts)
+local SliderW = ns.Class.new("Slider", FrameWidget)
+function SliderW:Initialize(parent, opts)
     opts = opts or {}
     local minV, maxV = opts.min or 0, opts.max or 1
     local step  = opts.step or 0.01
     local width = opts.width or 160
     local fmt   = opts.format or "%.2f"
 
-    local f = CreateFrame("Frame", nil, parent)
+    local f = CreateFrame("Frame", nil, unwrap(parent))
     f:SetSize(width, 34)
 
     if opts.label then
-        local label = Widgets.Text(f, opts.label, "text", "GameFontHighlightSmall")
+        local label = TextW:New(f, opts.label, "text", "GameFontHighlightSmall")
         label:SetPoint("TOPLEFT", 0, 0)
     end
-    local readout = Widgets.Text(f, "", "accent", "GameFontHighlightSmall")
+    local readout = TextW:New(f, "", "accent", "GameFontHighlightSmall")
     readout:SetPoint("TOPRIGHT", 0, 0)
 
     local slider = CreateFrame("Slider", nil, f)
@@ -518,74 +659,79 @@ function Widgets.Slider(parent, opts)
     thumb:SetSize(10, 16)
     slider:SetThumbTexture(thumb)
 
-    local onChange, enabled, suppress = nil, true, false
+    local p = self:_p()
+    p.slider, p.enabled, p.suppress = slider, true, false
     local function render(v)
         readout:SetText(fmt:format(v))
         local frac = (maxV > minV) and ((v - minV) / (maxV - minV)) or 0
         fill:SetWidth(math.max(0.01, width * math.max(0, math.min(1, frac))))
     end
+    p.render = render
     slider:SetScript("OnValueChanged", function(_, v)
         render(v)
-        if onChange and enabled and not suppress then onChange(v) end
+        if p.onChange and p.enabled and not p.suppress then p.onChange(v) end
     end)
-
-    f.SetValue    = function(_, v) suppress = true; slider:SetValue(v); suppress = false; render(slider:GetValue()) end
-    f.GetValue    = function() return slider:GetValue() end
-    f.SetOnChange = function(_, fn) onChange = fn end
-    f.SetEnabled  = function(_, on)
-        enabled = on and true or false
-        slider:EnableMouse(enabled)
-        f:SetAlpha(enabled and 1 or 0.5)
-    end
-    f.slider = slider
+    self:_attach(f)
     render(minV)
-    return f
 end
+function SliderW:SetValue(v)    local p = self:_p(); p.suppress = true; p.slider:SetValue(v); p.suppress = false; p.render(p.slider:GetValue()); return self end
+function SliderW:GetValue()     return self:_p().slider:GetValue() end
+function SliderW:SetOnChange(fn) self:_p().onChange = fn; return self end
+function SliderW:SetEnabled(on)
+    local p = self:_p(); p.enabled = on and true or false
+    p.slider:EnableMouse(p.enabled); self:_frame():SetAlpha(p.enabled and 1 or 0.5)
+    return self
+end
+Widgets.Slider = SliderW
 
 -- A titled settings GROUP: a bordered panel with a clickable header strip (chevron + `title`) and a
 -- content area below it that callers fill. COLLAPSIBLE -- clicking the header toggles the body (the
 -- group shrinks to just its header when collapsed). Returns the container Frame; anchor it like any
 -- widget. Methods: :GetContent() (parent your controls into it), :SetContentHeight(h) (the expanded
 -- body height), :SetExpanded(bool), :IsExpanded(), :SetOnToggle(fn) fn(expanded), :SetTitle(s).
-function Widgets.SettingsGroup(parent, title)
+local SettingsGroupW = ns.Class.new("SettingsGroup", FrameWidget)
+function SettingsGroupW:Initialize(parent, title)
     local HEADER, PAD = 24, 10
-    local g = Widgets.Panel(parent, "panel2", "border")
+    local g = CreateFrame("Frame", nil, unwrap(parent), "BackdropTemplate")
+    Widgets.Style(g, "panel2", "border")
 
     local header = CreateFrame("Button", nil, g)
     header:SetPoint("TOPLEFT", 1, -1); header:SetPoint("TOPRIGHT", -1, -1); header:SetHeight(HEADER)
     local strip = header:CreateTexture(nil, "ARTWORK"); strip:SetAllPoints(); strip:SetColorTexture(Theme.Unpack("bg1"))
-    local chevron = Widgets.Text(header, "-", "accent", "GameFontNormal")
+    local chevron = TextW:New(header, "-", "accent", "GameFontNormal")
     chevron:SetPoint("LEFT", 8, 0)
-    local label = Widgets.Text(header, title, "text", "GameFontNormal")
+    local label = TextW:New(header, title, "text", "GameFontNormal")
     label:SetPoint("LEFT", chevron, "RIGHT", 6, 0)
 
-    local content = CreateFrame("Frame", nil, g)
+    local content = ContainerW:New(g)
     content:SetPoint("TOPLEFT", g, "TOPLEFT", PAD, -(HEADER + PAD))
     content:SetPoint("TOPRIGHT", g, "TOPRIGHT", -PAD, -(HEADER + PAD))
     content:SetHeight(1)
 
-    local expanded, contentH, onToggle = true, 0, nil
+    local p = self:_p()
+    p.content, p.contentH, p.expanded, p.label = content, 0, true, label
     local function apply()
-        chevron:SetText(expanded and "-" or "+")
-        content:SetShown(expanded)
-        g:SetHeight(expanded and (HEADER + PAD + math.max(0, contentH) + PAD) or HEADER)
+        chevron:SetText(p.expanded and "-" or "+")
+        content:SetShown(p.expanded)
+        g:SetHeight(p.expanded and (HEADER + PAD + math.max(0, p.contentH) + PAD) or HEADER)
     end
+    p.apply = apply
     header:SetScript("OnEnter", function() g:SetBackdropBorderColor(Theme.Unpack("accent")) end)
     header:SetScript("OnLeave", function() g:SetBackdropBorderColor(Theme.Unpack("border")) end)
     header:SetScript("OnClick", function()
-        expanded = not expanded; apply()
-        if onToggle then onToggle(expanded) end
+        p.expanded = not p.expanded; apply()
+        if p.onToggle then p.onToggle(p.expanded) end
     end)
-
-    g.GetContent       = function() return content end
-    g.SetContentHeight = function(_, h) contentH = math.max(0, h or 0); apply() end
-    g.SetTitle         = function(_, t) label:SetText(t) end
-    g.SetExpanded      = function(_, v) expanded = v and true or false; apply() end
-    g.IsExpanded       = function() return expanded end
-    g.SetOnToggle      = function(_, fn) onToggle = fn end
+    self:_attach(g)
     apply()
-    return g
 end
+function SettingsGroupW:GetContent()        return self:_p().content end
+function SettingsGroupW:SetContentHeight(h) local p = self:_p(); p.contentH = math.max(0, h or 0); p.apply(); return self end
+function SettingsGroupW:SetTitle(t)         self:_p().label:SetText(t); return self end
+function SettingsGroupW:SetExpanded(v)      local p = self:_p(); p.expanded = v and true or false; p.apply(); return self end
+function SettingsGroupW:IsExpanded()        return self:_p().expanded end
+function SettingsGroupW:SetOnToggle(fn)     self:_p().onToggle = fn; return self end
+Widgets.SettingsGroup = SettingsGroupW
 
 -- (Widgets.ScrollFrame -- the Blizzard-template scroll frame -- was removed: every scrollable surface
 -- now uses Widgets.ScrollArea, our themed scrollbar. Pages/modules never define their own scroll.)
@@ -606,9 +752,11 @@ end
 --         autoClose true -> hide while in COMBAT or Edit Mode, reopen after (a manual X/Esc
 --                   close cancels the reopen). onAutoShow/onAutoHide(frame) override the
 --                   reopen/hide for windows with custom show logic (default frame:Show/Hide).
--- Returns the frame with .bar / .titleFS / .subtitleFS / .closeBtn / .body attached and a
--- :SetWindowTitle(text) method.
-function Widgets.Window(level, opts)
+-- Construct with Widgets.Window:New(level, opts). Exposes :Body() / :Bar() / :Title() (widgets) and
+-- :SetWindowTitle(text); the close X and auto-close wiring are internal. onClose / onAutoShow /
+-- onAutoHide callbacks receive the Window widget.
+local WindowW = ns.Class.new("Window", FrameWidget)
+function WindowW:Initialize(level, opts)
     opts = opts or {}
     assert(type(level) == "number", "Widgets.Window: a frame level (first argument) is required")
     local f = CreateFrame("Frame", opts.name, UIParent, "BackdropTemplate")
@@ -623,9 +771,11 @@ function Widgets.Window(level, opts)
     f:SetClampedToScreen(true)
     f:Hide()
     if opts.name then tinsert(UISpecialFrames, opts.name) end  -- ESC closes
+    self:_attach(f)
+    local p = self:_p()
 
     local H = opts.barHeight or 38
-    local bar = Widgets.Panel(f, "bg0", "border")
+    local bar = PanelW:New(f, "bg0", "border")
     bar:SetHeight(H)
     bar:SetPoint("TOPLEFT", 1, -1)
     bar:SetPoint("TOPRIGHT", -1, -1)
@@ -633,32 +783,32 @@ function Widgets.Window(level, opts)
     bar:RegisterForDrag("LeftButton")
     bar:SetScript("OnDragStart", function() f:StartMoving() end)
     bar:SetScript("OnDragStop", function() f:StopMovingOrSizing() end)
-    f.bar = bar
+    p.bar = bar
 
-    local title = Widgets.Text(bar, opts.title or "", opts.titleKey or "accent", "GameFontNormalLarge")
+    local title = TextW:New(bar, opts.title or "", opts.titleKey or "accent", "GameFontNormalLarge")
     title:SetPoint("LEFT", 16, 0)
-    f.titleFS = title
+    p.title = title
     if opts.subtitle then
-        local sub = Widgets.Text(bar, opts.subtitle, "textFaint", "GameFontNormalSmall")
+        local sub = TextW:New(bar, opts.subtitle, "textFaint", "GameFontNormalSmall")
         sub:SetPoint("LEFT", title, "RIGHT", 8, -1)
-        f.subtitleFS = sub
+        p.subtitle = sub
     end
 
-    local close = CreateFrame("Button", nil, bar)
+    local close = CreateFrame("Button", nil, unwrap(bar))
     close:SetSize(H, H)
     close:SetPoint("RIGHT", 0, 0)
-    local x = Widgets.Text(close, "X", "textDim", "GameFontNormalLarge")
+    local x = TextW:New(close, "X", "textDim", "GameFontNormalLarge")
     x:SetPoint("CENTER")
     close:SetScript("OnEnter", function() x:SetTextColor(Theme.Unpack("red")) end)
     close:SetScript("OnLeave", function() x:SetTextColor(Theme.Unpack("textDim")) end)
-    close:SetScript("OnClick", function() if opts.onClose then opts.onClose(f) else f:Hide() end end)
-    f.closeBtn = close
+    close:SetScript("OnClick", function() if opts.onClose then opts.onClose(self) else f:Hide() end end)
+    p.closeBtn = close
 
-    -- The content region under the bar (callers parent their layout here, or to `.bar`).
-    local body = CreateFrame("Frame", nil, f)
-    body:SetPoint("TOPLEFT", bar, "BOTTOMLEFT", 0, -1)
+    -- The content region under the bar (callers parent their layout into :Body(), or anchor to :Bar()).
+    local body = ContainerW:New(f)
+    body:SetPoint("TOPLEFT", unwrap(bar), "BOTTOMLEFT", 0, -1)
     body:SetPoint("BOTTOMRIGHT", f, "BOTTOMRIGHT", -1, 1)
-    f.body = body
+    p.body = body
 
     -- Auto-close while fighting OR in Edit Mode, reopening after if it was open. Combat events
     -- go through ns.EventBus (its driver frame is always shown -- a HIDDEN window's own OnEvent
@@ -668,7 +818,7 @@ function Widgets.Window(level, opts)
         local function suspend()
             if not f:IsShown() then return end
             f.__autoReopen, f.__autoHiding = true, true
-            if opts.onAutoHide then opts.onAutoHide(f) else f:Hide() end
+            if opts.onAutoHide then opts.onAutoHide(self) else f:Hide() end
         end
         local function resume()
             if not f.__autoReopen then return end
@@ -676,7 +826,7 @@ function Widgets.Window(level, opts)
             -- defer a frame: on EditMode.Exit the manager can still report active, so a
             -- re-checking show would defer again and never reopen.
             C_Timer.After(0, function()
-                if opts.onAutoShow then opts.onAutoShow(f) else f:Show() end
+                if opts.onAutoShow then opts.onAutoShow(self) else f:Show() end
             end)
         end
         local bus = ns.EventBus
@@ -692,18 +842,21 @@ function Widgets.Window(level, opts)
             if f.__autoHiding then f.__autoHiding = false else f.__autoReopen = false end
         end)
     end
-
-    f.SetWindowTitle = function(_, t) title:SetText(t or "") end
-    return f
 end
+function WindowW:Body()  return self:_p().body end
+function WindowW:Bar()   return self:_p().bar end
+function WindowW:Title() return self:_p().title end
+function WindowW:SetWindowTitle(t) self:_p().title:SetText(t or ""); return self end
+Widgets.Window = WindowW
 
 -- A vertically scrollable area with a CUSTOM themed scrollbar (no Blizzard template, so no grey
 -- arrows). Mouse-wheel + draggable thumb; the thumb auto-sizes to the content/viewport ratio and
 -- hides when everything fits. Fill `.content` (the scroll child, auto-matched to the viewport
 -- width so only the vertical axis scrolls), then call :Update() after its height changes.
-function Widgets.ScrollArea(parent, name)
+local ScrollAreaW = ns.Class.new("ScrollArea", FrameWidget)
+function ScrollAreaW:Initialize(parent, name)
     local BAR = 5
-    local sa = CreateFrame("Frame", nil, parent)
+    local sa = CreateFrame("Frame", nil, unwrap(parent))
 
     local sf = CreateFrame("ScrollFrame", name, sa)
     sf:SetPoint("TOPLEFT", 0, 0)
@@ -712,7 +865,6 @@ function Widgets.ScrollArea(parent, name)
     local content = CreateFrame("Frame", nil, sf)
     content:SetSize(1, 1)
     sf:SetScrollChild(content)
-    sa.scroll, sa.content = sf, content
 
     local track = sa:CreateTexture(nil, "BACKGROUND")
     track:SetColorTexture(Theme.Unpack("panel2", 0.6))
@@ -725,12 +877,7 @@ function Widgets.ScrollArea(parent, name)
     thumbTex:SetColorTexture(Theme.Unpack("borderStrong"))
 
     local function maxScroll() return math.max(0, (content:GetHeight() or 0) - (sf:GetHeight() or 0)) end
-    local function set(v)
-        sf:SetVerticalScroll(math.max(0, math.min(maxScroll(), v)))
-        sa:Update()
-    end
-
-    function sa:Update()
+    local function update()
         local vh, ch = sf:GetHeight() or 1, content:GetHeight() or 1
         local m = math.max(0, ch - vh)
         if sf:GetVerticalScroll() > m then sf:SetVerticalScroll(m) end   -- clamp when content shrank
@@ -741,11 +888,13 @@ function Widgets.ScrollArea(parent, name)
         local y = (m > 0) and -((vh - th) * (sf:GetVerticalScroll() / m)) or 0
         thumb:ClearAllPoints(); thumb:SetPoint("TOPRIGHT", sa, "TOPRIGHT", 0, y)
     end
+    local function set(v)
+        sf:SetVerticalScroll(math.max(0, math.min(maxScroll(), v)))
+        update()
+    end
 
-    sa.ScrollTop = function() sf:SetVerticalScroll(0); sa:Update() end
-
-    sf:SetScript("OnSizeChanged", function(_, w) content:SetWidth(w); sa:Update() end)
-    content:SetScript("OnSizeChanged", function() sa:Update() end)   -- also track the content's own height
+    sf:SetScript("OnSizeChanged", function(_, w) content:SetWidth(w); update() end)
+    content:SetScript("OnSizeChanged", function() update() end)   -- also track the content's own height
     sf:EnableMouseWheel(true)
     sf:SetScript("OnMouseWheel", function(_, d) set(sf:GetVerticalScroll() - d * 32) end)
 
@@ -766,8 +915,14 @@ function Widgets.ScrollArea(parent, name)
     end)
     thumb:SetScript("OnDragStop", function() thumb:SetScript("OnUpdate", nil) end)
 
-    return sa
+    local p = self:_p()
+    p.sf, p.content, p.contentW, p.update = sf, content, adopt(content), update
+    self:_attach(sa)
 end
+function ScrollAreaW:Update()    self:_p().update(); return self end
+function ScrollAreaW:ScrollTop() local p = self:_p(); p.sf:SetVerticalScroll(0); p.update(); return self end
+function ScrollAreaW:Content()   return self:_p().contentW end   -- the scroll child, as a widget
+Widgets.ScrollArea = ScrollAreaW
 
 -- Column-aligned GRID -- the one row/column layout engine. Define columns ONCE (width +
 -- header label + justify); the optional sticky header AND every data row derive their cell
@@ -787,13 +942,15 @@ end
 --       rowFrame, re-bind each call) so an interactive table still aligns through the grid
 --   { section = "Label" }                          -- a full-width section header row
 -- Methods: :SetColumns(cols)  :SetRows(rows)  :Refresh()  (.header is the header frame).
-function Widgets.Grid(parent, opts)
+local GridW = ns.Class.new("Grid", FrameWidget)
+function GridW:Initialize(parent, opts)
     opts = opts or {}
-    local g = CreateFrame("Frame", nil, parent)
+    local g = CreateFrame("Frame", nil, unwrap(parent))
     -- clip everything (the sticky header's columns + the scrolled rows) to the grid's own bounds, so a
     -- table wider/taller than its area is cut at the edge instead of spilling over the rest of the UI.
     if g.SetClipsChildren then g:SetClipsChildren(true) end
-    g.columns = opts.columns or {}
+    local p = self:_p()
+    p.columns = opts.columns or {}
     local rowH       = opts.rowHeight or 22
     local indentStep = opts.indentStep or 12
     local pad        = opts.cellPad or 4   -- left text padding (raise it to clear an active bar)
@@ -802,9 +959,9 @@ function Widgets.Grid(parent, opts)
     -- x offset of each column from the grid's left; a width=nil column flexes to fill `width`.
     local function colX(width)
         local fixed = 0
-        for _, c in ipairs(g.columns) do fixed = fixed + (c.width or 0) end
+        for _, c in ipairs(p.columns) do fixed = fixed + (c.width or 0) end
         local xs, x = {}, 0
-        for i, c in ipairs(g.columns) do
+        for i, c in ipairs(p.columns) do
             xs[i] = x
             x = x + (c.width or math.max(40, width - fixed))
         end
@@ -817,24 +974,24 @@ function Widgets.Grid(parent, opts)
         header:SetPoint("TOPLEFT"); header:SetPoint("TOPRIGHT")
         header:SetHeight(opts.headerHeight or 18)
         header.cells = {}
-        headerDiv = Widgets.Divider(g)
+        headerDiv = DividerW:New(g)
         headerDiv:SetPoint("TOPLEFT", header, "BOTTOMLEFT", 0, -2)
         headerDiv:SetPoint("TOPRIGHT", header, "BOTTOMRIGHT", 0, -2)
     end
-    g.header = header
+    p.header = header
 
     local content
     if opts.scroll ~= false then
-        local sa = Widgets.ScrollArea(g, opts.name)   -- custom themed scrollbar
+        local sa = ScrollAreaW:New(g, opts.name)   -- custom themed scrollbar
         sa:SetPoint("TOPLEFT", header and headerDiv or g, header and "BOTTOMLEFT" or "TOPLEFT", 0, header and -6 or 0)
         sa:SetPoint("BOTTOMRIGHT", g, "BOTTOMRIGHT", 0, 0)
-        g.scrollArea, g.scroll, content = sa, sa.scroll, sa.content
+        p.scrollArea, content = sa, unwrap(sa:Content())
     else
         content = CreateFrame("Frame", nil, g)
-        content:SetPoint("TOPLEFT", header and headerDiv or g, header and "BOTTOMLEFT" or "TOPLEFT", 0, header and -6 or 0)
+        content:SetPoint("TOPLEFT", header and unwrap(headerDiv) or g, header and "BOTTOMLEFT" or "TOPLEFT", 0, header and -6 or 0)
         content:SetPoint("TOPRIGHT")
     end
-    g.content = content
+    p.content = content
 
     local function bodyWidth()
         local w = content:GetWidth()
@@ -852,7 +1009,7 @@ function Widgets.Grid(parent, opts)
         r.bar:SetPoint("TOPLEFT"); r.bar:SetPoint("BOTTOMLEFT"); r.bar:SetWidth(3)  -- flush to the row bg
         r.bar:SetColorTexture(Theme.Unpack("accent")); r.bar:Hide()
         r.cells = {}
-        r.sectionFS = Widgets.SectionLabel(r, ""); r.sectionFS:SetPoint("LEFT", pad, 0); r.sectionFS:Hide()
+        r.sectionFS = SectionLabelW:New(r, ""); r.sectionFS:SetPoint("LEFT", pad, 0); r.sectionFS:Hide()
         rows[i] = r
         return r
     end
@@ -861,30 +1018,26 @@ function Widgets.Grid(parent, opts)
         if type(key) == "table" then fs:SetTextColor(key[1], key[2], key[3]) else fs:SetTextColor(Theme.Unpack(key)) end
     end
 
-    function g:SetColumns(cols) g.columns = cols or {}; g:Refresh() end
-    function g:SetRows(data)    g._data = data; g:Refresh() end
-    function g:ScrollTop()      if g.scrollArea then g.scrollArea:ScrollTop() end end
-
-    function g:Refresh()
+    local function refresh()
         local width = bodyWidth()   -- the ScrollArea keeps content width = viewport (no manual set)
         local xs = colX(width)
 
         if header then
-            for ci, c in ipairs(g.columns) do
+            for ci, c in ipairs(p.columns) do
                 local fs = header.cells[ci]
-                if not fs then fs = Widgets.SectionLabel(header, ""); header.cells[ci] = fs end
+                if not fs then fs = SectionLabelW:New(header, ""); header.cells[ci] = fs end
                 fs:ClearAllPoints(); fs:SetPoint("LEFT", xs[ci] + pad, 0)
                 fs:SetWidth(math.max(10, (c.width or (width - xs[ci])) - pad - 2))
                 fs:SetJustifyH(c.justify or "LEFT"); fs:SetText(c.label or ""); fs:SetWordWrap(false); fs:Show()
             end
-            for ci = #g.columns + 1, #header.cells do header.cells[ci]:Hide() end
+            for ci = #p.columns + 1, #header.cells do header.cells[ci]:Hide() end
         end
 
-        local data, y = g._data or {}, 0
+        local data, y = p._data or {}, 0
         for i, rd in ipairs(data) do
             local r = getRow(i)
-            for ci = #r.cells + 1, #g.columns do
-                r.cells[ci] = Widgets.Text(r, "", "text", "GameFontHighlightSmall")
+            for ci = #r.cells + 1, #p.columns do
+                r.cells[ci] = TextW:New(r, "", "text", "GameFontHighlightSmall")
             end
             r:ClearAllPoints(); r:SetPoint("TOPLEFT", 0, y); r:SetPoint("RIGHT", content, "RIGHT", 0, 0)
             r:SetScript("OnClick", nil); r:SetScript("OnEnter", nil); r:SetScript("OnLeave", nil); r:EnableMouse(false)
@@ -895,7 +1048,7 @@ function Widgets.Grid(parent, opts)
                 r.sectionFS:SetText(rd.section); r.sectionFS:Show()
             else
                 local indent = (rd.indent or 0) * indentStep
-                for ci, c in ipairs(g.columns) do
+                for ci, c in ipairs(p.columns) do
                     local fs, extra = r.cells[ci], (ci == 1) and (rd.indent or 0) * indentStep or 0
                     fs:ClearAllPoints(); fs:SetPoint("LEFT", xs[ci] + pad + extra, 0)
                     fs:SetWidth(math.max(10, (c.width or (width - xs[ci])) - pad - 2 - extra))
@@ -920,8 +1073,9 @@ function Widgets.Grid(parent, opts)
                 elseif opts.striped and (i % 2 == 0) then
                     r.bg:SetColorTexture(Theme.Unpack("panel2", 0.45))
                 end
-                -- custom per-row widgets (checkboxes/buttons) positioned at the column x's:
-                -- the row caches them on first call and re-binds them to this row's data.
+                -- custom per-row widgets (checkboxes/buttons) positioned at the column x's: the row
+                -- caches them on first call and re-binds them to this row's data. The first arg is a
+                -- raw row region (allowlisted: an internal grid surface) and `xs` the column offsets.
                 if rd.controls then rd.controls(r, xs) end
             end
             r:Show()
@@ -929,11 +1083,16 @@ function Widgets.Grid(parent, opts)
         end
         for i = #data + 1, #rows do rows[i]:Hide() end
         content:SetHeight(math.max(1, -y))
-        if g.scrollArea then g.scrollArea:Update() end   -- resize/position the custom scrollbar
+        if p.scrollArea then p.scrollArea:Update() end   -- resize/position the custom scrollbar
     end
-
-    return g
+    p.refresh = refresh
+    self:_attach(g)
 end
+function GridW:SetColumns(cols) local p = self:_p(); p.columns = cols or {}; p.refresh(); return self end
+function GridW:SetRows(data)    local p = self:_p(); p._data = data; p.refresh(); return self end
+function GridW:Refresh()        self:_p().refresh(); return self end
+function GridW:ScrollTop()      local p = self:_p(); if p.scrollArea then p.scrollArea:ScrollTop() end; return self end
+Widgets.Grid = GridW
 
 -- A vertical NAVIGATION list: section labels + selectable items (optionally indented as
 -- sub-items), with a single active selection (accent highlight + bar) and an onSelect callback.
@@ -942,51 +1101,53 @@ end
 --   opts: items = { { key="x", label="X", indent=number } | { section="Group" }, ... }
 --         onSelect = function(key)   rowHeight (30)   scroll (default false; name required if true)
 --   methods: :SetItems(items)  :Select(key[, silent])  :GetSelected()
-function Widgets.Nav(parent, opts)
+local NavW = ns.Class.new("Nav", GridW)
+function NavW:Initialize(parent, opts)
     opts = opts or {}
-    local nav = Widgets.Grid(parent, {
+    NavW.super.Initialize(self, parent, {
         columns = { {} }, scroll = opts.scroll or false, name = opts.name,
         rowHeight = opts.rowHeight or 30, cellPad = opts.cellPad,
     })
-    nav._items = opts.items or {}
-    nav._onSelect = opts.onSelect
-    nav._onReselect = opts.onReselect   -- fired when the user CLICKS the already-active item (optional)
-
-    local function rebuild()
-        local rows = {}
-        for _, it in ipairs(nav._items) do
-            if it.section then
-                rows[#rows + 1] = { section = it.section }
-            else
-                local key = it.key
-                rows[#rows + 1] = {
-                    cells = { it.label }, indent = it.indent or 0,
-                    active = (key == nav._selected),
-                    -- re-clicking the active item routes to onReselect (only on a real click, never on
-                    -- a programmatic Select), so callers can e.g. toggle back to a home/overview view.
-                    onClick = function()
-                        if key == nav._selected and nav._onReselect then nav._onReselect(key)
-                        else nav:Select(key) end
-                    end,
-                }
-            end
-        end
-        nav:SetRows(rows)
-    end
-
-    function nav:SetItems(items) self._items = items or {}; rebuild() end
-    function nav:GetSelected() return self._selected end
-    -- Select a key: re-highlight and (unless silent) fire onSelect. No-op styling for an
-    -- unknown key, so callers can clear the selection with nil.
-    function nav:Select(key, silent)
-        self._selected = key
-        rebuild()
-        if not silent and self._onSelect then self._onSelect(key) end
-    end
-
-    rebuild()
-    return nav
+    local p = self:_p()
+    p.items = opts.items or {}
+    p.onSelect = opts.onSelect
+    p.onReselect = opts.onReselect   -- fired when the user CLICKS the already-active item (optional)
+    self:_rebuild()
 end
+function NavW:_rebuild()
+    local p = self:_p()
+    local rows = {}
+    for _, it in ipairs(p.items) do
+        if it.section then
+            rows[#rows + 1] = { section = it.section }
+        else
+            local key = it.key
+            rows[#rows + 1] = {
+                cells = { it.label }, indent = it.indent or 0,
+                active = (key == p.selected),
+                -- re-clicking the active item routes to onReselect (only on a real click, never on
+                -- a programmatic Select), so callers can e.g. toggle back to a home/overview view.
+                onClick = function()
+                    if key == p.selected and p.onReselect then p.onReselect(key)
+                    else self:Select(key) end
+                end,
+            }
+        end
+    end
+    self:SetRows(rows)
+end
+function NavW:SetItems(items) self:_p().items = items or {}; self:_rebuild(); return self end
+function NavW:GetSelected()   return self:_p().selected end
+-- Select a key: re-highlight and (unless silent) fire onSelect. No-op styling for an
+-- unknown key, so callers can clear the selection with nil.
+function NavW:Select(key, silent)
+    local p = self:_p()
+    p.selected = key
+    self:_rebuild()
+    if not silent and p.onSelect then p.onSelect(key) end
+    return self
+end
+Widgets.Nav = NavW
 
 -- TEXTURE WIDGET -- a DUMB thin wrapper over a WoW Texture. It does NO maths and makes NO layout
 -- decisions: it only applies the WeakAuras texel-crisp fix (SetSnapToPixelGrid(false) +
@@ -997,30 +1158,24 @@ end
 --   opts: layer ("ARTWORK"), sublevel (0)
 -- Setters (each returns self): :SetTexture :SetAtlas :SetCoords(l,r,t,b) :SetParent :ClearAllPoints
 --   :SetPoint :SetSize :SetDrawLayer :SetVertexColor :Show :Hide :Reset
-function Widgets.Texture(parent, opts)
+-- Inherits TextureWidget for SetTexture/SetVertexColor/SetDrawLayer + base layout; adds the
+-- atlas/coords/reset helpers TextureService drives. Construct with Widgets.Texture:New(parent, opts).
+local TextureW = ns.Class.new("Texture", TextureWidget)
+function TextureW:Initialize(parent, opts)
     opts = opts or {}
-    local tw = {}
-    local tex = parent:CreateTexture(nil, opts.layer or "ARTWORK", nil, opts.sublevel or 0)
+    local tex = unwrap(parent):CreateTexture(nil, opts.layer or "ARTWORK", nil, opts.sublevel or 0)
     if tex.SetSnapToPixelGrid then tex:SetSnapToPixelGrid(false) end
     if tex.SetTexelSnappingBias then tex:SetTexelSnappingBias(0) end
-    tw.tex = tex
-    function tw:SetTexture(file)      tex:SetTexture(file);       return self end
-    function tw:SetAtlas(atlas)       tex:SetAtlas(atlas, false); return self end  -- atlas carries its own coords
-    function tw:SetCoords(l, r, t, b) tex:SetTexCoord(l, r, t, b); return self end
-    function tw:SetParent(p)          tex:SetParent(p);           return self end
-    function tw:ClearAllPoints()      tex:ClearAllPoints();       return self end
-    function tw:SetPoint(...)         tex:SetPoint(...);          return self end
-    function tw:SetSize(...)          tex:SetSize(...);           return self end
-    function tw:SetDrawLayer(...)     tex:SetDrawLayer(...);      return self end
-    function tw:SetVertexColor(...)   tex:SetVertexColor(...);    return self end
-    function tw:Show()                tex:Show();                 return self end
-    function tw:Hide()                tex:Hide();                 return self end
-    function tw:Reset()
-        tex:Hide(); tex:ClearAllPoints(); tex:SetTexture(nil); tex:SetTexCoord(0, 1, 0, 1)
-        return self
-    end
-    return tw
+    self:_attach(tex)
 end
+function TextureW:SetAtlas(atlas)       self:_frame():SetAtlas(atlas, false); return self end  -- atlas carries its own coords
+function TextureW:SetCoords(l, r, t, b) self:_frame():SetTexCoord(l, r, t, b); return self end
+function TextureW:Reset()
+    local tex = self:_frame()
+    tex:Hide(); tex:ClearAllPoints(); tex:SetTexture(nil); tex:SetTexCoord(0, 1, 0, 1)
+    return self
+end
+Widgets.Texture = TextureW
 
 -- Auto-sizing ICON GRID -- Encounter-Journal-style tiles laid out a FIXED number per row, each
 -- tile auto-sized to fill the available width. A tile is a button: the image on top, a solid
@@ -1038,18 +1193,20 @@ end
 --     1.0 as-is, <1 zooms in, >1 zooms out; pan re-centres the window in texcoord units).
 --   All crop/fit/zoom maths lives in ns.TextureService; the tile just describes the intent. }
 -- Methods: :SetTiles(list)  :Refresh()  :ScrollTop()
-function Widgets.IconGrid(parent, opts)
+local IconGridW = ns.Class.new("IconGrid", FrameWidget)
+function IconGridW:Initialize(parent, opts)
     opts = opts or {}
     local PER_ROW = opts.perRow or 3   -- the default; callers can override per refresh via :SetPerRow
     local ASPECT  = opts.aspect or 0.552    -- image h/w; matches the Encounter Journal tile (174x96)
     local GAP     = opts.gap or 12
     local TITLE_H = opts.titleHeight or 22
-    local g = CreateFrame("Frame", nil, parent)
+    local g = CreateFrame("Frame", nil, unwrap(parent))
 
-    local sa = Widgets.ScrollArea(g, opts.name)
+    local sa = ScrollAreaW:New(g, opts.name)
     sa:SetAllPoints()
-    local content = sa.content
-    g.scrollArea, g.content = sa, content
+    local content = unwrap(sa:Content())
+    local p = self:_p()
+    p.scrollArea = sa
 
     local tiles = {}
     local function getTile(i)
@@ -1081,65 +1238,30 @@ function Widgets.IconGrid(parent, opts)
         -- BACKGROUND layer (so the band border draws over it). Kept alive by the TextureService.
         if not t.img then
             t.img = (ns.TextureService and ns.TextureService:Acquire(t.band, { layer = "BACKGROUND", sublevel = 1 }))
-                or Widgets.Texture(t.band, { layer = "BACKGROUND", sublevel = 1 })
+                or TextureW:New(t.band, { layer = "BACKGROUND", sublevel = 1 })
         end
         return t
     end
 
-    function g:SetTiles(list) g._tiles = list or {}; g:Refresh() end
-    function g:ScrollTop()    sa:ScrollTop() end
-    -- Override how many tiles per row (re-lays out on the next Refresh; nil restores the default).
-    function g:SetPerRow(n) g._perRow = (n and n >= 1) and math.floor(n) or nil end
-    -- Release every tile's pooled image back to the TextureService (dropping the strong link that
-    -- pins its source texture, so an original can be collected once nothing else shows it). Tile
-    -- frames are kept for reuse; getTile re-acquires a fresh image on the next Refresh. Call this when
-    -- the owning module is disabled so a grid's textures don't stay pinned for the addon's lifetime.
-    function g:ReleaseAll()
-        for _, t in ipairs(tiles) do
-            if t.img and ns.TextureService then ns.TextureService:Release(t.img); t.img = nil end
-            t:Hide()
-        end
-    end
-
     -- ---- entry CRUD: add / remove / replace single tiles without rebuilding the whole list. A tile
     -- may carry an optional `key`; ops take either a 1-based index (number) or that key (string).
-    -- Removing shrinks the list, so the freed trailing tile's texture is released by Refresh.
+    -- Removing shrinks the list, so the freed trailing tile's texture is released by refresh.
     local function indexOf(ref)
-        local list = g._tiles
+        local list = p._tiles
         if not list then return nil end
         if type(ref) == "number" then return list[ref] and ref or nil end
         for i, t in ipairs(list) do if t.key == ref then return i end end
         return nil
     end
-    function g:GetTiles() return g._tiles or {} end
-    function g:GetTile(ref) local i = indexOf(ref); return i and g._tiles[i] or nil, i end
-    function g:AddTile(tile)
-        g._tiles = g._tiles or {}
-        g._tiles[#g._tiles + 1] = tile
-        g:Refresh()
-        return tile
-    end
-    function g:RemoveTile(ref)
-        local i = indexOf(ref); if not i then return nil end
-        local removed = table.remove(g._tiles, i)
-        g:Refresh()
-        return removed
-    end
-    function g:ReplaceTile(ref, tile)
-        local i = indexOf(ref); if not i then return nil end
-        g._tiles[i] = tile
-        g:Refresh()
-        return tile
-    end
 
-    function g:Refresh()
+    local function refresh()
         local w = content:GetWidth(); if not w or w < 1 then w = g:GetWidth() or 400 end
-        local cols = g._perRow or PER_ROW
+        local cols = p._perRow or PER_ROW
         local tw = math.floor((w - (cols - 1) * GAP) / cols)   -- auto-sized tile width
         if tw < 1 then tw = 1 end
         local ih = math.floor(tw * ASPECT)                     -- image height
         local th = ih + TITLE_H                                 -- full tile height
-        local data = g._tiles or {}
+        local data = p._tiles or {}
         for i, d in ipairs(data) do
             local t = getTile(i)
             local col, rowi = (i - 1) % cols, math.floor((i - 1) / cols)
@@ -1179,8 +1301,41 @@ function Widgets.IconGrid(parent, opts)
         sa:Update()
     end
 
-    return g
+    p.tiles, p.indexOf, p.refresh = tiles, indexOf, refresh
+    self:_attach(g)
 end
+function IconGridW:SetTiles(list) local p = self:_p(); p._tiles = list or {}; p.refresh(); return self end
+function IconGridW:ScrollTop()    self:_p().scrollArea:ScrollTop(); return self end
+-- Override how many tiles per row (re-lays out on the next Refresh; nil restores the default).
+function IconGridW:SetPerRow(n)   self:_p()._perRow = (n and n >= 1) and math.floor(n) or nil; return self end
+function IconGridW:Refresh()      self:_p().refresh(); return self end
+-- Release every tile's pooled image back to the TextureService (dropping the strong link that pins
+-- its source texture, so an original can be collected once nothing else shows it). Tile frames are
+-- kept for reuse; getTile re-acquires a fresh image on the next Refresh. Call when the owning module
+-- is disabled so a grid's textures don't stay pinned for the addon's lifetime.
+function IconGridW:ReleaseAll()
+    local p = self:_p()
+    for _, t in ipairs(p.tiles) do
+        if t.img and ns.TextureService then ns.TextureService:Release(t.img); t.img = nil end
+        t:Hide()
+    end
+    return self
+end
+function IconGridW:GetTiles() return self:_p()._tiles or {} end
+function IconGridW:GetTile(ref) local p = self:_p(); local i = p.indexOf(ref); return i and p._tiles[i] or nil, i end
+function IconGridW:AddTile(tile)
+    local p = self:_p(); p._tiles = p._tiles or {}
+    p._tiles[#p._tiles + 1] = tile; p.refresh(); return tile
+end
+function IconGridW:RemoveTile(ref)
+    local p = self:_p(); local i = p.indexOf(ref); if not i then return nil end
+    local removed = table.remove(p._tiles, i); p.refresh(); return removed
+end
+function IconGridW:ReplaceTile(ref, tile)
+    local p = self:_p(); local i = p.indexOf(ref); if not i then return nil end
+    p._tiles[i] = tile; p.refresh(); return tile
+end
+Widgets.IconGrid = IconGridW
 
 -- Shared HagAIO icon tooltip (addon-compartment + minimap buttons): an accent title plus
 -- a list of { text, key } lines coloured from the Theme palette (key defaults to "textDim").

@@ -590,7 +590,7 @@ function Tasklist:BuildSettingsPage(sf)
     content:SetWidth(width)
     local y = -4
 
-    local show = W.Toggle(content, "Show completed tasks")
+    local show = W.Toggle:New(content, "Show completed tasks")
     show:SetPoint("TOPLEFT", 6, y)
     show:SetChecked(self:GetSetting("showCompleted") ~= false)
     show:SetOnToggle(function(on) self:SetSetting("showCompleted", on) end)
@@ -598,18 +598,18 @@ function Tasklist:BuildSettingsPage(sf)
 
     y = y - 2
 
-    local div = W.Divider(content); div:SetPoint("TOPLEFT", 6, y); div:SetPoint("RIGHT", content, "RIGHT", -6, 0); y = y - 14
+    local div = W.Divider:New(content); div:SetPoint("TOPLEFT", 6, y); div:SetPoint("RIGHT", content, "RIGHT", -6, 0); y = y - 14
 
     -- Add a task
-    local addLbl = W.SectionLabel(content, "Add a task"); addLbl:SetPoint("TOPLEFT", 6, y); y = y - 22
-    local input = W.Input(content, width - 230)
+    local addLbl = W.SectionLabel:New(content, "Add a task"); addLbl:SetPoint("TOPLEFT", 6, y); y = y - 22
+    local input = W.Input:New(content, width - 230)
     input:SetPoint("TOPLEFT", 6, y)
-    local seg = W.Segmented(content, {
+    local seg = W.Segmented:New(content, {
         { value = "once", text = "Once" }, { value = "daily", text = "Daily" }, { value = "weekly", text = "Weekly" },
     })
     seg:SetValue("once")
     seg:SetPoint("LEFT", input, "RIGHT", 8, 0)
-    local add = W.TextButton(content, "Add"); add:SetPoint("LEFT", seg, "RIGHT", 10, 0)
+    local add = W.TextButton:New(content, "Add"); add:SetPoint("LEFT", seg, "RIGHT", 10, 0)
     local function submit()
         local title = input:GetValue()
         if title and title:match("%S") then
@@ -620,15 +620,15 @@ function Tasklist:BuildSettingsPage(sf)
     end
     add:SetScript("OnClick", submit)
     input:SetScript("OnEnterPressed", function(s) s:ClearFocus(); submit() end)
-    local hint = W.Text(content, "Manual tasks (tick them off yourself). e.g. \"Raid LK (weekly)\", \"Grind X mob\".",
+    local hint = W.Text:New(content, "Manual tasks (tick them off yourself). e.g. \"Raid LK (weekly)\", \"Grind X mob\".",
         "textFaint", "GameFontHighlightSmall")
     hint:SetPoint("TOPLEFT", 6, y - 26); hint:SetWidth(width - 16); hint:SetJustifyH("LEFT")
     y = y - 26 - hint:GetStringHeight() - 12
 
-    local div2 = W.Divider(content); div2:SetPoint("TOPLEFT", 6, y); div2:SetPoint("RIGHT", content, "RIGHT", -6, 0); y = y - 14
+    local div2 = W.Divider:New(content); div2:SetPoint("TOPLEFT", 6, y); div2:SetPoint("RIGHT", content, "RIGHT", -6, 0); y = y - 14
 
     -- Current tasks (grouped by type) with Remove
-    local cur = W.SectionLabel(content, "Current tasks"); cur:SetPoint("TOPLEFT", 6, y); y = y - 22
+    local cur = W.SectionLabel:New(content, "Current tasks"); cur:SetPoint("TOPLEFT", 6, y); y = y - 22
     local p = self:_p()
     local any = false
     -- Bucket tasks by type ONCE (not a scan of every task per type), then render in
@@ -644,10 +644,10 @@ function Tasklist:BuildSettingsPage(sf)
             local key, def = entry.key, entry.def
             any = true
             local done = self:IsDone(key)
-            local lbl = W.Text(content, ("|cff5b6473[%s]|r %s"):format(TYPE_LABEL[def.type], def.title or key),
+            local lbl = W.Text:New(content, ("|cff5b6473[%s]|r %s"):format(TYPE_LABEL[def.type], def.title or key),
                 done and "textFaint" or "text", "GameFontHighlightSmall")
             lbl:SetPoint("TOPLEFT", 10, y); lbl:SetWidth(width - 90); lbl:SetJustifyH("LEFT")
-            local rm = W.TextButton(content, "Remove")
+            local rm = W.TextButton:New(content, "Remove")
             rm:SetPoint("TOPRIGHT", content, "TOPRIGHT", -6, y)
             rm.text:SetTextColor(Theme.Unpack("red"))
             rm:SetScript("OnClick", function()
@@ -658,7 +658,7 @@ function Tasklist:BuildSettingsPage(sf)
         end
     end
     if not any then
-        local none = W.Text(content, "No tasks yet.", "textFaint", "GameFontHighlightSmall")
+        local none = W.Text:New(content, "No tasks yet.", "textFaint", "GameFontHighlightSmall")
         none:SetPoint("TOPLEFT", 10, y); y = y - 20
     end
 

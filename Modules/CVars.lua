@@ -187,7 +187,7 @@ function CVars:BuildSettingsPage(sf)
     p.pageWidth = width
     p.sections = {}
 
-    local intro = W.Text(content, "Grouped useful CVars -- expand a category to change values. "
+    local intro = W.Text:New(content, "Grouped useful CVars -- expand a category to change values. "
         .. "Changes apply right away. Tick Global on a per-character CVar to save it and "
         .. "re-apply it on every character (while this module is enabled).",
         "textDim", "GameFontHighlightSmall")
@@ -214,7 +214,7 @@ end
 -- Build one collapsible category section with the given CVar defs.
 function CVars:_BuildSection(titleText, defs, prependAdd)
     local p = self:_p()
-    local sec = W.CollapsibleSection(p.pageContent, titleText)
+    local sec = W.CollapsibleSection:New(p.pageContent, titleText)
     local box = sec:GetContent()
     local y = -6
 
@@ -259,10 +259,10 @@ end
 -- ---- row builders ---------------------------------------------------------
 -- Place the "add a custom CVar" row: a text box for the name + an Add button.
 function CVars:_PlaceAddRow(box, y, width)
-    local input = W.Input(box, width - 120)
+    local input = W.Input:New(box, width - 120)
     input:SetPoint("TOPLEFT", 6, y)
 
-    local add = W.TextButton(box, "Add")
+    local add = W.TextButton:New(box, "Add")
     add:SetPoint("LEFT", input, "RIGHT", 10, 0)
 
     local function submit()
@@ -281,7 +281,7 @@ function CVars:_PlaceAddRow(box, y, width)
     add:SetScript("OnClick", submit)
     input:SetScript("OnEnterPressed", function(s) s:ClearFocus(); submit() end)
 
-    local hint = W.Text(box, "Type any CVar name, then Add. The field type is detected automatically.",
+    local hint = W.Text:New(box, "Type any CVar name, then Add. The field type is detected automatically.",
         "textFaint", "GameFontHighlightSmall")
     hint:SetPoint("TOPLEFT", 6, y - 26)
     hint:SetWidth(width - 24)
@@ -301,7 +301,7 @@ function CVars:_PlaceRow(box, def, y, width)
 
     -- Remove (custom rows only), pinned furthest right.
     if def.custom then
-        local rm = W.TextButton(box, "Remove")
+        local rm = W.TextButton:New(box, "Remove")
         rm:SetPoint("TOPRIGHT", box, "TOPRIGHT", -cursor, y - 2)
         rm.text:SetTextColor(Theme.Unpack("red"))
         rm:SetScript("OnEnter", function() rm.text:SetTextColor(Theme.Unpack("text")) end)
@@ -317,11 +317,11 @@ function CVars:_PlaceRow(box, def, y, width)
     -- "Global" toggle: only for per-character CVars (account/global ones are
     -- already shared, so forcing them is meaningless).
     if perChar then
-        local g = W.Toggle(box, nil)
+        local g = W.Toggle:New(box, nil)
         g:SetPoint("TOPRIGHT", box, "TOPRIGHT", -cursor, y)
         g:SetChecked(self:GetDB().managed[def.name] ~= nil)
         g:SetOnToggle(function(on) self:_SetGlobalise(def.name, on) end)
-        local glbl = W.Text(box, "Global", "textDim", "GameFontHighlightSmall")
+        local glbl = W.Text:New(box, "Global", "textDim", "GameFontHighlightSmall")
         glbl:SetPoint("RIGHT", g, "LEFT", -6, 0)
         cursor = cursor + 18 + 6 + glbl:GetStringWidth() + 14
     end
@@ -329,26 +329,26 @@ function CVars:_PlaceRow(box, def, y, width)
     local valInset = -cursor
 
     if def.type == "boolean" then
-        local t = W.Toggle(box, nil)
+        local t = W.Toggle:New(box, nil)
         t:SetPoint("TOPLEFT", 6, y)
         t:SetChecked(cur == "1")
         t:SetOnToggle(function(on) self:_SetCVar(def.name, on and "1" or "0") end)
-        local lbl = W.Text(box, def.label, "text", "GameFontHighlight")
+        local lbl = W.Text:New(box, def.label, "text", "GameFontHighlight")
         lbl:SetPoint("LEFT", t, "RIGHT", 10, 0)
 
     elseif def.options then
-        local lbl = W.Text(box, def.label, "text", "GameFontHighlight")
+        local lbl = W.Text:New(box, def.label, "text", "GameFontHighlight")
         lbl:SetPoint("TOPLEFT", 6, y - 2)
-        local seg = W.Segmented(box, def.options)
+        local seg = W.Segmented:New(box, def.options)
         seg:SetPoint("TOPRIGHT", box, "TOPRIGHT", valInset, y)
         seg:SetValue(cur)
         seg:SetOnChange(function(v) self:_SetCVar(def.name, v) end)
 
     else  -- number or string -> text box
-        local lbl = W.Text(box, def.label, "text", "GameFontHighlight")
+        local lbl = W.Text:New(box, def.label, "text", "GameFontHighlight")
         lbl:SetPoint("TOPLEFT", 6, y - 2)
         local numeric = def.type == "number"
-        local input = W.Input(box, numeric and 90 or 150)
+        local input = W.Input:New(box, numeric and 90 or 150)
         input:SetPoint("TOPRIGHT", box, "TOPRIGHT", valInset, y)
         input:SetValue(cur)
         input:SetOnChange(function(v)
@@ -365,7 +365,7 @@ function CVars:_PlaceRow(box, def, y, width)
 
     local descY = y - 22
     if def.desc then
-        local d = W.Text(box, def.desc, "textFaint", "GameFontHighlightSmall")
+        local d = W.Text:New(box, def.desc, "textFaint", "GameFontHighlightSmall")
         d:SetPoint("TOPLEFT", def.type == "boolean" and 30 or 6, descY)
         d:SetWidth(width - 40)
         d:SetJustifyH("LEFT")
