@@ -47,17 +47,19 @@ local function lockoutColumns(chars, predicate)
     local seen, cols = {}, {}
     for _, e in pairs(chars) do
         for _, lk in ipairs(e.lockouts or {}) do
-            if predicate(lk) and not seen[lk.name] then
-                seen[lk.name] = true
-                local name = lk.name
-                cols[#cols + 1] = { label = name, width = 96, cell = function(entry)
-                    for _, l in ipairs(entry.lockouts or {}) do
-                        if l.name == name then
-                            return (l.progress or 0) .. "/" .. (l.total or "?")
+            local key = lk.name .. "|" .. (lk.diff or "")
+            if predicate(lk) and not seen[key] then
+                seen[key] = true
+                local name, diff = lk.name, lk.diff
+                cols[#cols + 1] = { label = diff and (name .. " (" .. diff .. ")") or name,
+                    width = 110, cell = function(entry)
+                        for _, l in ipairs(entry.lockouts or {}) do
+                            if l.name == name and l.diff == diff then
+                                return (l.progress or 0) .. "/" .. (l.total or "?")
+                            end
                         end
-                    end
-                    return "-"
-                end }
+                        return "-"
+                    end }
             end
         end
     end
@@ -203,17 +205,20 @@ function Dashboard:_CollectVault()
     e.vault = { slots = slots }
 end
 
--- All saved instances the character is locked to (raids AND dungeons, current AND legacy) --
--- GetSavedInstanceInfo returns every active lock, so legacy raids you're saved to are captured
--- without any curated per-expansion list.
+-- All saved instances the character is locked to (raids AND dungeons, every difficulty, current
+-- AND legacy). GetSavedInstanceInfo returns ONLY active locks, so "which difficulty has a lockout"
+-- needs no curated table -- if it's locked it's here (with its difficulty + boss count), if not it
+-- isn't. We capture the difficulty name so a multi-difficulty lock (e.g. LFR + Heroic of one raid)
+-- shows as separate entries.
 function Dashboard:_CollectLockouts()
     local e = self:_SelfEntry()
     local n = (GetNumSavedInstances and GetNumSavedInstances()) or 0
     local locks = {}
     for i = 1, n do
-        local name, _, reset, _, locked, _, _, isRaid, _, _, numEnc, prog = GetSavedInstanceInfo(i)
+        local name, _, reset, _, locked, _, _, isRaid, _, diff, numEnc, prog = GetSavedInstanceInfo(i)
         if locked and reset and reset > 0 then
-            locks[#locks + 1] = { name = name, total = numEnc, progress = prog, isRaid = isRaid, reset = reset }
+            locks[#locks + 1] = { name = name, diff = diff, total = numEnc, progress = prog,
+                isRaid = isRaid, reset = reset }
         end
     end
     e.lockouts = locks
@@ -258,16 +263,20 @@ function Dashboard:_ExpansionMap()
     if C_AddOns and C_AddOns.LoadAddOn then pcall(C_AddOns.LoadAddOn, "Blizzard_EncounterJournal") end
     local map, found = {}, false
     local prev = EJ_GetCurrentTier and EJ_GetCurrentTier()
-    for tier = 1, EJ_GetNumTiers() do
-        local tierName = EJ_GetTierInfo(tier)
+    local function walk(tier, tierName, isRaid)
         EJ_SelectTier(tier)
         local i = 1
         while true do
-            local instID, name = EJ_GetInstanceByIndex(i, true)   -- true = raids only
+            local instID, name = EJ_GetInstanceByIndex(i, isRaid)
             if not instID then break end
             if name and tierName then map[name] = tierName; found = true end
             i = i + 1
         end
+    end
+    for tier = 1, EJ_GetNumTiers() do
+        local tierName = EJ_GetTierInfo(tier)
+        walk(tier, tierName, true)    -- raids
+        walk(tier, tierName, false)   -- dungeons -> same name->expansion map
     end
     if prev then pcall(EJ_SelectTier, prev) end   -- restore the journal's selected tier
     if found then
@@ -277,18 +286,21 @@ function Dashboard:_ExpansionMap()
     return p.ejMap
 end
 
--- The expansion a saved raid belongs to (cache read only; "Other" until the map is built).
-function Dashboard:_RaidExpansion(name)
+-- The expansion an instance (raid OR dungeon) belongs to (cache read only; "Other" until built).
+function Dashboard:_InstanceExpansion(name)
     local m = self:_p().ejMap
     return (m and m[name]) or "Other"
 end
 
--- Distinct expansions across all characters' saved raids, the current expansion first then A-Z.
-function Dashboard:_SavedRaidExpansions()
+-- Distinct expansions among locked instances of one kind (raids if wantRaid, else dungeons),
+-- the current expansion first then A-Z. Only expansions you actually hold a lock in appear.
+function Dashboard:_SavedExpansions(wantRaid)
     local set = {}
     for _, e in pairs(self:_Chars()) do
         for _, lk in ipairs(e.lockouts or {}) do
-            if lk.isRaid then set[self:_RaidExpansion(lk.name)] = true end
+            if (lk.isRaid and true or false) == wantRaid then
+                set[self:_InstanceExpansion(lk.name)] = true
+            end
         end
     end
     local list, cur = {}, self:_p().currentExpansion
@@ -400,10 +412,14 @@ function Dashboard:_NavItems()
             items[#items + 1] = { section = cat.label }
         elseif self:_CategoryVisible(cat.key) then
             items[#items + 1] = { key = cat.key, label = cat.label, indent = cat.indent and 1 or 0 }
-            -- under Raids, a deeper sub-node per expansion you hold a raid lock in (current first)
+            -- a deeper sub-node per expansion you hold a lock in (current first), for Raids/Dungeons
             if cat.key == "raids" then
-                for _, exp in ipairs(self:_SavedRaidExpansions()) do
+                for _, exp in ipairs(self:_SavedExpansions(true)) do
                     items[#items + 1] = { key = "raid:" .. exp, label = exp, indent = 2 }
+                end
+            elseif cat.key == "dungeons" then
+                for _, exp in ipairs(self:_SavedExpansions(false)) do
+                    items[#items + 1] = { key = "dungeon:" .. exp, label = exp, indent = 2 }
                 end
             end
         end
@@ -420,15 +436,21 @@ function Dashboard:_NavItems()
     return out
 end
 
--- Resolve a nav key to (title, columns(chars)). A dynamic "raid:<exp>" key filters the raid
--- lockouts to one expansion; everything else is a static CATEGORIES entry.
+-- Resolve a nav key to (title, columns(chars)). Dynamic "raid:<exp>" / "dungeon:<exp>" keys filter
+-- the lockouts to one expansion of that kind; everything else is a static CATEGORIES entry.
 function Dashboard:_ResolveCategory(key)
-    local exp = key and key:match("^raid:(.+)$")
-    if exp then
-        return exp .. " Raids", function(chars)
+    local rexp = key and key:match("^raid:(.+)$")
+    if rexp then
+        return rexp .. " Raids", function(chars)
             return lockoutColumns(chars, function(lk)
-                return lk.isRaid and self:_RaidExpansion(lk.name) == exp
-            end)
+                return lk.isRaid and self:_InstanceExpansion(lk.name) == rexp end)
+        end
+    end
+    local dexp = key and key:match("^dungeon:(.+)$")
+    if dexp then
+        return dexp .. " Dungeons", function(chars)
+            return lockoutColumns(chars, function(lk)
+                return not lk.isRaid and self:_InstanceExpansion(lk.name) == dexp end)
         end
     end
     for _, c in ipairs(CATEGORIES) do
