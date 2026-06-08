@@ -284,10 +284,7 @@ function Questing:_OnDetail()
     -- any quest is accepted. A first-seen timed quest is unknown here and gets caught
     -- post-accept by _OnQuestAccepted, then remembered so it lands here next time.
     local qid = self:_CurrentQuestID()
-    if self:_IsTimedQuest(qid) then
-        self:LogEchoInfo("skipped timed quest:", GetTitleText())
-        return
-    end
+    if self:_IsTimedQuest(qid) then return end
     -- Mark it ours so QUEST_ACCEPTED can catch it if it turns out to be timed (the limit
     -- only becomes readable once it's in the log).
     if qid then self:_p().pendingAccept[qid] = true end
@@ -307,10 +304,9 @@ function Questing:_OnQuestAccepted(_, a, b)
     -- Defer one tick: the log timer isn't always initialised the instant the event fires.
     C_Timer.After(0.1, function()
         if not self:_LiveTimed(questID) then return end
-        local newly = self:_RememberTimed(questID)
+        self:_RememberTimed(questID)
         self:_AbandonQuest(questID)
-        self:LogAnnounce(("auto-abandoned timed quest: %s%s"):format(
-            self:_QuestTitle(questID), newly and "  (remembered account-wide)" or ""))
+        self:LogWarnAlways("auto-abandoned timed quest:", self:_QuestTitle(questID))
     end)
 end
 
