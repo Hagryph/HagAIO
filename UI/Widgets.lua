@@ -523,6 +523,161 @@ function Widgets.Window(opts)
     return f
 end
 
+-- Column-aligned GRID -- the one row/column layout engine. Define columns ONCE (width +
+-- header label + justify); the optional sticky header AND every data row derive their cell
+-- x-positions from the SAME column spec, so alignment is structural, never hand-offset. The
+-- same primitive drives a single-column selectable list (a sidebar/nav) and an N-column data
+-- table, so the sidebar items, section headers and the main grid all align through one code path.
+--   opts: columns = { { width=number|nil(flex), label=string, justify="LEFT"/"CENTER"/"RIGHT" }, ... }
+--         header   build a sticky column-label row;  striped  alternate row tints
+--         scroll   default true -> rows scroll under the header; false -> laid out in place
+--         name     frame name (REQUIRED when scroll, for the scrollbar);  rowHeight (22)
+--         indentStep (12)  pixels per row.indent level on the first column
+-- A row passed to :SetRows is one of:
+--   { cells = { "..", .. }, color=paletteKey, cellColor=function(colIndex)->key|{r,g,b},
+--     onClick=fn, active=bool, indent=number }   -- a data / nav row
+--   { section = "Label" }                          -- a full-width section header row
+-- Methods: :SetColumns(cols)  :SetRows(rows)  :Refresh()  (.header is the header frame).
+function Widgets.Grid(parent, opts)
+    opts = opts or {}
+    local g = CreateFrame("Frame", nil, parent)
+    g.columns = opts.columns or {}
+    local rowH       = opts.rowHeight or 22
+    local indentStep = opts.indentStep or 12
+    local rows = {}
+
+    -- x offset of each column from the grid's left; a width=nil column flexes to fill `width`.
+    local function colX(width)
+        local fixed = 0
+        for _, c in ipairs(g.columns) do fixed = fixed + (c.width or 0) end
+        local xs, x = {}, 0
+        for i, c in ipairs(g.columns) do
+            xs[i] = x
+            x = x + (c.width or math.max(40, width - fixed))
+        end
+        return xs
+    end
+
+    local header, headerDiv
+    if opts.header then
+        header = CreateFrame("Frame", nil, g)
+        header:SetPoint("TOPLEFT"); header:SetPoint("TOPRIGHT")
+        header:SetHeight(opts.headerHeight or 18)
+        header.cells = {}
+        headerDiv = Widgets.Divider(g)
+        headerDiv:SetPoint("TOPLEFT", header, "BOTTOMLEFT", 0, -2)
+        headerDiv:SetPoint("TOPRIGHT", header, "BOTTOMRIGHT", 0, -2)
+    end
+    g.header = header
+
+    local content
+    if opts.scroll ~= false then
+        local sf = Widgets.ScrollFrame(g, opts.name)
+        sf:SetPoint("TOPLEFT", header and headerDiv or g, header and "BOTTOMLEFT" or "TOPLEFT", 0, header and -6 or 0)
+        sf:SetPoint("BOTTOMRIGHT", -22, 0)
+        g.scroll, content = sf, sf.content
+    else
+        content = CreateFrame("Frame", nil, g)
+        content:SetPoint("TOPLEFT", header and headerDiv or g, header and "BOTTOMLEFT" or "TOPLEFT", 0, header and -6 or 0)
+        content:SetPoint("TOPRIGHT")
+    end
+    g.content = content
+
+    local function bodyWidth()
+        local w = content:GetWidth()
+        if not w or w < 1 then w = g:GetWidth() or 200 end
+        return w
+    end
+
+    local function getRow(i)
+        local r = rows[i]
+        if r then return r end
+        r = CreateFrame("Button", nil, content)
+        r:SetHeight(rowH)
+        r.bg = r:CreateTexture(nil, "BACKGROUND"); r.bg:SetAllPoints()
+        r.bar = r:CreateTexture(nil, "OVERLAY")
+        r.bar:SetPoint("TOPLEFT"); r.bar:SetPoint("BOTTOMLEFT"); r.bar:SetWidth(3)
+        r.bar:SetColorTexture(Theme.Unpack("accent")); r.bar:Hide()
+        r.cells = {}
+        r.sectionFS = Widgets.SectionLabel(r, ""); r.sectionFS:SetPoint("LEFT", 6, 0); r.sectionFS:Hide()
+        rows[i] = r
+        return r
+    end
+
+    local function setColor(fs, key)
+        if type(key) == "table" then fs:SetTextColor(key[1], key[2], key[3]) else fs:SetTextColor(Theme.Unpack(key)) end
+    end
+
+    function g:SetColumns(cols) g.columns = cols or {}; g:Refresh() end
+    function g:SetRows(data)    g._data = data; g:Refresh() end
+
+    function g:Refresh()
+        local width = bodyWidth()
+        if g.scroll then content:SetWidth(width) end
+        local xs = colX(width)
+
+        if header then
+            for ci, c in ipairs(g.columns) do
+                local fs = header.cells[ci]
+                if not fs then fs = Widgets.SectionLabel(header, ""); header.cells[ci] = fs end
+                fs:ClearAllPoints(); fs:SetPoint("LEFT", xs[ci] + 4, 0)
+                fs:SetWidth(math.max(10, (c.width or (width - xs[ci])) - 6))
+                fs:SetJustifyH(c.justify or "LEFT"); fs:SetText(c.label or ""); fs:SetWordWrap(false); fs:Show()
+            end
+            for ci = #g.columns + 1, #header.cells do header.cells[ci]:Hide() end
+        end
+
+        local data, y = g._data or {}, 0
+        for i, rd in ipairs(data) do
+            local r = getRow(i)
+            for ci = #r.cells + 1, #g.columns do
+                r.cells[ci] = Widgets.Text(r, "", "text", "GameFontHighlightSmall")
+            end
+            r:ClearAllPoints(); r:SetPoint("TOPLEFT", 0, y); r:SetPoint("RIGHT", g, "RIGHT", g.scroll and -22 or 0, 0)
+            r:SetScript("OnClick", nil); r:SetScript("OnEnter", nil); r:SetScript("OnLeave", nil); r:EnableMouse(false)
+            r.bar:Hide(); r.sectionFS:Hide(); r.bg:SetColorTexture(0, 0, 0, 0)
+            for _, fs in ipairs(r.cells) do fs:Hide() end
+
+            if rd.section then
+                r.sectionFS:SetText(rd.section); r.sectionFS:Show()
+            else
+                local indent = (rd.indent or 0) * indentStep
+                for ci, c in ipairs(g.columns) do
+                    local fs, extra = r.cells[ci], (ci == 1) and (rd.indent or 0) * indentStep or 0
+                    fs:ClearAllPoints(); fs:SetPoint("LEFT", xs[ci] + 4 + extra, 0)
+                    fs:SetWidth(math.max(10, (c.width or (width - xs[ci])) - 6 - extra))
+                    fs:SetJustifyH(c.justify or "LEFT"); fs:SetWordWrap(false)
+                    fs:SetText((rd.cells and rd.cells[ci]) or "")
+                    setColor(fs, (rd.cellColor and rd.cellColor(ci)) or rd.color or "text")
+                    fs:Show()
+                end
+                if rd.onClick then
+                    r:EnableMouse(true)
+                    r:SetScript("OnClick", function() rd.onClick(rd) end)
+                    local function paint(hover)
+                        if rd.active then r.bg:SetColorTexture(Theme.Unpack("accentSoft"))
+                        elseif hover then r.bg:SetColorTexture(Theme.Unpack("panel2"))
+                        else r.bg:SetColorTexture(0, 0, 0, 0) end
+                    end
+                    r.bar:SetShown(rd.active and true or false)
+                    if rd.active then r.cells[1]:SetTextColor(Theme.Unpack("accent")) end
+                    r:SetScript("OnEnter", function() paint(true) end)
+                    r:SetScript("OnLeave", function() paint(false) end)
+                    paint(false)
+                elseif opts.striped and (i % 2 == 0) then
+                    r.bg:SetColorTexture(Theme.Unpack("panel2", 0.45))
+                end
+            end
+            r:Show()
+            y = y - rowH
+        end
+        for i = #data + 1, #rows do rows[i]:Hide() end
+        content:SetHeight(math.max(1, -y))
+    end
+
+    return g
+end
+
 -- Shared HagAIO icon tooltip (addon-compartment + minimap buttons): an accent title plus
 -- a list of { text, key } lines coloured from the Theme palette (key defaults to "textDim").
 -- Keeps the two icon services from each hand-rolling the same block + magic RGBs.

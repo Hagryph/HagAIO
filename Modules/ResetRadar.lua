@@ -111,9 +111,6 @@ local CATEGORIES = {
 function ResetRadar:OnInitialize()
     local p = self:_p()
     p.built = false
-    p.rows = {}
-    p.cols = {}
-    p.navItems = {}
     p.shown = false
     p.category = "mplus"
 end
@@ -246,8 +243,13 @@ function ResetRadar:_Snapshot()
 end
 
 -- ===========================================================================
--- Window: left rail (avatar + char header + category tree) | bordered content grid.
+-- Window: left rail (avatar + char header + a 1-column nav GRID) | content (reset header +
+-- title + an N-column data GRID). BOTH panels are ns.UI.Widgets.Grid instances, so the sidebar
+-- items, section headers and the data columns all align through ONE layout engine -- no
+-- hand-computed offsets, so headers and cells can't drift apart.
 -- ===========================================================================
+local NAME_COL = 150   -- the sticky character-name column (shared by the data grid)
+
 function ResetRadar:_Build()
     local p = self:_p()
     if p.built then return end
@@ -260,14 +262,14 @@ function ResetRadar:_Build()
     f:SetScript("OnHide", function() self:_p().shown = false end)
     p.frame = f
 
-    -- left rail
+    -- left rail: character card + category nav grid
     local rail = W.Panel(f.body, "bg0", "border")
     rail:SetWidth(RAIL_W)
     rail:SetPoint("TOPLEFT", 0, 0)
     rail:SetPoint("BOTTOMLEFT", 0, 0)
 
-    -- character header: avatar + name + level/ilvl + rating. The portrait is a texture ON the
-    -- bordered frame's ARTWORK layer (above its backdrop) so the backdrop never hides it.
+    -- character card: avatar (portrait on the bordered frame's ARTWORK layer, above its
+    -- backdrop so the fill never hides it) + name / level-ilvl / rating.
     local avFrame = CreateFrame("Frame", nil, rail, "BackdropTemplate")
     avFrame:SetSize(AVATAR, AVATAR)
     avFrame:SetPoint("TOPLEFT", 14, -14)
@@ -291,25 +293,13 @@ function ResetRadar:_Build()
     div:SetPoint("TOPLEFT", avFrame, "BOTTOMLEFT", 0, -14)
     div:SetPoint("RIGHT", rail, "RIGHT", -12, 0)
 
-    -- category tree (nav items start well below the header block)
-    local menuLabel = W.SectionLabel(rail, "Categories")
-    menuLabel:SetPoint("TOPLEFT", div, "BOTTOMLEFT", 2, -12)
-    local y = -118
-    for _, cat in ipairs(CATEGORIES) do
-        if cat.header then
-            local h = W.SectionLabel(rail, cat.label)
-            h:SetPoint("TOPLEFT", 12, y); y = y - 22
-        else
-            local item = W.NavItem(rail, (cat.indent and "   " or "") .. cat.label)
-            item:SetPoint("TOPLEFT", rail, "TOPLEFT", 8, y)
-            item:SetPoint("RIGHT", rail, "RIGHT", -8, 0)
-            item:SetScript("OnClick", function() self:_Select(cat.key) end)
-            p.navItems[cat.key] = item
-            y = y - 32
-        end
-    end
+    -- the category tree IS a 1-column grid (section + selectable nav rows)
+    local nav = W.Grid(rail, { columns = { {} }, scroll = false, rowHeight = 30 })
+    nav:SetPoint("TOPLEFT", div, "BOTTOMLEFT", 6, -10)
+    nav:SetPoint("BOTTOMRIGHT", rail, "BOTTOMRIGHT", -6, 8)
+    p.nav = nav
 
-    -- content panel
+    -- content: reset header + category title + the data grid
     local content = W.Panel(f.body, "panel", "border")
     content:SetPoint("TOPLEFT", rail, "TOPRIGHT", 1, 0)
     content:SetPoint("BOTTOMRIGHT", f.body, "BOTTOMRIGHT", 0, 0)
@@ -323,31 +313,38 @@ function ResetRadar:_Build()
     catTitle:SetPoint("TOPLEFT", resetHdr, "BOTTOMLEFT", 0, -10)
     p.catTitle = catTitle
 
-    -- column-header row (sticky) + a divider, above the scrolling character rows
-    local colHdr = CreateFrame("Frame", nil, content)
-    colHdr:SetPoint("TOPLEFT", catTitle, "BOTTOMLEFT", 0, -10)
-    colHdr:SetPoint("RIGHT", content, "RIGHT", -16, 0)
-    colHdr:SetHeight(16)
-    p.colHdr = colHdr
-    p.colHdrCells = {}
-
-    local cdiv = W.Divider(content)
-    cdiv:SetPoint("TOPLEFT", colHdr, "BOTTOMLEFT", 0, -3)
-    cdiv:SetPoint("RIGHT", content, "RIGHT", -16, 0)
-
-    local sf = W.ScrollFrame(content, "HagAIOResetRadarScroll")
-    sf:SetPoint("TOPLEFT", cdiv, "BOTTOMLEFT", 0, -6)
-    sf:SetPoint("BOTTOMRIGHT", content, "BOTTOMRIGHT", -28, 12)
-    p.scroll = sf
+    local grid = W.Grid(content, { name = "HagAIOResetRadarGrid", header = true, striped = true })
+    grid:SetPoint("TOPLEFT", catTitle, "BOTTOMLEFT", 0, -12)
+    grid:SetPoint("BOTTOMRIGHT", content, "BOTTOMRIGHT", -10, 12)
+    p.grid = grid
 
     p.built = true
     self:_Select(p.category)
 end
 
+-- The sidebar rows: a section header for a group, a selectable (indented) nav row otherwise.
+function ResetRadar:_SidebarRows()
+    local p = self:_p()
+    local rows = {}
+    for _, cat in ipairs(CATEGORIES) do
+        if cat.header then
+            rows[#rows + 1] = { section = cat.label }
+        else
+            local key = cat.key
+            rows[#rows + 1] = {
+                cells = { cat.label }, indent = cat.indent and 1 or 0,
+                active = (key == p.category),
+                onClick = function() self:_Select(key) end,
+            }
+        end
+    end
+    return rows
+end
+
 function ResetRadar:_Select(key)
     local p = self:_p()
     p.category = key
-    for k, item in pairs(p.navItems) do item:SetActive(k == key) end
+    p.nav:SetRows(self:_SidebarRows())   -- rebuild to reflect the active row
     self:_Render()
 end
 
@@ -369,8 +366,6 @@ function ResetRadar:_SortedChars()
     return keys, chars
 end
 
-local NAME_COL = 150   -- the sticky character-name column
-
 function ResetRadar:_Render()
     local p = self:_p()
     if not p.built then return end
@@ -378,81 +373,29 @@ function ResetRadar:_Render()
     self:_UpdateCountdown()
 
     local cat = self:_Category()
-    local keys, chars = self:_SortedChars()
     p.catTitle:SetText(cat.label)
-
-    -- columns for the selected category (cells are pure over a stored entry)
+    local keys, chars = self:_SortedChars()
     local cols = (cat.columns and cat.columns(chars)) or {}
 
-    -- (re)build the sticky column-header cells
-    for _, fs in ipairs(p.colHdrCells) do fs:Hide() end
-    local x = NAME_COL
-    for i, c in ipairs(cols) do
-        local fs = p.colHdrCells[i]
-        if not fs then fs = W.SectionLabel(p.colHdr, ""); p.colHdrCells[i] = fs end
-        fs:ClearAllPoints(); fs:SetPoint("LEFT", x, 0)
-        fs:SetWidth(c.width); fs:SetText(c.label); fs:SetJustifyH("LEFT"); fs:SetWordWrap(false); fs:Show()
-        x = x + c.width
-    end
-    local rowWidth = x
+    -- one sticky Character column + one column per category item; the grid aligns header+cells
+    local columns = { { width = NAME_COL, label = "Character" } }
+    for _, c in ipairs(cols) do columns[#columns + 1] = { width = c.width, label = c.label } end
+    p.grid:SetColumns(columns)
 
-    -- character rows
-    local width = math.max(rowWidth + 8, p.scroll:GetWidth() or 0)
-    p.scroll.content:SetWidth(width)
-    local y = 0
-    for i, key in ipairs(keys) do
+    -- one row per character: cell 1 = class-coloured name, then a value per item column
+    local rows = {}
+    for _, key in ipairs(keys) do
         local e = chars[key]
-        local row = self:_Row(i, #cols)
-        row:ClearAllPoints()
-        row:SetPoint("TOPLEFT", 0, y)
-        row:SetWidth(rowWidth)
-        if i % 2 == 0 then row.bg:SetColorTexture(Theme.Unpack("panel2", 0.45)) else row.bg:SetColorTexture(0, 0, 0, 0) end
-
-        row.name:SetText(e.name or key)
+        local cells = { e.name or key }
+        for _, c in ipairs(cols) do cells[#cells + 1] = c.cell(e) or "-" end
         local cc = e.class and RAID_CLASS_COLORS and RAID_CLASS_COLORS[e.class]
-        if cc then row.name:SetTextColor(cc.r, cc.g, cc.b) else row.name:SetTextColor(Theme.Unpack("text")) end
-
-        local cx = NAME_COL
-        for ci, c in ipairs(cols) do
-            local fs = row.cells[ci]
-            local val = c.cell(e) or "-"
-            fs:ClearAllPoints(); fs:SetPoint("LEFT", cx, 0); fs:SetWidth(c.width)
-            fs:SetText(val); fs:SetJustifyH("LEFT")
-            fs:SetTextColor(Theme.Unpack(val == "-" and "textFaint" or "text"))
-            fs:Show()
-            cx = cx + c.width
-        end
-        for ci = #cols + 1, #row.cells do row.cells[ci]:Hide() end
-        row:Show()
-        y = y - 24
+        local nameColor = cc and { cc.r, cc.g, cc.b } or "text"
+        rows[#rows + 1] = { cells = cells, cellColor = function(ci)
+            if ci == 1 then return nameColor end
+            return cells[ci] == "-" and "textFaint" or "text"
+        end }
     end
-    for i = #keys + 1, #p.rows do p.rows[i]:Hide() end
-    p.scroll.content:SetHeight(math.max(1, -y))
-
-    if #keys == 0 then return end
-end
-
--- A reusable character row with at least `nCells` cells.
-function ResetRadar:_Row(index, nCells)
-    local p = self:_p()
-    local row = p.rows[index]
-    if not row then
-        row = CreateFrame("Frame", nil, p.scroll.content)
-        row:SetHeight(22)
-        row.bg = row:CreateTexture(nil, "BACKGROUND")
-        row.bg:SetPoint("TOPLEFT", 0, 0); row.bg:SetPoint("BOTTOMRIGHT", 0, 2)
-        row.name = W.Text(row, "", "text", "GameFontHighlightSmall")
-        row.name:SetPoint("LEFT", 2, 0); row.name:SetWidth(NAME_COL - 6)
-        row.name:SetJustifyH("LEFT"); row.name:SetWordWrap(false)
-        row.cells = {}
-        p.rows[index] = row
-    end
-    for i = #row.cells + 1, nCells do
-        local fs = W.Text(row, "", "textDim", "GameFontHighlightSmall")
-        fs:SetJustifyH("LEFT"); fs:SetWordWrap(false)
-        row.cells[i] = fs
-    end
-    return row
+    p.grid:SetRows(rows)
 end
 
 function ResetRadar:_UpdateHeader()
