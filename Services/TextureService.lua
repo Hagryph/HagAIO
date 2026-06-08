@@ -65,6 +65,35 @@ local function zoomPan(b, zoom, panX, panY)
     return cx - hw, cx + hw, cy - hh, cy + hh
 end
 
+-- ---- the private texture EDIT ---------------------------------------------
+-- The pooled texture controller. The raw WoW Texture is captured in a closure and never returned --
+-- TextureService is the ONE place a texture is CREATED (the frame-access lint forbids CreateTexture
+-- everywhere else). The Widgets.Texture WIDGET doesn't make its own texture: it HOLDS one of these
+-- edits (acquired here) and releases it on hide/unload, so a texture is always service-owned/pooled.
+local function newEdit(parent, opts)
+    opts = opts or {}
+    local tex = parent:CreateTexture(nil, opts.layer or "ARTWORK", nil, opts.sublevel or 0)
+    if tex.SetSnapToPixelGrid then tex:SetSnapToPixelGrid(false) end       -- WeakAuras texel-crisp fix
+    if tex.SetTexelSnappingBias then tex:SetTexelSnappingBias(0) end
+    local e = {}
+    function e:SetTexture(file)      tex:SetTexture(file);       return self end
+    function e:SetAtlas(atlas)       tex:SetAtlas(atlas, false); return self end  -- atlas carries its own coords
+    function e:SetCoords(l, r, t, b) tex:SetTexCoord(l, r, t, b); return self end
+    function e:SetParent(pp)         tex:SetParent(pp);          return self end
+    function e:ClearAllPoints()      tex:ClearAllPoints();       return self end
+    function e:SetPoint(...)         tex:SetPoint(...);          return self end
+    function e:SetSize(...)          tex:SetSize(...);           return self end
+    function e:SetDrawLayer(...)     tex:SetDrawLayer(...);      return self end
+    function e:SetVertexColor(...)   tex:SetVertexColor(...);    return self end
+    function e:Show()                tex:Show();                 return self end
+    function e:Hide()                tex:Hide();                 return self end
+    function e:Reset()
+        tex:Hide(); tex:ClearAllPoints(); tex:SetTexture(nil); tex:SetTexCoord(0, 1, 0, 1)
+        return self
+    end
+    return e
+end
+
 -- ---- lifecycle ------------------------------------------------------------
 
 function TextureService:OnInitialize()
@@ -116,7 +145,7 @@ function TextureService:Acquire(parent, opts)
         tw:Show()
         return tw
     end
-    tw = ns.UI.Widgets.Texture(parent, opts)
+    tw = (self.__newEdit or newEdit)(parent, opts)   -- __newEdit: test seam; production uses newEdit
     p.owned[#p.owned + 1] = tw   -- keep it alive for the addon's lifetime
     return tw
 end

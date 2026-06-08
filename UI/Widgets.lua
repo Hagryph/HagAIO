@@ -122,8 +122,9 @@ end
 Widgets.RELOAD_FLAG = "  |cff" .. Theme.hex.amber .. "(reload)|r"
 function Widgets.FlagReload(label) return label .. Widgets.RELOAD_FLAG end
 
--- Apply a solid themed backdrop + colours to a BackdropTemplate frame.
-function Widgets.Style(frame, bgKey, borderKey, edgeSize)
+-- Apply a solid themed backdrop + colours to a BackdropTemplate frame. PRIVATE: a widget's own
+-- builder uses it on the raw frame it just created; callers never hold a frame to style.
+local function style(frame, bgKey, borderKey, edgeSize)
     frame:SetBackdrop(Theme.Backdrop(edgeSize or 1))
     frame:SetBackdropColor(Theme.Unpack(bgKey or "panel"))
     frame:SetBackdropBorderColor(Theme.Unpack(borderKey or "border"))
@@ -135,7 +136,7 @@ end
 local PanelW = ns.Class.new("Panel", FrameWidget)
 function PanelW:Initialize(parent, bgKey, borderKey)
     local f = CreateFrame("Frame", nil, unwrap(parent), "BackdropTemplate")
-    Widgets.Style(f, bgKey or "panel", borderKey or "border")
+    style(f, bgKey or "panel", borderKey or "border")
     self:_attach(f)
 end
 function PanelW:SetBackdropColor(...)       self:_frame():SetBackdropColor(...);       return self end
@@ -159,7 +160,7 @@ Widgets.Divider = DividerW
 local AvatarW = ns.Class.new("Avatar", FrameWidget)
 function AvatarW:Initialize(parent, size)
     local f = CreateFrame("Frame", nil, unwrap(parent), "BackdropTemplate")
-    Widgets.Style(f, "panel2", "borderStrong")
+    style(f, "panel2", "borderStrong")
     if size then f:SetSize(size, size) end
     local tex = f:CreateTexture(nil, "ARTWORK")   -- above the backdrop fill so it's never hidden
     tex:SetPoint("TOPLEFT", 2, -2)
@@ -217,7 +218,7 @@ local ButtonW = ns.Class.new("Button", FrameWidget)
 function ButtonW:Initialize(parent, text, opts)
     opts = opts or {}
     local b = CreateFrame("Button", nil, unwrap(parent), "BackdropTemplate")
-    Widgets.Style(b, "panel2", "borderStrong")
+    style(b, "panel2", "borderStrong")
     b:SetHeight(opts.height or 24)
     local fs = TextW:New(b, text, "text", "GameFontHighlight")
     fs:SetPoint("CENTER")
@@ -249,7 +250,7 @@ function ToggleW:Initialize(parent, labelText)
 
     local box = CreateFrame("Frame", nil, btn, "BackdropTemplate")
     box:SetAllPoints()
-    Widgets.Style(box, "panel2", "borderStrong")
+    style(box, "panel2", "borderStrong")
 
     local check = box:CreateTexture(nil, "OVERLAY")
     check:SetTexture("Interface\\Buttons\\UI-CheckBox-Check")
@@ -364,7 +365,7 @@ Widgets.NavItem = NavItemW
 local SegmentedW = ns.Class.new("Segmented", FrameWidget)
 function SegmentedW:Initialize(parent, options)
     local c = CreateFrame("Frame", nil, unwrap(parent), "BackdropTemplate")
-    Widgets.Style(c, "panel2", "border")
+    style(c, "panel2", "border")
     c:SetHeight(24)
 
     local p = self:_p()
@@ -424,7 +425,7 @@ local ColorSwatchW = ns.Class.new("ColorSwatch", FrameWidget)
 function ColorSwatchW:Initialize(parent)
     local btn = CreateFrame("Button", nil, unwrap(parent), "BackdropTemplate")
     btn:SetSize(26, 16)
-    Widgets.Style(btn, "panel2", "borderStrong")
+    style(btn, "panel2", "borderStrong")
 
     local sw = btn:CreateTexture(nil, "ARTWORK")
     sw:SetPoint("TOPLEFT", 2, -2)
@@ -532,7 +533,7 @@ function CollapsibleSectionW:Initialize(parent, titleText)
     header:SetHeight(HEADER)
     header:SetPoint("TOPLEFT")
     header:SetPoint("TOPRIGHT")
-    Widgets.Style(header, "panel2", "border")
+    style(header, "panel2", "border")
 
     local chevron = TextW:New(header, "+", "accent", "GameFontNormalLarge")
     chevron:SetPoint("LEFT", 10, 0)
@@ -583,7 +584,7 @@ function InputW:Initialize(parent, width)
     box:SetAutoFocus(false)
     box:SetHeight(20)
     box:SetWidth(width or 90)
-    Widgets.Style(box, "panel2", "borderStrong")
+    style(box, "panel2", "borderStrong")
     box:SetFontObject("GameFontHighlightSmall")
     box:SetTextInsets(6, 6, 0, 0)
     box:SetTextColor(Theme.Unpack("text"))
@@ -693,7 +694,7 @@ local SettingsGroupW = ns.Class.new("SettingsGroup", FrameWidget)
 function SettingsGroupW:Initialize(parent, title)
     local HEADER, PAD = 24, 10
     local g = CreateFrame("Frame", nil, unwrap(parent), "BackdropTemplate")
-    Widgets.Style(g, "panel2", "border")
+    style(g, "panel2", "border")
 
     local header = CreateFrame("Button", nil, g)
     header:SetPoint("TOPLEFT", 1, -1); header:SetPoint("TOPRIGHT", -1, -1); header:SetHeight(HEADER)
@@ -762,7 +763,7 @@ function WindowW:Initialize(level, opts)
     local f = CreateFrame("Frame", opts.name, UIParent, "BackdropTemplate")
     f:SetSize(opts.width or 560, opts.height or 440)
     f:SetPoint(opts.point or "CENTER")
-    Widgets.Style(f, "bg1", "borderStrong")
+    style(f, "bg1", "borderStrong")
     local strata = opts.strata or "HIGH"
     f:SetFrameStrata(strata)
     f:SetFrameLevel(claimLevel(strata, level))
@@ -1158,21 +1159,32 @@ Widgets.Nav = NavW
 --   opts: layer ("ARTWORK"), sublevel (0)
 -- Setters (each returns self): :SetTexture :SetAtlas :SetCoords(l,r,t,b) :SetParent :ClearAllPoints
 --   :SetPoint :SetSize :SetDrawLayer :SetVertexColor :Show :Hide :Reset
--- Inherits TextureWidget for SetTexture/SetVertexColor/SetDrawLayer + base layout; adds the
--- atlas/coords/reset helpers TextureService drives. Construct with Widgets.Texture:New(parent, opts).
-local TextureW = ns.Class.new("Texture", TextureWidget)
+-- A TEXTURE widget. It does NOT create or own a texture -- it HOLDS a TextureService edit (the
+-- service creates the actual texture and pools it) and forwards to it, RELEASING it back to the
+-- service on :Hide so a texture is never pinned past its use. Methods no-op once released.
+-- Construct with Widgets.Texture:New(parent, opts).
+local TextureW = ns.Class.new("Texture", Widget)
 function TextureW:Initialize(parent, opts)
-    opts = opts or {}
-    local tex = unwrap(parent):CreateTexture(nil, opts.layer or "ARTWORK", nil, opts.sublevel or 0)
-    if tex.SetSnapToPixelGrid then tex:SetSnapToPixelGrid(false) end
-    if tex.SetTexelSnappingBias then tex:SetTexelSnappingBias(0) end
-    self:_attach(tex)
+    self:_p().edit = ns.TextureService:Acquire(unwrap(parent), opts)
 end
-function TextureW:SetAtlas(atlas)       self:_frame():SetAtlas(atlas, false); return self end  -- atlas carries its own coords
-function TextureW:SetCoords(l, r, t, b) self:_frame():SetTexCoord(l, r, t, b); return self end
-function TextureW:Reset()
-    local tex = self:_frame()
-    tex:Hide(); tex:ClearAllPoints(); tex:SetTexture(nil); tex:SetTexCoord(0, 1, 0, 1)
+function TextureW:SetTexture(f)       local e = self:_p().edit; if e then e:SetTexture(f) end;        return self end
+function TextureW:SetAtlas(a)         local e = self:_p().edit; if e then e:SetAtlas(a) end;          return self end
+function TextureW:SetCoords(l,r,t,b)  local e = self:_p().edit; if e then e:SetCoords(l,r,t,b) end;   return self end
+function TextureW:SetVertexColor(...) local e = self:_p().edit; if e then e:SetVertexColor(...) end;  return self end
+function TextureW:SetDrawLayer(...)   local e = self:_p().edit; if e then e:SetDrawLayer(...) end;    return self end
+function TextureW:SetSize(w, h)       local e = self:_p().edit; if e then e:SetSize(w, h) end;        return self end
+function TextureW:ClearAllPoints()    local e = self:_p().edit; if e then e:ClearAllPoints() end;     return self end
+function TextureW:SetParent(p)        local e = self:_p().edit; if e then e:SetParent(unwrap(p)) end; return self end
+function TextureW:SetPoint(point, a, b, c, d)
+    local e = self:_p().edit; if not e then return self end
+    if type(a) == "number" or a == nil then e:SetPoint(point, a, b)
+    else e:SetPoint(point, unwrap(a), b, c, d) end
+    return self
+end
+function TextureW:Show() local e = self:_p().edit; if e then e:Show() end; return self end
+function TextureW:Hide()   -- release the edit back to the service so the texture isn't pinned
+    local e = self:_p().edit
+    if e then ns.TextureService:Release(e); self:_p().edit = nil end
     return self
 end
 Widgets.Texture = TextureW
@@ -1216,7 +1228,7 @@ function IconGridW:Initialize(parent, opts)
             -- image holder: a bordered frame that the texture always FILLS (the image follows this
             -- frame, never a manual size). The border (BORDER layer) draws over the image (BACKGROUND).
             local band = CreateFrame("Frame", nil, t, "BackdropTemplate")
-            Widgets.Style(band, "panel2", "border")
+            style(band, "panel2", "border")
             band:SetPoint("TOPLEFT", t, "TOPLEFT", 0, 0)
             band:SetPoint("BOTTOMRIGHT", t, "BOTTOMRIGHT", 0, TITLE_H)
             t.band = band

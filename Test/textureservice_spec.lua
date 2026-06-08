@@ -3,29 +3,34 @@ local S = dofile("Test/support.lua")
 -- A fresh TextureService with a stubbed holder frame and a FAKE "dumb widget" that records its
 -- setters (a _sets counter on every SetTexture/SetAtlas), so we can assert pooling / original dedupe
 -- / paint memoisation / hold counts without the real WoW texture objects.
+-- A FAKE texture edit recording its setters (a _sets counter on SetTexture/SetAtlas), so we can
+-- assert pooling / dedupe / paint memoisation without real WoW textures. TextureService creates the
+-- real edit via its private newEdit; we inject this fake through the __newEdit test seam.
+local function fakeEdit()
+    local w = { _sets = 0 }
+    function w:SetTexture(f) self._image, self._sets = f, self._sets + 1; return self end
+    function w:SetAtlas(a)   self._image, self._sets = a, self._sets + 1; return self end
+    function w:SetCoords(l, r, t, b) self._coords = { l, r, t, b }; return self end
+    function w:SetParent()       return self end
+    function w:ClearAllPoints()  return self end
+    function w:SetPoint()        return self end
+    function w:SetSize()         return self end
+    function w:SetDrawLayer()    return self end
+    function w:SetVertexColor()  return self end
+    function w:Show() self._shown = true;  return self end
+    function w:Hide() self._shown = false; return self end
+    function w:Reset() self._image, self._coords, self._shown = nil, nil, false; return self end
+    return w
+end
+
 local function setup()
     _G.UIParent = {}
     _G.CreateFrame = function() return { Hide = function() end, Show = function() end } end
     _G.C_Texture = nil                          -- nothing resolves as an atlas (isAtlas -> false)
     local ns = S.newNs()
-    ns.UI = ns.UI or {}
-    ns.UI.Widgets = { Texture = function()
-        local w = { _sets = 0 }
-        function w:SetTexture(f) self._image, self._sets = f, self._sets + 1; return self end
-        function w:SetAtlas(a)   self._image, self._sets = a, self._sets + 1; return self end
-        function w:SetCoords(l, r, t, b) self._coords = { l, r, t, b }; return self end
-        function w:SetParent()       return self end
-        function w:ClearAllPoints()  return self end
-        function w:SetPoint()        return self end
-        function w:SetSize()         return self end
-        function w:SetDrawLayer()    return self end
-        function w:Show() self._shown = true;  return self end
-        function w:Hide() self._shown = false; return self end
-        function w:Reset() self._image, self._coords, self._shown = nil, nil, false; return self end
-        return w
-    end }
     S.load(ns, "Services/TextureService.lua")
     local ts = ns._captured["TextureService"]
+    ts.__newEdit = function() return fakeEdit() end   -- inject fake edits via the test seam
     ts:OnInitialize()
     return ts
 end
