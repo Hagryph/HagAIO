@@ -539,7 +539,10 @@ end
 --         indentStep (12)  pixels per row.indent level on the first column
 -- A row passed to :SetRows is one of:
 --   { cells = { "..", .. }, color=paletteKey, cellColor=function(colIndex)->key|{r,g,b},
---     onClick=fn, active=bool, indent=number }   -- a data / nav row
+--     onClick=fn, active=bool, indent=number,
+--     controls=function(rowFrame, columnXs) ... end }  -- a data / nav row; controls lets the
+--       caller place persistent widgets (checkboxes/buttons) at columnXs[i] (cache them on
+--       rowFrame, re-bind each call) so an interactive table still aligns through the grid
 --   { section = "Label" }                          -- a full-width section header row
 -- Methods: :SetColumns(cols)  :SetRows(rows)  :Refresh()  (.header is the header frame).
 function Widgets.Grid(parent, opts)
@@ -672,6 +675,9 @@ function Widgets.Grid(parent, opts)
                 elseif opts.striped and (i % 2 == 0) then
                     r.bg:SetColorTexture(Theme.Unpack("panel2", 0.45))
                 end
+                -- custom per-row widgets (checkboxes/buttons) positioned at the column x's:
+                -- the row caches them on first call and re-binds them to this row's data.
+                if rd.controls then rd.controls(r, xs) end
             end
             r:Show()
             y = y - rowH

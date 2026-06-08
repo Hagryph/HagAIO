@@ -330,84 +330,79 @@ function SettingsWindow:_BuildProfilesPage(parent)
 
     local listLabel = W.SectionLabel(page, "Saved profiles")
     listLabel:SetPoint("TOPLEFT", 22, -140)
+
+    -- the saved-profile list is a grid: a flex name column, then a Global checkbox column (the
+    -- header names it -- no per-row label) and the Load / Export / Delete action columns.
+    local grid = W.Grid(page, { name = "HagAIOProfilesGrid", header = true, striped = true,
+        rowHeight = 26, columns = {
+            { width = nil, label = "" },                      -- profile name (flex)
+            { width = 58, label = "Global", justify = "CENTER" },
+            { width = 50, label = "" },                       -- Load
+            { width = 62, label = "" },                       -- Export
+            { width = 62, label = "" },                       -- Delete
+        } })
+    grid:SetPoint("TOPLEFT", listLabel, "BOTTOMLEFT", 0, -8)
+    grid:SetPoint("BOTTOMRIGHT", page, "BOTTOMRIGHT", -18, 14)
+    p.profileGrid = grid
+
     local empty = W.Text(page, "No profiles yet.", "textFaint", "GameFontHighlightSmall")
-    empty:SetPoint("TOPLEFT", 24, -166)
+    empty:SetPoint("TOPLEFT", grid, "TOPLEFT", 4, -30)
     p.profileEmpty = empty
-    p.profileRows = {}
 
     page:SetScript("OnShow", function() self:_RefreshProfilesPage() end)
     return page
 end
 
--- A reusable row: name + Load / Export / Delete, acting on row.name.
-function SettingsWindow:_BuildProfileRow(page)
-    local row = CreateFrame("Frame", nil, page)
-    row:SetHeight(26)
-    local label = W.Text(row, "", "text", "GameFontHighlight")
-    label:SetPoint("LEFT", 2, 0)
-    label:SetWidth(140)
-    label:SetJustifyH("LEFT")
-    label:SetWordWrap(false)
-    row.label = label
-
-    -- Exclusive "Global" flag: ticking one profile clears any other; unticking the
-    -- current global leaves none (fresh characters then start empty).
-    local globalCheck = W.Toggle(row, "Global")
-    globalCheck:SetPoint("LEFT", 150, 0)
-    globalCheck:SetOnToggle(function(on)
-        if not row.name then return end
-        ns.Profiles:SetGlobal(on and row.name or nil)
-        self:_RefreshProfilesPage()  -- reflect exclusivity across all rows
-    end)
-    row.globalCheck = globalCheck
-
-    local del = W.TextButton(row, "Delete")
-    del:SetPoint("RIGHT", 0, 0)
-    del:SetScript("OnClick", function()
-        if not row.name then return end
-        ns.Profiles:Delete(row.name)
+-- Per-row interactive widgets for a profile (Global checkbox + Load/Export/Delete), placed at
+-- the grid's column x's. Created once per pooled row and re-bound to `name` on every refresh.
+function SettingsWindow:_ProfileRowControls(row, xs, name)
+    if not row.pInit then
+        row.gCheck   = W.Toggle(row, nil)        -- no label: the column header reads "Global"
+        row.loadBtn  = W.TextButton(row, "Load")
+        row.expBtn   = W.TextButton(row, "Export")
+        row.delBtn   = W.TextButton(row, "Delete")
+        row.pInit = true
+    end
+    row.gCheck:ClearAllPoints(); row.gCheck:SetPoint("LEFT", xs[2] + 20, 0)  -- centred in the column
+    row.gCheck:SetChecked(ns.Profiles:IsGlobal(name))
+    -- Exclusive flag: ticking one clears any other; unticking leaves none.
+    row.gCheck:SetOnToggle(function(on)
+        ns.Profiles:SetGlobal(on and name or nil)
         self:_RefreshProfilesPage()
     end)
-    local export = W.TextButton(row, "Export")
-    export:SetPoint("RIGHT", del, "LEFT", -16, 0)
-    export:SetScript("OnClick", function()
-        if not row.name then return end
-        local str, err = ns.Profiles:Export(row.name)
-        if str then ns.UI.CopyWindow:Show("Profile - " .. row.name, str)
-        else self:LogWarn(err or "export failed") end
-    end)
-    local load = W.TextButton(row, "Load")
-    load:SetPoint("RIGHT", export, "LEFT", -16, 0)
-    load:SetScript("OnClick", function()
-        if not row.name then return end
-        local ok, err = ns.Profiles:LoadProfile(row.name)
-        if ok then self:LogSuccess(("loaded '%s' -- type /reload to apply"):format(row.name))
+    row.loadBtn:ClearAllPoints(); row.loadBtn:SetPoint("LEFT", xs[3], 0)
+    row.loadBtn:SetScript("OnClick", function()
+        local ok, err = ns.Profiles:LoadProfile(name)
+        if ok then self:LogSuccess(("loaded '%s' -- type /reload to apply"):format(name))
         else self:LogWarn(err or "load failed") end
     end)
-    return row
+    row.expBtn:ClearAllPoints(); row.expBtn:SetPoint("LEFT", xs[4], 0)
+    row.expBtn:SetScript("OnClick", function()
+        local str, err = ns.Profiles:Export(name)
+        if str then ns.UI.CopyWindow:Show("Profile - " .. name, str)
+        else self:LogWarn(err or "export failed") end
+    end)
+    row.delBtn:ClearAllPoints(); row.delBtn:SetPoint("LEFT", xs[5], 0)
+    row.delBtn:SetScript("OnClick", function()
+        ns.Profiles:Delete(name)
+        self:_RefreshProfilesPage()
+    end)
 end
 
 -- Rebuild the saved-profile list (cheap; called on show + after save/delete/import).
 function SettingsWindow:_RefreshProfilesPage()
     local p = self:_p()
-    local page = p.pages and p.pages.profiles
-    if not page then return end
-    for _, row in ipairs(p.profileRows) do row:Hide() end
+    if not p.profileGrid then return end
     local names = ns.Profiles and ns.Profiles:List() or {}
     p.profileEmpty:SetShown(#names == 0)
-    local y = -166
-    for i, name in ipairs(names) do
-        local row = p.profileRows[i]
-        if not row then row = self:_BuildProfileRow(page); p.profileRows[i] = row end
-        row:ClearAllPoints()
-        row:SetPoint("TOPLEFT", page, "TOPLEFT", 22, y)
-        row:SetPoint("RIGHT", page, "RIGHT", -22, 0)
-        row.label:SetText(name)
-        row.name = name
-        row.globalCheck:SetChecked(ns.Profiles:IsGlobal(name))
-        row:Show()
-        y = y - 30
+    local rows = {}
+    for _, name in ipairs(names) do
+        rows[#rows + 1] = {
+            cells = { name, "", "", "", "" },
+            controls = function(row, xs) self:_ProfileRowControls(row, xs, name) end,
+        }
     end
+    p.profileGrid:SetRows(rows)
 end
 
 -- Drop a module's cached settings page so it rebuilds from the CURRENT schema
