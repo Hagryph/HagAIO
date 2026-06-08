@@ -6,44 +6,105 @@ local Ledger = ns.ResetLedger
 local clock = ns.Format.Clock   -- "3h 04m" duration formatter (Lib/Format.lua)
 
 -- Modules/ResetRadar.lua
--- Account-wide, cross-character RESET dashboard. Every character snapshots its own reset-
--- timer state (Great Vault, M+ keystone + rating, raid/dungeon lockouts, item level) into a
--- shared account-wide saved table keyed by "Name-Realm"; a wide themed window then shows ALL
--- characters as rows with a category per column and a live "time until reset" header. No
--- addon-to-addon comms (cross-character state travels purely via SavedVariables), so the
--- 12.0 encounter comms throttle never applies. Secret Great-Vault progress (M+/raid) is read
--- through ns.Secrets and stored only when non-secret -- we never compute on a secret.
+-- Account-wide, cross-character RESET dashboard. Every character snapshots its own reset-timer
+-- state (Great Vault, M+ keystone + rating, raid/dungeon lockouts, weekly/daily quest turn-ins,
+-- item level) into a shared account-wide saved table keyed by "Name-Realm"; a themed window
+-- with a LEFT CATEGORY TREE + a character header then shows ALL characters as rows, the selected
+-- category's items as columns. No addon-to-addon comms (cross-character state travels purely via
+-- SavedVariables), so the 12.0 encounter comms throttle never applies. Secret Great-Vault
+-- progress (M+/raid) is read through ns.Secrets and stored only when non-secret.
 --
--- The pure shaping (the store key, reset-rollover detection, progress/keystone formatting)
--- lives in the unit-tested ns.ResetLedger (Lib/ResetLedger.lua); this module is the WoW-API
--- collectors + the window.
+-- Pure shaping (store key, reset-rollover, progress/keystone formatting) lives in the unit-tested
+-- ns.ResetLedger (Lib/ResetLedger.lua). Data approach (verified by reading SavedInstances /
+-- AlterEgo / Altoholic source): lockouts come dynamically from GetSavedInstanceInfo (every
+-- instance the character is locked to, incl. legacy raids), and weekly/daily quests are RECORDED
+-- as they're turned in (QUEST_TURNED_IN) and classified by frequency -- no curated ID tables.
 
 local ResetRadar = Class.new("ResetRadar", ns.Module)
 
-local NAME_W = 124   -- the sticky first (character) column width
+local RAIL_W = 178            -- left category-tree / character-header rail
+local AVATAR = 46            -- character portrait size
 
--- One column = one reset category. get(entry) is PURE (reads only the stored snapshot, no
--- live API), so the same descriptor renders the current character and every offline alt.
-local COLUMNS = {
-    { key = "level", label = "Lvl",      width = 40,  get = function(e) return e.level and tostring(e.level) or "-" end },
-    { key = "ilvl",  label = "iLvl",     width = 48,  get = function(e) return e.ilvl  and tostring(e.ilvl)  or "-" end },
-    { key = "score", label = "M+",       width = 52,  get = function(e) return e.rating and tostring(e.rating) or "-" end },
-    { key = "key",   label = "Keystone", width = 132, get = function(e)
-        local k = e.keystone; return Ledger:KeystoneText(k and k.name, k and k.level) end },
-    { key = "vault", label = "Vault",    width = 64,  get = function(e)
-        local v = e.vault
-        if not (v and v.slots and #v.slots > 0) then return "-" end
-        local done = 0
-        for _, s in ipairs(v.slots) do
-            local _, isDone = Ledger:Progress(s.progress, s.threshold)
-            if isDone then done = done + 1 end
+-- ===========================================================================
+-- Category descriptors. Each yields the COLUMNS for the selected dataset; a column's cell(entry)
+-- is PURE (reads only a stored snapshot) so it renders the current character and every alt the
+-- same way. `indent` draws it as a sub-item in the tree.
+-- ===========================================================================
+local function vaultDone(e)
+    local v = e.vault
+    if not (v and v.slots and #v.slots > 0) then return "-" end
+    local done = 0
+    for _, s in ipairs(v.slots) do
+        local _, isDone = Ledger:Progress(s.progress, s.threshold)
+        if isDone then done = done + 1 end
+    end
+    return done .. "/" .. #v.slots
+end
+
+-- A lockout column-set built from the union of every character's saved instances matching
+-- `predicate(lockout)`; each cell shows that character's boss progress for the instance.
+local function lockoutColumns(chars, predicate)
+    local seen, cols = {}, {}
+    for _, e in pairs(chars) do
+        for _, lk in ipairs(e.lockouts or {}) do
+            if predicate(lk) and not seen[lk.name] then
+                seen[lk.name] = true
+                local name = lk.name
+                cols[#cols + 1] = { label = name, width = 96, cell = function(entry)
+                    for _, l in ipairs(entry.lockouts or {}) do
+                        if l.name == name then
+                            return (l.progress or 0) .. "/" .. (l.total or "?")
+                        end
+                    end
+                    return "-"
+                end }
+            end
         end
-        return done .. "/" .. #v.slots
+    end
+    table.sort(cols, function(a, b) return a.label < b.label end)
+    return cols
+end
+
+-- A quest column-set from the union of recorded weekly/daily turn-ins of the given `freq`.
+local function questColumns(chars, freq)
+    local seen, cols = {}, {}
+    for _, e in pairs(chars) do
+        local recorded = e.quests and e.quests[freq]
+        if recorded then
+            for id, title in pairs(recorded) do
+                if not seen[id] then
+                    seen[id] = true
+                    local qid = id
+                    cols[#cols + 1] = { label = title or ("Quest " .. id), width = 120, cell = function(entry)
+                        local r = entry.quests and entry.quests[freq]
+                        return (r and r[qid]) and "done" or "-"
+                    end }
+                end
+            end
+        end
+    end
+    table.sort(cols, function(a, b) return a.label < b.label end)
+    return cols
+end
+
+local CATEGORIES = {
+    { key = "mplus", label = "Mythic+", columns = function()
+        return {
+            { label = "Keystone", width = 150, cell = function(e)
+                local k = e.keystone; return Ledger:KeystoneText(k and k.name, k and k.level) end },
+            { label = "Rating", width = 64, cell = function(e) return e.rating and tostring(e.rating) or "-" end },
+            { label = "Vault",  width = 64, cell = vaultDone },
+        }
     end },
-    { key = "locks", label = "Lockouts", width = 70,  get = function(e)
-        local n = e.lockouts and #e.lockouts or 0
-        return n > 0 and tostring(n) or "-"
-    end },
+    { key = "lockouts", label = "Lockouts", header = true },
+    { key = "raids",    label = "Raids",    indent = true,
+      columns = function(chars) return lockoutColumns(chars, function(lk) return lk.isRaid end) end },
+    { key = "dungeons", label = "Dungeons", indent = true,
+      columns = function(chars) return lockoutColumns(chars, function(lk) return not lk.isRaid end) end },
+    { key = "weekly", label = "Weekly Quests",
+      columns = function(chars) return questColumns(chars, "weekly") end },
+    { key = "daily",  label = "Daily Quests",
+      columns = function(chars) return questColumns(chars, "daily") end },
 }
 
 -- ---- lifecycle ------------------------------------------------------------
@@ -51,21 +112,24 @@ function ResetRadar:OnInitialize()
     local p = self:_p()
     p.built = false
     p.rows = {}
+    p.cols = {}
+    p.navItems = {}
     p.shown = false
+    p.category = "mplus"
 end
 
 function ResetRadar:OnEnable()
-    -- Snapshot now, and on every event that changes a tracked value. Targeted collectors keep
-    -- each fire cheap (per the never-debounce rule) -- a bag update only re-reads the keystone,
-    -- not the whole snapshot.
-    self:On("PLAYER_ENTERING_WORLD",    function() self:_Snapshot() end)
-    self:On("PLAYER_LOGOUT",            function() self:_Snapshot() end)
-    self:On("WEEKLY_REWARDS_UPDATE",    function() self:_CollectVault();    self:_RenderIfShown() end)
-    self:On("CHALLENGE_MODE_COMPLETED", function() self:_CollectKeystone(); self:_RenderIfShown() end)
+    -- Targeted collectors keep each fire cheap (the never-debounce rule): a bag update only
+    -- re-reads the keystone, a quest turn-in only records that quest.
+    self:On("PLAYER_ENTERING_WORLD",      function() self:_Snapshot() end)
+    self:On("PLAYER_LOGOUT",              function() self:_Snapshot() end)
+    self:On("WEEKLY_REWARDS_UPDATE",      function() self:_CollectVault();    self:_RenderIfShown() end)
+    self:On("CHALLENGE_MODE_COMPLETED",   function() self:_CollectKeystone(); self:_RenderIfShown() end)
     self:On("CHALLENGE_MODE_MAPS_UPDATE", function() self:_CollectKeystone(); self:_RenderIfShown() end)
-    self:On("BAG_UPDATE_DELAYED",       function() self:_CollectKeystone(); self:_RenderIfShown() end)
-    self:On("UPDATE_INSTANCE_INFO",     function() self:_CollectLockouts(); self:_RenderIfShown() end)
-    self:On("BOSS_KILL",                function() self:_CollectLockouts() end)
+    self:On("BAG_UPDATE_DELAYED",         function() self:_CollectKeystone(); self:_RenderIfShown() end)
+    self:On("UPDATE_INSTANCE_INFO",       function() self:_CollectLockouts(); self:_RenderIfShown() end)
+    self:On("BOSS_KILL",                  function() self:_CollectLockouts() end)
+    self:On("QUEST_TURNED_IN",            function(_, questID) self:_RecordQuest(questID) end)
     self:_Snapshot()
     if RequestRaidInfo then RequestRaidInfo() end   -- async -> UPDATE_INSTANCE_INFO fills lockouts
     if self:GetSetting("openOnLogin") then self:Show() end
@@ -76,8 +140,6 @@ function ResetRadar:OnDisable()
 end
 
 -- ---- account-wide store ---------------------------------------------------
--- The shared (NOT per-character) table: every character writes its own snapshot here keyed by
--- "Name-Realm", so any character sees all the others.
 function ResetRadar:_Chars()
     return ns.SavedVars:Namespace("resetradar", { chars = {} }).chars
 end
@@ -87,7 +149,6 @@ function ResetRadar:_SelfKey()
     return Ledger:CharKey(UnitName("player"), realm)
 end
 
--- This character's entry (created on first use); stamps lastSeen so reset-rollover works.
 function ResetRadar:_SelfEntry()
     local chars = self:_Chars()
     local key = self:_SelfKey()
@@ -133,16 +194,17 @@ function ResetRadar:_CollectVault()
     local slots = {}
     for _, a in ipairs(acts) do
         -- progress/threshold can be secret in restricted content -- store only a plain number
-        -- (ns.Secrets:Number returns nil for a secret), so the cross-char cell never computes
-        -- on a secret. A nil here just reads as not-done until snapshotted out of restriction.
+        -- (ns.Secrets:Number returns nil for a secret), so a cross-char cell never computes on one.
         local prog = ns.Secrets and ns.Secrets:Number(a.progress) or a.progress
         local thr  = ns.Secrets and ns.Secrets:Number(a.threshold) or a.threshold
         slots[#slots + 1] = { type = a.type, level = a.level, progress = prog, threshold = thr }
     end
-    e.vault = { slots = slots,
-        hasRewards = (C_WeeklyRewards.HasAvailableRewards and C_WeeklyRewards.HasAvailableRewards()) or false }
+    e.vault = { slots = slots }
 end
 
+-- All saved instances the character is locked to (raids AND dungeons, current AND legacy) --
+-- GetSavedInstanceInfo returns every active lock, so legacy raids you're saved to are captured
+-- without any curated per-expansion list.
 function ResetRadar:_CollectLockouts()
     local e = self:_SelfEntry()
     local n = (GetNumSavedInstances and GetNumSavedInstances()) or 0
@@ -150,10 +212,29 @@ function ResetRadar:_CollectLockouts()
     for i = 1, n do
         local name, _, reset, _, locked, _, _, isRaid, _, _, numEnc, prog = GetSavedInstanceInfo(i)
         if locked and reset and reset > 0 then
-            locks[#locks + 1] = { name = name, total = numEnc, progress = prog, isRaid = isRaid }
+            locks[#locks + 1] = { name = name, total = numEnc, progress = prog, isRaid = isRaid, reset = reset }
         end
     end
     e.lockouts = locks
+end
+
+-- Record a turned-in quest under its reset frequency (daily/weekly), so the dashboard shows
+-- which alt did which recurring quest this reset. Non-recurring quests are ignored.
+function ResetRadar:_RecordQuest(questID)
+    if not questID then return end
+    local freq
+    local info = C_QuestLog and C_QuestLog.GetQuestInfo  -- title fallback; frequency below
+    local f = C_QuestLog and C_QuestLog.GetQuestFrequency and C_QuestLog.GetQuestFrequency(questID)
+    if f == (Enum and Enum.QuestFrequency and Enum.QuestFrequency.Daily) then freq = "daily"
+    elseif f == (Enum and Enum.QuestFrequency and Enum.QuestFrequency.Weekly) then freq = "weekly" end
+    if not freq then return end
+    local e = self:_SelfEntry()
+    e.quests = e.quests or {}
+    e.quests[freq] = e.quests[freq] or {}
+    local title = (C_QuestLog and C_QuestLog.GetTitleForQuestID and C_QuestLog.GetTitleForQuestID(questID))
+        or (info and info(questID)) or ("Quest " .. questID)
+    e.quests[freq][questID] = title
+    self:_RenderIfShown()
 end
 
 function ResetRadar:_Snapshot()
@@ -164,119 +245,221 @@ function ResetRadar:_Snapshot()
     self:_RenderIfShown()
 end
 
--- ---- window ---------------------------------------------------------------
+-- ===========================================================================
+-- Window: left rail (avatar + char header + category tree) | bordered content grid.
+-- ===========================================================================
 function ResetRadar:_Build()
     local p = self:_p()
     if p.built then return end
 
-    -- total width = sticky name column + every category column + side padding
-    local gridW = NAME_W
-    for _, c in ipairs(COLUMNS) do gridW = gridW + c.width end
-
-    local f = W.Window({ name = "HagAIOResetRadar", width = gridW + 36, height = 420,
-        strata = "HIGH", title = "Reset Radar", onClose = function() self:Hide() end })
+    local f = W.Window({ name = "HagAIOResetRadar", width = 860, height = 520,
+        strata = "HIGH", title = "Reset Radar", onClose = function() self:Hide() end,
+        autoClose = true,
+        onAutoShow = function() self:Show() end,
+        onAutoHide = function() self:Hide() end })
     f:SetScript("OnHide", function() self:_p().shown = false end)
     p.frame = f
 
-    -- live reset countdown header
-    local header = W.Text(f.body, "", "textDim", "GameFontHighlightSmall")
-    header:SetPoint("TOPLEFT", 16, -12)
-    p.header = header
+    -- left rail
+    local rail = W.Panel(f.body, "bg0", "border")
+    rail:SetWidth(RAIL_W)
+    rail:SetPoint("TOPLEFT", 0, 0)
+    rail:SetPoint("BOTTOMLEFT", 0, 0)
 
-    -- column-label row (the sticky header for the grid)
-    local labels = CreateFrame("Frame", nil, f.body)
-    labels:SetPoint("TOPLEFT", header, "BOTTOMLEFT", 0, -10)
-    labels:SetPoint("RIGHT", f.body, "RIGHT", -16, 0)
-    labels:SetHeight(18)
-    local nameHdr = W.SectionLabel(labels, "Character")
-    nameHdr:SetPoint("LEFT", 0, 0)
-    local x = NAME_W
-    for _, c in ipairs(COLUMNS) do
-        local h = W.SectionLabel(labels, c.label)
-        h:SetPoint("LEFT", x, 0)
-        x = x + c.width
+    -- character header: avatar + name + level/ilvl + rating
+    local av = rail:CreateTexture(nil, "ARTWORK")
+    av:SetSize(AVATAR, AVATAR)
+    av:SetPoint("TOPLEFT", 14, -14)
+    local avBorder = CreateFrame("Frame", nil, rail, "BackdropTemplate")
+    avBorder:SetPoint("TOPLEFT", av, "TOPLEFT", -2, 2)
+    avBorder:SetPoint("BOTTOMRIGHT", av, "BOTTOMRIGHT", 2, -2)
+    W.Style(avBorder, "panel2", "borderStrong")
+    p.avatar = av
+
+    local hName = W.Text(rail, "", "text", "GameFontNormal")
+    hName:SetPoint("TOPLEFT", av, "TOPRIGHT", 10, -2)
+    hName:SetWidth(RAIL_W - AVATAR - 30); hName:SetJustifyH("LEFT"); hName:SetWordWrap(false)
+    local hInfo = W.Text(rail, "", "textDim", "GameFontHighlightSmall")
+    hInfo:SetPoint("TOPLEFT", hName, "BOTTOMLEFT", 0, -4)
+    local hRating = W.Text(rail, "", "accent", "GameFontHighlightSmall")
+    hRating:SetPoint("TOPLEFT", hInfo, "BOTTOMLEFT", 0, -2)
+    p.hName, p.hInfo, p.hRating = hName, hInfo, hRating
+
+    local div = W.Divider(rail)
+    div:SetPoint("TOPLEFT", av, "BOTTOMLEFT", 0, -12)
+    div:SetPoint("RIGHT", rail, "RIGHT", -12, 0)
+
+    -- category tree
+    local menuLabel = W.SectionLabel(rail, "Categories")
+    menuLabel:SetPoint("TOPLEFT", div, "BOTTOMLEFT", 2, -10)
+    local y = -54
+    for _, cat in ipairs(CATEGORIES) do
+        if cat.header then
+            local h = W.SectionLabel(rail, cat.label)
+            h:SetPoint("TOPLEFT", 12, y); y = y - 22
+        else
+            local item = W.NavItem(rail, (cat.indent and "   " or "") .. cat.label)
+            item:SetPoint("TOPLEFT", rail, "TOPLEFT", 8, y)
+            item:SetPoint("RIGHT", rail, "RIGHT", -8, 0)
+            item:SetScript("OnClick", function() self:_Select(cat.key) end)
+            p.navItems[cat.key] = item
+            y = y - 32
+        end
     end
 
-    local div = W.Divider(f.body)
-    div:SetPoint("TOPLEFT", labels, "BOTTOMLEFT", 0, -4)
-    div:SetPoint("RIGHT", f.body, "RIGHT", -16, 0)
+    -- content panel
+    local content = W.Panel(f.body, "panel", "border")
+    content:SetPoint("TOPLEFT", rail, "TOPRIGHT", 1, 0)
+    content:SetPoint("BOTTOMRIGHT", f.body, "BOTTOMRIGHT", 0, 0)
 
-    local sf = W.ScrollFrame(f.body, "HagAIOResetRadarScroll")
-    sf:SetPoint("TOPLEFT", div, "BOTTOMLEFT", 0, -8)
-    sf:SetPoint("BOTTOMRIGHT", f.body, "BOTTOMRIGHT", -28, 12)
+    local resetHdr = W.Text(content, "", "textDim", "GameFontHighlightSmall")
+    resetHdr:SetPoint("TOPLEFT", 16, -12); resetHdr:SetPoint("RIGHT", content, "RIGHT", -16, 0)
+    resetHdr:SetJustifyH("LEFT")
+    p.resetHdr = resetHdr
+
+    local catTitle = W.Text(content, "", "text", "GameFontNormalLarge")
+    catTitle:SetPoint("TOPLEFT", resetHdr, "BOTTOMLEFT", 0, -10)
+    p.catTitle = catTitle
+
+    -- column-header row (sticky) + a divider, above the scrolling character rows
+    local colHdr = CreateFrame("Frame", nil, content)
+    colHdr:SetPoint("TOPLEFT", catTitle, "BOTTOMLEFT", 0, -10)
+    colHdr:SetPoint("RIGHT", content, "RIGHT", -16, 0)
+    colHdr:SetHeight(16)
+    p.colHdr = colHdr
+    p.colHdrCells = {}
+
+    local cdiv = W.Divider(content)
+    cdiv:SetPoint("TOPLEFT", colHdr, "BOTTOMLEFT", 0, -3)
+    cdiv:SetPoint("RIGHT", content, "RIGHT", -16, 0)
+
+    local sf = W.ScrollFrame(content, "HagAIOResetRadarScroll")
+    sf:SetPoint("TOPLEFT", cdiv, "BOTTOMLEFT", 0, -6)
+    sf:SetPoint("BOTTOMRIGHT", content, "BOTTOMRIGHT", -28, 12)
     p.scroll = sf
 
     p.built = true
+    self:_Select(p.category)
 end
 
--- A sorted character list: the current character first, then the rest alphabetically.
+function ResetRadar:_Select(key)
+    local p = self:_p()
+    p.category = key
+    for k, item in pairs(p.navItems) do item:SetActive(k == key) end
+    self:_Render()
+end
+
+function ResetRadar:_Category()
+    for _, c in ipairs(CATEGORIES) do if c.key == self:_p().category then return c end end
+    return CATEGORIES[1]
+end
+
+-- Sorted character keys: the current character first, then alphabetical.
 function ResetRadar:_SortedChars()
     local chars = self:_Chars()
     local selfKey = self:_SelfKey()
     local keys = {}
     for k in pairs(chars) do keys[#keys + 1] = k end
     table.sort(keys, function(a, b)
-        if a == selfKey ~= (b == selfKey) then return a == selfKey end
+        if (a == selfKey) ~= (b == selfKey) then return a == selfKey end
         return a < b
     end)
-    return keys, chars, selfKey
+    return keys, chars
 end
 
--- One reusable character row: a class-coloured name + a cell per column.
-function ResetRadar:_Row(index)
-    local p = self:_p()
-    local row = p.rows[index]
-    if row then return row end
-    row = CreateFrame("Frame", nil, p.scroll.content)
-    row:SetHeight(22)
-    row.name = W.Text(row, "", "text", "GameFontHighlightSmall")
-    row.name:SetPoint("LEFT", 2, 0)
-    row.name:SetWidth(NAME_W - 4)
-    row.name:SetJustifyH("LEFT")
-    row.name:SetWordWrap(false)
-    row.cells = {}
-    local x = NAME_W
-    for i, c in ipairs(COLUMNS) do
-        local fs = W.Text(row, "", "textDim", "GameFontHighlightSmall")
-        fs:SetPoint("LEFT", x, 0)
-        fs:SetWidth(c.width)
-        fs:SetJustifyH("LEFT")
-        fs:SetWordWrap(false)
-        row.cells[i] = fs
-        x = x + c.width
-    end
-    p.rows[index] = row
-    return row
-end
+local NAME_COL = 150   -- the sticky character-name column
 
 function ResetRadar:_Render()
     local p = self:_p()
     if not p.built then return end
-    local keys, chars = self:_SortedChars()
-    local width = p.scroll:GetWidth(); if not width or width < 1 then width = 480 end
-    p.scroll.content:SetWidth(width)
+    self:_UpdateHeader()
+    self:_UpdateCountdown()
 
+    local cat = self:_Category()
+    local keys, chars = self:_SortedChars()
+    p.catTitle:SetText(cat.label)
+
+    -- columns for the selected category (cells are pure over a stored entry)
+    local cols = (cat.columns and cat.columns(chars)) or {}
+
+    -- (re)build the sticky column-header cells
+    for _, fs in ipairs(p.colHdrCells) do fs:Hide() end
+    local x = NAME_COL
+    for i, c in ipairs(cols) do
+        local fs = p.colHdrCells[i]
+        if not fs then fs = W.SectionLabel(p.colHdr, ""); p.colHdrCells[i] = fs end
+        fs:ClearAllPoints(); fs:SetPoint("LEFT", x, 0)
+        fs:SetWidth(c.width); fs:SetText(c.label); fs:SetWordWrap(false); fs:Show()
+        x = x + c.width
+    end
+    local rowWidth = x
+
+    -- character rows
+    local width = math.max(rowWidth + 8, p.scroll:GetWidth() or 0)
+    p.scroll.content:SetWidth(width)
     local y = 0
     for i, key in ipairs(keys) do
         local e = chars[key]
-        local row = self:_Row(i)
+        local row = self:_Row(i, #cols)
         row:ClearAllPoints()
         row:SetPoint("TOPLEFT", 0, y)
-        row:SetPoint("RIGHT", p.scroll.content, "RIGHT", 0, 0)
+        row:SetWidth(rowWidth)
 
         row.name:SetText(e.name or key)
         local cc = e.class and RAID_CLASS_COLORS and RAID_CLASS_COLORS[e.class]
         if cc then row.name:SetTextColor(cc.r, cc.g, cc.b) else row.name:SetTextColor(Theme.Unpack("text")) end
 
-        for ci, c in ipairs(COLUMNS) do
-            row.cells[ci]:SetText(c.get(e) or "-")
+        local cx = NAME_COL
+        for ci, c in ipairs(cols) do
+            local fs = row.cells[ci]
+            fs:ClearAllPoints(); fs:SetPoint("LEFT", cx, 0); fs:SetWidth(c.width)
+            fs:SetText(c.cell(e) or "-"); fs:Show()
+            cx = cx + c.width
         end
+        for ci = #cols + 1, #row.cells do row.cells[ci]:Hide() end
         row:Show()
         y = y - 24
     end
     for i = #keys + 1, #p.rows do p.rows[i]:Hide() end
     p.scroll.content:SetHeight(math.max(1, -y))
-    self:_UpdateCountdown()
+
+    if #keys == 0 then return end
+end
+
+-- A reusable character row with at least `nCells` cells.
+function ResetRadar:_Row(index, nCells)
+    local p = self:_p()
+    local row = p.rows[index]
+    if not row then
+        row = CreateFrame("Frame", nil, p.scroll.content)
+        row:SetHeight(22)
+        row.name = W.Text(row, "", "text", "GameFontHighlightSmall")
+        row.name:SetPoint("LEFT", 2, 0); row.name:SetWidth(NAME_COL - 6)
+        row.name:SetJustifyH("LEFT"); row.name:SetWordWrap(false)
+        row.cells = {}
+        p.rows[index] = row
+    end
+    for i = #row.cells + 1, nCells do
+        local fs = W.Text(row, "", "textDim", "GameFontHighlightSmall")
+        fs:SetJustifyH("LEFT"); fs:SetWordWrap(false)
+        row.cells[i] = fs
+    end
+    return row
+end
+
+function ResetRadar:_UpdateHeader()
+    local p = self:_p()
+    local chars = self:_Chars()
+    local e = chars[self:_SelfKey()]
+    if not e then return end
+    p.hName:SetText(e.name or "?")
+    local cc = e.class and RAID_CLASS_COLORS and RAID_CLASS_COLORS[e.class]
+    if cc then p.hName:SetTextColor(cc.r, cc.g, cc.b) end
+    p.hInfo:SetText(("Level %s   iLvl %s"):format(tostring(e.level or "-"), tostring(e.ilvl or "-")))
+    p.hRating:SetText(e.rating and ("Mythic+ " .. e.rating) or "")
+    if SetPortraitTexture and p.avatar then
+        SetPortraitTexture(p.avatar, "player")   -- the viewing character's portrait
+    end
 end
 
 function ResetRadar:_RenderIfShown()
@@ -285,10 +468,10 @@ end
 
 function ResetRadar:_UpdateCountdown()
     local p = self:_p()
-    if not p.header then return end
+    if not p.resetHdr then return end
     local weekly = C_DateAndTime and C_DateAndTime.GetSecondsUntilWeeklyReset and C_DateAndTime.GetSecondsUntilWeeklyReset()
     local daily  = C_DateAndTime and C_DateAndTime.GetSecondsUntilDailyReset  and C_DateAndTime.GetSecondsUntilDailyReset()
-    p.header:SetText(("Weekly reset in |cff%s%s|r      Daily reset in |cff%s%s|r")
+    p.resetHdr:SetText(("Weekly reset in |cff%s%s|r      Daily reset in |cff%s%s|r")
         :format(Theme.hex.accent, clock(weekly), Theme.hex.accent, clock(daily)))
 end
 
@@ -318,7 +501,7 @@ end
 -- ---- registration ---------------------------------------------------------
 ns.ModuleManager:Register(ResetRadar:New("ResetRadar", {
     title = "Reset Radar",
-    description = "A cross-character view of weekly/daily resets: Great Vault, M+ keystone, and lockouts.",
+    description = "A cross-character view of weekly/daily resets: Great Vault, M+ keystone, lockouts and recurring quests.",
     defaultEnabled = false,
     color = ns.Theme.hex.accent,
     deps = { "SavedVars", "SlashCommand", "Secrets" },
