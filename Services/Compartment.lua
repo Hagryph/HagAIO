@@ -10,6 +10,16 @@ local Class = ns.Class
 
 local Compartment = Class.new("Compartment", ns.Service, { mixins = { ns.Persisted } })
 
+-- Open the Reset Radar dashboard. Optional module, resolved lazily at click time (a service
+-- can't depend on a module), enabled on first use so a middle-click just works.
+-- depcheck-allow: ResetRadar
+local function openResets()
+    local m = ns.ModuleManager and ns.ModuleManager:GetModule("ResetRadar")
+    if not m then return end
+    if not m:IsEnabled() then m:Enable() end
+    m:Toggle()
+end
+
 function Compartment:OnInitialize()
     self:_p().registered = false
     self:_BindStore("compartment", { shown = true })  -- account-wide; cached _Store (ns.Persisted)
@@ -54,6 +64,7 @@ function Compartment:Register()
         funcOnEnter = function(button)
             ns.UI.Widgets.IconTooltip(button, {
                 { text = "Left-click: open settings", key = "text" },
+                { text = "Middle-click: reset dashboard" },
                 { text = "Right-click: enable/disable modules" },
             })
         end,
@@ -69,6 +80,8 @@ end
 function Compartment:OnClick(button, owner)
     if button == "RightButton" then
         ns.ModuleManager:OpenContextMenu(owner or AddonCompartmentFrame)
+    elseif button == "MiddleButton" then
+        openResets()
     else  -- LeftButton (and any other) opens the settings window
         ns.UI.SettingsWindow:Toggle()
     end

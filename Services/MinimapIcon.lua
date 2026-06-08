@@ -10,6 +10,16 @@ local MinimapIcon = Class.new("MinimapIcon", ns.Service, { mixins = { ns.Persist
 
 local DEFAULT_ANGLE = 225   -- degrees, measured from the minimap centre
 
+-- Open the Reset Radar dashboard. It's an OPTIONAL module, resolved lazily at click time, so
+-- the icon never hard-depends on it (a service can't depend on a module anyway). Enables it on
+-- first use so a middle-click just works. depcheck-allow: ResetRadar
+local function openResets()
+    local m = ns.ModuleManager and ns.ModuleManager:GetModule("ResetRadar")
+    if not m then return end
+    if not m:IsEnabled() then m:Enable() end
+    m:Toggle()
+end
+
 function MinimapIcon:OnInitialize()
     self:_BindStore("minimap", { shown = false, angle = DEFAULT_ANGLE })  -- cached _Store (ns.Persisted)
     ns.EventBus:On("PLAYER_LOGIN", function() self:Refresh() end)  -- self-apply on login
@@ -39,7 +49,7 @@ function MinimapIcon:_Build()
     b:SetFrameStrata("MEDIUM")
     b:SetFrameLevel(8)
     b:SetSize(31, 31)
-    b:RegisterForClicks("LeftButtonUp", "RightButtonUp")
+    b:RegisterForClicks("LeftButtonUp", "RightButtonUp", "MiddleButtonUp")
     b:RegisterForDrag("LeftButton")
 
     -- round icon (square art clipped by a circular mask)
@@ -86,6 +96,8 @@ end
 function MinimapIcon:_OnClick(btn)
     if btn == "RightButton" then
         ns.ModuleManager:OpenContextMenu(self:_p().button)
+    elseif btn == "MiddleButton" then
+        openResets()
     else
         ns.UI.SettingsWindow:Toggle()
     end
@@ -94,6 +106,7 @@ end
 function MinimapIcon:_OnEnter(b)
     ns.UI.Widgets.IconTooltip(b, {
         { text = "Left-click: open settings", key = "text" },
+        { text = "Middle-click: reset dashboard" },
         { text = "Right-click: enable/disable modules" },
         { text = "Drag: move around the minimap" },
     })
