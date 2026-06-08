@@ -1019,32 +1019,35 @@ function Widgets.IconGrid(parent, opts)
     local tiles = {}
     local function getTile(i)
         local t = tiles[i]
-        if t then return t end
-        t = CreateFrame("Button", nil, content)                -- container only
-        -- image holder: a bordered frame that the texture always FILLS (the image follows this
-        -- frame, never a manual size). The border (BORDER layer) draws over the image (BACKGROUND).
-        local band = CreateFrame("Frame", nil, t, "BackdropTemplate")
-        Widgets.Style(band, "panel2", "border")
-        band:SetPoint("TOPLEFT", t, "TOPLEFT", 0, 0)
-        band:SetPoint("BOTTOMRIGHT", t, "BOTTOMRIGHT", 0, TITLE_H)
-        t.band = band
-        local tb = t:CreateTexture(nil, "ARTWORK")             -- titlebar strip below the image
-        tb:SetColorTexture(Theme.Unpack("bg1"))
-        tb:SetPoint("TOPLEFT", band, "BOTTOMLEFT", 0, 0); tb:SetPoint("BOTTOMRIGHT", t, "BOTTOMRIGHT", 0, 0)
-        t.titlebar = tb
-        -- pooled Texture widget (kept alive by TextureService), filling the band on its BACKGROUND
-        -- layer so the band border draws over it. The widget applies the WeakAuras texel fix.
-        local img = (ns.TextureService and ns.TextureService:Acquire(band, { layer = "BACKGROUND", sublevel = 1 }))
-            or Widgets.Texture(band, { layer = "BACKGROUND", sublevel = 1 })
-        t.img = img
-        local label = t:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-        label:SetPoint("LEFT", tb, "LEFT", 6, 0); label:SetPoint("RIGHT", tb, "RIGHT", -6, 0)
-        label:SetJustifyH("CENTER"); label:SetWordWrap(false)
-        t.label = label
-        local badge = band:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-        badge:SetPoint("TOPRIGHT", band, "TOPRIGHT", -5, -5); badge:SetJustifyH("RIGHT")
-        t.badge = badge
-        tiles[i] = t
+        if not t then
+            t = CreateFrame("Button", nil, content)            -- container only
+            -- image holder: a bordered frame that the texture always FILLS (the image follows this
+            -- frame, never a manual size). The border (BORDER layer) draws over the image (BACKGROUND).
+            local band = CreateFrame("Frame", nil, t, "BackdropTemplate")
+            Widgets.Style(band, "panel2", "border")
+            band:SetPoint("TOPLEFT", t, "TOPLEFT", 0, 0)
+            band:SetPoint("BOTTOMRIGHT", t, "BOTTOMRIGHT", 0, TITLE_H)
+            t.band = band
+            local tb = t:CreateTexture(nil, "ARTWORK")         -- titlebar strip below the image
+            tb:SetColorTexture(Theme.Unpack("bg1"))
+            tb:SetPoint("TOPLEFT", band, "BOTTOMLEFT", 0, 0); tb:SetPoint("BOTTOMRIGHT", t, "BOTTOMRIGHT", 0, 0)
+            t.titlebar = tb
+            local label = t:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+            label:SetPoint("LEFT", tb, "LEFT", 6, 0); label:SetPoint("RIGHT", tb, "RIGHT", -6, 0)
+            label:SetJustifyH("CENTER"); label:SetWordWrap(false)
+            t.label = label
+            local badge = band:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+            badge:SetPoint("TOPRIGHT", band, "TOPRIGHT", -5, -5); badge:SetJustifyH("RIGHT")
+            t.badge = badge
+            tiles[i] = t
+        end
+        -- (Re)acquire the pooled image widget. Released tiles (see :ReleaseAll) drop theirs so the
+        -- source texture can be collected; this hands a fresh one back filling the band on its
+        -- BACKGROUND layer (so the band border draws over it). Kept alive by the TextureService.
+        if not t.img then
+            t.img = (ns.TextureService and ns.TextureService:Acquire(t.band, { layer = "BACKGROUND", sublevel = 1 }))
+                or Widgets.Texture(t.band, { layer = "BACKGROUND", sublevel = 1 })
+        end
         return t
     end
 
@@ -1052,6 +1055,16 @@ function Widgets.IconGrid(parent, opts)
     function g:ScrollTop()    sa:ScrollTop() end
     -- Override how many tiles per row (re-lays out on the next Refresh; nil restores the default).
     function g:SetPerRow(n) g._perRow = (n and n >= 1) and math.floor(n) or nil end
+    -- Release every tile's pooled image back to the TextureService (dropping the strong link that
+    -- pins its source texture, so an original can be collected once nothing else shows it). Tile
+    -- frames are kept for reuse; getTile re-acquires a fresh image on the next Refresh. Call this when
+    -- the owning module is disabled so a grid's textures don't stay pinned for the addon's lifetime.
+    function g:ReleaseAll()
+        for _, t in ipairs(tiles) do
+            if t.img and ns.TextureService then ns.TextureService:Release(t.img); t.img = nil end
+            t:Hide()
+        end
+    end
 
     function g:Refresh()
         local w = content:GetWidth(); if not w or w < 1 then w = g:GetWidth() or 400 end

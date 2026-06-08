@@ -35,6 +35,20 @@ function Questing:_CurrentQuestID()
     return GetQuestID and GetQuestID() or nil
 end
 
+-- Timed quests (escort/event style with a countdown that can fail) are NEVER auto-accepted,
+-- so you can choose to take them on only when you're ready. C_QuestLog.GetTimeAllowed reports
+-- a quest's time limit and returns nothing for ordinary quests -- the canonical "is it timed?"
+-- check. Note Blizzard exposes the limit through the quest log, so it's reliably caught at the
+-- QUEST_DETAIL gate (every accept path funnels through there before AcceptQuest).
+function Questing:_IsTimedQuest(questID)
+    if not questID then return false end
+    if C_QuestLog and C_QuestLog.GetTimeAllowed then
+        local total = C_QuestLog.GetTimeAllowed(questID)
+        if total and total > 0 then return true end
+    end
+    return false
+end
+
 -- ---- lifecycle ------------------------------------------------------------
 function Questing:OnInitialize()
     local p = self:_p()
@@ -215,6 +229,13 @@ end
 
 function Questing:_OnDetail()
     if not self:GetSetting("autoAccept") or self:_Paused() then return end
+    -- Never auto-accept a timed quest, regardless of the other accept settings -- leave it
+    -- open for a manual choice. This is the universal gate: gossip/greeting selections all
+    -- open the quest-detail window before any quest is accepted.
+    if self:_IsTimedQuest(self:_CurrentQuestID()) then
+        self:LogEchoInfo("skipped timed quest:", GetTitleText())
+        return
+    end
     self:LogEchoInfo("accepted:", GetTitleText())
     AcceptQuest()
 end
@@ -255,7 +276,8 @@ function Questing:_OnGossip()
     if self:GetSetting("autoAccept") and C_GossipInfo and C_GossipInfo.GetAvailableQuests then
         local acceptGrey = self:GetSetting("acceptGrey")
         for _, q in ipairs(C_GossipInfo.GetAvailableQuests()) do
-            if acceptGrey or not q.isTrivial then  -- skip trivial (grey) quests unless opted in
+            -- skip trivial (grey) quests unless opted in, and always skip timed quests
+            if (acceptGrey or not q.isTrivial) and not self:_IsTimedQuest(q.questID) then
                 C_GossipInfo.SelectAvailableQuest(q.questID)
                 return
             end
@@ -342,5 +364,6 @@ ns.ModuleManager:Register(Questing:New("Questing", {
           dependsOn = { "autoAccept", "autoTurnIn", "autoDialogue" },
           desc = "Skip quest automation while in dungeons and raids." },
         { type = "note", text = "Quests that let you choose between rewards are left open so you can pick." },
+        { type = "note", text = "Timed quests are never auto-accepted, so you can take them on when you're ready." },
     },
 }))

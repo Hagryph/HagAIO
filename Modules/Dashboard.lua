@@ -162,6 +162,12 @@ end
 
 function Dashboard:OnDisable()
     self:Hide()
+    -- Release every overview page's pooled images so their source textures can be garbage-collected
+    -- while the module is off (the registry/saved data stays; only the GPU-side art is let go).
+    local p = self:_p()
+    if p.iconPages then
+        for _, g in pairs(p.iconPages) do g:ReleaseAll() end
+    end
 end
 
 -- ---- account-wide store ---------------------------------------------------
@@ -713,6 +719,7 @@ function Dashboard:_Build()
     local content = W.Panel(f.body, "panel", "border")
     content:SetPoint("TOPLEFT", rail, "TOPRIGHT", 1, 0)
     content:SetPoint("BOTTOMRIGHT", f.body, "BOTTOMRIGHT", 0, 0)
+    p.contentPanel = content   -- the icon-grid PAGES (see _IconPage) anchor over the data-grid area
 
     local resetHdr = W.Text(content, "", "textDim", "GameFontHighlightSmall")
     resetHdr:SetPoint("TOPLEFT", 16, -12); resetHdr:SetPoint("RIGHT", content, "RIGHT", -16, 0)
@@ -728,13 +735,9 @@ function Dashboard:_Build()
     grid:SetPoint("BOTTOMRIGHT", content, "BOTTOMRIGHT", -10, 12)
     p.grid = grid
 
-    -- the overview: a journal-style icon grid (one tile per expansion) shown over the same area
-    -- as the data grid; selecting Raids/Dungeons shows this, picking a tile drills into the grid.
-    local iconGrid = W.IconGrid(content, { name = "HagAIODashboardIcons" })
-    iconGrid:SetPoint("TOPLEFT", catTitle, "BOTTOMLEFT", 0, -12)
-    iconGrid:SetPoint("BOTTOMRIGHT", content, "BOTTOMRIGHT", -10, 12)
-    iconGrid:Hide()
-    p.iconGrid = iconGrid
+    -- the overviews are journal-style icon grids shown over the same area as the data grid. Each
+    -- overview (home / raids / dungeons) is its OWN cached page (see _IconPage), built lazily.
+    p.iconPages = {}
 
     p.built = true
     p.nav:Select(p.category)   -- highlight the default category + render it via onSelect
@@ -919,6 +922,22 @@ function Dashboard:_OverviewTiles(key)
     return tiles
 end
 
+-- Lazily create + cache the icon-grid PAGE for an overview key. home / raids / dungeons each get their
+-- OWN grid (anchored over the data-grid area, hidden until shown), so switching between overviews is a
+-- show/hide -- the page's tiles + textures persist and are reused as a whole. Home packs 3 per row,
+-- the instance overviews 4. Released as a unit on module disable (see OnDisable -> ReleaseAll).
+function Dashboard:_IconPage(key)
+    local p = self:_p()
+    local g = p.iconPages[key]
+    if g then return g end
+    g = W.IconGrid(p.contentPanel, { name = "HagAIODashboardIcons_" .. key, perRow = (key == "home") and 3 or 4 })
+    g:SetPoint("TOPLEFT", p.catTitle, "BOTTOMLEFT", 0, -12)
+    g:SetPoint("BOTTOMRIGHT", p.contentPanel, "BOTTOMRIGHT", -10, 12)
+    g:Hide()
+    p.iconPages[key] = g
+    return g
+end
+
 function Dashboard:_Render()
     local p = self:_p()
     if not p.built then return end
@@ -946,24 +965,25 @@ function Dashboard:_Render()
     local keys, chars = self:_SortedChars()
     local label, columnsFn = self:_ResolveCategory(p.category)
 
-    -- the Home/Raids/Dungeons overviews are journal-style icon grids, not the data grid
+    -- the Home/Raids/Dungeons overviews are journal-style icon grids, not the data grid. Each is its
+    -- OWN cached page: switching between them just shows one and hides the rest -- the tiles and their
+    -- textures stay loaded and aren't re-edited (the TextureService memoises unchanged tiles).
     if p.category == "home" or p.category == "raids" or p.category == "dungeons" then
         p.grid:Hide()
-        p.iconGrid:Show()
+        local page = self:_IconPage(p.category)
+        for _, g in pairs(p.iconPages) do g:SetShown(g == page) end
         if p.category == "home" then
             p.catTitle:SetText("Overview")
-            p.iconGrid:SetPerRow(3)
-            p.iconGrid:SetTiles(self:_CategoryTiles())
+            page:SetTiles(self:_CategoryTiles())
         else
             p.catTitle:SetText(label)
-            p.iconGrid:SetPerRow(4)   -- the Raids/Dungeons instance overviews pack 4 tiles per row
-            p.iconGrid:SetTiles(self:_OverviewTiles(p.category))
+            page:SetTiles(self:_OverviewTiles(p.category))
         end
-        p.iconGrid:ScrollTop()
+        page:ScrollTop()
         return
     end
     p.catTitle:SetText(label)
-    p.iconGrid:Hide()
+    for _, g in pairs(p.iconPages) do g:Hide() end   -- data grid view: hide every icon page
     p.grid:Show()
 
     local cols = (columnsFn and columnsFn(chars)) or {}
