@@ -1175,9 +1175,10 @@ end
 -- TextureService). :Render(frame, w, h, spec) anchors it into `frame` and paints `spec.texture`:
 --   spec.mode "contain" (centre a square side h) | "cover" (cover-fit by spec.aspect = image px w/h) |
 --   "banner"/default (a fixed base crop spec.coord); spec.zoom + spec.panX/panY zoom/pan ANY mode;
---   spec.atlas forces atlas mode. A nil texture hides + frees. Repaints are memoised (skip if the
---   image + crop are unchanged). :Hide FREES the GPU upload (SetTexture(nil)) so a hidden texture isn't
---   pinned in VRAM; the next :Render reloads it.  opts: layer ("ARTWORK"), sublevel (0).
+--   spec.atlas forces atlas mode. A nil texture hides it. Repaints are memoised (skip if the image +
+--   crop are unchanged). Hiding is enough to free VRAM -- WoW streams a texture's pixels only while it
+--   renders, so a hidden texture isn't pinned (no SetTexture(nil) needed); the kept reference reloads
+--   on the next :Render/:Show.  opts: layer ("ARTWORK"), sublevel (0).
 local TextureW = ns.Class.new("Texture", Widget)
 function TextureW:Initialize(parent, opts)
     opts = opts or {}
@@ -1214,12 +1215,8 @@ function TextureW:Render(frame, w, h, spec)
     tex:Show()
     return self
 end
-function TextureW:Hide()                          -- free the GPU upload so a hidden texture isn't pinned
-    local tex = self:_frame()
-    tex:Hide(); tex:SetTexture(nil); tex:SetTexCoord(0, 1, 0, 1)
-    self:_p().sig = nil
-    return self
-end
+-- (No :Hide override -- base Widget:Hide just hides the region; WoW frees the VRAM while it's not
+-- rendered, and the kept image reference means the next :Render/:Show brings it back instantly.)
 Widgets.Texture = TextureW
 
 -- Auto-sizing ICON GRID -- Encounter-Journal-style tiles laid out a FIXED number per row, each
@@ -1279,7 +1276,7 @@ function IconGridW:Initialize(parent, opts)
             tiles[i] = t
         end
         -- One Texture widget per tile, filling the band on its BACKGROUND layer (so the band border
-        -- draws over it). It owns its texture and frees the GPU upload on :Hide (see refresh/ReleaseAll).
+        -- draws over it). It owns its texture; hiding the tile hides + frees that VRAM (see refresh).
         if not t.img then t.img = TextureW:New(t.band, { layer = "BACKGROUND", sublevel = 1 }) end
         return t
     end
@@ -1329,14 +1326,9 @@ function IconGridW:Initialize(parent, opts)
             paint()
             t:Show()
         end
-        -- surplus tiles (the list shrank, e.g. an entry was removed): hide them; the image widget's
-        -- :Hide frees its GPU upload so a removed entry's texture isn't left pinned (the tile + its
-        -- image widget are kept for reuse if the grid grows again).
-        for i = #data + 1, #tiles do
-            local t = tiles[i]
-            if t.img then t.img:Hide() end
-            t:Hide()
-        end
+        -- surplus tiles (the list shrank, e.g. an entry was removed): hide them. Hiding the tile hides
+        -- its texture too, so WoW frees that VRAM; the tile + image widget are kept for reuse.
+        for i = #data + 1, #tiles do tiles[i]:Hide() end
         local rows = math.max(1, math.ceil(#data / cols))
         content:SetHeight(rows * th + (rows - 1) * GAP)
         sa:Update()
@@ -1350,17 +1342,6 @@ function IconGridW:ScrollTop()    self:_p().scrollArea:ScrollTop(); return self 
 -- Override how many tiles per row (re-lays out on the next Refresh; nil restores the default).
 function IconGridW:SetPerRow(n)   self:_p()._perRow = (n and n >= 1) and math.floor(n) or nil; return self end
 function IconGridW:Refresh()      self:_p().refresh(); return self end
--- Free every tile image's GPU upload (each Texture widget's :Hide does SetTexture(nil)); the tile and
--- its image widget are kept for reuse and reload on the next Refresh. Call when the owning module is
--- disabled so a grid's textures don't stay pinned in VRAM for the addon's lifetime.
-function IconGridW:ReleaseAll()
-    local p = self:_p()
-    for _, t in ipairs(p.tiles) do
-        if t.img then t.img:Hide() end   -- frees each image's GPU upload; the widget is kept for reuse
-        t:Hide()
-    end
-    return self
-end
 function IconGridW:GetTiles() return self:_p()._tiles or {} end
 function IconGridW:GetTile(ref) local p = self:_p(); local i = p.indexOf(ref); return i and p._tiles[i] or nil, i end
 function IconGridW:AddTile(tile)

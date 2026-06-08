@@ -161,13 +161,7 @@ function Dashboard:OnSettingChanged()
 end
 
 function Dashboard:OnDisable()
-    self:Hide()
-    -- Release every overview page's pooled images so their source textures can be garbage-collected
-    -- while the module is off (the registry/saved data stays; only the GPU-side art is let go).
-    local p = self:_p()
-    if p.iconPages then
-        for _, g in pairs(p.iconPages) do g:ReleaseAll() end
-    end
+    self:Hide()   -- hiding the window hides every page's tiles + textures, so WoW frees their VRAM
 end
 
 -- ---- account-wide store ---------------------------------------------------
@@ -713,11 +707,9 @@ function Dashboard:_Build()
         autoClose = true,
         onAutoShow = function() self:Show() end,
         onAutoHide = function() self:Hide() end })
-    -- Whenever the window hides (X / Esc / combat auto-hide / toggle), release every overview page's
-    -- pooled images so their textures don't stay loaded while it's off-screen. Reopening re-renders
-    -- and re-acquires them from the pool. Switching pages WHILE open still caches them (only hiding
-    -- the whole window frees them).
-    f:SetScript("OnHide", function() self:_p().shown = false; self:_ReleaseIcons() end)
+    -- Hiding the window (X / Esc / combat auto-hide / toggle) hides every page's tiles + textures, so
+    -- WoW frees their VRAM on its own; reopening shows them again (reloads instantly). No manual release.
+    f:SetScript("OnHide", function() self:_p().shown = false end)
     p.frame = f
 
     -- left rail: character card + category nav grid
@@ -975,7 +967,7 @@ end
 -- Lazily create + cache the icon-grid PAGE for an overview key. home / raids / dungeons each get their
 -- OWN grid (anchored over the data-grid area, hidden until shown), so switching between overviews is a
 -- show/hide -- the page's tiles + textures persist and are reused as a whole. Home packs 3 per row,
--- the instance overviews 4. Released as a unit on module disable (see OnDisable -> ReleaseAll).
+-- the instance overviews 4. Hiding the window hides each page's tiles + textures, so WoW frees the VRAM.
 function Dashboard:_IconPage(key)
     local p = self:_p()
     local g = p.iconPages[key]
@@ -988,20 +980,11 @@ function Dashboard:_IconPage(key)
     return g
 end
 
--- Release every overview page's pooled images (their textures drop to idle). Called when the window
--- hides, so nothing's kept loaded off-screen; the pages re-acquire from the pool on the next render.
-function Dashboard:_ReleaseIcons()
-    local p = self:_p()
-    if not p.iconPages then return end
-    for _, g in pairs(p.iconPages) do g:ReleaseAll() end
-end
-
--- Delete an overview page: release its textures and forget it (it's rebuilt lazily if shown again).
+-- Delete an overview page: hide it (frees its textures' VRAM) and forget it (rebuilt lazily if shown).
 function Dashboard:DeletePage(key)
     local p = self:_p()
     local g = p.iconPages and p.iconPages[key]
     if not g then return end
-    g:ReleaseAll()
     g:Hide()
     p.iconPages[key] = nil
 end
