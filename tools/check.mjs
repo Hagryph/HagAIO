@@ -23,6 +23,8 @@ const sh = process.platform === "win32";  // resolve PATH-based commands via the
 const LINT = [
   ["depcheck", ["tools/depcheck.mjs"]],
   ["deadcode", ["tools/deadcode.mjs"]],
+  ["frames", ["tools/check-frames.mjs"]],
+  ["widgets", ["tools/check-widgets.mjs"]],
 ];
 
 function run(label, cmd, cmdArgs) {

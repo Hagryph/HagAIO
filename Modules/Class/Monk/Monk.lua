@@ -247,9 +247,9 @@ end
 function ClassModule:_EnsureHost(bar)
     local p = self:_p()
     if not p.host then
-        local h = CreateFrame("Frame", nil, bar)
+        local h = ns.UI.Widgets.Container:New(bar)
         h:SetAllPoints(bar)
-        if h.SetClipsChildren then h:SetClipsChildren(true) end
+        h:SetClipsChildren(true)
         p.host = h
     end
     return p.host
@@ -259,7 +259,7 @@ end
 function ClassModule:_EnsureMarker()
     local p = self:_p()
     if not p.marker then
-        local m = p.host:CreateTexture(nil, "OVERLAY", nil, 7)
+        local m = ns.UI.Widgets.Fill:New(p.host, { layer = "OVERLAY", sublevel = 7 })
         m:SetWidth(1)  -- thin line
         p.marker = m
     end
@@ -271,11 +271,8 @@ end
 function ClassModule:_EnsureOrbBar()
     local p = self:_p()
     if not p.orbBar then
-        local sb = CreateFrame("StatusBar", nil, p.host)
-        sb:SetStatusBarTexture("Interface\\Buttons\\WHITE8X8")  -- flat: tints to a clean colour
-        local tex = sb:GetStatusBarTexture()
-        if tex and tex.SetDesaturated then tex:SetDesaturated(true) end
-        p.orbBar = sb
+        -- flat WHITE8X8 fill, desaturated so the tint reads clean
+        p.orbBar = ns.UI.Widgets.StatusBar:New(p.host, { desaturate = true })
     end
     return p.orbBar
 end
@@ -546,13 +543,13 @@ function ClassModule:_UpdateTiger()
     if not efill then if p.tigerMarker then p.tigerMarker:Hide() end return end
 
     if not p.tigerHost then
-        local h = CreateFrame("Frame", nil, bar)
+        local h = ns.UI.Widgets.Container:New(bar)
         h:SetAllPoints(bar)
-        if h.SetClipsChildren then h:SetClipsChildren(true) end
+        h:SetClipsChildren(true)
         p.tigerHost = h
     end
     if not p.tigerMarker then
-        p.tigerMarker = p.tigerHost:CreateTexture(nil, "OVERLAY", nil, 7)
+        p.tigerMarker = ns.UI.Widgets.Fill:New(p.tigerHost, { layer = "OVERLAY", sublevel = 7 })
     end
     local m = p.tigerMarker
     local c = self:GetSetting("tigerColor") or { 1, 1, 1 }

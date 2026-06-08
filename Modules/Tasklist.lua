@@ -383,15 +383,15 @@ function Tasklist:_BuildFrame()
     if p.frame then return end
 
     -- See-through: no backdrop. Only header bars + text are drawn over the world.
-    local f = CreateFrame("Frame", nil, UIParent)
+    local f = W.Container:New(UIParent)
     f:SetSize(240, 30)
     f:SetFrameStrata("MEDIUM")
     f:SetClampedToScreen(true)
 
     -- Faint fill shown ONLY while moving in Edit Mode, so there's something to grab.
-    local grab = f:CreateTexture(nil, "BACKGROUND")
+    local grab = W.Fill:New(f, { layer = "BACKGROUND" })
     grab:SetAllPoints(f)
-    grab:SetColorTexture(Theme.Unpack("accent", 0.18))
+    grab:SetColor("accent", 0.18)
     grab:Hide()
     p.grab = grab
 
@@ -400,7 +400,7 @@ function Tasklist:_BuildFrame()
     if ns.EditMode then
         -- TOPLEFT anchor: the top stays fixed and the list grows down. A fresh key
         -- (taskTracker) so any old centre-anchored saved position is dropped.
-        ns.EditMode:Register(f, {
+        f:RegisterEditMode({
             key = "taskTracker", label = "Task List", anchor = "TOPLEFT",
             default = { point = "TOPLEFT", x = 420, y = -260 },
             active = function() return self:IsEnabled() end,
@@ -415,10 +415,10 @@ end
 
 -- Static row-button handlers: set on the pooled buttons each refresh WITHOUT allocating a
 -- fresh closure per task. They read the owning list + task key off the button (b._list/_key).
-local function rmOnEnter(b)  b.label:SetTextColor(Theme.Unpack("red")) end
-local function rmOnLeave(b)  b.label:SetTextColor(Theme.Unpack("textFaint")) end
-local function rmOnClick(b)  b._list:Remove(b._key) end
-local function manualOnClick(b) b._list:SetDone(b._key, not b._list:IsDone(b._key)) end
+local function rmOnEnter(b)  b:Label():SetTextColor(Theme.Unpack("red")) end
+local function rmOnLeave(b)  b:Label():SetTextColor(Theme.Unpack("textFaint")) end
+local function rmOnClick(b)  local list, key = b:Data(); list:Remove(key) end
+local function manualOnClick(b) local list, key = b:Data(); list:SetDone(key, not list:IsDone(key)) end
 
 -- Rebuild the tracker: a header bar per task type, then its objective lines,
 -- laid out top-down so the frame grows downward.
@@ -437,26 +437,21 @@ function Tasklist:_Refresh()
     local function tex()
         n.tex = n.tex + 1
         local w = pool.tex[n.tex]
-        if not w then w = f:CreateTexture(nil, "ARTWORK"); pool.tex[n.tex] = w end
+        if not w then w = W.Fill:New(f, { layer = "ARTWORK" }); pool.tex[n.tex] = w end
         w:ClearAllPoints(); w:Show(); return w
     end
     local function fs(font)
         n.fs = n.fs + 1
         local w = pool.fs[n.fs]
-        if not w then w = f:CreateFontString(nil, "OVERLAY"); pool.fs[n.fs] = w end
+        if not w then w = W.Text:New(f, "", "text"); pool.fs[n.fs] = w end
         w:ClearAllPoints(); w:SetWidth(0); w:SetFontObject(font); w:Show(); return w
     end
     local function btn()
         n.btn = n.btn + 1
         local w = pool.btn[n.btn]
-        if not w then
-            w = CreateFrame("Button", nil, f)
-            w.label = w:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-            pool.btn[n.btn] = w
-        end
-        w:ClearAllPoints()
-        w:SetScript("OnEnter", nil); w:SetScript("OnLeave", nil); w:SetScript("OnClick", nil)
-        w.label:ClearAllPoints(); w.label:SetPoint("CENTER"); w.label:SetText("")
+        if not w then w = W.HitButton:New(f); pool.btn[n.btn] = w end
+        w:ClearAllPoints(); w:ClearScripts()
+        w:Label():ClearAllPoints(); w:Label():SetPoint("CENTER"); w:Label():SetText("")
         w:Show(); return w
     end
 
@@ -507,11 +502,11 @@ function Tasklist:_Refresh()
         local x = btn()
         x:SetSize(14, 14)
         x:SetPoint("TOPRIGHT", f, "TOPRIGHT", 0, y)
-        x.label:SetText("x"); x.label:SetTextColor(Theme.Unpack("textFaint"))
-        x._list, x._key = self, def.key
-        x:SetScript("OnEnter", rmOnEnter)
-        x:SetScript("OnLeave", rmOnLeave)
-        x:SetScript("OnClick", rmOnClick)
+        x:Label():SetText("x"); x:Label():SetTextColor(Theme.Unpack("textFaint"))
+        x:SetData(self, def.key)
+        x:OnEnter(rmOnEnter)
+        x:OnLeave(rmOnLeave)
+        x:OnClick(rmOnClick)
 
         -- manual tasks: click the text to toggle done
         if def.manual then
@@ -519,8 +514,8 @@ function Tasklist:_Refresh()
             mbtn:SetPoint("TOPLEFT", t, "TOPLEFT", 0, 0)
             mbtn:SetPoint("RIGHT", x, "LEFT", -2, 0)
             mbtn:SetHeight(h + 4)
-            mbtn._list, mbtn._key = self, def.key
-            mbtn:SetScript("OnClick", manualOnClick)
+            mbtn:SetData(self, def.key)
+            mbtn:OnClick(manualOnClick)
         end
         y = y - (h + LINE_GAP)
     end

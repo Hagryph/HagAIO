@@ -1,6 +1,7 @@
 local addonName, ns = ...
 local Class = ns.Class
 local Theme = ns.Theme
+local W = ns.UI.Widgets
 
 -- Modules/Questing.lua
 -- Everything around levelling through quests, in one module:
@@ -129,7 +130,8 @@ function Questing:_EnsureQuestBanner()
     local p = self:_p()
     if p.questBanner then return p.questBanner end
     if not QuestFrame then return nil end
-    local fs = QuestFrame:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge", 7)
+    local fs = W.Text:New(QuestFrame, "", "text", "GameFontNormalLarge")
+    fs:SetDrawLayer("OVERLAY", 7)
     self:_PositionBanner(fs)
     fs:SetShadowColor(0, 0, 0, 1)
     fs:SetShadowOffset(1, -1)
@@ -202,7 +204,7 @@ function Questing:OnDisable()
     if p.xpTicker then p.xpTicker:Cancel(); p.xpTicker = nil end
     if p.overlay then
         p.overlay:Hide()
-        if GameTooltip:IsOwned(p.overlay) then GameTooltip:Hide() end
+        if p.overlay:OwnsTooltip(GameTooltip) then GameTooltip:Hide() end
     end
 end
 
@@ -267,11 +269,11 @@ function Questing:_ShowTooltip()
     -- No tooltip when it's turned off, or at max level (no XP to track) -- just hide and bail.
     if not self:GetSetting("showTooltip")
         or UnitLevel("player") >= self:_MaxLevel() or UnitXPMax("player") == 0 then
-        if GameTooltip:IsOwned(p.overlay) then GameTooltip:Hide() end
+        if p.overlay:OwnsTooltip(GameTooltip) then GameTooltip:Hide() end
         return
     end
     local tt = GameTooltip
-    tt:SetOwner(p.overlay, "ANCHOR_TOP")
+    p.overlay:SetTooltipOwner(tt, "ANCHOR_TOP")
     tt:ClearLines()
     tt:AddLine("|cff" .. Theme.hex.accent .. "HagAIO|r  |cff" .. Theme.hex.gold .. "Questing|r")
 
@@ -306,14 +308,10 @@ function Questing:_EnsureOverlay()
         return
     end
 
-    local overlay = CreateFrame("Frame", nil, bar)
+    local overlay = W.Container:New(bar)
     overlay:SetAllPoints(bar)
     overlay:SetFrameLevel(bar:GetFrameLevel() + 10)
-    if overlay.EnableMouseMotion then
-        overlay:EnableMouseMotion(true)
-    else
-        overlay:EnableMouse(true)
-    end
+    overlay:EnableMouseMotion(true)
 
     -- Refresh the tooltip on a 0.5s ticker only WHILE hovered (started on enter,
     -- cancelled on leave) -- no per-frame OnUpdate burning cycles when not hovering.
@@ -326,7 +324,7 @@ function Questing:_EnsureOverlay()
     overlay:SetScript("OnLeave", function()
         p.hovering = false
         if p.xpTicker then p.xpTicker:Cancel(); p.xpTicker = nil end
-        if GameTooltip:IsOwned(overlay) then GameTooltip:Hide() end
+        if overlay:OwnsTooltip(GameTooltip) then GameTooltip:Hide() end
     end)
 
     p.overlay = overlay

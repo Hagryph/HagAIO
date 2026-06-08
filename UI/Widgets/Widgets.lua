@@ -154,6 +154,14 @@ function FrameWidget:EnableMouseWheel(b)   self:_p().frame:EnableMouseWheel(b); 
 function FrameWidget:RegisterForDrag(...)  self:_p().frame:RegisterForDrag(...);    return self end
 function FrameWidget:SetFrameStrata(s)     self:_p().frame:SetFrameStrata(s);       return self end
 function FrameWidget:SetFrameLevel(l)      self:_p().frame:SetFrameLevel(l);        return self end
+function FrameWidget:EnableMouseMotion(b)  local f = self:_p().frame; if f.EnableMouseMotion then f:EnableMouseMotion(b) else f:EnableMouse(b) end; return self end
+function FrameWidget:SetClipsChildren(b)   local f = self:_p().frame; if f.SetClipsChildren then f:SetClipsChildren(b) end; return self end
+function FrameWidget:GetFrameLevel()       return self:_p().frame:GetFrameLevel() end
+function FrameWidget:SetClampedToScreen(b) self:_p().frame:SetClampedToScreen(b);   return self end
+-- GameTooltip ownership stays mediated by the widget so the frame never leaks: the widget
+-- hands its own frame to a tooltip as anchor/owner, and answers whether it still owns it.
+function FrameWidget:SetTooltipOwner(tt, anchor) tt:SetOwner(self:_p().frame, anchor); return self end
+function FrameWidget:OwnsTooltip(tt)             return tt:IsOwned(self:_p().frame) end
 
 -- ---- TextWidget: a widget backed by a FontString -- adds text content/justify/colour/measurement.
 local TextWidget = ns.Class.new("TextWidget", Widget, { abstract = true })
@@ -166,6 +174,11 @@ function TextWidget:SetWordWrap(b)      self:_p().frame:SetWordWrap(b);         
 function TextWidget:SetSpacing(n)       self:_p().frame:SetSpacing(n);              return self end
 function TextWidget:GetStringWidth()    return self:_p().frame:GetStringWidth()  end
 function TextWidget:GetStringHeight()   return self:_p().frame:GetStringHeight() end
+function TextWidget:SetShadowColor(...)  self:_p().frame:SetShadowColor(...);       return self end
+function TextWidget:SetShadowOffset(...) self:_p().frame:SetShadowOffset(...);      return self end
+function TextWidget:SetDrawLayer(...)    self:_p().frame:SetDrawLayer(...);         return self end
+function TextWidget:SetFontObject(f)    self:_p().frame:SetFontObject(f);          return self end
+function TextWidget:SetFont(...)        self:_p().frame:SetFont(...);              return self end
 
 -- ---- TextureWidget: a widget backed by a Texture -- adds fill/colour/coords.
 local TextureWidget = ns.Class.new("TextureWidget", Widget, { abstract = true })
@@ -174,11 +187,13 @@ function TextureWidget:SetTexture(...)      self:_p().frame:SetTexture(...);    
 function TextureWidget:SetTexCoord(...)     self:_p().frame:SetTexCoord(...);       return self end
 function TextureWidget:SetVertexColor(...)  self:_p().frame:SetVertexColor(...);    return self end
 function TextureWidget:SetDrawLayer(...)    self:_p().frame:SetDrawLayer(...);      return self end
+function TextureWidget:SetAtlas(...)        self:_p().frame:SetAtlas(...);          return self end
+function TextureWidget:SetDesaturated(b)    self:_p().frame:SetDesaturated(b);      return self end
 
 -- A plain (unstyled) container Frame -- the generic surface other widgets expose as their content /
 -- body region, and the only way a caller gets a parentable area without a raw frame leaking. Pass a
 -- parent to create one under it, or an existing raw region (template = "__adopt__") to wrap in place.
-local ContainerW = ns.Class.new("Container", FrameWidget)
+local ContainerW = ns.Class.new("Container", FrameWidget, { mixins = { Registrable } })
 function ContainerW:Initialize(parent, template)
     if template == "__adopt__" then self:_attach(parent)   -- internal: wrap an already-created region
     else self:_attach(CreateFrame("Frame", nil, unwrap(parent))) end

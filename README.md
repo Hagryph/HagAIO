@@ -128,7 +128,9 @@ UI/
   Widgets\CollapsibleSection.lua Collapsible section ("accordion"): a clickable header with a +/- chevron that
   Widgets\ColorSwatch.lua  Colour swatch button: shows the current colour, opens the Blizzard colour
   Widgets\Divider.lua      1px horizontal hairline (anchor + width set by caller)
+  Widgets\Fill.lua         A plain SOLID-COLOUR texture region (a tint/overlay/marker)
   Widgets\Grid.lua         Column-aligned GRID -- the one row/column layout engine
+  Widgets\HitButton.lua    A bare, transparent CLICK target with a centred label -- the building block for pooled in-world
   Widgets\IconGrid.lua     Auto-sizing ICON GRID -- Encounter-Journal-style tiles laid out a FIXED number per row, each
   Widgets\Input.lua        Themed single-line EditBox
   Widgets\MultilineEdit.lua A scrollable multi-line EditBox -- the copy-in/out surface
@@ -141,6 +143,7 @@ UI/
   Widgets\Segmented.lua    Segmented selector (LoL "view-switch"): a row of option buttons, active one
   Widgets\SettingsGroup.lua A titled settings GROUP: a bordered panel with a clickable header strip (chevron + `title`) and a
   Widgets\Slider.lua       Themed horizontal slider with a track, an accent fill, a draggable thumb, and a live numeric
+  Widgets\StatusBar.lua    A bare StatusBar widget for HUD fills
   Widgets\Text.lua         (no description)
   Widgets\TextButton.lua   Inline accent text button (Clear / links)
   Widgets\Texture.lua      ---- crop / fit / zoom maths (the single home, owned by the Texture widget) ------------------------

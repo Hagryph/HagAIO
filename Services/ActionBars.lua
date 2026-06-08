@@ -114,7 +114,7 @@ function ActionBars:SetGrey(button, on)
     local ov = button.__hagGrey
     if on then
         if not ov then
-            ov = button:CreateTexture(nil, "OVERLAY", nil, 6)
+            ov = ns.UI.Widgets.Fill:New(button, { layer = "OVERLAY", sublevel = 6 })
             ov:SetAllPoints(button.icon or button)
             ov:SetColorTexture(0, 0, 0, 0.55)
             button.__hagGrey = ov
