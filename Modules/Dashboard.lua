@@ -32,8 +32,8 @@ local DIFF = {
     Normal = { abbr = "N", rank = 2 }, Heroic = { abbr = "H", rank = 3 }, Mythic = { abbr = "M", rank = 4 },
 }
 
--- Mythic 0 dungeon difficulty (id 23). M0 is the localized NAME (matches a saved M0 lock's
--- difficulty name); M0_ID is the locale-proof difficulty id the prune keys on.
+-- Mythic 0 dungeon difficulty (id 23). M0 is the localized NAME (matches a saved M0 lock's difficulty
+-- name); M0_ID is the locale-proof difficulty id (stamped on seeded season-dungeon entries).
 local M0_ID = 23
 local M0 = (GetDifficultyInfo and GetDifficultyInfo(M0_ID)) or "Mythic"
 
@@ -508,17 +508,22 @@ function Dashboard:CurrentSeasonDungeon()
     return pool[self:_p().seasonIdx]
 end
 
--- Distinct expansions in the registry for one kind (raids if wantRaid, else dungeons), the
--- current expansion first then A-Z. Persists -- an expansion stays once anything in it is known.
+-- Distinct expansions in the registry for one kind (raids if wantRaid, else dungeons), ordered by
+-- EXPANSION RELEASE DATE -- newest first, like the raid list -- via the journal tier level. Tiers with
+-- no known level (e.g. "Other") sort last, then alphabetically. Persists: an expansion stays listed
+-- once anything in it is known.
 function Dashboard:_KnownExpansions(wantRaid)
     local set = {}
     for _, r in pairs(self:_Instances()) do
         if r.isRaid == wantRaid then set[r.expansion or "Other"] = true end
     end
-    local list, cur = {}, self:_p().currentExpansion
+    local lvl = self:_p().ejTierLevel or {}
+    local list = {}
     for exp in pairs(set) do list[#list + 1] = exp end
     table.sort(list, function(a, b)
-        if (a == cur) ~= (b == cur) then return a == cur end
+        local la, lb = lvl[a], lvl[b]
+        if la and lb then if la ~= lb then return la > lb end return a < b end
+        if la ~= lb then return la ~= nil end   -- a known-level tier sorts before an unknown one
         return a < b
     end)
     return list
@@ -594,37 +599,16 @@ function Dashboard:_SeasonColumns()
     return cols
 end
 
--- Is a registry entry a dungeon Mythic-0 lock? Keyed on the difficulty ID (locale-proof); falls back
--- to the difficulty name for entries saved before the id was recorded.
-local function isDungeonM0(r)
-    if r.isRaid then return false end
-    if r.diffID then return r.diffID == M0_ID end
-    return r.diff == M0
-end
-
--- Does a registry entry's difficulty still EXIST for its instance? The auto-prune's rule. Almost
--- every difficulty is STABLE (raids at any difficulty, dungeons at Normal/Heroic) and is always kept.
--- The one that comes and goes is a dungeon's Mythic 0 -- BUT only for a LEGACY dungeon: it's M0-able
--- solely while it's in the M+ season. The CURRENT expansion's dungeons stay runnable at Mythic 0 the
--- whole expansion (only the keystone POOL rotates), so a current-expansion M0 lock is kept regardless
--- of the season. (Can't classify the expansion yet -- journal map not built -- keep it; prune later.)
-function Dashboard:_DifficultyLive(r)
-    if not isDungeonM0(r) then return true end        -- stable difficulty -> always kept
-    local curTier = self:_CurrentExpansionTier()
-    if not curTier or r.expansion == curTier then return true end   -- current expansion: always M0-able
-    local s = self:_SeasonDungeons()
-    if not s then return true end                     -- season not known yet -> keep, prune a later pass
-    return s.set[r.name] == true                      -- a legacy dungeon: M0 only while in the season
-end
-
--- Auto-cleanup, run on login (via _Snapshot): drop every saved instance whose difficulty no longer
--- exists for it. The registry otherwise REMEMBERS instances across weekly resets, so this only ever
--- removes entries that genuinely lost their difficulty (e.g. a dungeon that left the M+ season), never
--- ones that merely expired this week.
+-- Auto-cleanup, run on login (via _Snapshot): a DUNGEON only offers a lockable difficulty while it's
+-- in the current M+ season, so any dungeon NOT in the season set has lost its difficulty and is
+-- dropped -- it doesn't matter which difficulty or which expansion it is. RAIDS keep their difficulties
+-- forever, so the registry still remembers them across weekly resets. Season not known yet -> no-op.
 function Dashboard:_PruneRegistry()
+    local s = self:_SeasonDungeons()
+    if not s then return end
     local inst = self:_Instances()
     for key, r in pairs(inst) do
-        if not self:_DifficultyLive(r) then inst[key] = nil end
+        if not r.isRaid and not s.set[r.name] then inst[key] = nil end
     end
 end
 
