@@ -593,6 +593,23 @@ function Dashboard:_SeasonDungeons()
     return p.season
 end
 
+-- The expansion the Current Season belongs to, derived from the dungeons IN the season: the NEWEST
+-- expansion represented among them. A season can fold in legacy dungeons, so we take the highest tier
+-- level present rather than assuming the live expansion. Returns a tier NAME (for the logo/grouping),
+-- or nil before the journal map is ready (or if none of the season's dungeons are mapped yet).
+function Dashboard:_SeasonExpansionTier()
+    local s = self:_SeasonDungeons()
+    local lvl = self:_p().ejTierLevel
+    if not (s and lvl) then return nil end
+    local bestTier, bestLvl
+    for _, name in ipairs(s.list) do
+        local tier = self:_InstanceExpansion(name)   -- "Other" (no level) if unmapped
+        local l = lvl[tier]
+        if l and (not bestLvl or l > bestLvl) then bestTier, bestLvl = tier, l end
+    end
+    return bestTier
+end
+
 -- One column per current-season dungeon; cell = the character's Mythic 0 lock ("x/y") or "-".
 function Dashboard:_SeasonColumns()
     local s = self:_SeasonDungeons()
@@ -923,11 +940,11 @@ function Dashboard:_OverviewTiles(key)
     elseif key == "dungeons" then
         local curTier = self:_CurrentExpansionTier()
         if self:_SeasonDungeons() then
-            -- The Current Season belongs to the LATEST expansion (the live client expansion), not the
-            -- newest raid tier -- those diverge when a new expansion ships before its first raid. Its
-            -- title stays "Current Season"; its expansion/logo resolves to the latest.
-            tile(SEASON_LABEL, curTier or p.currentExpansion, "dungeon:current")
-            tiles[#tiles].texture = self:_CurrentExpansionLogo() or tiles[#tiles].texture
+            -- The Current Season's title stays "Current Season"; its expansion/logo is derived from
+            -- the dungeons in it -- the newest expansion represented (a season can fold in legacy
+            -- dungeons). Falls back to the current expansion / newest raid tier before the map loads.
+            local seasonTier = self:_SeasonExpansionTier() or curTier or p.currentExpansion
+            tile(SEASON_LABEL, seasonTier, "dungeon:current")
             -- Current Season shows a random season-dungeon scene, distinct from the expansion logo
             local art = self:_SeasonDungeonArt()
             if art then applyArt(tiles[#tiles], art) end
