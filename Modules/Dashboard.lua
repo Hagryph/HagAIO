@@ -259,15 +259,17 @@ function Dashboard:_ExpansionMap()
     if C_AddOns and C_AddOns.LoadAddOn then pcall(C_AddOns.LoadAddOn, "Blizzard_EncounterJournal") end
     local map, raidsByTier, dungeonsByTier, tierOrder, found = {}, {}, {}, {}, false
     local tierLevel = {}   -- tier name -> expansionLevel (EJ tier index 1 = Classic = expansion 0)
+    local image = {}       -- instance name -> EJ buttonImage1 (tile art)
     local prev = EJ_GetCurrentTier and EJ_GetCurrentTier()
     local function walk(tier, tierName, isRaid, sink)
         EJ_SelectTier(tier)
         local i = 1
         while true do
-            local instID, name = EJ_GetInstanceByIndex(i, isRaid)
+            local instID, name, _, _, buttonImage = EJ_GetInstanceByIndex(i, isRaid)
             if not instID then break end
             if name and tierName then
                 map[name] = tierName; found = true
+                if buttonImage then image[name] = buttonImage end
                 if sink then sink[#sink + 1] = name end
             end
             i = i + 1
@@ -294,6 +296,7 @@ function Dashboard:_ExpansionMap()
         p.ejDungeonsByTier = dungeonsByTier   -- tier -> { all dungeon names }
         p.ejTierOrder = tierOrder             -- tiers with raids, newest first
         p.ejTierLevel = tierLevel             -- tier name -> expansionLevel (for native logos)
+        p.ejImage = image                     -- instance name -> EJ tile art (buttonImage1)
         p.currentExpansion = tierOrder[1] or EJ_GetTierInfo(EJ_GetNumTiers())   -- newest raid tier = current
     end
     return p.ejMap
@@ -312,6 +315,21 @@ function Dashboard:_ExpansionLogo(tierName)
     if not (lvl and GetExpansionDisplayInfo) then return nil end
     local info = GetExpansionDisplayInfo(lvl)
     return info and info.logo or nil
+end
+
+-- The EJ tile art for a specific instance (nil until the journal catalog is built).
+function Dashboard:_InstanceImage(name)
+    local img = self:_p().ejImage
+    return name and img and img[name] or nil
+end
+
+-- The latest raid's tile art: the last (newest) raid in the current expansion's catalog. Used so
+-- the current-tier raid tile shows the actual raid picture instead of the generic expansion logo.
+function Dashboard:_LatestRaidImage()
+    local p = self:_p()
+    local raids = p.ejRaidsByTier and p.currentExpansion and p.ejRaidsByTier[p.currentExpansion]
+    if not (raids and #raids > 0) then return nil end
+    return self:_InstanceImage(raids[#raids])
 end
 
 -- Distinct expansions in the registry for one kind (raids if wantRaid, else dungeons), the
@@ -641,7 +659,14 @@ function Dashboard:_OverviewTiles(key)
         }
     end
     if key == "raids" then
-        for _, exp in ipairs(self:_RaidExpansions()) do tile(exp, exp, "raid:" .. exp) end
+        for _, exp in ipairs(self:_RaidExpansions()) do
+            tile(exp, exp, "raid:" .. exp)
+            -- the current tier's tile shows the latest raid's picture, not the expansion logo
+            if exp == p.currentExpansion then
+                local img = self:_LatestRaidImage()
+                if img then tiles[#tiles].texture = img end
+            end
+        end
     elseif key == "dungeons" then
         if self:_SeasonDungeons() then tile("Current Season", p.currentExpansion, "dungeon:current") end
         local cur, dbt = p.currentExpansion, p.ejDungeonsByTier

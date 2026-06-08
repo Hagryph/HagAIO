@@ -827,18 +827,22 @@ function Widgets.Nav(parent, opts)
     return nav
 end
 
--- Auto-spacing ICON GRID -- Encounter-Journal-style tiles that re-flow to the available width.
--- Each tile is a button: a background image (texture path / fileID, or an atlas) with the name
--- on a dark gradient, a themed border that lights to accent on hover/selection, and an optional
--- small badge in the top-right corner. Tiles scroll under the shared themed scrollbar
--- (Widgets.ScrollArea) and re-flow on resize, so the caller just hands over a flat list.
---   opts: name (scrollbar frame name), tileWidth (150), tileHeight (74), gap (10)
+-- Auto-sizing ICON GRID -- Encounter-Journal-style tiles laid out a FIXED number per row, each
+-- tile auto-sized to fill the available width. A tile is a button: the image on top, a solid
+-- titlebar across the bottom holding the centred name, a themed border that lights to accent on
+-- hover/selection, and an optional small badge in the image's top-right corner. Tiles scroll
+-- under the shared themed scrollbar (Widgets.ScrollArea) and re-size on resize.
+--   opts: name (scrollbar frame name), perRow (3), aspect (image height/width, 0.5),
+--         gap (12), titleHeight (22)
 -- A tile in :SetTiles is { texture=path|fileID, atlas=bool, label=string, labelKey=paletteKey,
 --   badge=string, badgeKey=paletteKey, selected=bool, onClick=function(tile) }.
 -- Methods: :SetTiles(list)  :Refresh()  :ScrollTop()
 function Widgets.IconGrid(parent, opts)
     opts = opts or {}
-    local TW, TH, GAP = opts.tileWidth or 150, opts.tileHeight or 74, opts.gap or 10
+    local PER_ROW = opts.perRow or 3
+    local ASPECT  = opts.aspect or 0.5      -- image height as a fraction of tile width
+    local GAP     = opts.gap or 12
+    local TITLE_H = opts.titleHeight or 22
     local g = CreateFrame("Frame", nil, parent)
 
     local sa = Widgets.ScrollArea(g, opts.name)
@@ -851,21 +855,20 @@ function Widgets.IconGrid(parent, opts)
         local t = tiles[i]
         if t then return t end
         t = CreateFrame("Button", nil, content, "BackdropTemplate")
-        t:SetSize(TW, TH)
         Widgets.Style(t, "panel2", "border")
-        local img = t:CreateTexture(nil, "ARTWORK")
-        img:SetPoint("TOPLEFT", 2, -2); img:SetPoint("BOTTOMRIGHT", -2, 2)
+        local img = t:CreateTexture(nil, "ARTWORK")            -- height set per-refresh (auto-size)
+        img:SetPoint("TOPLEFT", 2, -2); img:SetPoint("TOPRIGHT", -2, -2)
         t.img = img
-        local shade = t:CreateTexture(nil, "OVERLAY")   -- dark gradient so the name stays legible
-        shade:SetPoint("BOTTOMLEFT", 2, 2); shade:SetPoint("BOTTOMRIGHT", -2, 2)
-        shade:SetHeight(math.floor(TH * 0.5))
-        shade:SetColorTexture(0, 0, 0, 0.6)
+        local tb = t:CreateTexture(nil, "ARTWORK")             -- titlebar across the bottom
+        tb:SetColorTexture(Theme.Unpack("bg1"))
+        tb:SetPoint("BOTTOMLEFT", 2, 2); tb:SetPoint("BOTTOMRIGHT", -2, 2); tb:SetHeight(TITLE_H - 2)
+        t.titlebar = tb
         local label = t:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-        label:SetPoint("BOTTOMLEFT", 6, 5); label:SetPoint("BOTTOMRIGHT", -6, 5)
-        label:SetJustifyH("LEFT"); label:SetWordWrap(true); label:SetMaxLines(2)
+        label:SetPoint("LEFT", tb, "LEFT", 6, 0); label:SetPoint("RIGHT", tb, "RIGHT", -6, 0)
+        label:SetJustifyH("CENTER"); label:SetWordWrap(false)
         t.label = label
         local badge = t:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-        badge:SetPoint("TOPRIGHT", -5, -4); badge:SetJustifyH("RIGHT")
+        badge:SetPoint("TOPRIGHT", -5, -5); badge:SetJustifyH("RIGHT")
         t.badge = badge
         tiles[i] = t
         return t
@@ -876,13 +879,19 @@ function Widgets.IconGrid(parent, opts)
 
     function g:Refresh()
         local w = content:GetWidth(); if not w or w < 1 then w = g:GetWidth() or 400 end
-        local cols = math.max(1, math.floor((w + GAP) / (TW + GAP)))
+        local cols = PER_ROW
+        local tw = math.floor((w - (cols - 1) * GAP) / cols)   -- auto-sized tile width
+        if tw < 1 then tw = 1 end
+        local ih = math.floor(tw * ASPECT)                     -- image height
+        local th = ih + TITLE_H                                 -- full tile height
         local data = g._tiles or {}
         for i, d in ipairs(data) do
             local t = getTile(i)
             local col, rowi = (i - 1) % cols, math.floor((i - 1) / cols)
+            t:SetSize(tw, th)
+            t.img:SetHeight(ih)
             t:ClearAllPoints()
-            t:SetPoint("TOPLEFT", content, "TOPLEFT", col * (TW + GAP), -(rowi * (TH + GAP)))
+            t:SetPoint("TOPLEFT", content, "TOPLEFT", col * (tw + GAP), -(rowi * (th + GAP)))
             if d.texture then
                 if d.atlas then t.img:SetAtlas(d.texture, false) else t.img:SetTexture(d.texture) end
                 t.img:Show()
@@ -902,7 +911,7 @@ function Widgets.IconGrid(parent, opts)
         end
         for i = #data + 1, #tiles do tiles[i]:Hide() end
         local rows = math.max(1, math.ceil(#data / cols))
-        content:SetHeight(rows * TH + (rows - 1) * GAP)
+        content:SetHeight(rows * th + (rows - 1) * GAP)
         sa:Update()
     end
 
