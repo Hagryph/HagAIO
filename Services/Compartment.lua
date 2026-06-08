@@ -62,7 +62,7 @@ function Compartment:Register()
         funcOnEnter = function(button)
             local lines = {}
             if activeResets() then
-                lines[#lines + 1] = { text = "Left-click: reset dashboard", key = "text" }
+                lines[#lines + 1] = { text = "Left-click: Dashboard", key = "text" }
                 lines[#lines + 1] = { text = "Middle-click: open settings" }
             else
                 lines[#lines + 1] = { text = "Left-click: open settings", key = "text" }

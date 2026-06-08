@@ -309,7 +309,7 @@ function ResetRadar:_Build()
     if p.built then return end
 
     local f = W.Window({ name = "HagAIOResetRadar", width = 860, height = 520,
-        strata = "HIGH", title = "Reset Radar", onClose = function() self:Hide() end,
+        strata = "HIGH", title = "Dashboard", onClose = function() self:Hide() end,
         autoClose = true,
         onAutoShow = function() self:Show() end,
         onAutoHide = function() self:Hide() end })
@@ -516,16 +516,16 @@ end
 
 -- ---- registration ---------------------------------------------------------
 ns.ModuleManager:Register(ResetRadar:New("ResetRadar", {
-    title = "Reset Radar",
+    title = "Dashboard",
     description = "A cross-character view of weekly/daily resets: Great Vault, M+ keystone, lockouts and recurring quests.",
     defaultEnabled = false,
     color = ns.Theme.hex.accent,
     deps = { "SavedVars", "SlashCommand", "Secrets" },
     commands = {
-        resets = { handler = "Toggle", help = "open the cross-character reset dashboard" },
+        resets = { handler = "Toggle", help = "open the cross-character Dashboard" },
     },
     settings = {
-        { type = "header", text = "Reset Radar" },
+        { type = "header", text = "Dashboard" },
         { type = "toggle", key = "openOnLogin", label = "Open automatically on login", default = false },
         { type = "note", text = "Each character you log into adds itself to the dashboard. Open it any time with /hag resets." },
     },
