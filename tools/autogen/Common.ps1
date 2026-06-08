@@ -6,8 +6,9 @@
 $script:ScanDirs = @('Core', 'Lib', 'Services', 'UI', 'Modules')
 
 # Foundation files with a fixed load order: a base class must be defined before any file
-# that extends it at load time; UI\Widgets is pinned here too because the UI windows +
-# several modules alias ns.UI.Widgets at file scope.
+# that extends it at load time; UI\Widgets\Widgets.lua (the widget base layer + factory table) is
+# pinned here too because the UI windows + several modules alias ns.UI.Widgets at file scope, and
+# every per-widget file (UI\Widgets\<Name>.lua, in the free tier) reads ns.UI._wb from it.
 $script:PinnedHead = @(
     'Core\Namespace.lua', 'Core\Class.lua', 'Core\Type.lua', 'Core\Enum.lua',
     'Core\Mixin.lua', 'Core\Interface.lua', 'Core\Delegate.lua',
@@ -16,7 +17,7 @@ $script:PinnedHead = @(
     'Core\Logger.lua', 'Core\Registry.lua', 'Core\Loggable.lua', 'Core\Component.lua',
     'Core\Service.lua', 'Core\ServiceManager.lua', 'Core\Module.lua', 'Core\ModuleManager.lua',
     'Core\Submodule.lua', 'Core\SubmoduleManager.lua', 'Core\Lib.lua', 'Core\LibManager.lua',
-    'UI\Widgets.lua'
+    'UI\Widgets\Widgets.lua'
 )
 # The Core initializer boots services in dependency order; loads after all service/UI
 # files, before the modules.

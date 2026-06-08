@@ -39,8 +39,11 @@ const EXEMPT = new Set([
   "Core/Logger.lua", "Core/Loggable.lua", "Core/Service.lua", "Core/ServiceManager.lua",
   "Core/Component.lua", "Core/Module.lua", "Core/ModuleManager.lua", "Core/Submodule.lua",
   "Core/SubmoduleManager.lua", "Core/Registry.lua", "Core/Lib.lua", "Core/LibManager.lua",
-  "Core/Init.lua", "UI/Widgets.lua",
+  "Core/Init.lua",
 ]);
+// The whole Widget layer (UI/Widgets/<Name>.lua) is foundation UI, like the old UI/Widgets.lua was:
+// widgets reference foundation singletons (Logger/EventBus) without being modules that declare deps.
+const EXEMPT_PREFIX = "UI/Widgets/";
 
 function luaFiles(dir, out = []) {
   let names;
@@ -122,7 +125,7 @@ const unregistered = []; // [rel, kind, expectedCall] -- defines but never regis
 const libDeps = [];    // [rel, dep]                  -- lib wrongly listed as a service dep
 for (const path of ALL_FILES) {
   const rel = relative(ROOT, path).replace(/\\/g, "/");
-  if (EXEMPT.has(rel)) continue;
+  if (EXEMPT.has(rel) || rel.startsWith(EXEMPT_PREFIX)) continue;
   const raw = readFileSync(path, "utf8");
   const allow = new Set();
   for (const a of raw.matchAll(/depcheck-allow:\s*([\w,\s]+)/g)) {

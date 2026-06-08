@@ -37,7 +37,6 @@ const SUMMARY_ONLY = process.argv.includes("--summary");
 // are repo-relative; a trailing "/" matches everything beneath it (so the split-up Widgets folder is
 // covered automatically).
 const FRAME_ALLOW = [
-  "UI/Widgets.lua",
   "UI/Widgets/",
   "Services/EventBus.lua",
   "Services/MinimapIcon.lua",
