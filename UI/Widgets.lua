@@ -82,6 +82,33 @@ function Widgets.TextButton(parent, text)
     return b
 end
 
+-- A themed PUSH button: a bordered box with a centred label that lights to accent on hover.
+-- Auto-sizes to the text (override with opts.width / opts.height). Methods: :SetText(s)
+-- :SetOnClick(fn) :SetEnabled(bool).
+function Widgets.Button(parent, text, opts)
+    opts = opts or {}
+    local b = CreateFrame("Button", nil, parent, "BackdropTemplate")
+    Widgets.Style(b, "panel2", "borderStrong")
+    b:SetHeight(opts.height or 24)
+    local fs = Widgets.Text(b, text, "text", "GameFontHighlight")
+    fs:SetPoint("CENTER")
+    local function fit() b:SetWidth(opts.width or math.max(opts.minWidth or 70, fs:GetStringWidth() + 24)) end
+    fit()
+
+    local onClick, enabled = nil, true
+    b:SetScript("OnEnter", function() if enabled then b:SetBackdropBorderColor(Theme.Unpack("accent")) end end)
+    b:SetScript("OnLeave", function() b:SetBackdropBorderColor(Theme.Unpack("borderStrong")) end)
+    b:SetScript("OnClick", function() if enabled and onClick then onClick() end end)
+    b.SetText    = function(_, s) fs:SetText(s); fit() end
+    b.SetOnClick = function(_, fn) onClick = fn end
+    b.SetEnabled = function(_, on)
+        enabled = on and true or false
+        fs:SetTextColor(Theme.Unpack(enabled and "text" or "textFaint"))
+        b:SetAlpha(enabled and 1 or 0.6)
+    end
+    return b
+end
+
 -- Themed checkbox. Methods: :SetChecked(bool) :GetChecked() :SetOnToggle(fn).
 function Widgets.Toggle(parent, labelText)
     local btn = CreateFrame("Button", nil, parent)

@@ -412,10 +412,11 @@ function Dashboard:_LatestDungeonArt()
     if d and #d > 0 then return self:_InstanceArt(d[#d], "dungeon") end
 end
 
--- A RANDOM current-season dungeon's art for the Current Season tile. Picked once, then cached.
-function Dashboard:_SeasonDungeonArt()
+-- Season dungeons that actually have art, in season order -- the pool the Current Season tile draws
+-- from (and the Dev "next dungeon" button steps through). Cached once the journal map is ready.
+function Dashboard:_SeasonArtPool()
     local p = self:_p()
-    if p.seasonPicName then return self:_InstanceArt(p.seasonPicName, "dungeon") end
+    if p.seasonPool then return p.seasonPool end
     local s = self:_SeasonDungeons()
     if not s then return nil end
     local cand = {}
@@ -423,8 +424,36 @@ function Dashboard:_SeasonDungeonArt()
         if (p.ejLore and p.ejLore[name]) or (p.ejImage and p.ejImage[name]) then cand[#cand + 1] = name end
     end
     if #cand == 0 then return nil end
-    p.seasonPicName = cand[math.random(#cand)]
-    return self:_InstanceArt(p.seasonPicName, "dungeon")
+    p.seasonPool = cand
+    return cand
+end
+
+-- A current-season dungeon's art for the Current Season tile. Starts on a RANDOM one, then sticks to
+-- whatever the Dev "next dungeon" button last stepped to (p.seasonIdx).
+function Dashboard:_SeasonDungeonArt()
+    local p = self:_p()
+    local pool = self:_SeasonArtPool()
+    if not pool then return nil end
+    if not p.seasonIdx then p.seasonIdx = math.random(#pool) end
+    return self:_InstanceArt(pool[p.seasonIdx], "dungeon")
+end
+
+-- Dev tooling: step the Current Season tile to the NEXT season dungeon's image (wraps), so every
+-- dungeon's splash can be inspected/tuned. Returns the now-showing dungeon name, or nil if no pool.
+function Dashboard:NextSeasonDungeon()
+    local pool = self:_SeasonArtPool()
+    if not pool then return nil end
+    local p = self:_p()
+    p.seasonIdx = ((p.seasonIdx or 0) % #pool) + 1
+    self:_RenderIfShown()
+    return pool[p.seasonIdx]
+end
+
+-- The dungeon name currently shown on the Current Season tile (for the Dev panel's readout), or nil.
+function Dashboard:CurrentSeasonDungeon()
+    local pool = self:_SeasonArtPool()
+    if not (pool and self:_p().seasonIdx) then return nil end
+    return pool[self:_p().seasonIdx]
 end
 
 -- Distinct expansions in the registry for one kind (raids if wantRaid, else dungeons), the

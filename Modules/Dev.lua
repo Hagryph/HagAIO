@@ -37,8 +37,9 @@ function Dev:BuildSettingsPage(sf)
     intro:SetWidth(width - 12); intro:SetJustifyH("LEFT")
     local y = -(intro:GetStringHeight() + 14)
 
-    -- One titled group (Dungeon / Raid) of the three sliders, anchored at the running y.
-    local function buildGroup(kind, title)
+    -- One titled group (Dungeon / Raid) of the three sliders, anchored at the running y. `extra(gc, sy)`
+    -- (optional) adds controls under the sliders and returns the new running sy.
+    local function buildGroup(kind, title, extra)
         local g = W.SettingsGroup(content, title)
         g:SetPoint("TOPLEFT", content, "TOPLEFT", 0, y)
         g:SetPoint("TOPRIGHT", content, "TOPRIGHT", 0, y)
@@ -54,11 +55,24 @@ function Dev:BuildSettingsPage(sf)
             s:SetOnChange(function(v) if dash then dash:SetArtTune(kind, r.field, v) end end)
             sy = sy - ROW_H
         end
+        if extra then sy = extra(gc, sy) end
         g:SetContentHeight(-sy - 6)                      -- rows height (drop the trailing gap)
         y = y - (g:GetHeight() + GROUP_GAP)
     end
 
-    buildGroup("dungeon", "Dungeon")
+    -- Dungeon group gets a "next image" stepper: the Current Season tile cycles through every season
+    -- dungeon's splash so each can be inspected (and tuned) in turn. The label shows which is showing.
+    buildGroup("dungeon", "Dungeon", function(gc, sy)
+        local btn = W.Button(gc, "Next dungeon image  >")
+        btn:SetPoint("TOPLEFT", gc, "TOPLEFT", 0, sy)
+        local nameFS = W.Text(gc, "", "accent", "GameFontHighlightSmall")
+        nameFS:SetPoint("LEFT", btn, "RIGHT", 12, 0)
+        nameFS:SetPoint("RIGHT", gc, "RIGHT", 0, 0); nameFS:SetJustifyH("LEFT"); nameFS:SetWordWrap(false)
+        local function refresh() nameFS:SetText((dash and dash:CurrentSeasonDungeon()) or "open the Dashboard's Dungeons view") end
+        refresh()
+        btn:SetOnClick(function() if dash then dash:NextSeasonDungeon() end; refresh() end)
+        return sy - 32
+    end)
     buildGroup("raid", "Raid")
 
     content:SetHeight(math.max(30, -y + 8))
