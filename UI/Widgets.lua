@@ -997,9 +997,15 @@ function Widgets.IconGrid(parent, opts)
                 t.img:Fill(t.band)
             end
             if d.texture then
-                if d.cover then   -- full-bleed scene: cover-crop the band, auto-centred + pixel offset
-                    t.img:SetImage(d.texture, nil, d.atlas)
-                    t.img:Cover(t.band, d.offset)
+                if d.cover then
+                    -- COVER: width hits max (x 0->1); vertically show a centred band sized to the box
+                    -- aspect (the MIDDLE of the scene), nudged by d.offset frame-pixels (+down/-up).
+                    -- Computed from the known box size (ih/tw), not a frame read that isn't resolved
+                    -- yet at refresh time -- that was the bug that left it uncropped/stretched.
+                    local band = math.min(1, ih / tw)
+                    local y0 = (1 - band) / 2 + band * (d.offset or 0) / ih
+                    y0 = math.max(0, math.min(1 - band, y0))
+                    t.img:SetImage(d.texture, { 0, 1, y0, y0 + band }, d.atlas)
                 else              -- banner: base crop + WeakAuras zoom to eat residual padding
                     t.img:SetImage(d.texture, d.texCoord, d.atlas)
                 end
