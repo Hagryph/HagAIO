@@ -142,6 +142,7 @@ Services/
   Secrets.lua              Thin, allocation-free helpers around 12.0 Secret Values, so modules don't each
   Serializer.lua           Turns a Lua value into a compact, copy-pasteable share string and back, using
   SlashCommand.lua         Singleton slash-command router for /hagaio (alias /hag)
+  TextureService.lua       Owns the addon's reusable TEXTURE WIDGETS (ns.UI.Widgets.Texture)
 Modules/
   Class.lua                Generic class-helper module
   CVars.lua                Force chosen console variables on every character

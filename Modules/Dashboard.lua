@@ -330,15 +330,15 @@ function Dashboard:_ExpansionLogo(tierName)
     return info and info.logo or nil
 end
 
--- The art for an instance as (texture, texCoord) so it ALWAYS fills the box, no margins:
---   buttonImage1 is a padded banner -> crop with EJ_TILE_TC and stretch (the banner fills).
---   bgImage is a full-bleed scene  -> NO crop, just stretch 0-1 (the scene fills).
--- Applying the banner crop to the scene is what left the dark margin; this keeps them separate.
+-- The art for an instance as (texture, texCoord) so it ALWAYS fills the box, no margins. The
+-- bgImage is a full-bleed opaque SCENE that stretches edge-to-edge with no crop -> preferred. The
+-- buttonImage1 banner is padded; even cropped with EJ_TILE_TC its feathered edges leave a margin,
+-- so it's only a fallback when an instance has no scene.
 function Dashboard:_InstanceArt(name)
     local p = self:_p()
     if not name then return nil end
-    if p.ejImage and p.ejImage[name] then return p.ejImage[name], EJ_TILE_TC end
     if p.ejBg and p.ejBg[name] then return p.ejBg[name], nil end
+    if p.ejImage and p.ejImage[name] then return p.ejImage[name], EJ_TILE_TC end
     return nil
 end
 

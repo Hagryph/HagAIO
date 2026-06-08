@@ -827,6 +827,58 @@ function Widgets.Nav(parent, opts)
     return nav
 end
 
+-- TEXTURE WIDGET -- a thin wrapper over a WoW Texture that renders crisp and FILLS its region.
+-- Two fixes most hand-rolled textures miss: WeakAuras' texel trick (SetSnapToPixelGrid(false) +
+-- SetTexelSnappingBias(0)), so the art isn't biased inward and snapped, leaving a faint margin;
+-- and a single SetImage that hides the file-vs-atlas + "SetAtlas resets the texcoord" gotchas.
+-- :Fill anchors it flush (no inset) so it covers the box edge-to-edge. Textures are pooled and
+-- kept alive by ns.TextureService (a long-lived Service), so they aren't garbage-collected.
+--   opts: layer ("ARTWORK"), sublevel (0)
+-- Methods: :SetImage(image[, coord][, isAtlas])  :Fill(frame[, inset])  :SetParent/:SetPoint/
+--   :ClearAllPoints/:SetSize/:SetDrawLayer/:Show/:Hide passthroughs  :Reset
+function Widgets.Texture(parent, opts)
+    opts = opts or {}
+    local tw = {}
+    local tex = parent:CreateTexture(nil, opts.layer or "ARTWORK", nil, opts.sublevel or 0)
+    if tex.SetSnapToPixelGrid then tex:SetSnapToPixelGrid(false) end
+    if tex.SetTexelSnappingBias then tex:SetTexelSnappingBias(0) end
+    tw.tex = tex
+
+    local function isAtlas(image)
+        return type(image) == "string" and C_Texture and C_Texture.GetAtlasInfo
+            and C_Texture.GetAtlasInfo(image) ~= nil
+    end
+    function tw:SetImage(image, coord, asAtlas)
+        if asAtlas or isAtlas(image) then
+            tex:SetAtlas(image, false)          -- atlas carries its own coords
+        else
+            tex:SetTexture(image)
+            if coord then tex:SetTexCoord(coord[1], coord[2], coord[3], coord[4]) else tex:SetTexCoord(0, 1, 0, 1) end
+        end
+        return self
+    end
+    function tw:Fill(frame, inset)
+        inset = inset or 0
+        tex:ClearAllPoints()
+        tex:SetPoint("TOPLEFT", frame, "TOPLEFT", inset, -inset)
+        tex:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", -inset, inset)
+        return self
+    end
+    function tw:SetParent(p)        tex:SetParent(p);       return self end
+    function tw:ClearAllPoints()    tex:ClearAllPoints();   return self end
+    function tw:SetPoint(...)       tex:SetPoint(...);      return self end
+    function tw:SetSize(...)        tex:SetSize(...);       return self end
+    function tw:SetDrawLayer(...)   tex:SetDrawLayer(...);  return self end
+    function tw:SetVertexColor(...) tex:SetVertexColor(...);return self end
+    function tw:Show()              tex:Show();             return self end
+    function tw:Hide()              tex:Hide();             return self end
+    function tw:Reset()
+        tex:Hide(); tex:ClearAllPoints(); tex:SetTexture(nil); tex:SetTexCoord(0, 1, 0, 1)
+        return self
+    end
+    return tw
+end
+
 -- Auto-sizing ICON GRID -- Encounter-Journal-style tiles laid out a FIXED number per row, each
 -- tile auto-sized to fill the available width. A tile is a button: the image on top, a solid
 -- titlebar across the bottom holding the centred name, a themed border that lights to accent on
@@ -858,11 +910,10 @@ function Widgets.IconGrid(parent, opts)
         if t then return t end
         t = CreateFrame("Button", nil, content, "BackdropTemplate")
         Widgets.Style(t, "panel2", "border")
-        -- BACKGROUND layer so the flush image sits under the frame's border (selection stays visible)
-        local img = t:CreateTexture(nil, "BACKGROUND", nil, 1)  -- anchored per-refresh (auto-size)
-        -- WeakAuras-style: stop texel snapping so the art renders crisp and fills its region exactly
-        if img.SetSnapToPixelGrid then img:SetSnapToPixelGrid(false) end
-        if img.SetTexelSnappingBias then img:SetTexelSnappingBias(0) end
+        -- image: a pooled Texture widget (kept alive by TextureService) on the BACKGROUND layer so
+        -- the flush art sits under the frame border. The widget applies the WeakAuras texel fix.
+        local img = (ns.TextureService and ns.TextureService:Acquire(t, { layer = "BACKGROUND", sublevel = 1 }))
+            or Widgets.Texture(t, { layer = "BACKGROUND", sublevel = 1 })
         t.img = img
         local tb = t:CreateTexture(nil, "OVERLAY")             -- titlebar across the bottom (own strip)
         tb:SetColorTexture(Theme.Unpack("bg1"))
@@ -905,13 +956,7 @@ function Widgets.IconGrid(parent, opts)
                 t.img:SetPoint("BOTTOMRIGHT", t.titlebar, "TOPRIGHT", 0, 0)
             end
             if d.texture then
-                if d.atlas then
-                    t.img:SetAtlas(d.texture, false)
-                else
-                    t.img:SetTexture(d.texture)
-                    local tc = d.texCoord   -- crop padded source art (EJ buttonImage1) to its art region
-                    if tc then t.img:SetTexCoord(tc[1], tc[2], tc[3], tc[4]) else t.img:SetTexCoord(0, 1, 0, 1) end
-                end
+                t.img:SetImage(d.texture, d.texCoord, d.atlas)   -- handles atlas + crop + full-fill
                 t.img:Show()
             else
                 t.img:Hide()
