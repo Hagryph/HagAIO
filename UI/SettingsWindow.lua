@@ -515,6 +515,8 @@ function SettingsWindow:_RenderSchema(content, host, width, y)
         end
     end
 
+    local controls = {}   -- setting key -> its widget, so a dependent can watch its parent widget(s)
+    local pending = {}    -- { widget, key } dependents, wired to their parents after every control exists
     for _, s in ipairs(schema) do
         if s.type == "header" then
             local h = W.SectionLabel:New(content, s.text)
@@ -533,7 +535,8 @@ function SettingsWindow:_RenderSchema(content, host, width, y)
             t:SetPoint("TOPLEFT", 6, y)
             t:SetChecked(host:GetSetting(s.key) and true or false)
             t:SetOnToggle(function(on) host:SetSetting(s.key, on) end)
-            if s.dependsOn then t:EnableWhen(function() return graph:IsSatisfied(s.key) end) end
+            if s.key then controls[s.key] = t end
+            if s.dependsOn then pending[#pending + 1] = { w = t, key = s.key, on = s.dependsOn } end
             y = y - 26
             if s.desc then
                 local d = W.Text:New(content, s.desc, "textFaint", "GameFontHighlightSmall")
@@ -553,7 +556,8 @@ function SettingsWindow:_RenderSchema(content, host, width, y)
             seg:SetPoint("TOPLEFT", 6, y)
             seg:SetValue(host:GetSetting(s.key))
             seg:SetOnChange(function(v) host:SetSetting(s.key, v) end)
-            if s.dependsOn then seg:EnableWhen(function() return graph:IsSatisfied(s.key) end) end
+            if s.key then controls[s.key] = seg end
+            if s.dependsOn then pending[#pending + 1] = { w = seg, key = s.key, on = s.dependsOn } end
             y = y - 34
 
         elseif s.type == "color" then
@@ -565,9 +569,20 @@ function SettingsWindow:_RenderSchema(content, host, width, y)
             sw:SetColor(c[1] or 1, c[2] or 1, c[3] or 1)
             sw:SetOnChange(function(r, g, b) host:SetSetting(s.key, { r, g, b }) end)
             if s.default then sw:SetDefault(s.default[1], s.default[2], s.default[3]) end
-            if s.dependsOn then sw:EnableWhen(function() return graph:IsSatisfied(s.key) end) end
+            if s.key then controls[s.key] = sw end
+            if s.dependsOn then pending[#pending + 1] = { w = sw, key = s.key, on = s.dependsOn } end
             y = y - 26
         end
+    end
+
+    -- Wire each dependent to watch its PARENT widget(s): when a parent changes it re-checks the graph
+    -- (and the EnableWhen cascade carries transitive chains). Targeted -- only the widgets it depends on.
+    for _, d in ipairs(pending) do
+        local parents = {}
+        for _, key in ipairs(type(d.on) == "table" and d.on or { d.on }) do
+            if controls[key] then parents[#parents + 1] = controls[key] end
+        end
+        d.w:EnableWhen(parents, function() return graph:IsSatisfied(d.key) end)
     end
     return y
 end

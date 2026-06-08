@@ -4,13 +4,14 @@ local Widgets = ns.UI.Widgets
 local _wb = ns.UI._wb
 local Widget, FrameWidget, TextWidget, TextureWidget = _wb.Widget, _wb.FrameWidget, _wb.TextWidget, _wb.TextureWidget
 local unwrap, style, claimLevel, adopt = _wb.unwrap, _wb.style, _wb.claimLevel, _wb.adopt
+local Changeable = _wb.Changeable
 
 -- UI/Widgets/Slider.lua
 -- Themed horizontal slider with a track, an accent fill, a draggable thumb, and a live numeric
 -- readout (right of an optional label). The widget is a container Frame -- anchor it like any other.
 --   opts: min, max, step, width (track px, 160), label (string), format (readout fmt, "%.2f")
 -- Methods: :SetValue(v) :GetValue() :SetOnChange(fn)  fn(newValue) on user drag  :SetEnabled(bool)
-local SliderW = ns.Class.new("Slider", FrameWidget)
+local SliderW = ns.Class.new("Slider", FrameWidget, { mixins = { Changeable } })
 function SliderW:Initialize(parent, opts)
     opts = opts or {}
     local minV, maxV = opts.min or 0, opts.max or 1
@@ -62,12 +63,12 @@ function SliderW:Initialize(parent, opts)
     slider:SetScript("OnValueChanged", function(_, v)
         render(v)
         if p.onChange and p.enabled and not p.suppress then p.onChange(v) end
-        if not p.suppress then self:_changed() end   -- dependents re-evaluate (skip programmatic SetValue)
+        if not p.suppress then self:_fireChange(v) end   -- emit a change (skip programmatic SetValue)
     end)
     self:_attach(f)
     render(minV)
 end
-function SliderW:SetValue(v)    local p = self:_p(); p.suppress = true; p.slider:SetValue(v); p.suppress = false; p.render(p.slider:GetValue()); self:_changed(); return self end
+function SliderW:SetValue(v)    local p = self:_p(); p.suppress = true; p.slider:SetValue(v); p.suppress = false; p.render(p.slider:GetValue()); self:_fireChange(p.slider:GetValue()); return self end
 function SliderW:GetValue()     return self:_p().slider:GetValue() end
 function SliderW:SetOnChange(fn) self:_p().onChange = fn; return self end
 function SliderW:SetEnabled(on)

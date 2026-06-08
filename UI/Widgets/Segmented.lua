@@ -4,12 +4,13 @@ local Widgets = ns.UI.Widgets
 local _wb = ns.UI._wb
 local Widget, FrameWidget, TextWidget, TextureWidget = _wb.Widget, _wb.FrameWidget, _wb.TextWidget, _wb.TextureWidget
 local unwrap, style, claimLevel, adopt = _wb.unwrap, _wb.style, _wb.claimLevel, _wb.adopt
+local Changeable = _wb.Changeable
 
 -- UI/Widgets/Segmented.lua
 -- Segmented selector (LoL "view-switch"): a row of option buttons, active one
 -- accent-highlighted. options = { { value = v, text = "..." }, ... }.
 -- Methods: :SetValue(v) :GetValue() :SetOnChange(fn) :SetEnabled(bool).
-local SegmentedW = ns.Class.new("Segmented", FrameWidget)
+local SegmentedW = ns.Class.new("Segmented", FrameWidget, { mixins = { Changeable } })
 function SegmentedW:Initialize(parent, options)
     local c = CreateFrame("Frame", nil, unwrap(parent), "BackdropTemplate")
     style(c, "panel2", "border")
@@ -47,7 +48,7 @@ function SegmentedW:Initialize(parent, options)
             if not p.enabled then return end
             p.value = opt.value; render()
             if p.onChange then p.onChange(p.value) end
-            self:_changed()   -- dependents re-evaluate their EnableWhen condition
+            self:_fireChange(p.value)   -- dependents re-evaluate their EnableWhen condition
         end)
         b:SetScript("OnEnter", function() if p.enabled and opt.value ~= p.value then fs:SetTextColor(Theme.Unpack("text")) end end)
         b:SetScript("OnLeave", render)
@@ -58,7 +59,7 @@ function SegmentedW:Initialize(parent, options)
     self:_attach(c)
     render()
 end
-function SegmentedW:SetValue(v)     local p = self:_p(); p.value = v; p.render(); self:_changed(); return self end
+function SegmentedW:SetValue(v)     local p = self:_p(); p.value = v; p.render(); self:_fireChange(p.value); return self end
 function SegmentedW:GetValue()      return self:_p().value end
 function SegmentedW:SetOnChange(fn) self:_p().onChange = fn; return self end
 function SegmentedW:SetEnabled(on)

@@ -4,13 +4,14 @@ local Widgets = ns.UI.Widgets
 local _wb = ns.UI._wb
 local Widget, FrameWidget, TextWidget, TextureWidget = _wb.Widget, _wb.FrameWidget, _wb.TextWidget, _wb.TextureWidget
 local unwrap, style, claimLevel, adopt = _wb.unwrap, _wb.style, _wb.claimLevel, _wb.adopt
+local Changeable = _wb.Changeable
 
 -- UI/Widgets/Input.lua
 -- Themed single-line EditBox. `numeric` only affects which characters look valid
 -- to us; we never SetNumeric (that would block decimals/negatives many CVars
 -- need) -- callers validate on change. Commits on Enter or focus-loss; Esc
 -- reverts. Methods: :SetValue(v) :GetValue() :SetOnChange(fn) :SetEnabled(b).
-local InputW = ns.Class.new("Input", FrameWidget)
+local InputW = ns.Class.new("Input", FrameWidget, { mixins = { Changeable } })
 function InputW:Initialize(parent, width)
     local box = CreateFrame("EditBox", nil, unwrap(parent), "BackdropTemplate")
     box:SetAutoFocus(false)
@@ -29,7 +30,7 @@ function InputW:Initialize(parent, width)
         if v == p.value then return end
         p.value = v
         if p.onChange then p.onChange(v) end
-        self:_changed()   -- dependents re-evaluate their EnableWhen condition
+        self:_fireChange(p.value)   -- dependents re-evaluate their EnableWhen condition
     end
     box:SetScript("OnEnterPressed",    function(s) s:ClearFocus() end)  -- triggers focus-lost commit
     box:SetScript("OnEscapePressed",   function(s) s:SetText(p.value); s:ClearFocus() end)
@@ -37,7 +38,7 @@ function InputW:Initialize(parent, width)
     box:SetScript("OnEditFocusLost",   function() box:SetBackdropBorderColor(Theme.Unpack("borderStrong")); commit() end)
     self:_attach(box)
 end
-function InputW:SetValue(v)     local p = self:_p(); p.value = tostring(v == nil and "" or v); self:_frame():SetText(p.value); self:_changed(); return self end
+function InputW:SetValue(v)     local p = self:_p(); p.value = tostring(v == nil and "" or v); self:_frame():SetText(p.value); self:_fireChange(p.value); return self end
 function InputW:GetValue()      return self:_frame():GetText() end
 function InputW:SetOnChange(fn) self:_p().onChange = fn; return self end
 function InputW:SetEnabled(on)

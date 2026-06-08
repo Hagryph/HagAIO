@@ -4,10 +4,11 @@ local Widgets = ns.UI.Widgets
 local _wb = ns.UI._wb
 local Widget, FrameWidget, TextWidget, TextureWidget = _wb.Widget, _wb.FrameWidget, _wb.TextWidget, _wb.TextureWidget
 local unwrap, style, claimLevel, adopt = _wb.unwrap, _wb.style, _wb.claimLevel, _wb.adopt
+local Changeable = _wb.Changeable
 
 -- UI/Widgets/Toggle.lua
 -- Themed checkbox. Methods: :SetChecked(bool) :GetChecked() :SetOnToggle(fn) :SetEnabled(bool).
-local ToggleW = ns.Class.new("Toggle", FrameWidget)
+local ToggleW = ns.Class.new("Toggle", FrameWidget, { mixins = { Changeable } })
 function ToggleW:Initialize(parent, labelText)
     local rawParent = unwrap(parent)
     local btn = CreateFrame("Button", nil, rawParent)
@@ -63,13 +64,13 @@ function ToggleW:Initialize(parent, labelText)
         p.state = not p.state
         render()
         if p.onToggle then p.onToggle(p.state) end
-        self:_changed()   -- let dependent widgets re-evaluate their EnableWhen condition
+        self:_fireChange(p.state)   -- let dependent widgets re-evaluate their EnableWhen condition
     end)
 
     self:_attach(btn)
     render()
 end
-function ToggleW:SetChecked(v)   local p = self:_p(); p.state = v and true or false; p.render(); self:_changed(); return self end
+function ToggleW:SetChecked(v)   local p = self:_p(); p.state = v and true or false; p.render(); self:_fireChange(p.state); return self end
 function ToggleW:GetChecked()    return self:_p().state end
 function ToggleW:SetOnToggle(fn) self:_p().onToggle = fn; return self end
 function ToggleW:SetEnabled(on)  local p = self:_p(); p.enabled = on and true or false; p.render(); return self end

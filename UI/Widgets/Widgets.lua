@@ -61,35 +61,53 @@ function Widget:IsShown()          return self:_p().frame:IsShown() end
 function Widget:SetAlpha(a)        self:_p().frame:SetAlpha(a);             return self end
 
 -- ---- reactive enable/disable (declarative grey-out) ------------------------------------------------
--- A widget can declare, at build time, a CONDITION for staying enabled; the widget layer greys it out
--- automatically whenever ANY interactive widget changes state -- no external controller, no manual
--- Refresh. The registry is weak-keyed so a discarded widget drops out on its own; predicates run in a
--- pcall so a stale/throwing one can't break the sweep.
-local conditioned = setmetatable({}, { __mode = "k" })   -- widget -> predicate() -> bool
-local function reevaluate()
-    for w, pred in pairs(conditioned) do
-        if w.SetEnabled then
-            local ok, on = pcall(pred)
-            if ok then w:SetEnabled(on and true or false) end
+-- CHANGEABLE mixin: makes an interactive widget an OBSERVABLE change source -- through ns.EventBus, NOT
+-- a hand-rolled callback list. Each widget owns a UNIQUE EventBus message (its identity), so a
+-- dependent subscribes to exactly the widget(s) it cares about, never a global broadcast. :OnChange(fn)
+-- subscribes (fn gets (message, self, value) -- the event carries the widget + its new value, EventBus
+-- style); the widget Emits via :_fireChange(value) after a user OR programmatic state change. Mixed
+-- into Toggle/Segmented/Input/Slider/ColorSwatch.
+local nextChangeMsg = 0
+local Changeable = ns.Mixin.new("Changeable", {
+    -- this widget's unique EventBus message name (lazily assigned on first use)
+    _changeMsg = function(self)
+        local p = self:_p()
+        if not p.changeMsg then nextChangeMsg = nextChangeMsg + 1; p.changeMsg = "Widget.Change#" .. nextChangeMsg end
+        return p.changeMsg
+    end,
+    -- subscribe to THIS widget's change message; returns the EventBus token (for Unsubscribe)
+    OnChange = function(self, fn) return ns.EventBus and ns.EventBus:Subscribe(self:_changeMsg(), fn) end,
+    -- broadcast this widget's change through the EventBus (carries the widget + its new value)
+    _fireChange = function(self, value)
+        if ns.EventBus then ns.EventBus:Emit(self:_changeMsg(), self, value) end
+    end,
+})
+
+-- Grey this widget out unless `predicate()` holds. Re-checked when ANY of the given `sources` (one
+-- Changeable widget or a list) fires a change -- so it watches ONLY the widgets it depends on, never a
+-- global broadcast -- and once now for the initial state. When this widget's own enabled state flips
+-- it propagates a change too, so a dependency CHAIN cascades (the graph is acyclic, so no loop). No-op
+-- without :SetEnabled (labels/notes). Returns self.
+function Widget:EnableWhen(sources, predicate)
+    if not (self.SetEnabled and type(predicate) == "function") then return self end
+    local list = (type(sources) == "table" and sources.IsInstanceOf) and { sources } or (sources or {})
+    local last
+    local function reeval()
+        local ok, on = pcall(predicate)
+        if not ok then return end
+        on = on and true or false
+        if on ~= last then
+            last = on
+            self:SetEnabled(on)
+            if self._fireChange then self:_fireChange() end   -- cascade to widgets depending on me
         end
     end
-end
-
--- Grey this widget out whenever `predicate()` is false. Re-checked automatically on every widget
--- change AND once now, so the caller never wires a dependency object or calls Refresh. No-op for a
--- widget without :SetEnabled (labels/notes). Returns self.
-function Widget:EnableWhen(predicate)
-    if type(predicate) == "function" and self.SetEnabled then
-        conditioned[self] = predicate
-        local ok, on = pcall(predicate)
-        if ok then self:SetEnabled(on and true or false) end
+    for _, src in ipairs(list) do
+        if src.OnChange then src:OnChange(reeval) end
     end
+    reeval()
     return self
 end
-
--- Interactive widgets call this AFTER a user/programmatic state change so every conditioned widget
--- re-evaluates. SetEnabled itself never notifies, so reevaluate can't loop.
-function Widget:_changed() reevaluate() end
 
 -- ---- FrameWidget: a widget backed by a real Frame/Button/etc. -- adds the general FRAME powers
 -- (event wiring, mouse, strata). Visual extras (scale, colour) stay opt-in: a subclass that wants
@@ -170,4 +188,5 @@ end
 ns.UI._wb = {
     Widget = Widget, FrameWidget = FrameWidget, TextWidget = TextWidget, TextureWidget = TextureWidget,
     Container = ContainerW, unwrap = unwrap, style = style, claimLevel = claimLevel, adopt = adopt,
+    Changeable = Changeable,
 }

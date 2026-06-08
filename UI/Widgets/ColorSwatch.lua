@@ -4,11 +4,12 @@ local Widgets = ns.UI.Widgets
 local _wb = ns.UI._wb
 local Widget, FrameWidget, TextWidget, TextureWidget = _wb.Widget, _wb.FrameWidget, _wb.TextWidget, _wb.TextureWidget
 local unwrap, style, claimLevel, adopt = _wb.unwrap, _wb.style, _wb.claimLevel, _wb.adopt
+local Changeable = _wb.Changeable
 
 -- UI/Widgets/ColorSwatch.lua
 -- Colour swatch button: shows the current colour, opens the Blizzard colour
 -- picker on click. Methods: :SetColor(r,g,b) :GetColor() :SetOnChange(fn) :SetDefault :SetEnabled.
-local ColorSwatchW = ns.Class.new("ColorSwatch", FrameWidget)
+local ColorSwatchW = ns.Class.new("ColorSwatch", FrameWidget, { mixins = { Changeable } })
 function ColorSwatchW:Initialize(parent)
     local btn = CreateFrame("Button", nil, unwrap(parent), "BackdropTemplate")
     btn:SetSize(26, 16)
@@ -21,7 +22,7 @@ function ColorSwatchW:Initialize(parent)
 
     local p = self:_p()
     p.r, p.g, p.b, p.enabled = 1, 1, 1, true
-    local function set(r, g, b) p.r, p.g, p.b = r, g, b; sw:SetColorTexture(r, g, b); self:_changed() end
+    local function set(r, g, b) p.r, p.g, p.b = r, g, b; sw:SetColorTexture(r, g, b); self:_fireChange({ r, g, b }) end
     p.set = set
 
     btn:SetScript("OnEnter", function() if p.enabled then btn:SetBackdropBorderColor(Theme.Unpack("accent")) end end)

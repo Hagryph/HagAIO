@@ -86,6 +86,15 @@ const RULES = [
     skip: (rel) => allow(rel, FRAME_ALLOW),
     msg: "raw frame/fontstring created outside the Widgets layer",
   },
+  {
+    // No hand-rolled pub/sub (a "mini event bus"): defining a dispatcher (:Fire/:Emit/:Publish/
+    // :Broadcast/:Dispatch) or invoking a stored callback-list element. Pub/sub goes through the
+    // sanctioned primitives -- ns.EventBus (global messages) or ns.Delegate (object-owned signal).
+    id: "mini-event-bus",
+    re: /\bfunction\b[^\n(]*[.:](?:Fire|Emit|Publish|Broadcast|Dispatch)\s*\(|\b(?:Fire|Emit|Publish|Broadcast|Dispatch)\s*=\s*function\b|\b(?:subs|subscribers|listeners|callbacks|observers|handlers)\s*\[\s*\w+\s*\]\s*\(/g,
+    skip: (rel) => rel === "Services/EventBus.lua" || rel === "Core/Delegate.lua",
+    msg: "hand-rolled pub/sub (mini event bus) -- route through ns.EventBus or ns.Delegate",
+  },
 ];
 
 function* luaFiles(dir) {
@@ -128,7 +137,7 @@ if (!SUMMARY_ONLY) {
 }
 
 console.log("\n=== frame-access lint ===");
-for (const id of ["widget-call-form", "raw-texture", "raw-frame"]) {
+for (const id of ["widget-call-form", "raw-texture", "raw-frame", "mini-event-bus"]) {
   console.log(`  ${id}: ${byRule[id] || 0}`);
 }
 console.log(`  TOTAL: ${violations.length}`);
