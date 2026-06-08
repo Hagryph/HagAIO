@@ -293,8 +293,11 @@ function ResetRadar:_Build()
     div:SetPoint("TOPLEFT", avFrame, "BOTTOMLEFT", 0, -14)
     div:SetPoint("RIGHT", rail, "RIGHT", -12, 0)
 
-    -- the category tree IS a 1-column grid (section + selectable nav rows)
-    local nav = W.Grid(rail, { columns = { {} }, scroll = false, rowHeight = 30 })
+    -- the category tree is a Navigation widget; selecting a category re-renders the data grid
+    local nav = W.Nav(rail, {
+        items = self:_NavItems(),
+        onSelect = function(key) p.category = key; self:_Render() end,
+    })
     nav:SetPoint("TOPLEFT", div, "BOTTOMLEFT", 6, -10)
     nav:SetPoint("BOTTOMRIGHT", rail, "BOTTOMRIGHT", -6, 8)
     p.nav = nav
@@ -319,33 +322,20 @@ function ResetRadar:_Build()
     p.grid = grid
 
     p.built = true
-    self:_Select(p.category)
+    p.nav:Select(p.category)   -- highlight the default category + render it via onSelect
 end
 
--- The sidebar rows: a section header for a group, a selectable (indented) nav row otherwise.
-function ResetRadar:_SidebarRows()
-    local p = self:_p()
-    local rows = {}
+-- The navigation items: a section header per group, a selectable (indented) item otherwise.
+function ResetRadar:_NavItems()
+    local items = {}
     for _, cat in ipairs(CATEGORIES) do
         if cat.header then
-            rows[#rows + 1] = { section = cat.label }
+            items[#items + 1] = { section = cat.label }
         else
-            local key = cat.key
-            rows[#rows + 1] = {
-                cells = { cat.label }, indent = cat.indent and 1 or 0,
-                active = (key == p.category),
-                onClick = function() self:_Select(key) end,
-            }
+            items[#items + 1] = { key = cat.key, label = cat.label, indent = cat.indent and 1 or 0 }
         end
     end
-    return rows
-end
-
-function ResetRadar:_Select(key)
-    local p = self:_p()
-    p.category = key
-    p.nav:SetRows(self:_SidebarRows())   -- rebuild to reflect the active row
-    self:_Render()
+    return items
 end
 
 function ResetRadar:_Category()

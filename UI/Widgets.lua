@@ -678,6 +678,53 @@ function Widgets.Grid(parent, opts)
     return g
 end
 
+-- A vertical NAVIGATION list: section labels + selectable items (optionally indented as
+-- sub-items), with a single active selection (accent highlight + bar) and an onSelect callback.
+-- Built ON Widgets.Grid (a 1-column grid) so it shares the one aligned layout + theming -- the
+-- sidebar/tree any window needs, without each re-deriving row positioning or active state.
+--   opts: items = { { key="x", label="X", indent=number } | { section="Group" }, ... }
+--         onSelect = function(key)   rowHeight (30)   scroll (default false; name required if true)
+--   methods: :SetItems(items)  :Select(key[, silent])  :GetSelected()
+function Widgets.Nav(parent, opts)
+    opts = opts or {}
+    local nav = Widgets.Grid(parent, {
+        columns = { {} }, scroll = opts.scroll or false, name = opts.name,
+        rowHeight = opts.rowHeight or 30,
+    })
+    nav._items = opts.items or {}
+    nav._onSelect = opts.onSelect
+
+    local function rebuild()
+        local rows = {}
+        for _, it in ipairs(nav._items) do
+            if it.section then
+                rows[#rows + 1] = { section = it.section }
+            else
+                local key = it.key
+                rows[#rows + 1] = {
+                    cells = { it.label }, indent = it.indent or 0,
+                    active = (key == nav._selected),
+                    onClick = function() nav:Select(key) end,
+                }
+            end
+        end
+        nav:SetRows(rows)
+    end
+
+    function nav:SetItems(items) self._items = items or {}; rebuild() end
+    function nav:GetSelected() return self._selected end
+    -- Select a key: re-highlight and (unless silent) fire onSelect. No-op styling for an
+    -- unknown key, so callers can clear the selection with nil.
+    function nav:Select(key, silent)
+        self._selected = key
+        rebuild()
+        if not silent and self._onSelect then self._onSelect(key) end
+    end
+
+    rebuild()
+    return nav
+end
+
 -- Shared HagAIO icon tooltip (addon-compartment + minimap buttons): an accent title plus
 -- a list of { text, key } lines coloured from the Theme palette (key defaults to "textDim").
 -- Keeps the two icon services from each hand-rolling the same block + magic RGBs.
