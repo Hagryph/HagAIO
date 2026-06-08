@@ -9,17 +9,21 @@ local Theme = ns.Theme
 ns.UI = ns.UI or {}
 local Widgets = {}
 
--- Frame levels claimed by Widgets.Window, so two windows never share one (a tie would let them
--- z-fight on overlap). A requested level that's taken steps DOWN to the highest free level below
--- it. Windows are persistent singletons, so claims are never released.
-local usedLevels = {}
-local function claimLevel(requested)
+-- Frame levels claimed by Widgets.Window, PER STRATA (a level only governs draw order among
+-- frames in the SAME strata), so two windows in one strata never share a level and z-fight. A
+-- requested level that's taken steps DOWN to the highest free level below it and warns with the
+-- level it actually used. Windows are persistent singletons, so claims are never released.
+local usedLevels = {}   -- strata -> { level -> true }
+local function claimLevel(strata, requested)
+    local taken = usedLevels[strata]
+    if not taken then taken = {}; usedLevels[strata] = taken end
     local level = requested
-    while level > 0 and usedLevels[level] do level = level - 1 end
+    while level > 0 and taken[level] do level = level - 1 end
     if level ~= requested then
-        ns.Logger:Core():Warn(("window level %d is already in use; using %d instead"):format(requested, level))
+        ns.Logger:Core():Warn(("window level %d (strata %s) is already in use; using %d instead")
+            :format(requested, strata, level))
     end
-    usedLevels[level] = true
+    taken[level] = true
     return level
 end
 
@@ -443,9 +447,10 @@ end
 -- region under the bar) or anchor your own content to `.bar`.
 --   opts: name      global frame name -> ESC closes it (UISpecialFrames); omit for none
 --         width/height/point/strata   geometry (defaults 560x440, CENTER, "HIGH")
---         level     explicit frame level -- within a strata, a higher level draws on top, so
---                   two same-strata windows can be stacked deterministically (gap them so one
---                   window's nested children never interleave with the other's)
+--         level     REQUIRED frame level -- within a strata a higher level draws on top, so
+--                   windows stack deterministically. Levels are unique per strata (a taken one
+--                   steps down + warns); gap them so one window's nested children never
+--                   interleave with the other's
 --         title     bar title text;  titleKey palette key (default "accent")
 --         subtitle  faint text right of the title (e.g. a version);  barHeight (default 38)
 --         onClose   fn(frame) for the X (default frame:Hide())
@@ -456,12 +461,14 @@ end
 -- :SetWindowTitle(text) method.
 function Widgets.Window(opts)
     opts = opts or {}
+    assert(type(opts.level) == "number", "Widgets.Window: opts.level is required (a frame level)")
     local f = CreateFrame("Frame", opts.name, UIParent, "BackdropTemplate")
     f:SetSize(opts.width or 560, opts.height or 440)
     f:SetPoint(opts.point or "CENTER")
     Widgets.Style(f, "bg1", "borderStrong")
-    f:SetFrameStrata(opts.strata or "HIGH")
-    if opts.level then f:SetFrameLevel(claimLevel(opts.level)) end
+    local strata = opts.strata or "HIGH"
+    f:SetFrameStrata(strata)
+    f:SetFrameLevel(claimLevel(strata, opts.level))
     f:EnableMouse(true)
     f:SetMovable(true)
     f:SetClampedToScreen(true)

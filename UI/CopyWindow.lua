@@ -45,7 +45,7 @@ function CopyWindow:_Build()
 
     -- shared chrome: movable DIALOG-strata frame + draggable bar + close X (Widgets.Window).
     local f = W.Window({ name = "HagAIOCopyWindow", width = 560, height = 440,
-        strata = "DIALOG", title = "Copy", onClose = function() self:Hide() end })
+        strata = "DIALOG", level = 100, title = "Copy", onClose = function() self:Hide() end })
     local bar = f.bar
     p.frame = f
     p.title = f.titleFS
