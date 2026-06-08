@@ -672,11 +672,12 @@ function Dashboard:_CategoryTiles()
     local p = self:_p()
     local function go(key) return function() p.nav:Select(key) end end
     local logo = self:_ExpansionLogo(p.currentExpansion)
+    local raidImg, dunImg = self:_LatestRaidImage(), self:_LatestDungeonImage()
     local defs = {
         { key = "mplus",    label = "Mythic+",       contain = true,
           texture = "Interface\\Icons\\Achievement_ChallengeMode_Gold" },
-        { key = "raids",    label = "Raids",         texture = self:_LatestRaidImage() or logo },
-        { key = "dungeons", label = "Dungeons",      texture = self:_LatestDungeonImage() or logo },
+        { key = "raids",    label = "Raids",         texture = raidImg or logo, texCoord = raidImg and EJ_TILE_TC },
+        { key = "dungeons", label = "Dungeons",      texture = dunImg or logo,  texCoord = dunImg and EJ_TILE_TC },
         { key = "weekly",   label = "Weekly Quests", contain = true,
           texture = "Interface\\Icons\\Achievement_Quests_Completed_06" },
         { key = "daily",    label = "Daily Quests",  contain = true,
@@ -685,7 +686,8 @@ function Dashboard:_CategoryTiles()
     local tiles = {}
     for _, d in ipairs(defs) do
         if self:_CategoryVisible(d.key) then
-            tiles[#tiles + 1] = { texture = d.texture, label = d.label, contain = d.contain, onClick = go(d.key) }
+            tiles[#tiles + 1] = { texture = d.texture, label = d.label, contain = d.contain,
+                texCoord = d.texCoord, onClick = go(d.key) }
         end
     end
     return tiles
@@ -710,7 +712,7 @@ function Dashboard:_OverviewTiles(key)
             -- the current tier's tile shows the latest raid's picture, not the expansion logo
             if exp == p.currentExpansion then
                 local img = self:_LatestRaidImage()
-                if img then tiles[#tiles].texture = img end
+                if img then tiles[#tiles].texture, tiles[#tiles].texCoord = img, EJ_TILE_TC end
             end
         end
     elseif key == "dungeons" then
@@ -718,7 +720,7 @@ function Dashboard:_OverviewTiles(key)
             tile("Current Season", p.currentExpansion, "dungeon:current")
             -- Current Season shows dungeon art, so it's distinct from the current-expansion logo tile
             local img = self:_LatestDungeonImage()
-            if img then tiles[#tiles].texture = img end
+            if img then tiles[#tiles].texture, tiles[#tiles].texCoord = img, EJ_TILE_TC end
         end
         local cur, dbt = p.currentExpansion, p.ejDungeonsByTier
         if cur and dbt and dbt[cur] then tile(cur, cur, "dungeon:" .. cur) end
