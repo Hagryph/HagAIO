@@ -8,8 +8,17 @@ local Theme = ns.Theme
 --     projected time-to-level in a hover tooltip on the XP bar.
 --   * Quests: auto-accepts offered quests and turns in completed ones; quests
 --     with a choice of rewards are left for you to pick. Hold Shift to pause.
+--
+-- TIMED QUESTS: the client exposes NOTHING about a quest's time limit while it's
+-- only being offered (GetTimeAllowed / GetQuestLogTimeLeft / GetQuestTagInfo all
+-- come back empty until the quest is in your log -- verified in-game, and Blizzard
+-- only renders the timer in the quest-LOG UI templates). So a timed quest can't be
+-- spotted before accepting it. Instead we learn: the first time one is auto-accepted
+-- we detect the timer (now readable), abandon it, and remember its questID in an
+-- ACCOUNT-WIDE registry -- so on every future encounter, on any character, it's
+-- skipped before acceptance.
 
-local Questing = Class.new("Questing", ns.Module)
+local Questing = Class.new("Questing", ns.Module, { mixins = { ns.Persisted } })
 
 local clock = ns.Format.Clock   -- pure duration formatter (Lib/Format.lua)
 
@@ -35,35 +44,55 @@ function Questing:_CurrentQuestID()
     return GetQuestID and GetQuestID() or nil
 end
 
--- Timed quests (escort/event style with a countdown that can fail) are NEVER auto-accepted,
--- so you can choose to take them on only when you're ready. C_QuestLog.GetTimeAllowed reports
--- a quest's time limit and returns nothing for ordinary quests -- the canonical "is it timed?"
--- check. Note Blizzard exposes the limit through the quest log, so it's reliably caught at the
--- QUEST_DETAIL gate (every accept path funnels through there before AcceptQuest).
-function Questing:_IsTimedQuest(questID)
-    if not questID then return false end
-    if C_QuestLog and C_QuestLog.GetTimeAllowed then
+-- The account-wide set of known-timed questIDs ({ [questID] = true }), or nil before
+-- SavedVariables load. Learned over time (see _OnQuestAccepted); shared across characters.
+function Questing:_TimedRegistry()
+    local store = self:_Store()
+    return store and store.timed or nil
+end
+
+-- A quest's live time limit is only readable once it's in your log -- this returns true
+-- only then (offered quests always report nothing). C_QuestLog.GetTimeAllowed gives a
+-- positive total for timed quests and nothing for ordinary ones.
+function Questing:_LiveTimed(questID)
+    if questID and C_QuestLog and C_QuestLog.GetTimeAllowed then
         local total = C_QuestLog.GetTimeAllowed(questID)
         if total and total > 0 then return true end
     end
     return false
 end
 
--- Diagnostic: dump every "is it timed?" signal the client exposes for a quest, to chat.
--- GetTimeAllowed apparently returns nothing for an offered quest, so this probes the
--- alternatives too -- run it on the next timed quest and report back which one fires.
-function Questing:_DebugTimed(questID, title)
-    local function v(x) if x == nil then return "nil" else return tostring(x) end end
-    local total, elapsed
-    if C_QuestLog and C_QuestLog.GetTimeAllowed then total, elapsed = C_QuestLog.GetTimeAllowed(questID) end
-    local tagID, tagName, displayExp
-    if C_QuestLog and C_QuestLog.GetQuestTagInfo then
-        local info = C_QuestLog.GetQuestTagInfo(questID)
-        if info then tagID, tagName, displayExp = info.tagID, info.tagName, info.displayExpiration end
+-- The pre-accept gate: a quest is treated as timed if we've LEARNED it is (account-wide
+-- registry) or if its timer is somehow already readable. Offered timed quests are unknown
+-- on the very first encounter -- they're caught post-accept and remembered for next time.
+function Questing:_IsTimedQuest(questID)
+    if not questID then return false end
+    local reg = self:_TimedRegistry()
+    if reg and reg[questID] then return true end
+    return self:_LiveTimed(questID)
+end
+
+-- Record a questID as timed in the account-wide registry. Returns true if newly added.
+function Questing:_RememberTimed(questID)
+    local reg = self:_TimedRegistry()
+    if reg and questID and not reg[questID] then
+        reg[questID] = true
+        return true
     end
-    self:LogAnnounce(("timed-debug: qid=%s \"%s\" | GetTimeAllowed total=%s elapsed=%s | tagID=%s tag=%s displayExp=%s | GetQuestLogTimeLeft=%s")
-        :format(v(questID), v(title), v(total), v(elapsed), v(tagID), v(tagName), v(displayExp),
-            v(GetQuestLogTimeLeft and GetQuestLogTimeLeft())))
+    return false
+end
+
+function Questing:_QuestTitle(questID)
+    return (C_QuestLog and C_QuestLog.GetTitleForQuestID and C_QuestLog.GetTitleForQuestID(questID))
+        or ("quest #" .. tostring(questID))
+end
+
+-- Abandon a quest by ID (select -> mark -> abandon, the modern C_QuestLog sequence).
+function Questing:_AbandonQuest(questID)
+    if not (C_QuestLog and C_QuestLog.SetSelectedQuest and C_QuestLog.AbandonQuest) then return end
+    C_QuestLog.SetSelectedQuest(questID)
+    if C_QuestLog.SetAbandonQuest then C_QuestLog.SetAbandonQuest() end
+    C_QuestLog.AbandonQuest()
 end
 
 -- ---- lifecycle ------------------------------------------------------------
@@ -76,7 +105,10 @@ function Questing:OnInitialize()
     p.overlay = nil
     p.hovering = false
     -- quests
-    p.skipTurnIn = {}   -- questIDs that need a manual reward choice
+    p.skipTurnIn = {}     -- questIDs that need a manual reward choice
+    p.pendingAccept = {}  -- questIDs WE auto-accepted, awaiting QUEST_ACCEPTED (for the timed check)
+    -- Account-wide registry of known-timed questIDs, learned as they're encountered.
+    self:_BindStore("timedQuests", { timed = {} })
 end
 
 -- Event subscriptions are declared on the module (see registration below) and
@@ -93,6 +125,7 @@ end
 function Questing:OnDisable()
     local p = self:_p()
     wipe(p.skipTurnIn)
+    wipe(p.pendingAccept)
     if p.xpTicker then p.xpTicker:Cancel(); p.xpTicker = nil end
     if p.overlay then
         p.overlay:Hide()

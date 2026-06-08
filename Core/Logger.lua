@@ -52,8 +52,15 @@ end
 function Channel:_Log(level, echo, ...)
     self:_p().logger:Record(self, level, joinArgs(...), echo)
 end
+-- DEBUG is gated entirely by the Logger's debug flag (off by default; auto-on for dev chars). When
+-- the flag is OFF it outputs NOTHING -- not even the log -- so a debug line is never "log only". When
+-- ON it ALWAYS posts to chat (ECHO.ALWAYS), regardless of the "Echo to Chat" setting. One method, two
+-- states: silent, or in chat.
+function Channel:Debug(...)
+    if not self:_p().logger:GetDebug() then return end
+    self:_Log(LEVELS.DEBUG, ECHO.ALWAYS, ...)
+end
 -- Record-only helpers (never echo to chat) -- the default for ordinary info-level logging.
-function Channel:Debug(...)   self:_Log(LEVELS.DEBUG,   ECHO.NEVER, ...) end
 function Channel:Info(...)    self:_Log(LEVELS.INFO,    ECHO.NEVER, ...) end
 function Channel:Success(...) self:_Log(LEVELS.SUCCESS, ECHO.NEVER, ...) end
 -- Warnings and errors have TWO tiers, no record-only mode: the plain method ECHOES to chat
@@ -132,9 +139,9 @@ function Logger:SetEcho(on)
 end
 function Logger:GetEcho() return self:_p().echo end
 
--- Debug surfacing: when on, DEBUG-level lines (normally record-only) ALSO echo to chat, so debug
--- output is visible live. A session/runtime aid -- deliberately NOT persisted (the logger DB is
--- account-wide, so it must not leak to other characters); auto-enabled on a dev char (Core/Init.lua).
+-- The debug flag gates Channel:Debug ENTIRELY: off -> debug lines output nothing; on -> they always
+-- post to chat (see Channel:Debug). A session/runtime aid, deliberately NOT persisted (the logger DB
+-- is account-wide, so it must not leak to other characters); auto-enabled on a dev char (Core/Init.lua).
 function Logger:SetDebug(on) self:_p().debug = on and true or false end
 function Logger:GetDebug()   return self:_p().debug end
 
@@ -205,7 +212,6 @@ function Logger:Record(channel, level, text, echo)
     echo = echo or ECHO.NEVER
     local doEcho = (echo == ECHO.ALWAYS)
         or (echo == ECHO.NORMAL and p.echo and level.order >= p.minLevel)
-        or (p.debug and level.order <= LEVELS.DEBUG.order)   -- debug flag: surface DEBUG lines to chat
     if doEcho then
         p.frame:AddMessage(entry.line)
     end
