@@ -1066,6 +1066,37 @@ function Widgets.IconGrid(parent, opts)
         end
     end
 
+    -- ---- entry CRUD: add / remove / replace single tiles without rebuilding the whole list. A tile
+    -- may carry an optional `key`; ops take either a 1-based index (number) or that key (string).
+    -- Removing shrinks the list, so the freed trailing tile's texture is released by Refresh.
+    local function indexOf(ref)
+        local list = g._tiles
+        if not list then return nil end
+        if type(ref) == "number" then return list[ref] and ref or nil end
+        for i, t in ipairs(list) do if t.key == ref then return i end end
+        return nil
+    end
+    function g:GetTiles() return g._tiles or {} end
+    function g:GetTile(ref) local i = indexOf(ref); return i and g._tiles[i] or nil, i end
+    function g:AddTile(tile)
+        g._tiles = g._tiles or {}
+        g._tiles[#g._tiles + 1] = tile
+        g:Refresh()
+        return tile
+    end
+    function g:RemoveTile(ref)
+        local i = indexOf(ref); if not i then return nil end
+        local removed = table.remove(g._tiles, i)
+        g:Refresh()
+        return removed
+    end
+    function g:ReplaceTile(ref, tile)
+        local i = indexOf(ref); if not i then return nil end
+        g._tiles[i] = tile
+        g:Refresh()
+        return tile
+    end
+
     function g:Refresh()
         local w = content:GetWidth(); if not w or w < 1 then w = g:GetWidth() or 400 end
         local cols = g._perRow or PER_ROW
@@ -1100,7 +1131,14 @@ function Widgets.IconGrid(parent, opts)
             paint()
             t:Show()
         end
-        for i = #data + 1, #tiles do tiles[i]:Hide() end
+        -- surplus tiles (the list shrank, e.g. an entry was removed): hide them AND release their
+        -- pooled image, so a deleted entry's texture is let go rather than left pinned. getTile
+        -- re-acquires one if the grid grows again.
+        for i = #data + 1, #tiles do
+            local t = tiles[i]
+            if t.img and ns.TextureService then ns.TextureService:Release(t.img); t.img = nil end
+            t:Hide()
+        end
         local rows = math.max(1, math.ceil(#data / cols))
         content:SetHeight(rows * th + (rows - 1) * GAP)
         sa:Update()

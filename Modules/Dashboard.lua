@@ -938,6 +938,16 @@ function Dashboard:_IconPage(key)
     return g
 end
 
+-- Delete an overview page: release its textures and forget it (it's rebuilt lazily if shown again).
+function Dashboard:DeletePage(key)
+    local p = self:_p()
+    local g = p.iconPages and p.iconPages[key]
+    if not g then return end
+    g:ReleaseAll()
+    g:Hide()
+    p.iconPages[key] = nil
+end
+
 function Dashboard:_Render()
     local p = self:_p()
     if not p.built then return end
