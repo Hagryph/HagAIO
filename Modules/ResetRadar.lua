@@ -242,6 +242,60 @@ function ResetRadar:_Snapshot()
     self:_RenderIfShown()
 end
 
+-- ---- expansion mapping (Encounter Journal) --------------------------------
+-- Map a raid NAME -> its expansion by walking the Encounter Journal tiers (one tier per
+-- expansion). Built lazily and cached on first success; name-matching is locale-consistent
+-- within a client. A raid the journal doesn't list (or before the journal data loads) resolves
+-- to "Other". The reference addons hand-curate this; we derive it dynamically instead.
+function ResetRadar:_ExpansionMap()
+    local p = self:_p()
+    if p.ejMap then return p.ejMap end
+    if not (EJ_GetNumTiers and EJ_SelectTier and EJ_GetInstanceByIndex and EJ_GetTierInfo) then return nil end
+    if C_AddOns and C_AddOns.LoadAddOn then pcall(C_AddOns.LoadAddOn, "Blizzard_EncounterJournal") end
+    local map, found = {}, false
+    local prev = EJ_GetCurrentTier and EJ_GetCurrentTier()
+    for tier = 1, EJ_GetNumTiers() do
+        local tierName = EJ_GetTierInfo(tier)
+        EJ_SelectTier(tier)
+        local i = 1
+        while true do
+            local instID, name = EJ_GetInstanceByIndex(i, true)   -- true = raids only
+            if not instID then break end
+            if name and tierName then map[name] = tierName; found = true end
+            i = i + 1
+        end
+    end
+    if prev then pcall(EJ_SelectTier, prev) end   -- restore the journal's selected tier
+    if found then
+        p.ejMap = map
+        p.currentExpansion = EJ_GetTierInfo(EJ_GetNumTiers())   -- newest tier = current expansion
+    end
+    return p.ejMap
+end
+
+-- The expansion a saved raid belongs to (cache read only; "Other" until the map is built).
+function ResetRadar:_RaidExpansion(name)
+    local m = self:_p().ejMap
+    return (m and m[name]) or "Other"
+end
+
+-- Distinct expansions across all characters' saved raids, the current expansion first then A-Z.
+function ResetRadar:_SavedRaidExpansions()
+    local set = {}
+    for _, e in pairs(self:_Chars()) do
+        for _, lk in ipairs(e.lockouts or {}) do
+            if lk.isRaid then set[self:_RaidExpansion(lk.name)] = true end
+        end
+    end
+    local list, cur = {}, self:_p().currentExpansion
+    for exp in pairs(set) do list[#list + 1] = exp end
+    table.sort(list, function(a, b)
+        if (a == cur) ~= (b == cur) then return a == cur end
+        return a < b
+    end)
+    return list
+end
+
 -- ===========================================================================
 -- Window: left rail (avatar + char header + a 1-column nav GRID) | content (reset header +
 -- title + an N-column data GRID). BOTH panels are ns.UI.Widgets.Grid instances, so the sidebar
@@ -334,14 +388,32 @@ function ResetRadar:_NavItems()
             items[#items + 1] = { section = cat.label }
         else
             items[#items + 1] = { key = cat.key, label = cat.label, indent = cat.indent and 1 or 0 }
+            -- under Raids, a deeper sub-node per expansion you hold a raid lock in (current first)
+            if cat.key == "raids" then
+                for _, exp in ipairs(self:_SavedRaidExpansions()) do
+                    items[#items + 1] = { key = "raid:" .. exp, label = exp, indent = 2 }
+                end
+            end
         end
     end
     return items
 end
 
-function ResetRadar:_Category()
-    for _, c in ipairs(CATEGORIES) do if c.key == self:_p().category then return c end end
-    return CATEGORIES[1]
+-- Resolve a nav key to (title, columns(chars)). A dynamic "raid:<exp>" key filters the raid
+-- lockouts to one expansion; everything else is a static CATEGORIES entry.
+function ResetRadar:_ResolveCategory(key)
+    local exp = key and key:match("^raid:(.+)$")
+    if exp then
+        return exp .. " Raids", function(chars)
+            return lockoutColumns(chars, function(lk)
+                return lk.isRaid and self:_RaidExpansion(lk.name) == exp
+            end)
+        end
+    end
+    for _, c in ipairs(CATEGORIES) do
+        if c.key == key then return c.label, c.columns end
+    end
+    return CATEGORIES[1].label, CATEGORIES[1].columns
 end
 
 -- Sorted character keys: the current character first, then alphabetical.
@@ -362,11 +434,13 @@ function ResetRadar:_Render()
     if not p.built then return end
     self:_UpdateHeader()
     self:_UpdateCountdown()
+    self:_ExpansionMap()                 -- build the raid->expansion map (no-op once cached)
+    p.nav:SetItems(self:_NavItems())     -- reflect any newly-saved expansions in the tree
 
-    local cat = self:_Category()
-    p.catTitle:SetText(cat.label)
     local keys, chars = self:_SortedChars()
-    local cols = (cat.columns and cat.columns(chars)) or {}
+    local label, columnsFn = self:_ResolveCategory(p.category)
+    p.catTitle:SetText(label)
+    local cols = (columnsFn and columnsFn(chars)) or {}
 
     -- one sticky Character column + one column per category item; the grid aligns header+cells
     local columns = { { width = NAME_COL, label = "Character" } }
