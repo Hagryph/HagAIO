@@ -46,7 +46,9 @@ function Widget:_frame() return self:_p().frame end
 -- ---- general layout / sizing / visibility (every widget) -------------------------------------------
 function Widget:SetPoint(point, a, b, c, d)
     local f = self:_p().frame
-    if type(a) == "number" or a == nil then f:SetPoint(point, a, b)               -- SetPoint(point [, x, y])
+    -- Explicit nils anchor to the SCREEN, not the parent -- so pass only the args we actually have.
+    if a == nil then f:SetPoint(point)                                            -- SetPoint(point) -> parent's same point
+    elseif type(a) == "number" then f:SetPoint(point, a, b)                        -- SetPoint(point, x, y) -> parent + offset
     else f:SetPoint(point, unwrap(a), b, c, d) end                                -- SetPoint(point, rel, relPoint, x, y)
     return self
 end
