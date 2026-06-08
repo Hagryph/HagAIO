@@ -539,33 +539,30 @@ function Tasklist:_Refresh()
     p.hasTasks = any   -- drives visibility: an empty tracker hides itself (see _UpdateVisibility)
     local editing = ns.EditMode and ns.EditMode:IsEditing()
 
-    if not any then
-        if editing then
-            -- Edit Mode preview: sample headers + objective lines so the otherwise-empty tracker is
-            -- visible and grabbable, filling at least 500px downward.
-            local TARGET = 500
+    if not any and not editing then
+        local t = fs(lineFont)
+        t:SetPoint("TOPLEFT", 2, y); t:SetText("No active tasks."); t:SetTextColor(0.6, 0.6, 0.6)
+        y = y - 18
+    end
+
+    -- Edit Mode: pad the tracker to at least 500px with faint SAMPLE lines so it's always visible and
+    -- grabbable while positioning -- whether it's empty (then we also lead with the section headers)
+    -- or just shorter than 500px with a few real tasks.
+    if editing then
+        local function sample(text)
+            local t = fs(lineFont)
+            t:SetPoint("TOPLEFT", INDENT, y); t:SetWidth(width - INDENT - 14); t:SetJustifyH("LEFT")
+            t:SetText(text); t:SetTextColor(0.55, 0.55, 0.55)
+            y = y - (t:GetStringHeight() + LINE_GAP)
+        end
+        if not any then
             for _, ttype in ipairs(TYPE_ORDER) do
                 header(TYPE_LABEL[ttype])
-                for i = 1, 5 do
-                    local t = fs(lineFont)
-                    t:SetPoint("TOPLEFT", INDENT, y); t:SetWidth(width - INDENT - 14); t:SetJustifyH("LEFT")
-                    t:SetText("- " .. TYPE_LABEL[ttype] .. " sample " .. i)
-                    t:SetTextColor(0.7, 0.7, 0.7)
-                    y = y - (t:GetStringHeight() + LINE_GAP)
-                end
+                for i = 1, 3 do sample("- " .. TYPE_LABEL[ttype] .. " sample " .. i) end
                 y = y - 6
             end
-            while -y < TARGET do   -- top up to the target height
-                local t = fs(lineFont)
-                t:SetPoint("TOPLEFT", INDENT, y); t:SetWidth(width - INDENT - 14)
-                t:SetText("- Sample task"); t:SetTextColor(0.7, 0.7, 0.7)
-                y = y - (t:GetStringHeight() + LINE_GAP)
-            end
-        else
-            local t = fs(lineFont)
-            t:SetPoint("TOPLEFT", 2, y); t:SetText("No active tasks."); t:SetTextColor(0.6, 0.6, 0.6)
-            y = y - 18
         end
+        while -y < 500 do sample("- sample task") end
     end
 
     -- hide any widgets left over from a previous, larger build
