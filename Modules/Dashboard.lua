@@ -314,7 +314,8 @@ function Dashboard:_ExpansionMap()
         while true do
             local instID, name, _, _, buttonImage, loreImage = EJ_GetInstanceByIndex(i, isRaid)
             if not instID then break end
-            if name == "Keystone Dungeons" then name = nil end   -- meta-entry, never a real instance
+            if name == "Keystone Dungeons" then name = nil end   -- dungeon meta-entry, never a real instance
+            if name == "World Bosses"     then name = nil end   -- per-expansion world-boss bucket (Pandaria/Draenor/...), not a lockout raid
             if name and tierName then
                 -- map keeps the OLDEST tier (the home expansion); art keeps the NEWEST tier. Two
                 -- instances can share a name (a legacy dungeon AND a reworked current-season version,
