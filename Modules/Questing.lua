@@ -479,7 +479,7 @@ ns.ModuleManager:Register(Questing:New("Questing", {
 
         { type = "header", text = "Quests" },
         { type = "toggle", key = "advancedInfo", label = "Advanced quest info", default = false,
-          desc = "Show how long you have on timed quests at the top of the quest window." },
+          desc = "Show extra details at the top of the quest window." },
         { type = "toggle", key = "autoAccept", label = "Auto-accept quests", default = false },
         { type = "toggle", key = "acceptGrey", label = "Accept grey quests", default = false,
           dependsOn = "autoAccept",

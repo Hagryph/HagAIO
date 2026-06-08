@@ -738,6 +738,7 @@ function Widgets.ScrollArea(parent, name)
     sa.ScrollTop = function() sf:SetVerticalScroll(0); sa:Update() end
 
     sf:SetScript("OnSizeChanged", function(_, w) content:SetWidth(w); sa:Update() end)
+    content:SetScript("OnSizeChanged", function() sa:Update() end)   -- also track the content's own height
     sf:EnableMouseWheel(true)
     sf:SetScript("OnMouseWheel", function(_, d) set(sf:GetVerticalScroll() - d * 32) end)
 
