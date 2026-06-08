@@ -602,13 +602,14 @@ end
 -- Auto-cleanup, run on login (via _Snapshot): drop any DUNGEON whose difficulty Blizzard has REMOVED
 -- from the game, i.e. its difficulty id no longer resolves via GetDifficultyInfo. One uniform rule --
 -- it doesn't care which difficulty or which expansion the dungeon is, only whether that difficulty
--- still exists. RAIDS are left alone (their difficulties aren't retired). Entries with no known diffID,
--- or before GetDifficultyInfo is available, are kept (can't prove the difficulty is gone -> no-op).
+-- still exists. A dungeon with NO difficulty id at all is also dropped (nothing valid to anchor it).
+-- RAIDS are left alone (their difficulties aren't retired). Before GetDifficultyInfo is available the
+-- whole pass is a no-op.
 function Dashboard:_PruneRegistry()
     if not GetDifficultyInfo then return end
     local inst = self:_Instances()
     for key, r in pairs(inst) do
-        if not r.isRaid and r.diffID and not GetDifficultyInfo(r.diffID) then inst[key] = nil end
+        if not r.isRaid and not (r.diffID and GetDifficultyInfo(r.diffID)) then inst[key] = nil end
     end
 end
 
