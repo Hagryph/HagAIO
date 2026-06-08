@@ -277,6 +277,7 @@ function Dashboard:_ExpansionMap()
         while true do
             local instID, name, _, bgImage, buttonImage = EJ_GetInstanceByIndex(i, isRaid)
             if not instID then break end
+            if name == "Keystone Dungeons" then name = nil end   -- meta-entry, never a real instance
             if name and tierName then
                 map[name] = tierName; found = true
                 if buttonImage then image[name] = buttonImage end
@@ -352,6 +353,23 @@ function Dashboard:_LatestDungeonImage()
     return (d and #d > 0) and self:_InstanceImage(d[#d]) or nil
 end
 
+-- A RANDOM current-season dungeon's banner art (buttonImage1) for the Current Season tile. Only
+-- season dungeons that actually have journal tile art are eligible (so it crops + fills like the
+-- raids instead of falling back to an uncropped scene). Picked once, then cached for stability.
+function Dashboard:_SeasonDungeonImage()
+    local p = self:_p()
+    if p.seasonPic then return p.seasonPic end
+    local s = self:_SeasonDungeons()
+    if not (s and p.ejImage) then return nil end
+    local cand = {}
+    for _, name in ipairs(s.list) do
+        if p.ejImage[name] then cand[#cand + 1] = p.ejImage[name] end   -- has buttonImage1 -> fills
+    end
+    if #cand == 0 then return nil end
+    p.seasonPic = cand[math.random(#cand)]
+    return p.seasonPic
+end
+
 -- Distinct expansions in the registry for one kind (raids if wantRaid, else dungeons), the
 -- current expansion first then A-Z. Persists -- an expansion stays once anything in it is known.
 function Dashboard:_KnownExpansions(wantRaid)
@@ -414,7 +432,7 @@ function Dashboard:_SeasonDungeons()
     local list, set = {}, {}
     for _, mapID in ipairs(ids) do
         local name = C_ChallengeMode.GetMapUIInfo(mapID)
-        if name then list[#list + 1] = name; set[name] = true end
+        if name and name ~= "Keystone Dungeons" then list[#list + 1] = name; set[name] = true end
     end
     table.sort(list)
     p.season = { list = list, set = set }
@@ -672,7 +690,8 @@ function Dashboard:_CategoryTiles()
     local p = self:_p()
     local function go(key) return function() p.nav:Select(key) end end
     local logo = self:_ExpansionLogo(p.currentExpansion)
-    local raidImg, dunImg = self:_LatestRaidImage(), self:_LatestDungeonImage()
+    local raidImg = self:_LatestRaidImage()
+    local dunImg = self:_SeasonDungeonImage() or self:_LatestDungeonImage()
     local defs = {
         { key = "mplus",    label = "Mythic+",       contain = true,
           texture = "Interface\\Icons\\Achievement_ChallengeMode_Gold" },
@@ -718,8 +737,8 @@ function Dashboard:_OverviewTiles(key)
     elseif key == "dungeons" then
         if self:_SeasonDungeons() then
             tile("Current Season", p.currentExpansion, "dungeon:current")
-            -- Current Season shows dungeon art, so it's distinct from the current-expansion logo tile
-            local img = self:_LatestDungeonImage()
+            -- Current Season shows a random season-dungeon banner, distinct from the expansion logo
+            local img = self:_SeasonDungeonImage()
             if img then tiles[#tiles].texture, tiles[#tiles].texCoord = img, EJ_TILE_TC end
         end
         local cur, dbt = p.currentExpansion, p.ejDungeonsByTier
