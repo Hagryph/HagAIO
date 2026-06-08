@@ -78,6 +78,11 @@ end
 -- inline. Selecting it shows the overview -- an icon grid of every category.
 local HOME_ICON = "|TInterface\\Icons\\INV_Misc_Rune_01:20:20|t"
 
+-- The Encounter Journal crops its instance buttonImage1 art to this region (the rest is padding);
+-- see Blizzard_EncounterJournal.xml "EncounterInstanceButtonTemplate" bgImage TexCoords. We reuse
+-- it so our instance tiles fill the same way the journal's do instead of rendering tiny.
+local EJ_TILE_TC = { 0, 0.68359375, 0, 0.7421875 }
+
 local CATEGORIES = {
     { key = "mplus", label = "Mythic+", columns = function()
         return {
@@ -324,12 +329,13 @@ function Dashboard:_ExpansionLogo(tierName)
     return info and info.logo or nil
 end
 
--- The EJ art for a specific instance. The full-bleed bgImage fills a wide tile; buttonImage1 is a
--- compact image with transparent padding, so we prefer the bgImage and fall back to it.
+-- The EJ tile art (buttonImage1) for a specific instance -- the wide banner the journal shows in
+-- its instance-select list. It's a padded source texture; pair it with EJ_TILE_TC (the journal's
+-- own crop) so only the art region shows. Falls back to the bgImage if a buttonImage is missing.
 function Dashboard:_InstanceImage(name)
     local p = self:_p()
     if not name then return nil end
-    return (p.ejBg and p.ejBg[name]) or (p.ejImage and p.ejImage[name]) or nil
+    return (p.ejImage and p.ejImage[name]) or (p.ejBg and p.ejBg[name]) or nil
 end
 
 -- The last (newest) raid / dungeon in the current expansion's catalog -- the picture used for the

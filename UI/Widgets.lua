@@ -836,12 +836,13 @@ end
 --         gap (12), titleHeight (22)
 -- A tile in :SetTiles is { texture=path|fileID, atlas=bool, label=string, labelKey=paletteKey,
 --   badge=string, badgeKey=paletteKey, selected=bool, onClick=function(tile),
+--   texCoord={l,r,t,b} (crop padded source art, e.g. EJ buttonImage1),
 --   contain=bool (centre a square icon at the image's height instead of stretching to fill) }.
 -- Methods: :SetTiles(list)  :Refresh()  :ScrollTop()
 function Widgets.IconGrid(parent, opts)
     opts = opts or {}
     local PER_ROW = opts.perRow or 3
-    local ASPECT  = opts.aspect or 0.5      -- image height as a fraction of tile width
+    local ASPECT  = opts.aspect or 0.552    -- image h/w; matches the Encounter Journal tile (174x96)
     local GAP     = opts.gap or 12
     local TITLE_H = opts.titleHeight or 22
     local g = CreateFrame("Frame", nil, parent)
@@ -901,7 +902,13 @@ function Widgets.IconGrid(parent, opts)
                 t.img:SetHeight(ih)
             end
             if d.texture then
-                if d.atlas then t.img:SetAtlas(d.texture, false) else t.img:SetTexture(d.texture) end
+                if d.atlas then
+                    t.img:SetAtlas(d.texture, false)
+                else
+                    t.img:SetTexture(d.texture)
+                    local tc = d.texCoord   -- crop padded source art (EJ buttonImage1) to its art region
+                    if tc then t.img:SetTexCoord(tc[1], tc[2], tc[3], tc[4]) else t.img:SetTexCoord(0, 1, 0, 1) end
+                end
                 t.img:Show()
             else
                 t.img:Hide()
