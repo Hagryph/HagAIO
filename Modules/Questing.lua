@@ -49,6 +49,23 @@ function Questing:_IsTimedQuest(questID)
     return false
 end
 
+-- Diagnostic: dump every "is it timed?" signal the client exposes for a quest, to chat.
+-- GetTimeAllowed apparently returns nothing for an offered quest, so this probes the
+-- alternatives too -- run it on the next timed quest and report back which one fires.
+function Questing:_DebugTimed(questID, title)
+    local function v(x) if x == nil then return "nil" else return tostring(x) end end
+    local total, elapsed
+    if C_QuestLog and C_QuestLog.GetTimeAllowed then total, elapsed = C_QuestLog.GetTimeAllowed(questID) end
+    local tagID, tagName, displayExp
+    if C_QuestLog and C_QuestLog.GetQuestTagInfo then
+        local info = C_QuestLog.GetQuestTagInfo(questID)
+        if info then tagID, tagName, displayExp = info.tagID, info.tagName, info.displayExpiration end
+    end
+    self:LogAnnounce(("timed-debug: qid=%s \"%s\" | GetTimeAllowed total=%s elapsed=%s | tagID=%s tag=%s displayExp=%s | GetQuestLogTimeLeft=%s")
+        :format(v(questID), v(title), v(total), v(elapsed), v(tagID), v(tagName), v(displayExp),
+            v(GetQuestLogTimeLeft and GetQuestLogTimeLeft())))
+end
+
 -- ---- lifecycle ------------------------------------------------------------
 function Questing:OnInitialize()
     local p = self:_p()
@@ -232,7 +249,9 @@ function Questing:_OnDetail()
     -- Never auto-accept a timed quest, regardless of the other accept settings -- leave it
     -- open for a manual choice. This is the universal gate: gossip/greeting selections all
     -- open the quest-detail window before any quest is accepted.
-    if self:_IsTimedQuest(self:_CurrentQuestID()) then
+    local qid = self:_CurrentQuestID()
+    self:_DebugTimed(qid, GetTitleText())   -- TEMP: diagnose timed-quest detection
+    if self:_IsTimedQuest(qid) then
         self:LogEchoInfo("skipped timed quest:", GetTitleText())
         return
     end
