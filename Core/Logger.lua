@@ -86,6 +86,7 @@ function Logger:Initialize()
     p.last = 0        -- index of the newest live entry (0 = empty)
     p.minLevel = LEVELS.INFO.order
     p.echo = true
+    p.debug = false   -- when on, normally-silent DEBUG lines also surface to chat (dev aid; not persisted)
     p.keep = 500
     p.frame = DEFAULT_CHAT_FRAME
     p.db = nil
@@ -130,6 +131,12 @@ function Logger:SetEcho(on)
     if p.db then p.db.echo = p.echo end
 end
 function Logger:GetEcho() return self:_p().echo end
+
+-- Debug surfacing: when on, DEBUG-level lines (normally record-only) ALSO echo to chat, so debug
+-- output is visible live. A session/runtime aid -- deliberately NOT persisted (the logger DB is
+-- account-wide, so it must not leak to other characters); auto-enabled on a dev char (Core/Init.lua).
+function Logger:SetDebug(on) self:_p().debug = on and true or false end
+function Logger:GetDebug()   return self:_p().debug end
 
 function Logger:SetMinLevel(order)
     local p = self:_p()
@@ -198,6 +205,7 @@ function Logger:Record(channel, level, text, echo)
     echo = echo or ECHO.NEVER
     local doEcho = (echo == ECHO.ALWAYS)
         or (echo == ECHO.NORMAL and p.echo and level.order >= p.minLevel)
+        or (p.debug and level.order <= LEVELS.DEBUG.order)   -- debug flag: surface DEBUG lines to chat
     if doEcho then
         p.frame:AddMessage(entry.line)
     end

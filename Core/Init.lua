@@ -60,6 +60,8 @@ function Initializer:Run()
         -- profile here -- before modules bind, so no /reload is needed.
         if ns.Profiles then ns.Profiles:ApplyGlobalForFreshChar() end
         ns.Logger:LoadSettings()
+        -- On a whitelisted dev character, surface DEBUG output in chat automatically (session-only).
+        if ns.IsDevChar and ns.IsDevChar() then ns.Logger:SetDebug(true) end
         ns.SlashCommand:Activate()
         ns.Logger:Core():EchoInfo(
             ("loaded v%s - type /hag to open."):format(tostring(ns.version)))
