@@ -120,9 +120,33 @@ Lib/
   Vector2D.lua             A pure 2D vector value-TYPE (ns.Type) -- no WoW API
 UI/
   Theme.lua                Static design system ported from the LoL Game Helper desktop app's
-  Widgets.lua              Static factory of themed building blocks (the LoL "dark + blue" language in
+  Widgets\Widgets.lua      Base of the Widget layer: the factory table, the base class hierarchy, the generic Container and the
   CopyWindow.lua           A themed, reusable "copy this text out of the game" window
   SettingsWindow.lua       The unique, themed settings menu (replaces the default Blizzard options
+  Widgets\Avatar.lua       A framed portrait/avatar: a themed bordered box whose texture fills it (inset by the border),
+  Widgets\Button.lua       A themed PUSH button: a bordered box with a centred label that lights to accent on hover
+  Widgets\CollapsibleSection.lua Collapsible section ("accordion"): a clickable header with a +/- chevron that
+  Widgets\ColorSwatch.lua  Colour swatch button: shows the current colour, opens the Blizzard colour
+  Widgets\Divider.lua      1px horizontal hairline (anchor + width set by caller)
+  Widgets\Grid.lua         Column-aligned GRID -- the one row/column layout engine
+  Widgets\IconGrid.lua     Auto-sizing ICON GRID -- Encounter-Journal-style tiles laid out a FIXED number per row, each
+  Widgets\Input.lua        Themed single-line EditBox
+  Widgets\MultilineEdit.lua A scrollable multi-line EditBox -- the copy-in/out surface
+  Widgets\Nav.lua          A vertical NAVIGATION list: section labels + selectable items (optionally indented as
+  Widgets\NavItem.lua      Left-rail navigation item with active accent bar + tint
+  Widgets\Panel.lua        A bordered, themed container Frame
+  Widgets\ProgressBar.lua  A themed horizontal progress bar (a StatusBar with an accent fill over a panel2 track)
+  Widgets\ScrollArea.lua   A vertically scrollable area with a CUSTOM themed scrollbar (no Blizzard template, so no grey
+  Widgets\SectionLabel.lua Uppercase, dim, lightly spaced section label (LoL's letter-spaced caps)
+  Widgets\Segmented.lua    Segmented selector (LoL "view-switch"): a row of option buttons, active one
+  Widgets\SettingsGroup.lua A titled settings GROUP: a bordered panel with a clickable header strip (chevron + `title`) and a
+  Widgets\Slider.lua       Themed horizontal slider with a track, an accent fill, a draggable thumb, and a live numeric
+  Widgets\Text.lua         (no description)
+  Widgets\TextButton.lua   Inline accent text button (Clear / links)
+  Widgets\Texture.lua      ---- crop / fit / zoom maths (the single home, owned by the Texture widget) ------------------------
+  Widgets\Toggle.lua       Themed checkbox
+  Widgets\Tooltip.lua      The shared HagAIO icon tooltip (addon-compartment + minimap buttons)
+  Widgets\Window.lua       Themed window CHROME factory: a movable, ESC-closable frame with a draggable title bar
 Services/
   ActionBars.lua           Service for locating action buttons by what they cast and annotating them
   Cache.lua                Central caching service
@@ -142,7 +166,6 @@ Services/
   Secrets.lua              Thin, allocation-free helpers around 12.0 Secret Values, so modules don't each
   Serializer.lua           Turns a Lua value into a compact, copy-pasteable share string and back, using
   SlashCommand.lua         Singleton slash-command router for /hagaio (alias /hag)
-  TextureService.lua       Owns the addon's reusable TEXTURE WIDGETS (ns.UI.Widgets.Texture) AND all of their cropping /
 Modules/
   Class.lua                Generic class-helper module
   CVars.lua                Force chosen console variables on every character
