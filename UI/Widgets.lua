@@ -861,9 +861,9 @@ function Widgets.IconGrid(parent, opts)
         local img = t:CreateTexture(nil, "ARTWORK")            -- height set per-refresh (auto-size)
         img:SetPoint("TOPLEFT", 2, -2); img:SetPoint("TOPRIGHT", -2, -2)
         t.img = img
-        local tb = t:CreateTexture(nil, "ARTWORK")             -- titlebar across the bottom
+        local tb = t:CreateTexture(nil, "ARTWORK")             -- titlebar across the bottom (own strip)
         tb:SetColorTexture(Theme.Unpack("bg1"))
-        tb:SetPoint("BOTTOMLEFT", 2, 2); tb:SetPoint("BOTTOMRIGHT", -2, 2); tb:SetHeight(TITLE_H - 2)
+        tb:SetPoint("BOTTOMLEFT", 1, 1); tb:SetPoint("BOTTOMRIGHT", -1, 1); tb:SetHeight(TITLE_H)
         t.titlebar = tb
         local label = t:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
         label:SetPoint("LEFT", tb, "LEFT", 6, 0); label:SetPoint("RIGHT", tb, "RIGHT", -6, 0)
@@ -896,10 +896,10 @@ function Widgets.IconGrid(parent, opts)
             t.img:ClearAllPoints()
             if d.contain then   -- centre a square icon (no aspect distortion) in the image band
                 t.img:SetSize(ih, ih)
-                t.img:SetPoint("TOP", t, "TOP", 0, -2)
-            else                -- full-bleed art fills the whole image band
-                t.img:SetPoint("TOPLEFT", 2, -2); t.img:SetPoint("TOPRIGHT", -2, -2)
-                t.img:SetHeight(ih)
+                t.img:SetPoint("TOP", t, "TOP", 0, -1)
+            else                -- art fills the whole image band, flush to the titlebar above it
+                t.img:SetPoint("TOPLEFT", t, "TOPLEFT", 1, -1)
+                t.img:SetPoint("BOTTOMRIGHT", t.titlebar, "TOPRIGHT", 0, 0)
             end
             if d.texture then
                 if d.atlas then
