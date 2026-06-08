@@ -85,14 +85,14 @@ local EJ_TILE_TC = { 0, 0.68359375, 0, 0.7421875 }
 -- The journal crop lands on the art region but these textures still carry a little padding inside
 -- it, so we additionally ZOOM (WeakAuras style) toward the centre to eat it and let the art fill.
 local EJ_TILE_ZOOM = 0.4
--- Where the cover-crop of the full-bleed scene (bgImage) starts from the top (0-1). 0.1 = begin the
--- vertical cutoff 10% down, so the band shows the scene's middle rather than the very top sky.
-local EJ_FOCUS_Y = 0.1
+-- Vertical nudge (frame-pixels, +down / -up) for the auto-centred cover-crop of the scene. 0 keeps
+-- the middle of the scene; bump it to shift the visible band up or down.
+local EJ_FOCUS_OFFSET = 0
 
--- Copy an art descriptor ({texture, cover, focusY, texCoord, zoom} from _InstanceArt) onto a tile.
+-- Copy an art descriptor ({texture, cover, offset, texCoord, zoom} from _InstanceArt) onto a tile.
 local function applyArt(tile, art)
-    tile.texture, tile.cover, tile.focusY, tile.texCoord, tile.zoom =
-        art.texture, art.cover, art.focusY, art.texCoord, art.zoom
+    tile.texture, tile.cover, tile.offset, tile.texCoord, tile.zoom =
+        art.texture, art.cover, art.offset, art.texCoord, art.zoom
 end
 
 local CATEGORIES = {
@@ -352,7 +352,7 @@ end
 function Dashboard:_InstanceArt(name)
     local p = self:_p()
     if not name then return nil end
-    if p.ejBg and p.ejBg[name] then return { texture = p.ejBg[name], cover = true, focusY = EJ_FOCUS_Y } end
+    if p.ejBg and p.ejBg[name] then return { texture = p.ejBg[name], cover = true, offset = EJ_FOCUS_OFFSET } end
     if p.ejImage and p.ejImage[name] then return { texture = p.ejImage[name], texCoord = EJ_TILE_TC, zoom = EJ_TILE_ZOOM } end
     return nil
 end

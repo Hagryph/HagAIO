@@ -874,15 +874,18 @@ function Widgets.Texture(parent, opts)
         tw:_ApplyCoords()
         return self
     end
-    -- Cover-crop a full-bleed texture to a box of the given height/width ratio: show the FULL width
-    -- and a vertical band of that height, so a scene fills a wide box with no padding and (for a
-    -- square-ish source) no distortion. focusY (0-1) is where the band starts from the top -- e.g.
-    -- 0.1 begins the cutoff 10% down. The band is clamped to stay inside the texture.
-    function tw:Cover(ratioHW, focusY)
-        local band = math.max(0.01, math.min(1, ratioHW or 1))
-        local y0 = math.max(0, math.min(1 - band, focusY or 0))
+    -- Cover-crop a full-bleed texture to FILL `frame`: show the FULL width and a vertical band sized
+    -- to the frame's aspect, CENTRED (auto-crop the middle), then nudged by offsetPixels (frame-space
+    -- pixels; +down / -up). Reads the frame's size, so the texture always follows a frame -- never a
+    -- manual size. A scene fills a wide box with no padding (and no distortion for a square source).
+    function tw:Cover(frame, offsetPixels)
+        local w, h = frame:GetWidth(), frame:GetHeight()
+        if not (w and h and w > 0 and h > 0) then return self end
+        local band = math.max(0.01, math.min(1, h / w))
+        local dy = band * (offsetPixels or 0) / h      -- frame pixels -> texcoord along the band
+        local y0 = math.max(0, math.min(1 - band, (1 - band) / 2 + dy))
         tw._base = { 0, 1, y0, y0 + band }
-        tw:_ApplyCoords()                   -- any zoom still applies on top
+        tw:_ApplyCoords()                              -- any zoom still applies on top
         return self
     end
     function tw:Fill(frame, inset)
@@ -919,7 +922,8 @@ end
 --   badge=string, badgeKey=paletteKey, selected=bool, onClick=function(tile),
 --   texCoord={l,r,t,b} (base crop of padded source art, e.g. EJ buttonImage1),
 --   zoom=number (WeakAuras-style: shrink the crop toward its centre to eat residual padding),
---   cover=bool + focusY=number (cover-crop a full-bleed scene to the box aspect, band from focusY),
+--   cover=bool + offset=number (cover-crop a full-bleed scene to the box: auto-centred band nudged
+--     by `offset` frame-pixels, +down / -up),
 --   contain=bool (centre a square icon at the image's height instead of stretching to fill) }.
 -- Methods: :SetTiles(list)  :Refresh()  :ScrollTop()
 function Widgets.IconGrid(parent, opts)
@@ -939,25 +943,30 @@ function Widgets.IconGrid(parent, opts)
     local function getTile(i)
         local t = tiles[i]
         if t then return t end
-        t = CreateFrame("Button", nil, content, "BackdropTemplate")
-        Widgets.Style(t, "panel2", "border")
-        local tb = t:CreateTexture(nil, "OVERLAY")             -- titlebar across the bottom (own strip)
+        t = CreateFrame("Button", nil, content)                -- container only
+        -- image holder: a bordered frame that the texture always FILLS (the image follows this
+        -- frame, never a manual size). The border (BORDER layer) draws over the image (BACKGROUND).
+        local band = CreateFrame("Frame", nil, t, "BackdropTemplate")
+        Widgets.Style(band, "panel2", "border")
+        band:SetPoint("TOPLEFT", t, "TOPLEFT", 0, 0)
+        band:SetPoint("BOTTOMRIGHT", t, "BOTTOMRIGHT", 0, TITLE_H)
+        t.band = band
+        local tb = t:CreateTexture(nil, "ARTWORK")             -- titlebar strip below the image
         tb:SetColorTexture(Theme.Unpack("bg1"))
-        tb:SetPoint("BOTTOMLEFT", 0, 0); tb:SetPoint("BOTTOMRIGHT", 0, 0); tb:SetHeight(TITLE_H)
+        tb:SetPoint("TOPLEFT", band, "BOTTOMLEFT", 0, 0); tb:SetPoint("BOTTOMRIGHT", t, "BOTTOMRIGHT", 0, 0)
         t.titlebar = tb
-        -- image: a pooled Texture widget (kept alive by TextureService) on the TILE's own BACKGROUND
-        -- layer, so the frame border (BORDER layer) still draws over it and a child frame can't
-        -- mis-layer it. Anchored per-refresh to fill the box above the titlebar. WeakAuras texel fix
-        -- is applied by the widget so the art renders crisp and fills with no margin.
-        local img = (ns.TextureService and ns.TextureService:Acquire(t, { layer = "BACKGROUND", sublevel = 1 }))
-            or Widgets.Texture(t, { layer = "BACKGROUND", sublevel = 1 })
+        -- pooled Texture widget (kept alive by TextureService), filling the band on its BACKGROUND
+        -- layer so the band border draws over it. The widget applies the WeakAuras texel fix.
+        local img = (ns.TextureService and ns.TextureService:Acquire(band, { layer = "BACKGROUND", sublevel = 1 }))
+            or Widgets.Texture(band, { layer = "BACKGROUND", sublevel = 1 })
+        img:Fill(band)
         t.img = img
         local label = t:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
         label:SetPoint("LEFT", tb, "LEFT", 6, 0); label:SetPoint("RIGHT", tb, "RIGHT", -6, 0)
         label:SetJustifyH("CENTER"); label:SetWordWrap(false)
         t.label = label
-        local badge = t:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-        badge:SetPoint("TOPRIGHT", -5, -5); badge:SetJustifyH("RIGHT")
+        local badge = band:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+        badge:SetPoint("TOPRIGHT", band, "TOPRIGHT", -5, -5); badge:SetJustifyH("RIGHT")
         t.badge = badge
         tiles[i] = t
         return t
@@ -981,17 +990,16 @@ function Widgets.IconGrid(parent, opts)
             t:ClearAllPoints()
             t:SetPoint("TOPLEFT", content, "TOPLEFT", col * (tw + GAP), -(rowi * (th + GAP)))
             t.img:ClearAllPoints()
-            if d.contain then   -- centre a square icon (no aspect distortion) above the titlebar
+            if d.contain then   -- centre a square icon (no aspect distortion) in the image holder
                 t.img:SetSize(ih, ih)
-                t.img:SetPoint("CENTER", t, "CENTER", 0, TITLE_H / 2)
-            else                -- art fills the box above the titlebar, anchored to the TILE frame
-                t.img:SetPoint("TOPLEFT", t, "TOPLEFT", 0, 0)
-                t.img:SetPoint("BOTTOMRIGHT", t, "BOTTOMRIGHT", 0, TITLE_H)
+                t.img:SetPoint("CENTER", t.band, "CENTER", 0, 0)
+            else                -- the texture fills its holder frame edge-to-edge
+                t.img:Fill(t.band)
             end
             if d.texture then
-                if d.cover then   -- full-bleed scene: cover-crop to the box aspect, start at focusY
+                if d.cover then   -- full-bleed scene: cover-crop the band, auto-centred + pixel offset
                     t.img:SetImage(d.texture, nil, d.atlas)
-                    t.img:Cover(ih / tw, d.focusY)
+                    t.img:Cover(t.band, d.offset)
                 else              -- banner: base crop + WeakAuras zoom to eat residual padding
                     t.img:SetImage(d.texture, d.texCoord, d.atlas)
                 end
@@ -1004,8 +1012,8 @@ function Widgets.IconGrid(parent, opts)
             t.label:SetTextColor(Theme.Unpack(d.labelKey or "text"))
             t.badge:SetText(d.badge or "")
             if d.badge then t.badge:SetTextColor(Theme.Unpack(d.badgeKey or "accent")) end
-            local function paint() t:SetBackdropBorderColor(Theme.Unpack(d.selected and "accent" or "border")) end
-            t:SetScript("OnEnter", function() t:SetBackdropBorderColor(Theme.Unpack("accent")) end)
+            local function paint() t.band:SetBackdropBorderColor(Theme.Unpack(d.selected and "accent" or "border")) end
+            t:SetScript("OnEnter", function() t.band:SetBackdropBorderColor(Theme.Unpack("accent")) end)
             t:SetScript("OnLeave", paint)
             t:SetScript("OnClick", d.onClick and function() d.onClick(d) end or nil)
             paint()
