@@ -180,10 +180,9 @@ end
 -- ---- settings page (custom builder, called by SettingsWindow) -------------
 function CVars:BuildSettingsPage(sf)
     local p = self:_p()
-    local content = sf.content
-    local width = sf:GetWidth()
+    local content = sf.content                     -- the framework's scroll area; we just fill it
+    local width = content:GetWidth()
     if not width or width < 1 then width = 420 end
-    content:SetWidth(width)
     p.pageContent = content
     p.pageWidth = width
     p.sections = {}

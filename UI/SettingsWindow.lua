@@ -580,9 +580,8 @@ end
 -- only when AllTheThings is installed. No addon checks live here.
 function SettingsWindow:_BuildModuleControls(sf, module)
     local content = sf.content
-    local width = sf:GetWidth()
+    local width = content:GetWidth()   -- the scroll area keeps the content width synced for us
     if not width or width < 1 then width = 420 end
-    content:SetWidth(width)
 
     local y, rendered = -4, false
     if #module:GetSettings() > 0 then
@@ -643,9 +642,9 @@ function SettingsWindow:_BuildLogPage(parent)
     div:SetPoint("TOPLEFT", note, "BOTTOMLEFT", 0, -10)
     div:SetPoint("RIGHT", page, "RIGHT", -18, 0)
 
-    local sf = W.ScrollFrame(page, "HagAIOLogScroll")
+    local sf = W.ScrollArea(page, "HagAIOLogScroll")
     sf:SetPoint("TOPLEFT", div, "BOTTOMLEFT", 0, -8)
-    sf:SetPoint("BOTTOMRIGHT", page, "BOTTOMRIGHT", -30, 14)
+    sf:SetPoint("BOTTOMRIGHT", page, "BOTTOMRIGHT", -16, 14)
 
     local fs = sf.content:CreateFontString(nil, "ARTWORK", "GameFontHighlightSmall")
     fs:SetPoint("TOPLEFT")
@@ -670,10 +669,9 @@ function SettingsWindow:_RefreshLog()
     p.logFS:SetText(#lines > 0 and table.concat(lines, "\n")
         or ("|cff" .. Theme.hex.textFaint .. "No activity yet.|r"))
 
-    local width = p.logSF:GetWidth()
+    local width = p.logSF.content:GetWidth()
     if not width or width < 1 then width = 380 end
     p.logFS:SetWidth(width)
-    p.logSF.content:SetWidth(width)
     p.logSF.content:SetHeight(p.logFS:GetStringHeight() + 8)
 end
 

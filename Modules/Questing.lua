@@ -109,15 +109,19 @@ local function timeString(seconds)
     return clock(seconds)
 end
 
--- The banner FontString sits in the dark inset band at the top of the quest window -- just
--- above the parchment text and below the close button, anchored to the detail scroll frame so
--- it stays put (doesn't scroll with the text). Created lazily the first time it's needed.
+-- The banner FontString sits in the dark inset band at the top of the quest window, just
+-- below the NPC name and horizontally centred on it (anchored to QuestNpcNameFrame, so it
+-- doesn't scroll with the text). Created lazily the first time it's needed.
 function Questing:_EnsureQuestBanner()
     local p = self:_p()
     if p.questBanner then return p.questBanner end
     if not QuestFrame then return nil end
     local fs = QuestFrame:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge", 7)
-    fs:SetPoint("BOTTOM", QuestDetailScrollFrame or QuestFrame, "TOP", 0, 4)
+    if QuestNpcNameFrame then
+        fs:SetPoint("TOP", QuestNpcNameFrame, "BOTTOM", 0, -2)
+    else
+        fs:SetPoint("TOP", QuestFrame, "TOP", 0, -24)
+    end
     fs:SetShadowColor(0, 0, 0, 1)
     fs:SetShadowOffset(1, -1)
     fs:Hide()
