@@ -1,0 +1,11 @@
+Dashboard: drop the per-expansion world-boss meta entry from raid lists
+
+Each expansion raid tier in the Encounter Journal carries a world-boss
+meta entry named after the expansion itself (Pandaria, Draenor, Midnight)
+instead of a real raid. It has no weekly lockout, so it should not appear
+as a raid column. Drop any raid entry whose label matches its tier name
+(exactly, or as the trailing word for long tier names like Mists of
+Pandaria -> Pandaria), mirroring the Keystone Dungeons filter on the
+dungeon side.
+
+Co-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>
