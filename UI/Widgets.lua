@@ -870,13 +870,12 @@ end
 --         gap (12), titleHeight (22)
 -- A tile in :SetTiles is { texture=path|fileID, atlas=bool, label=string, labelKey=paletteKey,
 --   badge=string, badgeKey=paletteKey, selected=bool, onClick=function(tile),
---   texCoord={l,r,t,b} (base crop of padded source art, e.g. EJ buttonImage1),
---   zoom=number (WeakAuras-style: shrink the crop toward its centre to eat residual padding),
---   cover=bool + bounds={l,r,t,b} (real art rect, padding outside it cropped) + fileAspect=number
---     (texture file px w/h) + offset=number (cover-crop the scene to the box: crop padding, fit the
---     real art to the tile aspect undistorted, auto-centred, nudged `offset` frame-pixels along the
---     cropped axis),
---   contain=bool (centre a square icon at the image's height instead of stretching to fill) }.
+--   texCoord={l,r,t,b} (a fixed base crop, e.g. the EJ buttonImage1 banner region),
+--   cover=bool + aspect=number (the image's px w/h; auto cover-fits the whole image to the tile),
+--   contain=bool (centre a square icon at the image's height instead of filling),
+--   zoom=number + panX/panY=number (apply to ANY mode: zoom is the fraction of the region shown --
+--     1.0 as-is, <1 zooms in, >1 zooms out; pan re-centres the window in texcoord units).
+--   All crop/fit/zoom maths lives in ns.TextureService; the tile just describes the intent. }
 -- Methods: :SetTiles(list)  :Refresh()  :ScrollTop()
 function Widgets.IconGrid(parent, opts)
     opts = opts or {}
@@ -946,8 +945,8 @@ function Widgets.IconGrid(parent, opts)
             local mode = d.contain and "contain" or (d.cover and "cover") or "banner"
             ns.TextureService:Render(t.img, t.band, tw, ih, {
                 texture = d.texture, atlas = d.atlas, mode = mode,
-                bounds = d.bounds, fileAspect = d.fileAspect, offset = d.offset,
-                coord = d.texCoord, zoom = d.zoom,
+                aspect = d.aspect, coord = d.texCoord,
+                zoom = d.zoom, panX = d.panX, panY = d.panY,
             })
             t.label:SetText(d.label or "")
             t.label:SetTextColor(Theme.Unpack(d.labelKey or "text"))

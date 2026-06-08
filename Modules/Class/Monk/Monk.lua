@@ -61,10 +61,14 @@ local ORB_MAX_COUNT = 5
 -- can't be formed). Instead we stack one orb bar per health band: each bakes the SoS multiplier
 -- for its band's health % as a PLAIN constant, and a per-band colour curve evaluated by the
 -- engine against UnitHealthPercent reveals only the band that matches your live (secret) health.
--- ORB_LADDER_BANDS = number of steps across 0..100% (finer = smoother heal edge, ~N curve evals
--- per refresh; SoS is linear so a handful is plenty). ORB_BAND_ALPHA = the translucent fill alpha.
-local ORB_LADDER_BANDS = 20
-local ORB_BAND_ALPHA   = 0.55
+--
+-- The band COUNT is derived from the bonus, one band per 1% of healing increase: a +80% bonus
+-- ramps the multiplier 1.00 -> 1.80 over the health axis, so 80 bands = a 1%-per-step heal edge
+-- (the ramp is linear, so equal multiplier steps are equal health steps). Bars are created
+-- lazily up to ORB_LADDER_MAX_BANDS (caps a 100% bonus). ORB_BAND_ALPHA = the translucent fill
+-- alpha. See ClassModule:_LadderBands for the count.
+local ORB_LADDER_MAX_BANDS = 100
+local ORB_BAND_ALPHA       = 0.55
 
 -- ---- spell-data helpers ---------------------------------------------------
 -- Grace of the Crane raises all healing taken by a flat % the Expel Harm tooltip
