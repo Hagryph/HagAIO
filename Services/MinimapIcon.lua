@@ -10,14 +10,13 @@ local MinimapIcon = Class.new("MinimapIcon", ns.Service, { mixins = { ns.Persist
 
 local DEFAULT_ANGLE = 225   -- degrees, measured from the minimap centre
 
--- Open the Reset Radar dashboard. It's an OPTIONAL module, resolved lazily at click time, so
--- the icon never hard-depends on it (a service can't depend on a module anyway). Enables it on
--- first use so a middle-click just works. depcheck-allow: ResetRadar
-local function openResets()
+-- The Reset Radar module IFF it's enabled. When it is, LEFT-click opens it and settings move to
+-- MIDDLE-click; when it's off, the icon keeps the default LEFT-click = settings (and middle does
+-- nothing). Resolved lazily so the icon never hard-depends on the optional module.
+-- depcheck-allow: ResetRadar
+local function activeResets()
     local m = ns.ModuleManager and ns.ModuleManager:GetModule("ResetRadar")
-    if not m then return end
-    if not m:IsEnabled() then m:Enable() end
-    m:Toggle()
+    return (m and m:IsEnabled()) and m or nil
 end
 
 function MinimapIcon:OnInitialize()
@@ -97,19 +96,24 @@ function MinimapIcon:_OnClick(btn)
     if btn == "RightButton" then
         ns.ModuleManager:OpenContextMenu(self:_p().button)
     elseif btn == "MiddleButton" then
-        openResets()
-    else
-        ns.UI.SettingsWindow:Toggle()
+        if activeResets() then ns.UI.SettingsWindow:Toggle() end  -- settings only while Reset Radar owns left-click
+    else  -- LeftButton: Reset Radar if it's on, otherwise settings
+        local m = activeResets()
+        if m then m:Toggle() else ns.UI.SettingsWindow:Toggle() end
     end
 end
 
 function MinimapIcon:_OnEnter(b)
-    ns.UI.Widgets.IconTooltip(b, {
-        { text = "Left-click: open settings", key = "text" },
-        { text = "Middle-click: reset dashboard" },
-        { text = "Right-click: enable/disable modules" },
-        { text = "Drag: move around the minimap" },
-    })
+    local lines = {}
+    if activeResets() then
+        lines[#lines + 1] = { text = "Left-click: reset dashboard", key = "text" }
+        lines[#lines + 1] = { text = "Middle-click: open settings" }
+    else
+        lines[#lines + 1] = { text = "Left-click: open settings", key = "text" }
+    end
+    lines[#lines + 1] = { text = "Right-click: enable/disable modules" }
+    lines[#lines + 1] = { text = "Drag: move around the minimap" }
+    ns.UI.Widgets.IconTooltip(b, lines)
 end
 
 -- Show/hide per the saved setting (builds lazily on first show).

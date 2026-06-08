@@ -10,14 +10,12 @@ local Class = ns.Class
 
 local Compartment = Class.new("Compartment", ns.Service, { mixins = { ns.Persisted } })
 
--- Open the Reset Radar dashboard. Optional module, resolved lazily at click time (a service
--- can't depend on a module), enabled on first use so a middle-click just works.
--- depcheck-allow: ResetRadar
-local function openResets()
+-- The Reset Radar module IFF enabled: then LEFT-click opens it and settings move to MIDDLE-click;
+-- otherwise the icon keeps LEFT-click = settings and middle does nothing. Lazy lookup so the
+-- service never hard-depends on the optional module. depcheck-allow: ResetRadar
+local function activeResets()
     local m = ns.ModuleManager and ns.ModuleManager:GetModule("ResetRadar")
-    if not m then return end
-    if not m:IsEnabled() then m:Enable() end
-    m:Toggle()
+    return (m and m:IsEnabled()) and m or nil
 end
 
 function Compartment:OnInitialize()
@@ -62,11 +60,15 @@ function Compartment:Register()
             self:OnClick(button, btn)
         end,
         funcOnEnter = function(button)
-            ns.UI.Widgets.IconTooltip(button, {
-                { text = "Left-click: open settings", key = "text" },
-                { text = "Middle-click: reset dashboard" },
-                { text = "Right-click: enable/disable modules" },
-            })
+            local lines = {}
+            if activeResets() then
+                lines[#lines + 1] = { text = "Left-click: reset dashboard", key = "text" }
+                lines[#lines + 1] = { text = "Middle-click: open settings" }
+            else
+                lines[#lines + 1] = { text = "Left-click: open settings", key = "text" }
+            end
+            lines[#lines + 1] = { text = "Right-click: enable/disable modules" }
+            ns.UI.Widgets.IconTooltip(button, lines)
         end,
         funcOnLeave = function()
             GameTooltip:Hide()
@@ -81,9 +83,10 @@ function Compartment:OnClick(button, owner)
     if button == "RightButton" then
         ns.ModuleManager:OpenContextMenu(owner or AddonCompartmentFrame)
     elseif button == "MiddleButton" then
-        openResets()
-    else  -- LeftButton (and any other) opens the settings window
-        ns.UI.SettingsWindow:Toggle()
+        if activeResets() then ns.UI.SettingsWindow:Toggle() end  -- settings only while Reset Radar owns left-click
+    else  -- LeftButton: Reset Radar if it's on, otherwise settings
+        local m = activeResets()
+        if m then m:Toggle() else ns.UI.SettingsWindow:Toggle() end
     end
 end
 
