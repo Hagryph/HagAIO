@@ -183,6 +183,7 @@ function Questing:OnDisable()
     local p = self:_p()
     wipe(p.skipTurnIn)
     wipe(p.pendingAccept)
+    self:_HideQuestBanner()
     if p.xpTicker then p.xpTicker:Cancel(); p.xpTicker = nil end
     if p.overlay then
         p.overlay:Hide()
@@ -335,12 +336,16 @@ function Questing:_Paused()
 end
 
 function Questing:_OnDetail()
+    local qid = self:_CurrentQuestID()
+    -- Advanced info runs regardless of the auto-accept settings -- show the time banner on any
+    -- timed-quest window the player opens.
+    self:_UpdateQuestBanner(qid)
+
     if not self:GetSetting("autoAccept") or self:_Paused() then return end
     -- Skip quests we already KNOW are timed (learned account-wide) before accepting. This is
     -- the universal gate: gossip/greeting selections all open the quest-detail window before
     -- any quest is accepted. A first-seen timed quest is unknown here and gets caught
     -- post-accept by _OnQuestAccepted, then remembered so it lands here next time.
-    local qid = self:_CurrentQuestID()
     if self:_IsTimedQuest(qid) then return end
     -- Mark it ours so QUEST_ACCEPTED can catch it if it turns out to be timed (the limit
     -- only becomes readable once it's in the log).
@@ -360,8 +365,9 @@ function Questing:_OnQuestAccepted(_, a, b)
     p.pendingAccept[questID] = nil
     -- Defer one tick: the log timer isn't always initialised the instant the event fires.
     C_Timer.After(0.1, function()
-        if not self:_LiveTimed(questID) then return end
-        self:_RememberTimed(questID)
+        local secs = self:_LiveSeconds(questID)
+        if not secs then return end
+        self:_RememberTimed(questID, secs)   -- store the limit for the advanced-info banner
         self:_AbandonQuest(questID)
         self:LogWarnAlways("auto-abandoned timed quest:", self:_QuestTitle(questID))
     end)
@@ -458,7 +464,10 @@ ns.ModuleManager:Register(Questing:New("Questing", {
     defaultEnabled = true,
     color = ns.Theme.hex.gold,
     deps = { "SlashCommand" },  -- for its declarative /hag xp sub-command
-    commands = { xp = { handler = "_PrintSession", help = "session XP / hour" } },
+    commands = {
+        xp          = { handler = "_PrintSession", help = "session XP / hour" },
+        questreset  = { handler = "_WipeTimed",    help = "forget learned timed quests" },
+    },
     events = {
         PLAYER_XP_UPDATE      = "_OnXP",
         PLAYER_LEVEL_UP       = "_OnLevelUp",
@@ -469,6 +478,7 @@ ns.ModuleManager:Register(Questing:New("Questing", {
         QUEST_ACCEPTED        = "_OnQuestAccepted",
         QUEST_PROGRESS        = "_OnProgress",
         QUEST_COMPLETE        = "_OnComplete",
+        QUEST_FINISHED        = "_HideQuestBanner",
     },
     settings = {
         { type = "header", text = "Experience" },
@@ -478,6 +488,8 @@ ns.ModuleManager:Register(Questing:New("Questing", {
           desc = "Print your session rate to chat each time you level up." },
 
         { type = "header", text = "Quests" },
+        { type = "toggle", key = "advancedInfo", label = "Advanced quest info", default = false,
+          desc = "Show how long you have on timed quests at the top of the quest window." },
         { type = "toggle", key = "autoAccept", label = "Auto-accept quests", default = false },
         { type = "toggle", key = "acceptGrey", label = "Accept grey quests", default = false,
           dependsOn = "autoAccept",
