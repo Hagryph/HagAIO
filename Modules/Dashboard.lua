@@ -312,8 +312,8 @@ function Dashboard:_Build()
     local p = self:_p()
     if p.built then return end
 
-    local f = W.Window({ name = "HagAIODashboard", width = 860, height = 520,
-        strata = "HIGH", level = 100, title = "Dashboard", onClose = function() self:Hide() end,
+    local f = W.Window(100, { name = "HagAIODashboard", width = 860, height = 520,
+        strata = "HIGH", title = "Dashboard", onClose = function() self:Hide() end,
         autoClose = true,
         onAutoShow = function() self:Show() end,
         onAutoHide = function() self:Hide() end })

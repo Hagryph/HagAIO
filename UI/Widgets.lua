@@ -445,12 +445,11 @@ end
 -- HagAIO window (settings, copy-out, the reset dashboard) so none of them re-build the
 -- frame, drag handlers and close button by hand. Fill the returned frame's `.body` (the
 -- region under the bar) or anchor your own content to `.bar`.
+--   Widgets.Window(level, opts): `level` is a REQUIRED positional frame level -- within a strata
+--   a higher level draws on top, so windows stack deterministically; levels are unique per
+--   strata (a taken one steps down + warns; gap them so nested children never interleave).
 --   opts: name      global frame name -> ESC closes it (UISpecialFrames); omit for none
 --         width/height/point/strata   geometry (defaults 560x440, CENTER, "HIGH")
---         level     REQUIRED frame level -- within a strata a higher level draws on top, so
---                   windows stack deterministically. Levels are unique per strata (a taken one
---                   steps down + warns); gap them so one window's nested children never
---                   interleave with the other's
 --         title     bar title text;  titleKey palette key (default "accent")
 --         subtitle  faint text right of the title (e.g. a version);  barHeight (default 38)
 --         onClose   fn(frame) for the X (default frame:Hide())
@@ -459,16 +458,16 @@ end
 --                   reopen/hide for windows with custom show logic (default frame:Show/Hide).
 -- Returns the frame with .bar / .titleFS / .subtitleFS / .closeBtn / .body attached and a
 -- :SetWindowTitle(text) method.
-function Widgets.Window(opts)
+function Widgets.Window(level, opts)
     opts = opts or {}
-    assert(type(opts.level) == "number", "Widgets.Window: opts.level is required (a frame level)")
+    assert(type(level) == "number", "Widgets.Window: a frame level (first argument) is required")
     local f = CreateFrame("Frame", opts.name, UIParent, "BackdropTemplate")
     f:SetSize(opts.width or 560, opts.height or 440)
     f:SetPoint(opts.point or "CENTER")
     Widgets.Style(f, "bg1", "borderStrong")
     local strata = opts.strata or "HIGH"
     f:SetFrameStrata(strata)
-    f:SetFrameLevel(claimLevel(strata, opts.level))
+    f:SetFrameLevel(claimLevel(strata, level))
     f:EnableMouse(true)
     f:SetMovable(true)
     f:SetClampedToScreen(true)
