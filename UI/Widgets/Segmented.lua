@@ -47,6 +47,7 @@ function SegmentedW:Initialize(parent, options)
             if not p.enabled then return end
             p.value = opt.value; render()
             if p.onChange then p.onChange(p.value) end
+            self:_changed()   -- dependents re-evaluate their EnableWhen condition
         end)
         b:SetScript("OnEnter", function() if p.enabled and opt.value ~= p.value then fs:SetTextColor(Theme.Unpack("text")) end end)
         b:SetScript("OnLeave", render)
@@ -57,7 +58,7 @@ function SegmentedW:Initialize(parent, options)
     self:_attach(c)
     render()
 end
-function SegmentedW:SetValue(v)     local p = self:_p(); p.value = v; p.render(); return self end
+function SegmentedW:SetValue(v)     local p = self:_p(); p.value = v; p.render(); self:_changed(); return self end
 function SegmentedW:GetValue()      return self:_p().value end
 function SegmentedW:SetOnChange(fn) self:_p().onChange = fn; return self end
 function SegmentedW:SetEnabled(on)

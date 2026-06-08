@@ -60,6 +60,37 @@ function Widget:SetShown(b)        self:_p().frame:SetShown(b);              ret
 function Widget:IsShown()          return self:_p().frame:IsShown() end
 function Widget:SetAlpha(a)        self:_p().frame:SetAlpha(a);             return self end
 
+-- ---- reactive enable/disable (declarative grey-out) ------------------------------------------------
+-- A widget can declare, at build time, a CONDITION for staying enabled; the widget layer greys it out
+-- automatically whenever ANY interactive widget changes state -- no external controller, no manual
+-- Refresh. The registry is weak-keyed so a discarded widget drops out on its own; predicates run in a
+-- pcall so a stale/throwing one can't break the sweep.
+local conditioned = setmetatable({}, { __mode = "k" })   -- widget -> predicate() -> bool
+local function reevaluate()
+    for w, pred in pairs(conditioned) do
+        if w.SetEnabled then
+            local ok, on = pcall(pred)
+            if ok then w:SetEnabled(on and true or false) end
+        end
+    end
+end
+
+-- Grey this widget out whenever `predicate()` is false. Re-checked automatically on every widget
+-- change AND once now, so the caller never wires a dependency object or calls Refresh. No-op for a
+-- widget without :SetEnabled (labels/notes). Returns self.
+function Widget:EnableWhen(predicate)
+    if type(predicate) == "function" and self.SetEnabled then
+        conditioned[self] = predicate
+        local ok, on = pcall(predicate)
+        if ok then self:SetEnabled(on and true or false) end
+    end
+    return self
+end
+
+-- Interactive widgets call this AFTER a user/programmatic state change so every conditioned widget
+-- re-evaluates. SetEnabled itself never notifies, so reevaluate can't loop.
+function Widget:_changed() reevaluate() end
+
 -- ---- FrameWidget: a widget backed by a real Frame/Button/etc. -- adds the general FRAME powers
 -- (event wiring, mouse, strata). Visual extras (scale, colour) stay opt-in: a subclass that wants
 -- one defines its own method. Interactive widgets (Button, Toggle, Window, ...) extend this.
@@ -133,27 +164,6 @@ local function style(frame, bgKey, borderKey, edgeSize)
     frame:SetBackdropColor(Theme.Unpack(bgKey or "panel"))
     frame:SetBackdropBorderColor(Theme.Unpack(borderKey or "border"))
     return frame
-end
-
--- Dependency group: lets a settings page grey out controls whose parent option is off.
--- Add(control, predicate) registers any widget that supports :SetEnabled(bool); Refresh()
--- re-evaluates every predicate and enables/disables accordingly. Call Refresh() after a
--- parent control changes (and once after building). Controls without :SetEnabled are
--- ignored, so notes/labels can be skipped safely.
-function Widgets.DependencyGroup()
-    local entries = {}
-    local group = {}
-    function group:Add(control, predicate)
-        if control and control.SetEnabled and type(predicate) == "function" then
-            entries[#entries + 1] = { control = control, predicate = predicate }
-        end
-    end
-    function group:Refresh()
-        for _, e in ipairs(entries) do
-            e.control:SetEnabled(e.predicate() and true or false)
-        end
-    end
-    return group
 end
 
 -- Shared private base layer for the per-widget files (NOT public API).

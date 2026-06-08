@@ -29,6 +29,7 @@ function InputW:Initialize(parent, width)
         if v == p.value then return end
         p.value = v
         if p.onChange then p.onChange(v) end
+        self:_changed()   -- dependents re-evaluate their EnableWhen condition
     end
     box:SetScript("OnEnterPressed",    function(s) s:ClearFocus() end)  -- triggers focus-lost commit
     box:SetScript("OnEscapePressed",   function(s) s:SetText(p.value); s:ClearFocus() end)
@@ -36,7 +37,7 @@ function InputW:Initialize(parent, width)
     box:SetScript("OnEditFocusLost",   function() box:SetBackdropBorderColor(Theme.Unpack("borderStrong")); commit() end)
     self:_attach(box)
 end
-function InputW:SetValue(v)     local p = self:_p(); p.value = tostring(v == nil and "" or v); self:_frame():SetText(p.value); return self end
+function InputW:SetValue(v)     local p = self:_p(); p.value = tostring(v == nil and "" or v); self:_frame():SetText(p.value); self:_changed(); return self end
 function InputW:GetValue()      return self:_frame():GetText() end
 function InputW:SetOnChange(fn) self:_p().onChange = fn; return self end
 function InputW:SetEnabled(on)

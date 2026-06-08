@@ -499,8 +499,8 @@ end
 function SettingsWindow:_RenderSchema(content, host, width, y)
     local schema = host:GetSettings()
 
-    -- controls that declare `dependsOn` get greyed out when their parent option is off.
-    local dep = W.DependencyGroup()
+    -- controls that declare `dependsOn` get greyed out when their parent option is off -- each control
+    -- declares its own :EnableWhen condition and the widget layer re-checks it automatically.
     local graph = ns.DependencyGraph:New()
     for _, s in ipairs(schema) do
         if s.key and (s.type == "toggle" or s.type == "select" or s.type == "color") then
@@ -532,8 +532,8 @@ function SettingsWindow:_RenderSchema(content, host, width, y)
             local t = W.Toggle:New(content, s.reload and W.FlagReload(s.label) or s.label)
             t:SetPoint("TOPLEFT", 6, y)
             t:SetChecked(host:GetSetting(s.key) and true or false)
-            t:SetOnToggle(function(on) host:SetSetting(s.key, on); dep:Refresh() end)
-            if s.dependsOn then dep:Add(t, function() return graph:IsSatisfied(s.key) end) end
+            t:SetOnToggle(function(on) host:SetSetting(s.key, on) end)
+            if s.dependsOn then t:EnableWhen(function() return graph:IsSatisfied(s.key) end) end
             y = y - 26
             if s.desc then
                 local d = W.Text:New(content, s.desc, "textFaint", "GameFontHighlightSmall")
@@ -552,8 +552,8 @@ function SettingsWindow:_RenderSchema(content, host, width, y)
             local seg = W.Segmented:New(content, s.options)
             seg:SetPoint("TOPLEFT", 6, y)
             seg:SetValue(host:GetSetting(s.key))
-            seg:SetOnChange(function(v) host:SetSetting(s.key, v); dep:Refresh() end)
-            if s.dependsOn then dep:Add(seg, function() return graph:IsSatisfied(s.key) end) end
+            seg:SetOnChange(function(v) host:SetSetting(s.key, v) end)
+            if s.dependsOn then seg:EnableWhen(function() return graph:IsSatisfied(s.key) end) end
             y = y - 34
 
         elseif s.type == "color" then
@@ -565,12 +565,10 @@ function SettingsWindow:_RenderSchema(content, host, width, y)
             sw:SetColor(c[1] or 1, c[2] or 1, c[3] or 1)
             sw:SetOnChange(function(r, g, b) host:SetSetting(s.key, { r, g, b }) end)
             if s.default then sw:SetDefault(s.default[1], s.default[2], s.default[3]) end
-            if s.dependsOn then dep:Add(sw, function() return graph:IsSatisfied(s.key) end) end
+            if s.dependsOn then sw:EnableWhen(function() return graph:IsSatisfied(s.key) end) end
             y = y - 26
         end
     end
-
-    dep:Refresh()  -- set initial enabled/greyed state from the current values
     return y
 end
 

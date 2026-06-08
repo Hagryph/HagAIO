@@ -62,11 +62,12 @@ function SliderW:Initialize(parent, opts)
     slider:SetScript("OnValueChanged", function(_, v)
         render(v)
         if p.onChange and p.enabled and not p.suppress then p.onChange(v) end
+        if not p.suppress then self:_changed() end   -- dependents re-evaluate (skip programmatic SetValue)
     end)
     self:_attach(f)
     render(minV)
 end
-function SliderW:SetValue(v)    local p = self:_p(); p.suppress = true; p.slider:SetValue(v); p.suppress = false; p.render(p.slider:GetValue()); return self end
+function SliderW:SetValue(v)    local p = self:_p(); p.suppress = true; p.slider:SetValue(v); p.suppress = false; p.render(p.slider:GetValue()); self:_changed(); return self end
 function SliderW:GetValue()     return self:_p().slider:GetValue() end
 function SliderW:SetOnChange(fn) self:_p().onChange = fn; return self end
 function SliderW:SetEnabled(on)

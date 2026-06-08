@@ -21,7 +21,7 @@ function ColorSwatchW:Initialize(parent)
 
     local p = self:_p()
     p.r, p.g, p.b, p.enabled = 1, 1, 1, true
-    local function set(r, g, b) p.r, p.g, p.b = r, g, b; sw:SetColorTexture(r, g, b) end
+    local function set(r, g, b) p.r, p.g, p.b = r, g, b; sw:SetColorTexture(r, g, b); self:_changed() end
     p.set = set
 
     btn:SetScript("OnEnter", function() if p.enabled then btn:SetBackdropBorderColor(Theme.Unpack("accent")) end end)
