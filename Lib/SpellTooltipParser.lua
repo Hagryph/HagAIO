@@ -30,14 +30,6 @@ function SpellTooltipParser:Percent(desc)
     return num(desc:match("by%s*(%d+)%%"))
 end
 
--- "... up to N% ..." -> N (the integer percent), or nil. Separate from :Percent because
--- "increased by up to 100%" has "up to" between "by" and the number (e.g. Strength of
--- Spirit's "Expel Harm's healing is increased by up to N%, based on your missing health").
-function SpellTooltipParser:UpToPercent(desc)
-    if type(desc) ~= "string" then return nil end
-    return num(desc:match("up to%s*(%d+)%%"))
-end
-
 -- Hit damage from "... dealing N ..." / "N <school> damage" / "N damage" -> N, or nil.
 function SpellTooltipParser:Damage(desc)
     if type(desc) ~= "string" then return nil end

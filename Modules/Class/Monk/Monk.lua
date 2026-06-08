@@ -23,7 +23,6 @@ local Spell = ns.Enum.new("MonkSpell", {
     GRACE_OF_CRANE      = 388811,   -- passive talent: increases healing taken
     GIFT_OF_THE_OX      = 124502,   -- Brewmaster talent: spheres on damage taken
     SPIRIT_OF_THE_OX    = 400629,   -- Brewmaster talent: spheres from Blackout Kick
-    STRENGTH_OF_SPIRIT  = 387276,   -- talent: Expel Harm heals more the more health you're missing
     TIGER_PALM          = 100780,
     KEG_SMASH           = 121253,
     SPINNING_CRANE_KICK = 101546,   -- 8-yd PBAoE; efficient at 3+ targets
@@ -55,20 +54,6 @@ local SCK_BIAS = 1.20
 -- Harm heal (baseHeal + count*orbHeal) -- the heal-to point including orbs, or just the
 -- base heal at 0 orbs. It tracks the orbs IN and OUT of combat. 5 = Gift of the Ox cap.
 local ORB_MAX_COUNT = 5
-
--- Strength-of-Spirit LADDER (restricted content only). With Expel Harm's heal scaled by your
--- missing health AND the orb count both secret, no single StatusBar can show it (their product
--- can't be formed). Instead we stack one orb bar per health band: each bakes the SoS multiplier
--- for its band's health % as a PLAIN constant, and a per-band colour curve evaluated by the
--- engine against UnitHealthPercent reveals only the band that matches your live (secret) health.
---
--- The band COUNT is derived from the bonus, one band per 1% of healing increase: a +80% bonus
--- ramps the multiplier 1.00 -> 1.80 over the health axis, so 80 bands = a 1%-per-step heal edge
--- (the ramp is linear, so equal multiplier steps are equal health steps). Bars are created
--- lazily up to ORB_LADDER_MAX_BANDS (caps a 100% bonus). ORB_BAND_ALPHA = the translucent fill
--- alpha. See ClassModule:_LadderBands for the count.
-local ORB_LADDER_MAX_BANDS = 100
-local ORB_BAND_ALPHA       = 0.55
 
 -- ---- spell-data helpers ---------------------------------------------------
 -- Grace of the Crane raises all healing taken by a flat % the Expel Harm tooltip
@@ -107,21 +92,6 @@ local function orbHealAmount()
     local n = ns.SpellTooltipParser:HealsYouFor(desc)
     if not n then return 0 end
     return math.floor(n * healingTakenMultiplier() + 0.5)
-end
-
--- Strength of Spirit (talent): Expel Harm's healing is increased by "up to N%", scaling
--- linearly with your MISSING health (full bonus at 0% HP, none at full) -- SimC's
--- missing_health_percentage_t with highPct=100, lowPct=0, no plateau. Read the N from the
--- talent's own description (it has changed between builds -- 100% then 30% -- so never
--- hardcode it; see [[feedback_check-simcraft]]) and return it as a fraction, or nil when the
--- talent isn't learned. The health-dependent factor itself is applied per-draw (it needs the
--- live health %), not folded into the stored heal like the flat Grace of the Crane bonus.
-local function strengthOfSpiritBonus()
-    if not (IsPlayerSpell and IsPlayerSpell(Spell.STRENGTH_OF_SPIRIT)) then return nil end
-    local desc = C_Spell and C_Spell.GetSpellDescription and C_Spell.GetSpellDescription(Spell.STRENGTH_OF_SPIRIT)
-    local pct = ns.SpellTooltipParser:UpToPercent(desc)
-    if not pct then return nil end
-    return pct / 100
 end
 
 -- The (current-stat) hit damage parsed from a spell's tooltip description: the
@@ -190,9 +160,9 @@ end
 -- ===========================================================================
 -- Monk behaviour (methods on the shared ClassModule)
 -- ===========================================================================
--- depcheck-allow: Secrets, Scaling, Range, ActionBars, Scheduler  -- used by the host methods
--- below; the per-spec submodules that actually drive them declare them (Base.lua:
--- Secrets/Scaling; Brewmaster.lua adds Range/ActionBars/Scheduler), which enforces load order.
+-- depcheck-allow: Secrets, Range, ActionBars, Scheduler  -- used by the host methods below;
+-- the per-spec submodules that actually drive them declare them (Base.lua: Secrets;
+-- Brewmaster.lua: Secrets/Range/ActionBars/Scheduler), which is what enforces the load ordering.
 
 -- ---- Expel Harm marker ----------------------------------------------------
 -- Defer + debounce marker updates to the next frame. Reading bar:GetWidth()
@@ -220,10 +190,7 @@ function ClassModule:_StartOrbPoll()
     local function poll()
         local pp = self:_p()
         if pp.orbPollGen ~= gen then return end        -- superseded / unloaded
-        -- The orb count is secret (can't be compared), so each poll assumes it MAY have changed
-        -- and flags a SetValue-only refresh (not a full geometry rebuild). Health ticks don't set
-        -- this, so they stay colour-only. This is the orb-count refresh cadence.
-        if pp.orbTalented then pp.orbCountDirty = true; self:_ScheduleUpdate() end
+        if pp.orbTalented then self:_ScheduleUpdate() end
         if InCombatLockdown() then
             C_Timer.After(0.1, poll)                   -- combat: orbs change fast
             return
@@ -257,11 +224,6 @@ function ClassModule:_RefreshHeal()
     p.baseHeal = readExpelHarmHeal()
     p.orbHeal = orbHealAmount()
     p.orbTalented = IsPlayerSpell and (IsPlayerSpell(Spell.GIFT_OF_THE_OX) or IsPlayerSpell(Spell.SPIRIT_OF_THE_OX)) or false
-    -- Strength of Spirit: a missing-health heal ramp (nil when not talented). Kept as a
-    -- Scaling spec and applied per-draw, since the factor depends on the live health %.
-    p.sosBonus = strengthOfSpiritBonus()
-    p.sosSpec = p.sosBonus and { bonus = p.sosBonus, highPct = 100, lowPct = 0, direction = "missing" } or nil
-    p.orbLayoutDirty = true   -- heal/orb/SoS changed -> orb-bar min/max/width must rebuild
     self:_SnapshotMaxHP()
     if not p.baseHeal then
         -- description may not be loaded yet; retry shortly
@@ -304,179 +266,56 @@ function ClassModule:_EnsureMarker()
     return p.marker
 end
 
--- The number of ladder bands for the current bonus: one per 1% of healing increase (round of
--- bonus*100), clamped to [1, ORB_LADDER_MAX_BANDS]. 0 when there's no Strength of Spirit (or no
--- colour-curve API) -> a single plain bar.
-function ClassModule:_LadderBands(sos)
-    if not sos then return 0 end
-    local n = math.floor((self:_p().sosBonus or 0) * 100 + 0.5)
-    if n < 1 then n = 1 end
-    if n > ORB_LADDER_MAX_BANDS then n = ORB_LADDER_MAX_BANDS end
-    return n
-end
-
--- The orb-fill bars: stacked StatusBars (lazily created), all anchored at the current-health
--- edge. With Strength of Spirit each is revealed by its own colour curve so only the band
--- matching your live health is opaque; without it, only bar 0 is used as a plain translucent
--- fill. This is the single orb-display path. Grows the pool to cover `bands` (L.created tracks
--- the highest index built). See ClassModule:_LadderBands for the count.
-function ClassModule:_EnsureOrbLadder(bands)
+-- The orb-fill StatusBar (lazily created over the bar's clipping host). A flat white
+-- fill we tint; min/max are set per-draw (they depend on the live base/orb heal).
+function ClassModule:_EnsureOrbBar()
     local p = self:_p()
-    local L = p.orbLadder
-    if not L then L = { bars = {}, created = -1 }; p.orbLadder = L end
-    for i = L.created + 1, bands do
+    if not p.orbBar then
         local sb = CreateFrame("StatusBar", nil, p.host)
-        sb:SetStatusBarTexture("Interface\\Buttons\\WHITE8X8")
+        sb:SetStatusBarTexture("Interface\\Buttons\\WHITE8X8")  -- flat: tints to a clean colour
         local tex = sb:GetStatusBarTexture()
         if tex and tex.SetDesaturated then tex:SetDesaturated(true) end
-        sb:Hide()
-        L.bars[i] = sb
+        p.orbBar = sb
     end
-    if bands > L.created then L.created = bands end
-    return L
+    return p.orbBar
 end
 
-function ClassModule:_HideOrbLadder()
-    local L = self:_p().orbLadder
-    if L then for i = 0, L.created do L.bars[i]:Hide() end end
-end
-
--- One triangular alpha curve per band: opaque (ORB_BAND_ALPHA) at this band's health fraction,
--- fading to 0 at the neighbouring bands. UnitHealthPercent evaluates it against the SECRET
--- health %, returning a colour whose alpha we apply -- so the engine, untainted, decides which
--- band shows. Adjacent bands cross-fade, which smooths the heal edge between steps. Rebuilt
--- only when the ready/cooldown colour or the band count changes (RGB + N bake into the points).
-function ClassModule:_BuildOrbLadderCurves(c, N)
-    local curves = {}
-    for i = 0, N do
-        local curve = C_CurveUtil.CreateColorCurve()
-        curve:SetType(Enum.LuaCurveType.Linear)
-        if i > 0 then curve:AddPoint((i - 1) / N, CreateColor(c[1], c[2], c[3], 0)) end
-        curve:AddPoint(i / N, CreateColor(c[1], c[2], c[3], ORB_BAND_ALPHA))
-        if i < N then curve:AddPoint((i + 1) / N, CreateColor(c[1], c[2], c[3], 0)) end
-        curves[i] = curve
-    end
-    return curves
-end
-
--- THE orb display (one unified path -- no separate "single bar" any more). `bands` is the
--- number of health steps, derived from the bonus (1 per 1% of healing increase, see
--- _LadderBands), or 0 without Strength of Spirit / when the colour-curve APIs are missing (a
--- single bar, no health scaling).
+-- Drive the heal-amount fill off the (secret) cast count. The bar starts at the CURRENT
+-- HEALTH edge and fills to (baseHeal + count*orbHeal) -- the total you'd be healed to,
+-- including orbs (or just baseHeal at 0 orbs). Only SetValue takes the secret; the engine
+-- computes the fill extent untainted, so it's live in AND out of combat.
 --
--- Performance, two ways:
---   * Frames are created OUT of combat only -- building dozens of StatusBars mid-fight hitches.
---     The orb bar draws continuously, so out-of-combat draws pre-grow the pool to full size
---     before you pull; in combat we use whatever already exists (no growth).
---   * Work is split by what each input touches. min/max/width/anchor are health- AND
---     count-INDEPENDENT -> rebuilt only on a LAYOUT change (heal/maxHP/width/band-count: rare,
---     mostly out of combat). SetValue (a fill redraw) refreshes the secret count at the poll
---     cadence. Colour/visibility (cheap, no redraw) runs every refresh. So a health tick only
---     re-colours; an orb-count poll only SetValues; a full rebuild is rare. Always returns true.
-function ClassModule:_DrawOrbLadder(fill, maxHP, width)
-    local p = self:_p()
-    local curveOK = C_CurveUtil and C_CurveUtil.CreateColorCurve and UnitHealthPercent
-        and CreateColor and Enum and Enum.LuaCurveType
-    local sos     = p.sosSpec and curveOK
-    local desired = self:_LadderBands(sos)
-    local L = self:_EnsureOrbLadder(InCombatLockdown() and 0 or desired)  -- grow OOC only
-    local bands = math.min(desired, L.created)
-
-    local layoutDirty = p.orbLayoutDirty or L.maxHP ~= maxHP or L.width ~= width or L.bands ~= bands
-    if layoutDirty or p.orbCountDirty then
-        local count = C_Spell.GetSpellCastCount(Spell.EXPEL_HARM)   -- SECRET -> SetValue
-        for i = 0, L.created do
-            local sb = L.bars[i]
-            if i <= bands then
-                if layoutDirty then
-                    -- band health % -> SoS multiplier (a plain constant); 1 when no SoS
-                    local mult = sos and ns.Scaling:Multiplier(p.sosSpec, (i / bands) * 100) or 1
-                    local minV, maxV, span = MonkMath:OrbFill(p.baseHeal * mult, p.orbHeal * mult, ORB_MAX_COUNT, maxHP, width)
-                    sb:SetMinMaxValues(minV, maxV)
-                    sb:ClearAllPoints()
-                    sb:SetPoint("TOPLEFT",    fill, "TOPRIGHT",    0, 0)   -- start AT current health
-                    sb:SetPoint("BOTTOMLEFT", fill, "BOTTOMRIGHT", 0, 0)
-                    sb:SetWidth(span)
-                end
-                sb:SetValue(count)   -- refresh the (secret) count fill -- the one per-poll redraw
-            elseif layoutDirty then
-                sb:Hide()            -- band beyond the current count -> stays hidden
-            end
-        end
-        L.maxHP, L.width, L.bands = maxHP, width, bands
-        p.orbLayoutDirty, p.orbCountDirty = false, false
-    end
-
-    self:_RefreshLadderColors(bands)
-    return true
-end
-
--- Cheap per-refresh pass: the colour/visibility only. With Strength of Spirit, each band's
--- per-band curve (evaluated by the engine against the SECRET health %) yields the alpha that
--- reveals just the matching band -- adjacent bands cross-fade, so the new bar appears as the
--- old fades (no flicker, no Show/Hide churn). Without SoS it's one static translucent bar.
--- Show() lives here (cheap, no redraw) so the ladder re-appears after a hide without a geometry
--- rebuild. No SetValue here -> health ticks never redraw a fill texture.
-function ClassModule:_RefreshLadderColors(bands)
-    local p = self:_p()
-    local L = p.orbLadder
-    if not L then return end
-    local c = self:_ExpelColor()
-    if bands == 0 then
-        L.bars[0]:SetStatusBarColor(c[1], c[2], c[3], ORB_BAND_ALPHA)
-        L.bars[0]:Show()
-        return
-    end
-    if not L.curves or L.cr ~= c[1] or L.cg ~= c[2] or L.cb ~= c[3] or L.curveBands ~= bands then
-        L.curves = self:_BuildOrbLadderCurves(c, bands)
-        L.cr, L.cg, L.cb, L.curveBands = c[1], c[2], c[3], bands
-    end
-    for i = 0, bands do
-        local sb = L.bars[i]
-        local color = UnitHealthPercent("player", true, L.curves[i])   -- SECRET-driven alpha
-        if color then sb:SetStatusBarColor(color:GetRGBA()) end
-        sb:Show()
-    end
-end
-
--- The Strength-of-Spirit scale bar: a FULL-WIDTH, invisible StatusBar over the whole health
--- bar. We feed it the (secret) current health and bake the missing-health heal ramp into its
--- min/max, so its fill edge lands at the true heal-to point; the marker line hangs off that
--- edge. Only the line is visible (the bar's own texture is transparent).
-function ClassModule:_EnsureScaleBar()
-    local p = self:_p()
-    if not p.scaleBar then
-        local sb = CreateFrame("StatusBar", nil, p.host)
-        sb:SetAllPoints(p.host)
-        sb:SetStatusBarTexture("Interface\\Buttons\\WHITE8X8")
-        sb:SetStatusBarColor(1, 1, 1, 0)   -- invisible: only the marker line it carries shows
-        p.scaleBar = sb
-    end
-    return p.scaleBar
-end
-
-function ClassModule:_HideScaleBar()
-    local p = self:_p()
-    if p.scaleBar then p.scaleBar:Hide() end
-end
-
--- The orb heal fill: one unified path (the ladder), whether or not Strength of Spirit is
--- talented. The min/max bake the base heal into the secret-count fill so the StatusBar fraction
--- at value=count is exactly (baseHeal + count*orbHeal)/span (see MonkMath:OrbFill); SoS, when
--- present, scales each band's heal too. Only SetValue consumes the secret count; the engine
--- computes the fill untainted, live in AND out of combat. Returns false only when no sphere
--- talent / spell API (caller then draws the plain base-heal line instead).
+-- The fill fraction must equal (baseHeal + count*orbHeal)/span where span = the bar width
+-- in heal (baseHeal + ORB_MAX_COUNT*orbHeal). StatusBar fraction = (value-min)/(max-min),
+-- and value is the secret count we cannot offset/scale ourselves -- so we bake the base
+-- heal into min/max instead (plain math): with min = -baseHeal/orbHeal and max =
+-- ORB_MAX_COUNT, fraction at value=count is exactly (baseHeal + count*orbHeal)/span. Width
+-- is the full span so the fill's right edge lands at the true heal-to point. Returns true.
 function ClassModule:_DrawOrbFill(fill, maxHP, width)
     local p = self:_p()
     if not (p.orbTalented and p.orbHeal and p.orbHeal > 0
             and C_Spell and C_Spell.GetSpellCastCount) then
         return false
     end
-    return self:_DrawOrbLadder(fill, maxHP, width)
+    -- min/max bake the base heal into the secret-count fill; span is the full bar width (px).
+    local minV, maxV, span = MonkMath:OrbFill(p.baseHeal, p.orbHeal, ORB_MAX_COUNT, maxHP, width)
+    local c = self:_ExpelColor()
+
+    local sb = self:_EnsureOrbBar()
+    sb:SetStatusBarColor(c[1], c[2], c[3], 0.55)           -- translucent: predicted-heal band
+    sb:SetMinMaxValues(minV, maxV)
+    sb:ClearAllPoints()
+    sb:SetPoint("TOPLEFT",    fill, "TOPRIGHT",    0, 0)    -- start AT current health
+    sb:SetPoint("BOTTOMLEFT", fill, "BOTTOMRIGHT", 0, 0)
+    sb:SetWidth(span)
+    sb:SetValue(C_Spell.GetSpellCastCount(Spell.EXPEL_HARM))     -- SECRET value -> engine fills it
+    sb:Show()
+    return true
 end
 
 function ClassModule:_HideOrbFill()
-    self:_HideOrbLadder()
+    local p = self:_p()
+    if p.orbBar then p.orbBar:Hide() end
 end
 
 function ClassModule:_UpdateMarker()
@@ -487,7 +326,6 @@ function ClassModule:_UpdateMarker()
     local function hideAll()
         if p.marker then p.marker:Hide() end
         self:_HideOrbFill()
-        self:_HideScaleBar()
     end
 
     if not (self:IsEnabled() and p.expelActive and self:GetSetting("expelHarm")) then
@@ -519,44 +357,22 @@ function ClassModule:_UpdateMarker()
     -- secret count via SetValue, so it tracks the orbs in and out of combat.
     if self:_DrawOrbFill(fill, maxHP, width) then
         if p.marker then p.marker:Hide() end
-        self:_HideScaleBar()
         return
     end
     self:_HideOrbFill()
 
-    -- Strength of Spirit (no sphere talent): the heal-to point depends on MISSING health, so
-    -- the line can't sit at a fixed offset. Drive a full-width hidden StatusBar with the
-    -- (secret-safe) current health and min/max that bake the missing-health ramp, then hang
-    -- the marker on its fill edge. Correct in and out of restricted content.
-    if p.sosSpec then
-        local sb = self:_EnsureScaleBar()
-        local minV, maxV = MonkMath:HealLineFill(p.baseHeal, p.sosBonus, maxHP)
-        sb:SetMinMaxValues(minV, maxV)
-        sb:SetValue(UnitHealth("player"))      -- SECRET value -> engine places the fill edge
-        sb:Show()
-        self:_DrawMarkerLine(sb:GetStatusBarTexture(), 0)
-        return
-    end
-    self:_HideScaleBar()
-
     -- Otherwise: a single base-heal line at where Expel Harm alone heals you to. Anchor to
     -- the fill's right edge (current-health end) + the heal width, so it tracks the health
     -- bar automatically. We never read the secret current health — Blizzard moves the fill
-    -- texture, the line follows.
-    self:_DrawMarkerLine(fill, (p.baseHeal / maxHP) * width)
-end
-
--- Show the marker line at `offset` pixels right of `anchor`'s right edge, in the current
--- ready/on-cooldown colour. Anchoring to a fill texture's right edge lets the line track a
--- live (even secret-driven) fill. Reset vertex colour to white (shown = texture x vertex).
-function ClassModule:_DrawMarkerLine(anchor, offset)
+    -- texture, the line follows. Reset vertex colour to white (shown = texture x vertex).
     local m = self:_EnsureMarker()
     local c = self:_ExpelColor()
     m:SetColorTexture(c[1], c[2], c[3], 1)
     m:SetVertexColor(1, 1, 1, 1)
+    local offset = (p.baseHeal / maxHP) * width
     m:ClearAllPoints()
-    m:SetPoint("TOP", anchor, "TOPRIGHT", offset, 0)
-    m:SetPoint("BOTTOM", anchor, "BOTTOMRIGHT", offset, 0)
+    m:SetPoint("TOP", fill, "TOPRIGHT", offset, 0)
+    m:SetPoint("BOTTOM", fill, "BOTTOMRIGHT", offset, 0)
     m:Show()
 end
 

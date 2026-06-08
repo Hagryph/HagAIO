@@ -45,35 +45,6 @@ describe("MonkMath:OrbFill", function()
     end)
 end)
 
-describe("MonkMath:HealLineFill", function()
-    -- The fed-current-health StatusBar fraction must equal the Strength-of-Spirit heal-to
-    -- fraction h + (baseHeal/maxHP)*(1 + bonus*(1-h)) at every health level.
-    local function heal(baseHeal, maxHP, h, bonus) -- heal-to fraction at health fraction h
-        return h + (baseHeal / maxHP) * (1 + bonus * (1 - h))
-    end
-    it("bakes the missing-health ramp so the fill edge lands at the heal-to point", function()
-        local m = mm()
-        local baseHeal, maxHP, bonus = 1000, 10000, 1.0
-        local mn, mx = m:HealLineFill(baseHeal, bonus, maxHP)
-        for _, h in ipairs({ 0, 0.25, 0.5, 0.75, 1 }) do
-            local frac = (h * maxHP - mn) / (mx - mn)        -- StatusBar fill fraction at value=health
-            assert.near(heal(baseHeal, maxHP, h, bonus), frac)
-        end
-    end)
-    it("bonus=0 degenerates to a plain current-health + baseHeal line", function()
-        local m = mm()
-        local mn, mx = m:HealLineFill(1000, 0, 10000)
-        assert.near(-1000, mn)                                -- min = -baseHeal
-        assert.near(9000, mx)                                 -- max = maxHP - baseHeal
-        assert.near(0.6, (5000 - mn) / (mx - mn))             -- h=0.5 -> 0.5 + 1000/10000
-    end)
-    it("treats a nil bonus as zero", function()
-        local m = mm()
-        local mn = m:HealLineFill(1000, nil, 10000)
-        assert.near(-1000, mn)
-    end)
-end)
-
 describe("MonkMath:SumEnergyCosts", function()
     local ENERGY, OTHER = 3, 0
     it("sums only energy-typed costs across spells, ignoring other power types", function()

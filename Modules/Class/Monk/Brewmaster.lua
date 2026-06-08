@@ -12,7 +12,7 @@ local MonkBrewmaster = Class.new("MonkBrewmaster", ns.Monk.Base)
 MonkBrewmaster.settings = {
     { type = "header", text = "Expel Harm" },
     { type = "toggle", key = "expelHarm", label = "Show heal bar", default = true,
-      desc = "A bar that fills from your current health to where Expel Harm would heal you, including Gift of the Ox orbs and the extra healing from Strength of Spirit when you're hurt." },
+      desc = "A bar that fills from your current health to where Expel Harm would heal you, including Gift of the Ox orbs." },
     { type = "color", key = "expelColor", label = "Ready colour", default = Monk.EXPEL_READY_COLOR, dependsOn = "expelHarm" },
     { type = "color", key = "expelInactiveColor", label = "On-cooldown colour", default = Monk.EXPEL_COOLDOWN_COLOR, dependsOn = "expelHarm" },
     { type = "header", text = "Tiger Palm" },
@@ -75,4 +75,4 @@ function MonkBrewmaster:Unload()
 end
 
 -- All of Base + the AoE helper (Range counts, ActionBars greying, Scheduler ticker).
-ns.Monk.registerSpec("Monk-Brewmaster", MonkBrewmaster, 1, { "EventBus", "Cooldowns", "Secrets", "Scaling", "Range", "ActionBars", "Scheduler" })
+ns.Monk.registerSpec("Monk-Brewmaster", MonkBrewmaster, 1, { "EventBus", "Cooldowns", "Secrets", "Range", "ActionBars", "Scheduler" })
