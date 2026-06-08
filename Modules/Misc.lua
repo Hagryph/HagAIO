@@ -150,7 +150,6 @@ function Misc:_OnTakeTaxi(slot)
     -- resolve the expected time NOW, while the flight map (taxi data) is still
     -- open -- GetNumRoutes/TaxiGetNodeSlot stop working once it closes.
     p.known = (self:_RouteTime(p.src, dst, slot, dst))
-    p.fullKnown = p.known                 -- baseline full-route estimate; early-stop falls back to it
     p.path = self:_BuildPath(slot, dst)   -- ordered nodes (+world pos) for timing/landing
     p.earlyLanding = false                -- reset any prior Request-Stop redirect
     p.phase = "boarding"
@@ -551,15 +550,16 @@ function Misc:_UpdateEarlyTarget()
     -- Total time from take-off (node 1) to the new finish, via the SAME estimator the rest of
     -- the route timer uses (Flight:SumLegs over the booked path). No per-leg bookkeeping here --
     -- just the whole start -> finish total; the countdown subtracts the elapsed duration from it
-    -- in _RefreshDisplay. Falls back to the full-route estimate when a leg on the way is still
-    -- unmeasured, so the bar never blanks.
+    -- in _RefreshDisplay. If any leg on the way is still unmeasured, SumLegs returns nil and the
+    -- timer blanks to -:-- -- we do NOT fall back to the full-route time, which is for the further
+    -- ORIGINAL destination and would show a misleading countdown for this closer early target.
     local names = {}
     for i = 1, p.earlyIdx do
         local n = p.path[i] and p.path[i].name
         if not n then names = nil; break end
         names[i] = n
     end
-    p.known = (names and Flight:SumLegs(self:_AtomicLegs(), names)) or p.fullKnown
+    p.known = names and Flight:SumLegs(self:_AtomicLegs(), names) or nil
 end
 
 -- ---- map hover tooltip ----------------------------------------------------
