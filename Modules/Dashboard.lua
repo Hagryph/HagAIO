@@ -32,6 +32,9 @@ local DIFF = {
     Normal = { abbr = "N", rank = 2 }, Heroic = { abbr = "H", rank = 3 }, Mythic = { abbr = "M", rank = 4 },
 }
 
+-- Localized name of Mythic 0 (difficulty 23) -- matches a saved M0 dungeon lock's difficulty.
+local M0 = (GetDifficultyInfo and GetDifficultyInfo(23)) or "Mythic"
+
 -- ===========================================================================
 -- Category descriptors. Each yields the COLUMNS for the selected dataset; a column's cell(entry)
 -- is PURE (reads only a stored snapshot) so it renders the current character and every alt the
@@ -240,6 +243,7 @@ function Dashboard:_Snapshot()
     self:_CollectKeystone()
     self:_CollectVault()
     self:_CollectLockouts()
+    self:_PruneRegistry()   -- drop M0 entries that have rotated out of the current season
     self:_RenderIfShown()
 end
 
@@ -343,6 +347,53 @@ function Dashboard:_RaidLockText(e, name)
     if not best then return "-" end
     local d = (DIFF[best.diff] and DIFF[best.diff].abbr) or (best.diff and best.diff:sub(1, 1)) or ""
     return (d ~= "" and d .. " " or "") .. (best.progress or 0) .. "/" .. (best.total or "?")
+end
+
+-- ---- dungeons: the CURRENT M+ SEASON (always shown with Mythic 0) --------------------------
+-- The current M+ season's dungeon lineup -- can include legacy-expansion dungeons, and they ALL
+-- carry a Mythic 0 lockout while in season. From C_ChallengeMode.GetMapTable(); cached + a set.
+function Dashboard:_SeasonDungeons()
+    local p = self:_p()
+    if p.season then return p.season end
+    if not (C_ChallengeMode and C_ChallengeMode.GetMapTable and C_ChallengeMode.GetMapUIInfo) then return nil end
+    local ids = C_ChallengeMode.GetMapTable()
+    if not ids or #ids == 0 then return nil end
+    local list, set = {}, {}
+    for _, mapID in ipairs(ids) do
+        local name = C_ChallengeMode.GetMapUIInfo(mapID)
+        if name then list[#list + 1] = name; set[name] = true end
+    end
+    table.sort(list)
+    p.season = { list = list, set = set }
+    return p.season
+end
+
+-- One column per current-season dungeon; cell = the character's Mythic 0 lock ("x/y") or "-".
+function Dashboard:_SeasonColumns()
+    local s = self:_SeasonDungeons()
+    if not s then return {} end
+    local cols = {}
+    for _, name in ipairs(s.list) do
+        local dname = name
+        cols[#cols + 1] = { label = dname, width = 130, cell = function(e)
+            for _, l in ipairs(e.lockouts or {}) do
+                if l.name == dname and l.diff == M0 then return (l.progress or 0) .. "/" .. (l.total or "?") end
+            end
+            return "-"
+        end }
+    end
+    return cols
+end
+
+-- A dungeon's Mythic 0 exists only while it's in the current season; once it rotates out it has no
+-- Mythic difficulty, so on snapshot we drop any stale M0 registry entry no longer in the lineup.
+function Dashboard:_PruneRegistry()
+    local s = self:_SeasonDungeons()
+    if not s then return end   -- season not known yet -> leave the registry untouched
+    local inst = self:_Instances()
+    for key, r in pairs(inst) do
+        if (not r.isRaid) and r.diff == M0 and not s.set[r.name] then inst[key] = nil end
+    end
 end
 
 -- Columns from the self-curating registry, filtered by predicate(registryEntry). Each cell is the
@@ -473,6 +524,9 @@ function Dashboard:_NavItems()
                     items[#items + 1] = { key = "raid:" .. exp, label = exp, indent = 2 }
                 end
             elseif cat.key == "dungeons" then
+                if self:_SeasonDungeons() then
+                    items[#items + 1] = { key = "dungeon:current", label = "Current Season", indent = 2 }
+                end
                 for _, exp in ipairs(self:_KnownExpansions(false)) do
                     items[#items + 1] = { key = "dungeon:" .. exp, label = exp, indent = 2 }
                 end
@@ -504,9 +558,15 @@ function Dashboard:_ResolveCategory(key)
         return rexp .. " Raids", function() return self:_RaidColumns(rexp) end
     end
     local dexp = key and key:match("^dungeon:(.+)$")
-    if dexp then
+    if dexp == "current" then
+        return "Current Season", function() return self:_SeasonColumns() end
+    elseif dexp then
         return dexp .. " Dungeons", function()
-            return self:_LockoutColumns(function(r) return not r.isRaid and (r.expansion or "Other") == dexp end)
+            local s = self:_SeasonDungeons()
+            return self:_LockoutColumns(function(r)
+                if r.isRaid or (r.expansion or "Other") ~= dexp then return false end
+                return not (r.diff == M0 and s and s.set[r.name])   -- season M0 lives in Current Season
+            end)
         end
     end
     for _, c in ipairs(CATEGORIES) do
