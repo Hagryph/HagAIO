@@ -257,7 +257,7 @@ function Dashboard:_ExpansionMap()
     if p.ejMap then return p.ejMap end
     if not (EJ_GetNumTiers and EJ_SelectTier and EJ_GetInstanceByIndex and EJ_GetTierInfo) then return nil end
     if C_AddOns and C_AddOns.LoadAddOn then pcall(C_AddOns.LoadAddOn, "Blizzard_EncounterJournal") end
-    local map, raidsByTier, tierOrder, found = {}, {}, {}, false
+    local map, raidsByTier, dungeonsByTier, tierOrder, found = {}, {}, {}, {}, false
     local prev = EJ_GetCurrentTier and EJ_GetCurrentTier()
     local function walk(tier, tierName, isRaid, sink)
         EJ_SelectTier(tier)
@@ -275,20 +275,22 @@ function Dashboard:_ExpansionMap()
     for tier = EJ_GetNumTiers(), 1, -1 do   -- newest tier first
         local tierName = EJ_GetTierInfo(tier)
         if tierName then
-            local raids = {}
-            walk(tier, tierName, true, raids)   -- raids: also catalogued per tier
-            walk(tier, tierName, false, nil)    -- dungeons: only into the name->expansion map
+            local raids, dungeons = {}, {}
+            walk(tier, tierName, true, raids)
+            walk(tier, tierName, false, dungeons)
             if #raids > 0 then
                 raidsByTier[tierName] = raids
                 tierOrder[#tierOrder + 1] = tierName
             end
+            if #dungeons > 0 then dungeonsByTier[tierName] = dungeons end
         end
     end
     if prev then pcall(EJ_SelectTier, prev) end   -- restore the journal's selected tier
     if found then
         p.ejMap = map
-        p.ejRaidsByTier = raidsByTier   -- tier -> { all raid names } (every raid has a weekly lock)
-        p.ejTierOrder = tierOrder       -- tiers with raids, newest first
+        p.ejRaidsByTier = raidsByTier         -- tier -> { all raid names } (every raid has a weekly lock)
+        p.ejDungeonsByTier = dungeonsByTier   -- tier -> { all dungeon names }
+        p.ejTierOrder = tierOrder             -- tiers with raids, newest first
         p.currentExpansion = tierOrder[1] or EJ_GetTierInfo(EJ_GetNumTiers())   -- newest raid tier = current
     end
     return p.ejMap
@@ -322,24 +324,25 @@ function Dashboard:_RaidExpansions()
     return self:_p().ejTierOrder or {}
 end
 
--- One column per raid in `tierName` (defaults to the current tier).
-function Dashboard:_RaidColumns(tierName)
-    local byTier = self:_p().ejRaidsByTier
+-- One column per instance in `tierName`'s catalog (raids if isRaid, else dungeons; defaults to
+-- the current tier). Cell = the character's highest-difficulty lock for it, or "-".
+function Dashboard:_CatalogColumns(tierName, isRaid)
+    local byTier = isRaid and self:_p().ejRaidsByTier or self:_p().ejDungeonsByTier
     tierName = tierName or self:_p().currentExpansion
     local list = (byTier and byTier[tierName]) or {}
     local cols = {}
     for _, name in ipairs(list) do
-        local rname = name
-        cols[#cols + 1] = { label = rname, width = 130, cell = function(e) return self:_RaidLockText(e, rname) end }
+        local nm = name
+        cols[#cols + 1] = { label = nm, width = 130, cell = function(e) return self:_BestLockText(e, nm, isRaid) end }
     end
     return cols
 end
 
--- A character's lockout for one raid: the HIGHEST difficulty it's saved at, as "D x/y", else "-".
-function Dashboard:_RaidLockText(e, name)
+-- A character's lockout for one instance: the HIGHEST difficulty it's saved at, as "D x/y", else "-".
+function Dashboard:_BestLockText(e, name, isRaid)
     local best, bestRank
     for _, l in ipairs(e.lockouts or {}) do
-        if l.isRaid and l.name == name then
+        if (l.isRaid and true or false) == isRaid and l.name == name then
             local rank = (DIFF[l.diff] and DIFF[l.diff].rank) or 0
             if not best or rank > bestRank then best, bestRank = l, rank end
         end
@@ -527,8 +530,13 @@ function Dashboard:_NavItems()
                 if self:_SeasonDungeons() then
                     items[#items + 1] = { key = "dungeon:current", label = "Current Season", indent = 2 }
                 end
+                -- the current expansion's FULL dungeon catalog (not just the M+ season subset)
+                local cur, dbt = self:_p().currentExpansion, self:_p().ejDungeonsByTier
+                if cur and dbt and dbt[cur] then
+                    items[#items + 1] = { key = "dungeon:" .. cur, label = cur, indent = 2 }
+                end
                 for _, exp in ipairs(self:_KnownExpansions(false)) do
-                    items[#items + 1] = { key = "dungeon:" .. exp, label = exp, indent = 2 }
+                    if exp ~= cur then items[#items + 1] = { key = "dungeon:" .. exp, label = exp, indent = 2 } end
                 end
             end
         end
@@ -549,17 +557,19 @@ end
 -- kind; "raid:<exp>"/"dungeon:<exp>" filter to one expansion; the rest are static CATEGORIES.
 function Dashboard:_ResolveCategory(key)
     if key == "raids" then
-        return "Raids", function() return self:_RaidColumns() end          -- current tier, full catalog
+        return "Raids", function() return self:_CatalogColumns(nil, true) end       -- current tier
     elseif key == "dungeons" then
-        return "Dungeons", function() return self:_LockoutColumns(function(r) return not r.isRaid end) end
+        return "Dungeons", function() return self:_CatalogColumns(nil, false) end    -- current expansion
     end
     local rexp = key and key:match("^raid:(.+)$")
     if rexp then
-        return rexp .. " Raids", function() return self:_RaidColumns(rexp) end
+        return rexp .. " Raids", function() return self:_CatalogColumns(rexp, true) end
     end
     local dexp = key and key:match("^dungeon:(.+)$")
     if dexp == "current" then
         return "Current Season", function() return self:_SeasonColumns() end
+    elseif dexp == self:_p().currentExpansion then
+        return dexp .. " Dungeons", function() return self:_CatalogColumns(dexp, false) end   -- full catalog
     elseif dexp then
         return dexp .. " Dungeons", function()
             local s = self:_SeasonDungeons()
