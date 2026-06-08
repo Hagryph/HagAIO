@@ -874,6 +874,17 @@ function Widgets.Texture(parent, opts)
         tw:_ApplyCoords()
         return self
     end
+    -- Cover-crop a full-bleed texture to a box of the given height/width ratio: show the FULL width
+    -- and a vertical band of that height, so a scene fills a wide box with no padding and (for a
+    -- square-ish source) no distortion. focusY (0-1) is where the band starts from the top -- e.g.
+    -- 0.1 begins the cutoff 10% down. The band is clamped to stay inside the texture.
+    function tw:Cover(ratioHW, focusY)
+        local band = math.max(0.01, math.min(1, ratioHW or 1))
+        local y0 = math.max(0, math.min(1 - band, focusY or 0))
+        tw._base = { 0, 1, y0, y0 + band }
+        tw:_ApplyCoords()                   -- any zoom still applies on top
+        return self
+    end
     function tw:Fill(frame, inset)
         inset = inset or 0
         tex:ClearAllPoints()
@@ -908,6 +919,7 @@ end
 --   badge=string, badgeKey=paletteKey, selected=bool, onClick=function(tile),
 --   texCoord={l,r,t,b} (base crop of padded source art, e.g. EJ buttonImage1),
 --   zoom=number (WeakAuras-style: shrink the crop toward its centre to eat residual padding),
+--   cover=bool + focusY=number (cover-crop a full-bleed scene to the box aspect, band from focusY),
 --   contain=bool (centre a square icon at the image's height instead of stretching to fill) }.
 -- Methods: :SetTiles(list)  :Refresh()  :ScrollTop()
 function Widgets.IconGrid(parent, opts)
@@ -977,8 +989,13 @@ function Widgets.IconGrid(parent, opts)
                 t.img:SetPoint("BOTTOMRIGHT", t, "BOTTOMRIGHT", 0, TITLE_H)
             end
             if d.texture then
-                t.img:SetImage(d.texture, d.texCoord, d.atlas)   -- handles atlas + crop + full-fill
-                t.img:SetZoom(d.zoom or 0)                        -- WeakAuras zoom: eat source padding
+                if d.cover then   -- full-bleed scene: cover-crop to the box aspect, start at focusY
+                    t.img:SetImage(d.texture, nil, d.atlas)
+                    t.img:Cover(ih / tw, d.focusY)
+                else              -- banner: base crop + WeakAuras zoom to eat residual padding
+                    t.img:SetImage(d.texture, d.texCoord, d.atlas)
+                end
+                t.img:SetZoom(d.zoom or 0)
                 t.img:Show()
             else
                 t.img:Hide()

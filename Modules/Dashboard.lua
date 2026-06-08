@@ -85,6 +85,15 @@ local EJ_TILE_TC = { 0, 0.68359375, 0, 0.7421875 }
 -- The journal crop lands on the art region but these textures still carry a little padding inside
 -- it, so we additionally ZOOM (WeakAuras style) toward the centre to eat it and let the art fill.
 local EJ_TILE_ZOOM = 0.4
+-- Where the cover-crop of the full-bleed scene (bgImage) starts from the top (0-1). 0.1 = begin the
+-- vertical cutoff 10% down, so the band shows the scene's middle rather than the very top sky.
+local EJ_FOCUS_Y = 0.1
+
+-- Copy an art descriptor ({texture, cover, focusY, texCoord, zoom} from _InstanceArt) onto a tile.
+local function applyArt(tile, art)
+    tile.texture, tile.cover, tile.focusY, tile.texCoord, tile.zoom =
+        art.texture, art.cover, art.focusY, art.texCoord, art.zoom
+end
 
 local CATEGORIES = {
     { key = "mplus", label = "Mythic+", columns = function()
@@ -337,13 +346,14 @@ end
 -- shows in its instance list, names baked in) cropped with the journal's own EJ_TILE_TC fills the
 -- tile edge-to-edge -> preferred. bgImage is only a fallback (it's a centred scene with padding, so
 -- it leaves a margin) for the rare instance with no banner.
--- Returns (texture, texCoord, zoom). buttonImage1 -> the journal crop + a zoom to eat its padding;
--- bgImage -> no crop, no zoom (it is full-bleed already).
+-- An art descriptor for an instance tile. Prefer the full-bleed, high-def SCENE (bgImage) and
+-- cover-crop it to the box -- it has no padding, so it fills crisply. The low-def buttonImage1
+-- banner is only a fallback (cropped + zoomed) for an instance that has no scene.
 function Dashboard:_InstanceArt(name)
     local p = self:_p()
     if not name then return nil end
-    if p.ejImage and p.ejImage[name] then return p.ejImage[name], EJ_TILE_TC, EJ_TILE_ZOOM end
-    if p.ejBg and p.ejBg[name] then return p.ejBg[name], nil, 0 end
+    if p.ejBg and p.ejBg[name] then return { texture = p.ejBg[name], cover = true, focusY = EJ_FOCUS_Y } end
+    if p.ejImage and p.ejImage[name] then return { texture = p.ejImage[name], texCoord = EJ_TILE_TC, zoom = EJ_TILE_ZOOM } end
     return nil
 end
 
@@ -696,16 +706,13 @@ function Dashboard:_CategoryTiles()
     local p = self:_p()
     local function go(key) return function() p.nav:Select(key) end end
     local logo = self:_ExpansionLogo(p.currentExpansion)
-    local raidTex, raidTc, raidZoom = self:_LatestRaidArt()
-    local dunTex, dunTc, dunZoom = self:_SeasonDungeonArt()
-    if not dunTex then dunTex, dunTc, dunZoom = self:_LatestDungeonArt() end
+    local raidArt = self:_LatestRaidArt()
+    local dunArt = self:_SeasonDungeonArt() or self:_LatestDungeonArt()
     local defs = {
         { key = "mplus",    label = "Mythic+",       contain = true,
           texture = "Interface\\Icons\\Achievement_ChallengeMode_Gold" },
-        { key = "raids",    label = "Raids",         texture = raidTex or logo,
-          texCoord = raidTex and raidTc or nil, zoom = raidTex and raidZoom or nil },
-        { key = "dungeons", label = "Dungeons",      texture = dunTex or logo,
-          texCoord = dunTex and dunTc or nil, zoom = dunTex and dunZoom or nil },
+        { key = "raids",    label = "Raids",         art = raidArt, fallback = logo },
+        { key = "dungeons", label = "Dungeons",      art = dunArt,  fallback = logo },
         { key = "weekly",   label = "Weekly Quests", contain = true,
           texture = "Interface\\Icons\\Achievement_Quests_Completed_06" },
         { key = "daily",    label = "Daily Quests",  contain = true,
@@ -714,8 +721,10 @@ function Dashboard:_CategoryTiles()
     local tiles = {}
     for _, d in ipairs(defs) do
         if self:_CategoryVisible(d.key) then
-            tiles[#tiles + 1] = { texture = d.texture, label = d.label, contain = d.contain,
-                texCoord = d.texCoord, zoom = d.zoom, onClick = go(d.key) }
+            local tile = { label = d.label, contain = d.contain,
+                texture = d.texture or d.fallback, onClick = go(d.key) }
+            if d.art then applyArt(tile, d.art) end
+            tiles[#tiles + 1] = tile
         end
     end
     return tiles
@@ -739,18 +748,16 @@ function Dashboard:_OverviewTiles(key)
             tile(exp, exp, "raid:" .. exp)
             -- the current tier's tile shows the latest raid's picture, not the expansion logo
             if exp == p.currentExpansion then
-                local tex, tc, zoom = self:_LatestRaidArt()
-                if tex then
-                    tiles[#tiles].texture, tiles[#tiles].texCoord, tiles[#tiles].zoom = tex, tc, zoom
-                end
+                local art = self:_LatestRaidArt()
+                if art then applyArt(tiles[#tiles], art) end
             end
         end
     elseif key == "dungeons" then
         if self:_SeasonDungeons() then
             tile("Current Season", p.currentExpansion, "dungeon:current")
-            -- Current Season shows a random season-dungeon banner, distinct from the expansion logo
-            local tex, tc, zoom = self:_SeasonDungeonArt()
-            if tex then tiles[#tiles].texture, tiles[#tiles].texCoord, tiles[#tiles].zoom = tex, tc, zoom end
+            -- Current Season shows a random season-dungeon scene, distinct from the expansion logo
+            local art = self:_SeasonDungeonArt()
+            if art then applyArt(tiles[#tiles], art) end
         end
         local cur, dbt = p.currentExpansion, p.ejDungeonsByTier
         if cur and dbt and dbt[cur] then tile(cur, cur, "dungeon:" .. cur) end
