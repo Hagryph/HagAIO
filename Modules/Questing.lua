@@ -113,7 +113,7 @@ end
 -- below the NPC name and horizontally centred on it (anchored to QuestNpcNameFrame, so it
 -- doesn't scroll with the text). Its vertical offset is dev-tunable (see Set/GetBannerY).
 -- Created lazily the first time it's needed.
-local BANNER_Y = -14   -- default y offset below the NPC name (more negative = lower)
+local BANNER_Y = -18   -- default y offset below the NPC name (more negative = lower)
 
 function Questing:_PositionBanner(fs)
     fs:ClearAllPoints()
