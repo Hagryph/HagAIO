@@ -283,13 +283,34 @@ function Questing:_OnDetail()
     -- open for a manual choice. This is the universal gate: gossip/greeting selections all
     -- open the quest-detail window before any quest is accepted.
     local qid = self:_CurrentQuestID()
-    self:_DebugTimed(qid, GetTitleText())   -- TEMP: diagnose timed-quest detection
     if self:_IsTimedQuest(qid) then
         self:LogEchoInfo("skipped timed quest:", GetTitleText())
         return
     end
+    -- Mark it ours so QUEST_ACCEPTED can catch it if it turns out to be timed (the limit
+    -- only becomes readable once it's in the log).
+    if qid then self:_p().pendingAccept[qid] = true end
     self:LogEchoInfo("accepted:", GetTitleText())
     AcceptQuest()
+end
+
+-- A quest we auto-accepted has landed in the log -- now its timer is readable. If it's
+-- timed, abandon it and remember it account-wide so it's skipped before acceptance next
+-- time (on any character). Quests we didn't auto-accept (manual / shift-paused) are left
+-- alone. QUEST_ACCEPTED payload is (questID) on retail, (questLogIndex, questID) on classic.
+function Questing:_OnQuestAccepted(_, a, b)
+    local questID = b or a
+    local p = self:_p()
+    if not questID or not p.pendingAccept[questID] then return end
+    p.pendingAccept[questID] = nil
+    -- Defer one tick: the log timer isn't always initialised the instant the event fires.
+    C_Timer.After(0.1, function()
+        if not self:_LiveTimed(questID) then return end
+        local newly = self:_RememberTimed(questID)
+        self:_AbandonQuest(questID)
+        self:LogAnnounce(("auto-abandoned timed quest: %s%s"):format(
+            self:_QuestTitle(questID), newly and "  (remembered account-wide)" or ""))
+    end)
 end
 
 function Questing:_OnProgress()
@@ -391,6 +412,7 @@ ns.ModuleManager:Register(Questing:New("Questing", {
         GOSSIP_SHOW           = "_OnGossip",
         QUEST_GREETING        = "_OnGreeting",
         QUEST_DETAIL          = "_OnDetail",
+        QUEST_ACCEPTED        = "_OnQuestAccepted",
         QUEST_PROGRESS        = "_OnProgress",
         QUEST_COMPLETE        = "_OnComplete",
     },
@@ -416,6 +438,6 @@ ns.ModuleManager:Register(Questing:New("Questing", {
           dependsOn = { "autoAccept", "autoTurnIn", "autoDialogue" },
           desc = "Skip quest automation while in dungeons and raids." },
         { type = "note", text = "Quests that let you choose between rewards are left open so you can pick." },
-        { type = "note", text = "Timed quests are never auto-accepted, so you can take them on when you're ready." },
+        { type = "note", text = "Timed quests aren't kept by auto-accept -- they're dropped so you can take them on yourself when you're ready." },
     },
 }))
