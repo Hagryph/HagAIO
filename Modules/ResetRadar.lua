@@ -296,7 +296,7 @@ function ResetRadar:_Build()
     -- the category tree is a Navigation widget; selecting a category re-renders the data grid
     local nav = W.Nav(rail, {
         items = self:_NavItems(),
-        barOffset = -14,   -- push the active bar left into the rail margin, clear of the text
+        cellPad = 7,   -- 3px bar + 4px gap, so the label clears the active bar
         onSelect = function(key) p.category = key; self:_Render() end,
     })
     nav:SetPoint("TOPLEFT", div, "BOTTOMLEFT", 6, -10)

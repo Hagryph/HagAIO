@@ -544,6 +544,7 @@ function Widgets.Grid(parent, opts)
     g.columns = opts.columns or {}
     local rowH       = opts.rowHeight or 22
     local indentStep = opts.indentStep or 12
+    local pad        = opts.cellPad or 4   -- left text padding (raise it to clear an active bar)
     local rows = {}
 
     -- x offset of each column from the grid's left; a width=nil column flexes to fill `width`.
@@ -596,11 +597,10 @@ function Widgets.Grid(parent, opts)
         r:SetHeight(rowH)
         r.bg = r:CreateTexture(nil, "BACKGROUND"); r.bg:SetAllPoints()
         r.bar = r:CreateTexture(nil, "OVERLAY")
-        local barX = opts.barOffset or 0   -- shift the active bar into the left margin if asked
-        r.bar:SetPoint("TOPLEFT", barX, 0); r.bar:SetPoint("BOTTOMLEFT", barX, 0); r.bar:SetWidth(3)
+        r.bar:SetPoint("TOPLEFT"); r.bar:SetPoint("BOTTOMLEFT"); r.bar:SetWidth(3)  -- flush to the row bg
         r.bar:SetColorTexture(Theme.Unpack("accent")); r.bar:Hide()
         r.cells = {}
-        r.sectionFS = Widgets.SectionLabel(r, ""); r.sectionFS:SetPoint("LEFT", 6, 0); r.sectionFS:Hide()
+        r.sectionFS = Widgets.SectionLabel(r, ""); r.sectionFS:SetPoint("LEFT", pad, 0); r.sectionFS:Hide()
         rows[i] = r
         return r
     end
@@ -621,8 +621,8 @@ function Widgets.Grid(parent, opts)
             for ci, c in ipairs(g.columns) do
                 local fs = header.cells[ci]
                 if not fs then fs = Widgets.SectionLabel(header, ""); header.cells[ci] = fs end
-                fs:ClearAllPoints(); fs:SetPoint("LEFT", xs[ci] + 4, 0)
-                fs:SetWidth(math.max(10, (c.width or (width - xs[ci])) - 6))
+                fs:ClearAllPoints(); fs:SetPoint("LEFT", xs[ci] + pad, 0)
+                fs:SetWidth(math.max(10, (c.width or (width - xs[ci])) - pad - 2))
                 fs:SetJustifyH(c.justify or "LEFT"); fs:SetText(c.label or ""); fs:SetWordWrap(false); fs:Show()
             end
             for ci = #g.columns + 1, #header.cells do header.cells[ci]:Hide() end
@@ -645,8 +645,8 @@ function Widgets.Grid(parent, opts)
                 local indent = (rd.indent or 0) * indentStep
                 for ci, c in ipairs(g.columns) do
                     local fs, extra = r.cells[ci], (ci == 1) and (rd.indent or 0) * indentStep or 0
-                    fs:ClearAllPoints(); fs:SetPoint("LEFT", xs[ci] + 4 + extra, 0)
-                    fs:SetWidth(math.max(10, (c.width or (width - xs[ci])) - 6 - extra))
+                    fs:ClearAllPoints(); fs:SetPoint("LEFT", xs[ci] + pad + extra, 0)
+                    fs:SetWidth(math.max(10, (c.width or (width - xs[ci])) - pad - 2 - extra))
                     fs:SetJustifyH(c.justify or "LEFT"); fs:SetWordWrap(false)
                     fs:SetText((rd.cells and rd.cells[ci]) or "")
                     setColor(fs, (rd.cellColor and rd.cellColor(ci)) or rd.color or "text")
@@ -690,7 +690,7 @@ function Widgets.Nav(parent, opts)
     opts = opts or {}
     local nav = Widgets.Grid(parent, {
         columns = { {} }, scroll = opts.scroll or false, name = opts.name,
-        rowHeight = opts.rowHeight or 30, barOffset = opts.barOffset,
+        rowHeight = opts.rowHeight or 30, cellPad = opts.cellPad,
     })
     nav._items = opts.items or {}
     nav._onSelect = opts.onSelect
