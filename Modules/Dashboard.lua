@@ -92,9 +92,9 @@ local EJ_TILE_ZOOM = 0.8
 -- the whole square file, then we zoom in and pan UP-LEFT onto the art region. Zoom = fraction of the
 -- fitted region shown (1.0 = as-is, <1 = zoom in, >1 = zoom out); pan is in texcoord units (- = up/left).
 local EJ_LORE_ASPECT = 1
-local EJ_LORE_ZOOM   = 0.72
+local EJ_LORE_ZOOM   = 0.65
 local EJ_LORE_PAN_X  = -0.12
-local EJ_LORE_PAN_Y  = -0.17
+local EJ_LORE_PAN_Y  = -0.23
 
 -- Copy an art descriptor ({texture, cover, texCoord, zoom, aspect, panX, panY} from _InstanceArt)
 -- onto a tile.
