@@ -573,6 +573,9 @@ end
 -- Named scroll frame (template needs a name for its $parentScrollBar).
 function Widgets.ScrollFrame(parent, name)
     local sf = CreateFrame("ScrollFrame", name, parent, "UIPanelScrollFrameTemplate")
+    -- clip the scroll child (and everything in it) to the viewport -- modern ScrollFrames don't do
+    -- this on their own, so over-tall content would otherwise draw outside the frame.
+    if sf.SetClipsChildren then sf:SetClipsChildren(true) end
     local content = CreateFrame("Frame", nil, sf)
     content:SetSize(1, 1)
     sf:SetScrollChild(content)
@@ -698,6 +701,7 @@ function Widgets.ScrollArea(parent, name)
     local sf = CreateFrame("ScrollFrame", name, sa)
     sf:SetPoint("TOPLEFT", 0, 0)
     sf:SetPoint("BOTTOMRIGHT", -(BAR + 3), 0)
+    if sf.SetClipsChildren then sf:SetClipsChildren(true) end   -- keep over-tall content inside the viewport
     local content = CreateFrame("Frame", nil, sf)
     content:SetSize(1, 1)
     sf:SetScrollChild(content)
