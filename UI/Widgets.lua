@@ -914,16 +914,12 @@ function Widgets.IconGrid(parent, opts)
         tb:SetColorTexture(Theme.Unpack("bg1"))
         tb:SetPoint("BOTTOMLEFT", 0, 0); tb:SetPoint("BOTTOMRIGHT", 0, 0); tb:SetHeight(TITLE_H)
         t.titlebar = tb
-        -- image band: the box above the titlebar. The texture is anchored to FILL this frame, so it
-        -- auto-resizes with the tile and always covers the box edge-to-edge.
-        local band = CreateFrame("Frame", nil, t)
-        band:SetPoint("TOPLEFT", t, "TOPLEFT", 0, 0)
-        band:SetPoint("BOTTOMRIGHT", tb, "TOPRIGHT", 0, 0)
-        t.band = band
-        -- a pooled Texture widget (kept alive by TextureService) filling the band, on BACKGROUND so
-        -- the flush art sits under the frame border. The widget applies the WeakAuras texel fix.
-        local img = (ns.TextureService and ns.TextureService:Fill(band, nil, nil, { layer = "BACKGROUND", sublevel = 1 }))
-            or Widgets.Texture(band, { layer = "BACKGROUND", sublevel = 1 }):Fill(band)
+        -- image: a pooled Texture widget (kept alive by TextureService) on the TILE's own BACKGROUND
+        -- layer, so the frame border (BORDER layer) still draws over it and a child frame can't
+        -- mis-layer it. Anchored per-refresh to fill the box above the titlebar. WeakAuras texel fix
+        -- is applied by the widget so the art renders crisp and fills with no margin.
+        local img = (ns.TextureService and ns.TextureService:Acquire(t, { layer = "BACKGROUND", sublevel = 1 }))
+            or Widgets.Texture(t, { layer = "BACKGROUND", sublevel = 1 })
         t.img = img
         local label = t:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
         label:SetPoint("LEFT", tb, "LEFT", 6, 0); label:SetPoint("RIGHT", tb, "RIGHT", -6, 0)
@@ -953,12 +949,13 @@ function Widgets.IconGrid(parent, opts)
             t:SetSize(tw, th)
             t:ClearAllPoints()
             t:SetPoint("TOPLEFT", content, "TOPLEFT", col * (tw + GAP), -(rowi * (th + GAP)))
-            if d.contain then   -- centre a square icon (no aspect distortion) in the band
-                t.img:ClearAllPoints()
+            t.img:ClearAllPoints()
+            if d.contain then   -- centre a square icon (no aspect distortion) above the titlebar
                 t.img:SetSize(ih, ih)
-                t.img:SetPoint("CENTER", t.band, "CENTER", 0, 0)
-            else                -- art fills the band edge-to-edge (anchored once in getTile)
-                t.img:Fill(t.band)
+                t.img:SetPoint("CENTER", t, "CENTER", 0, TITLE_H / 2)
+            else                -- art fills the box above the titlebar, anchored to the TILE frame
+                t.img:SetPoint("TOPLEFT", t, "TOPLEFT", 0, 0)
+                t.img:SetPoint("BOTTOMRIGHT", t, "BOTTOMRIGHT", 0, TITLE_H)
             end
             if d.texture then
                 t.img:SetImage(d.texture, d.texCoord, d.atlas)   -- handles atlas + crop + full-fill
