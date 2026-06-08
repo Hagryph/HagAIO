@@ -465,9 +465,12 @@ ns.ModuleManager:Register(CVars:New("CVars", {
     defaultEnabled = false,
     color = ns.Theme.hex.red,
     deps = { "SlashCommand", "SettingsWindow" },  -- routing + page refresh (type inference is a pure Lib: ns.CVarHelper, always available). The full-dump enumeration (ns.Dev) is dev-only and optional, so it isn't a hard dep.
-    -- "dump" is dev-only (see _Slash); don't advertise it to normal users in /hag help.
-    commands = { cvar = { handler = "_Slash",
-        help = "console variables: " .. ((ns.IsDevChar and ns.IsDevChar()) and "dump / " or "") .. "set / get / clear / list" } },
+    -- "dump" is dev-only (see _Slash); don't advertise it to normal users in /hag help. The help is a
+    -- function so it's decided when /hag help prints (matching the runtime gate), not baked at load.
+    commands = { cvar = { handler = "_Slash", help = function()
+        return "console variables: " .. ((ns.IsDevChar and ns.IsDevChar()) and "dump [filter] / " or "")
+            .. "set <name> <value> / get <name> / clear <name> / list"
+    end } },
     -- Persisted structure (seeded on bind, before OnInitialize):
     dbSchema = {
         managed = {},  -- name -> value (account-wide, re-applied each login)

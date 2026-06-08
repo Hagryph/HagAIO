@@ -27,6 +27,8 @@ local function trim(s)
     return (s or ""):gsub("^%s+", ""):gsub("%s+$", "")
 end
 
+-- `help` is a string OR a function returning a string (evaluated when help is printed, so it can
+-- reflect live state -- e.g. hiding a developer-only sub-command on a non-dev character).
 function SlashCommand:Register(sub, fn, help)
     self:_p().handlers[sub:lower()] = { fn = fn, help = help }
 end
@@ -59,8 +61,10 @@ function SlashCommand:_PrintHelp()
     for sub in pairs(handlers) do subs[#subs + 1] = sub end
     table.sort(subs)   -- stable, alphabetical order (pairs() order is undefined)
     for _, sub in ipairs(subs) do
+        local help = handlers[sub].help
+        if type(help) == "function" then help = help() end   -- live help (e.g. dev-gated hints)
         ns.Log.Print(("  |cffffff00/hag %s|r %s"):format(
-            sub, handlers[sub].help and ("- " .. handlers[sub].help) or ""))
+            sub, help and ("- " .. help) or ""))
     end
 end
 
