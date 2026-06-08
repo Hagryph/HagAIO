@@ -56,6 +56,16 @@ local SCK_BIAS = 1.20
 -- base heal at 0 orbs. It tracks the orbs IN and OUT of combat. 5 = Gift of the Ox cap.
 local ORB_MAX_COUNT = 5
 
+-- Strength-of-Spirit LADDER (restricted content only). With Expel Harm's heal scaled by your
+-- missing health AND the orb count both secret, no single StatusBar can show it (their product
+-- can't be formed). Instead we stack one orb bar per health band: each bakes the SoS multiplier
+-- for its band's health % as a PLAIN constant, and a per-band colour curve evaluated by the
+-- engine against UnitHealthPercent reveals only the band that matches your live (secret) health.
+-- ORB_LADDER_BANDS = number of steps across 0..100% (finer = smoother heal edge, ~N curve evals
+-- per refresh; SoS is linear so a handful is plenty). ORB_BAND_ALPHA = the translucent fill alpha.
+local ORB_LADDER_BANDS = 20
+local ORB_BAND_ALPHA   = 0.55
+
 -- ---- spell-data helpers ---------------------------------------------------
 -- Grace of the Crane raises all healing taken by a flat % the Expel Harm tooltip
 -- doesn't fold in -- read that % from its own description (defaults 4%). 1.0 when
@@ -313,6 +323,84 @@ function ClassModule:_EnsureOrbBar()
     return p.orbBar
 end
 
+-- The Strength-of-Spirit ladder: ORB_LADDER_BANDS+1 stacked orb bars (lazily created), all
+-- anchored at the current-health edge. Each is revealed by its own colour curve, so only the
+-- band matching your live health is opaque. See ORB_LADDER_BANDS for the why.
+function ClassModule:_EnsureOrbLadder()
+    local p = self:_p()
+    if not p.orbLadder then
+        local bars = {}
+        for i = 0, ORB_LADDER_BANDS do
+            local sb = CreateFrame("StatusBar", nil, p.host)
+            sb:SetStatusBarTexture("Interface\\Buttons\\WHITE8X8")
+            local tex = sb:GetStatusBarTexture()
+            if tex and tex.SetDesaturated then tex:SetDesaturated(true) end
+            sb:Hide()
+            bars[i] = sb
+        end
+        p.orbLadder = { bars = bars }
+    end
+    return p.orbLadder
+end
+
+function ClassModule:_HideOrbLadder()
+    local p = self:_p()
+    if p.orbLadder then
+        for i = 0, ORB_LADDER_BANDS do p.orbLadder.bars[i]:Hide() end
+    end
+end
+
+-- One triangular alpha curve per band: opaque (ORB_BAND_ALPHA) at this band's health fraction,
+-- fading to 0 at the neighbouring bands. UnitHealthPercent evaluates it against the SECRET
+-- health %, returning a colour whose alpha we apply -- so the engine, untainted, decides which
+-- band shows. Adjacent bands cross-fade, which smooths the heal edge between steps. Rebuilt
+-- only when the ready/cooldown colour changes (RGB is baked into the curve points).
+function ClassModule:_BuildOrbLadderCurves(c)
+    local curves, N = {}, ORB_LADDER_BANDS
+    for i = 0, N do
+        local curve = C_CurveUtil.CreateColorCurve()
+        curve:SetType(Enum.LuaCurveType.Linear)
+        if i > 0 then curve:AddPoint((i - 1) / N, CreateColor(c[1], c[2], c[3], 0)) end
+        curve:AddPoint(i / N, CreateColor(c[1], c[2], c[3], ORB_BAND_ALPHA))
+        if i < N then curve:AddPoint((i + 1) / N, CreateColor(c[1], c[2], c[3], 0)) end
+        curves[i] = curve
+    end
+    return curves
+end
+
+-- Draw the ladder (restricted content + Strength of Spirit). Returns false if the colour-curve
+-- APIs are unavailable (pre-12.0 / test paths) so the caller can fall back to the minimum.
+function ClassModule:_DrawOrbLadder(fill, maxHP, width)
+    if not (C_CurveUtil and C_CurveUtil.CreateColorCurve and UnitHealthPercent and CreateColor
+            and Enum and Enum.LuaCurveType) then
+        return false
+    end
+    local p = self:_p()
+    local c = self:_ExpelColor()
+    local L = self:_EnsureOrbLadder()
+    if not L.curves or L.cr ~= c[1] or L.cg ~= c[2] or L.cb ~= c[3] then
+        L.curves = self:_BuildOrbLadderCurves(c)
+        L.cr, L.cg, L.cb = c[1], c[2], c[3]
+    end
+    local count = C_Spell.GetSpellCastCount(Spell.EXPEL_HARM)   -- SECRET -> SetValue on each bar
+    for i = 0, ORB_LADDER_BANDS do
+        local sb = L.bars[i]
+        local mult = ns.Scaling:Multiplier(p.sosSpec, (i / ORB_LADDER_BANDS) * 100)  -- plain const
+        local minV, maxV, span = MonkMath:OrbFill(p.baseHeal * mult, p.orbHeal * mult, ORB_MAX_COUNT, maxHP, width)
+        sb:SetMinMaxValues(minV, maxV)
+        sb:ClearAllPoints()
+        sb:SetPoint("TOPLEFT",    fill, "TOPRIGHT",    0, 0)
+        sb:SetPoint("BOTTOMLEFT", fill, "BOTTOMRIGHT", 0, 0)
+        sb:SetWidth(span)
+        sb:SetValue(count)
+        local color = UnitHealthPercent("player", true, L.curves[i])   -- SECRET-driven alpha
+        if color then sb:SetStatusBarColor(color:GetRGBA()) end
+        sb:Show()
+    end
+    if p.orbBar then p.orbBar:Hide() end
+    return true
+end
+
 -- The Strength-of-Spirit scale bar: a FULL-WIDTH, invisible StatusBar over the whole health
 -- bar. We feed it the (secret) current health and bake the missing-health heal ramp into its
 -- min/max, so its fill edge lands at the true heal-to point; the marker line hangs off that
@@ -352,17 +440,32 @@ function ClassModule:_DrawOrbFill(fill, maxHP, width)
         return false
     end
     -- Strength of Spirit scales the whole Expel Harm heal (base + absorbed spheres) by the
-    -- missing-health multiplier. When health is readable we fold it into both heals so the
-    -- fill reaches the true heal-to point. In restricted content current health AND the orb
-    -- count are both secret -- their product can't be formed in one StatusBar -- so the
-    -- multiplier comes back nil and the fill shows the un-scaled minimum (still the floor).
-    local mult = self:_SoSMultiplier() or 1
+    -- missing-health multiplier. When health is READABLE we fold it into both heals (one bar,
+    -- exact). When it's SECRET (restricted content) the multiplier can't be read -- but the orb
+    -- count and health, though both secret, can be split across two engine sinks via the LADDER
+    -- (SetValue + a health-driven colour curve), so the SoS bonus still shows. If the ladder's
+    -- colour-curve APIs are missing, fall back to the un-scaled minimum (still the floor).
+    if p.sosSpec then
+        local mult = self:_SoSMultiplier()         -- nil => health is secret
+        if mult == nil then
+            if self:_DrawOrbLadder(fill, maxHP, width) then return true end
+            mult = 1
+        end
+        return self:_DrawOrbBar(fill, maxHP, width, mult)
+    end
+    return self:_DrawOrbBar(fill, maxHP, width, 1)
+end
+
+-- One translucent orb bar from the current-health edge, its heal scaled by `mult` (1 = no
+-- Strength of Spirit). Hides the ladder, since the single bar carries this frame.
+function ClassModule:_DrawOrbBar(fill, maxHP, width, mult)
+    local p = self:_p()
     -- min/max bake the base heal into the secret-count fill; span is the full bar width (px).
     local minV, maxV, span = MonkMath:OrbFill(p.baseHeal * mult, p.orbHeal * mult, ORB_MAX_COUNT, maxHP, width)
     local c = self:_ExpelColor()
 
     local sb = self:_EnsureOrbBar()
-    sb:SetStatusBarColor(c[1], c[2], c[3], 0.55)           -- translucent: predicted-heal band
+    sb:SetStatusBarColor(c[1], c[2], c[3], ORB_BAND_ALPHA) -- translucent: predicted-heal band
     sb:SetMinMaxValues(minV, maxV)
     sb:ClearAllPoints()
     sb:SetPoint("TOPLEFT",    fill, "TOPRIGHT",    0, 0)    -- start AT current health
@@ -370,12 +473,14 @@ function ClassModule:_DrawOrbFill(fill, maxHP, width)
     sb:SetWidth(span)
     sb:SetValue(C_Spell.GetSpellCastCount(Spell.EXPEL_HARM))     -- SECRET value -> engine fills it
     sb:Show()
+    self:_HideOrbLadder()
     return true
 end
 
 function ClassModule:_HideOrbFill()
     local p = self:_p()
     if p.orbBar then p.orbBar:Hide() end
+    self:_HideOrbLadder()
 end
 
 function ClassModule:_UpdateMarker()
