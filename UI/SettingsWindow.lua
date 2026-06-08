@@ -473,9 +473,11 @@ function SettingsWindow:_EnsureModulePage(name)
     div:SetPoint("TOPLEFT", desc, "BOTTOMLEFT", 0, -12)
     div:SetPoint("RIGHT", page, "RIGHT", -18, 0)
 
-    local sf = W.ScrollFrame(page, "HagAIOModule" .. name:gsub("%s", "") .. "Scroll")
+    -- the framework hands every module page our themed scroll area, so a module's BuildSettingsPage
+    -- just fills sf.content and never defines a scrollbar of its own.
+    local sf = W.ScrollArea(page, "HagAIOModule" .. name:gsub("%s", "") .. "Scroll")
     sf:SetPoint("TOPLEFT", div, "BOTTOMLEFT", 0, -8)
-    sf:SetPoint("BOTTOMRIGHT", page, "BOTTOMRIGHT", -30, 14)
+    sf:SetPoint("BOTTOMRIGHT", page, "BOTTOMRIGHT", -16, 14)
 
     -- A module may own a fully custom, live-bound page (e.g. CVars, whose
     -- controls bind to the game rather than to keyed saved-vars). Otherwise the
