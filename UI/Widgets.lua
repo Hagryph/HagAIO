@@ -1005,7 +1005,7 @@ end
 -- Methods: :SetTiles(list)  :Refresh()  :ScrollTop()
 function Widgets.IconGrid(parent, opts)
     opts = opts or {}
-    local PER_ROW = opts.perRow or 3
+    local PER_ROW = opts.perRow or 3   -- the default; callers can override per refresh via :SetPerRow
     local ASPECT  = opts.aspect or 0.552    -- image h/w; matches the Encounter Journal tile (174x96)
     local GAP     = opts.gap or 12
     local TITLE_H = opts.titleHeight or 22
@@ -1050,10 +1050,12 @@ function Widgets.IconGrid(parent, opts)
 
     function g:SetTiles(list) g._tiles = list or {}; g:Refresh() end
     function g:ScrollTop()    sa:ScrollTop() end
+    -- Override how many tiles per row (re-lays out on the next Refresh; nil restores the default).
+    function g:SetPerRow(n) g._perRow = (n and n >= 1) and math.floor(n) or nil end
 
     function g:Refresh()
         local w = content:GetWidth(); if not w or w < 1 then w = g:GetWidth() or 400 end
-        local cols = PER_ROW
+        local cols = g._perRow or PER_ROW
         local tw = math.floor((w - (cols - 1) * GAP) / cols)   -- auto-sized tile width
         if tw < 1 then tw = 1 end
         local ih = math.floor(tw * ASPECT)                     -- image height

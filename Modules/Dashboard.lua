@@ -877,9 +877,11 @@ function Dashboard:_Render()
         p.iconGrid:Show()
         if p.category == "home" then
             p.catTitle:SetText("Overview")
+            p.iconGrid:SetPerRow(3)
             p.iconGrid:SetTiles(self:_CategoryTiles())
         else
             p.catTitle:SetText(label)
+            p.iconGrid:SetPerRow(4)   -- the Raids/Dungeons instance overviews pack 4 tiles per row
             p.iconGrid:SetTiles(self:_OverviewTiles(p.category))
         end
         p.iconGrid:ScrollTop()
