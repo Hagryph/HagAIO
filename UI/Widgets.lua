@@ -422,6 +422,71 @@ function Widgets.ScrollFrame(parent, name)
     return sf
 end
 
+-- Themed window CHROME factory: a movable, ESC-closable frame with a draggable title bar
+-- (title + optional subtitle + a red-on-hover close X). The shared shell behind every
+-- HagAIO window (settings, copy-out, the reset dashboard) so none of them re-build the
+-- frame, drag handlers and close button by hand. Fill the returned frame's `.body` (the
+-- region under the bar) or anchor your own content to `.bar`.
+--   opts: name      global frame name -> ESC closes it (UISpecialFrames); omit for none
+--         width/height/point/strata   geometry (defaults 560x440, CENTER, "HIGH")
+--         title     bar title text;  titleKey palette key (default "accent")
+--         subtitle  faint text right of the title (e.g. a version);  barHeight (default 38)
+--         onClose   fn(frame) for the X (default frame:Hide())
+-- Returns the frame with .bar / .titleFS / .subtitleFS / .closeBtn / .body attached and a
+-- :SetWindowTitle(text) method.
+function Widgets.Window(opts)
+    opts = opts or {}
+    local f = CreateFrame("Frame", opts.name, UIParent, "BackdropTemplate")
+    f:SetSize(opts.width or 560, opts.height or 440)
+    f:SetPoint(opts.point or "CENTER")
+    Widgets.Style(f, "bg1", "borderStrong")
+    f:SetFrameStrata(opts.strata or "HIGH")
+    f:EnableMouse(true)
+    f:SetMovable(true)
+    f:SetClampedToScreen(true)
+    f:Hide()
+    if opts.name then tinsert(UISpecialFrames, opts.name) end  -- ESC closes
+
+    local H = opts.barHeight or 38
+    local bar = Widgets.Panel(f, "bg0", "border")
+    bar:SetHeight(H)
+    bar:SetPoint("TOPLEFT", 1, -1)
+    bar:SetPoint("TOPRIGHT", -1, -1)
+    bar:EnableMouse(true)
+    bar:RegisterForDrag("LeftButton")
+    bar:SetScript("OnDragStart", function() f:StartMoving() end)
+    bar:SetScript("OnDragStop", function() f:StopMovingOrSizing() end)
+    f.bar = bar
+
+    local title = Widgets.Text(bar, opts.title or "", opts.titleKey or "accent", "GameFontNormalLarge")
+    title:SetPoint("LEFT", 16, 0)
+    f.titleFS = title
+    if opts.subtitle then
+        local sub = Widgets.Text(bar, opts.subtitle, "textFaint", "GameFontNormalSmall")
+        sub:SetPoint("LEFT", title, "RIGHT", 8, -1)
+        f.subtitleFS = sub
+    end
+
+    local close = CreateFrame("Button", nil, bar)
+    close:SetSize(H, H)
+    close:SetPoint("RIGHT", 0, 0)
+    local x = Widgets.Text(close, "X", "textDim", "GameFontNormalLarge")
+    x:SetPoint("CENTER")
+    close:SetScript("OnEnter", function() x:SetTextColor(Theme.Unpack("red")) end)
+    close:SetScript("OnLeave", function() x:SetTextColor(Theme.Unpack("textDim")) end)
+    close:SetScript("OnClick", function() if opts.onClose then opts.onClose(f) else f:Hide() end end)
+    f.closeBtn = close
+
+    -- The content region under the bar (callers parent their layout here, or to `.bar`).
+    local body = CreateFrame("Frame", nil, f)
+    body:SetPoint("TOPLEFT", bar, "BOTTOMLEFT", 0, -1)
+    body:SetPoint("BOTTOMRIGHT", f, "BOTTOMRIGHT", -1, 1)
+    f.body = body
+
+    f.SetWindowTitle = function(_, t) title:SetText(t or "") end
+    return f
+end
+
 -- Shared HagAIO icon tooltip (addon-compartment + minimap buttons): an accent title plus
 -- a list of { text, key } lines coloured from the Theme palette (key defaults to "textDim").
 -- Keeps the two icon services from each hand-rolling the same block + magic RGBs.

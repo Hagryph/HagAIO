@@ -80,41 +80,12 @@ function SettingsWindow:_Build()
     local p = self:_p()
     if p.built then return end
 
-    local f = CreateFrame("Frame", "HagAIOSettingsWindow", UIParent, "BackdropTemplate")
-    f:SetSize(620, 460)
-    f:SetPoint("CENTER")
-    W.Style(f, "bg1", "borderStrong")
-    f:SetFrameStrata("HIGH")
-    f:EnableMouse(true)
-    f:SetMovable(true)
-    f:SetClampedToScreen(true)
-    f:Hide()
-    tinsert(UISpecialFrames, "HagAIOSettingsWindow")  -- ESC closes
+    -- shared chrome: movable HIGH-strata frame + draggable bar (title + version) + close X.
+    local f = W.Window({ name = "HagAIOSettingsWindow", width = 620, height = 460,
+        strata = "HIGH", title = "HAGAIO", subtitle = "v" .. tostring(ns.version),
+        onClose = function() self:Hide() end })
+    local bar = f.bar
     p.frame = f
-
-    -- title bar (draggable)
-    local bar = W.Panel(f, "bg0", "border")
-    bar:SetHeight(38)
-    bar:SetPoint("TOPLEFT", 1, -1)
-    bar:SetPoint("TOPRIGHT", -1, -1)
-    bar:EnableMouse(true)
-    bar:RegisterForDrag("LeftButton")
-    bar:SetScript("OnDragStart", function() f:StartMoving() end)
-    bar:SetScript("OnDragStop", function() f:StopMovingOrSizing() end)
-
-    local title = W.Text(bar, "HAGAIO", "accent", "GameFontNormalLarge")
-    title:SetPoint("LEFT", 16, 0)
-    local ver = W.Text(bar, "v" .. tostring(ns.version), "textFaint", "GameFontNormalSmall")
-    ver:SetPoint("LEFT", title, "RIGHT", 8, -1)
-
-    local close = CreateFrame("Button", nil, bar)
-    close:SetSize(38, 38)
-    close:SetPoint("RIGHT", 0, 0)
-    local x = W.Text(close, "X", "textDim", "GameFontNormalLarge")
-    x:SetPoint("CENTER")
-    close:SetScript("OnEnter", function() x:SetTextColor(Theme.Unpack("red")) end)
-    close:SetScript("OnLeave", function() x:SetTextColor(Theme.Unpack("textDim")) end)
-    close:SetScript("OnClick", function() self:Hide() end)
 
     -- left nav rail
     local nav = W.Panel(f, "bg0", "border")

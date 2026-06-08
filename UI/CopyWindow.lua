@@ -43,40 +43,12 @@ function CopyWindow:_Build()
     local p = self:_p()
     if p.built then return end
 
-    local f = CreateFrame("Frame", "HagAIOCopyWindow", UIParent, "BackdropTemplate")
-    f:SetSize(560, 440)
-    f:SetPoint("CENTER")
-    W.Style(f, "bg1", "borderStrong")
-    f:SetFrameStrata("DIALOG")  -- above the settings window, which is HIGH
-    f:EnableMouse(true)
-    f:SetMovable(true)
-    f:SetClampedToScreen(true)
-    f:Hide()
-    tinsert(UISpecialFrames, "HagAIOCopyWindow")  -- ESC closes
+    -- shared chrome: movable DIALOG-strata frame + draggable bar + close X (Widgets.Window).
+    local f = W.Window({ name = "HagAIOCopyWindow", width = 560, height = 440,
+        strata = "DIALOG", title = "Copy", onClose = function() self:Hide() end })
+    local bar = f.bar
     p.frame = f
-
-    -- title bar (draggable)
-    local bar = W.Panel(f, "bg0", "border")
-    bar:SetHeight(38)
-    bar:SetPoint("TOPLEFT", 1, -1)
-    bar:SetPoint("TOPRIGHT", -1, -1)
-    bar:EnableMouse(true)
-    bar:RegisterForDrag("LeftButton")
-    bar:SetScript("OnDragStart", function() f:StartMoving() end)
-    bar:SetScript("OnDragStop", function() f:StopMovingOrSizing() end)
-
-    local title = W.Text(bar, "Copy", "accent", "GameFontNormalLarge")
-    title:SetPoint("LEFT", 16, 0)
-    p.title = title
-
-    local close = CreateFrame("Button", nil, bar)
-    close:SetSize(38, 38)
-    close:SetPoint("RIGHT", 0, 0)
-    local x = W.Text(close, "X", "textDim", "GameFontNormalLarge")
-    x:SetPoint("CENTER")
-    close:SetScript("OnEnter", function() x:SetTextColor(Theme.Unpack("red")) end)
-    close:SetScript("OnLeave", function() x:SetTextColor(Theme.Unpack("textDim")) end)
-    close:SetScript("OnClick", function() self:Hide() end)
+    p.title = f.titleFS
 
     -- hint line
     local hint = W.Text(f, "Press Ctrl+C to copy, then Esc to close.", "textDim", "GameFontHighlightSmall")
