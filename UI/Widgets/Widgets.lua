@@ -66,34 +66,25 @@ function Widget:SetAlpha(a)        self:_p().frame:SetAlpha(a);             retu
 
 -- ---- reactive enable/disable (declarative grey-out) ------------------------------------------------
 -- CHANGEABLE mixin: makes an interactive widget an OBSERVABLE change source -- through ns.EventBus, NOT
--- a hand-rolled callback list. There is ONE shared message, "Widget.Changed", and the changing widget
--- ITSELF is the argument (plus its new value) -- so a subscriber gets the real widget back and can read
--- it, instead of decoding identity from a message name. :OnChange(fn) is the convenience that filters
--- that message to THIS widget (fn gets (self, value)); the widget Emits via :_fireChange(value) after a
--- user OR programmatic state change. Mixed into Toggle/Segmented/Input/Slider/ColorSwatch.
-local CHANGED = "Widget.Changed"
+-- a hand-rolled callback list. The widget OBJECT ITSELF is its EventBus message (its private event), so
+-- a subscriber watches exactly that widget and gets it back as the argument (plus its new value) -- no
+-- string identity to decode. :OnChange(fn) subscribes (fn gets (self, value)); :_fireChange(value)
+-- Emits after a user OR programmatic change. The subscription is cleaned up by the BUS when the widget
+-- retires its event on :Dispose (EventBus:Delete) -- nobody unsubscribes by hand. Mixed into
+-- Toggle/Segmented/Input/Slider/ColorSwatch.
 local Changeable = ns.Mixin.new("Changeable", {
-    OnChange = function(self, fn)
-        if not ns.EventBus then return end
-        return self:_track(ns.EventBus:Subscribe(CHANGED, function(_, widget, value)
-            if widget == self then fn(widget, value) end
-        end))
-    end,
-    _fireChange = function(self, value)
-        if ns.EventBus then ns.EventBus:Emit(CHANGED, self, value) end
-    end,
+    OnChange = function(self, fn) return ns.EventBus and ns.EventBus:Subscribe(self, fn) end,
+    _fireChange = function(self, value) if ns.EventBus then ns.EventBus:Emit(self, value) end end,
 })
 
 -- Grey this widget out unless `predicate()` holds. Re-checked when one of the given `sources` (a
--- Changeable widget or a list) changes -- subscribe ONCE to "Widget.Changed" and act only when the
--- changed widget is one we watch, so it reacts to its dependencies, not a global broadcast -- and once
--- now for the initial state. When this widget's own enabled state flips it emits a change too, so a
--- dependency CHAIN cascades (the graph is acyclic, so no loop). No-op without :SetEnabled. Returns self.
+-- Changeable widget or a list) changes -- subscribe to each source's own event, so it reacts to just
+-- its dependencies, never a global broadcast -- and once now for the initial state. When this widget's
+-- own enabled state flips it emits a change too, so a dependency CHAIN cascades (the graph is acyclic,
+-- so no loop). No-op without :SetEnabled. Returns self.
 function Widget:EnableWhen(sources, predicate)
     if not (self.SetEnabled and type(predicate) == "function") then return self end
     local list = (type(sources) == "table" and sources.IsInstanceOf) and { sources } or (sources or {})
-    local watch = {}
-    for _, s in ipairs(list) do watch[s] = true end
     local last
     local function reeval()
         local ok, on = pcall(predicate)
@@ -105,20 +96,11 @@ function Widget:EnableWhen(sources, predicate)
             if self._fireChange then self:_fireChange() end   -- cascade to widgets depending on me
         end
     end
-    if next(watch) and ns.EventBus then
-        self:_track(ns.EventBus:Subscribe(CHANGED, function(_, widget) if watch[widget] then reeval() end end))
+    for _, src in ipairs(list) do
+        if src.OnChange then src:OnChange(function() reeval() end) end   -- watch each source's event
     end
     reeval()
     return self
-end
-
--- Record an EventBus token so :Dispose drops the subscription. Returns the token (pass-through).
-function Widget:_track(token)
-    if token == nil then return token end
-    local p = self:_p()
-    p._tokens = p._tokens or {}
-    p._tokens[#p._tokens + 1] = token
-    return token
 end
 
 -- Walk a frame's whole subtree (through raw frames too) Disposing every Widget found under it.
@@ -130,18 +112,16 @@ local function disposeChildren(frame)
     end
 end
 
--- Tear this widget down: drop its EventBus subscriptions, recursively Dispose every child widget under
--- it (so a whole subtree cleans up in one call), then hide its frame. Idempotent. Call it when you
--- discard a widget subtree (e.g. a settings page on rebuild) so nothing leaks subscriptions.
+-- Tear this widget down: recursively Dispose every child widget under it (so a whole subtree cleans up
+-- in one call), then RETIRE its event via EventBus:Delete -- the bus drops everyone who subscribed to
+-- this widget (no hand unsubscribing), and fires its OnDelete callbacks -- then hide its frame.
+-- Idempotent. Call it when you discard a widget subtree (e.g. a settings page on rebuild).
 function Widget:Dispose()
     local p = self:_p()
     if p._disposed then return end
     p._disposed = true
-    if p._tokens and ns.EventBus then
-        for i = 1, #p._tokens do ns.EventBus:Unsubscribe(CHANGED, p._tokens[i]) end
-        p._tokens = nil
-    end
     disposeChildren(p.frame)
+    if ns.EventBus then ns.EventBus:Delete(self) end   -- bus clears all subscribers of my event
     if p.frame and p.frame.Hide then p.frame:Hide() end
 end
 

@@ -60,6 +60,33 @@ describe("EventBus", function()
         uf:Fire("UNIT_HEALTH", "player"); assert.are.equal(1, got)   -- handler detached
     end)
 
+    it("Delete drops a message + all its subscribers and fires OnDelete (everyone registered)", function()
+        local bus = S.newBus()
+        local hits, deleted = 0, {}
+        bus:Subscribe("M", function() hits = hits + 1 end)
+        bus:OnDelete("M", function(m) deleted[#deleted + 1] = m end)
+        bus:OnDelete("M", function() deleted[#deleted + 1] = "second" end)   -- everyone can register
+        bus:Emit("M"); assert.are.equal(1, hits)
+        bus:Delete("M")
+        assert.are.equal("M", deleted[1]); assert.are.equal("second", deleted[2])  -- both OnDelete fired
+        bus:Emit("M"); assert.are.equal(1, hits)   -- subscriber gone with the message
+    end)
+
+    it("messages can be keyed by an object (a widget is its own event); Delete clears it", function()
+        local bus = S.newBus()
+        local source = {}                  -- stands in for a widget object
+        local n = 0
+        bus:Subscribe(source, function(who) n = (who == source) and n + 1 or n end)
+        bus:Emit(source); assert.are.equal(1, n)   -- the object is passed as the message (itself)
+        bus:Delete(source)
+        bus:Emit(source); assert.are.equal(1, n)   -- nobody left after Delete
+    end)
+
+    it("Delete of an unknown message is harmless", function()
+        local bus = S.newBus()
+        assert.is_true(pcall(function() bus:Delete("NOPE") end))
+    end)
+
     it("a handler that unsubscribes another mid-dispatch doesn't skip it this fire", function()
         local bus, frames = S.newBus()
         local ran = {}

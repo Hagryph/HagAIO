@@ -148,4 +148,25 @@ function EventBus:Emit(message, ...)
     dispatch(self:_p().messages[message], message, ...)
 end
 
+-- Register a callback fired when `message` is DELETED. "Everyone" can register -- the callbacks
+-- stack -- and each gets the message. They're dropped with the message (no manual cleanup).
+function EventBus:OnDelete(message, fn)
+    local e = bucket(self:_p().messages, message)
+    e.onDelete = e.onDelete or {}
+    e.onDelete[#e.onDelete + 1] = fn
+end
+
+-- DELETE a message: drop it and ALL of its handlers in one shot, then fire its OnDelete callbacks.
+-- This is how a destroyed owner retires its event -- subscribers never unsubscribe themselves; the
+-- bus clears them. (A message keyed by an object -- e.g. a widget -- is that object's private event.)
+function EventBus:Delete(message)
+    local p = self:_p()
+    local e = p.messages[message]
+    if not e then return end
+    p.messages[message] = nil                 -- gone first, so an OnDelete callback can't resurrect it
+    if e.onDelete then
+        for i = 1, #e.onDelete do e.onDelete[i](message) end
+    end
+end
+
 ns.ServiceManager:Register(EventBus:New("EventBus"))
