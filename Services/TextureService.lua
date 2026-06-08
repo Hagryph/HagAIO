@@ -127,24 +127,25 @@ function TextureService:AnchorFill(tw, frame, inset)
     return tw
 end
 
--- Copy an image off its ORIGINAL onto the edit `tw` and crop it to {l,r,t,b}; the original is never
--- touched. Atlases carry their own coords, so the crop is ignored for them.
+-- Load the PATH (`image`) onto the edit `tw` and crop it to {l,r,t,b}. The edit references no
+-- "original" -- it loads the image itself, so it holds its own texture and frees it on Release; the
+-- engine's texture cache dedupes the actual GPU upload across edits sharing a path. Atlases carry
+-- their own coords, so the crop is ignored for them.
 --
 -- MEMOISED: every paint stamps the edit with a signature of exactly what was applied (image + atlas +
 -- the four crop coords). If the next paint asks for the same image with the same edits, we already
 -- have that picture on this widget and do nothing -- so re-showing an unchanged grid/page is free and
 -- never re-loads a texture. Release/Reset clear the stamp so a recycled widget always repaints.
 function TextureService:_Paint(tw, image, atlas, l, r, t, b)
-    local sig = tostring(image) .. (atlas and "@" or "") .. "|"
+    local isA = atlas or isAtlas(image)
+    local sig = tostring(image) .. (isA and "@" or "") .. "|"
         .. string.format("%.4f,%.4f,%.4f,%.4f", l or 0, r or 1, t or 0, b or 1)
     if tw._paintSig == sig then return tw end   -- same image + same edits already on this widget
     tw._paintSig = sig
-    local o = self:Original(image, atlas)
-    tw._original = o                       -- keep the weakly-cached original alive while this edit uses it
-    if o._isAtlas then
-        tw:SetAtlas(o._image)
+    if isA then
+        tw:SetAtlas(image)
     else
-        tw:SetTexture(o._image)
+        tw:SetTexture(image)
         tw:SetCoords(l or 0, r or 1, t or 0, b or 1)
     end
     return tw
@@ -161,7 +162,7 @@ end
 -- anchored frames don't report their size yet at build/refresh time. Hides on a nil texture.
 function TextureService:Render(tw, frame, w, h, spec)
     spec = spec or {}
-    if not spec.texture then tw:Hide(); tw._paintSig, tw._original = nil, nil; return tw end
+    if not spec.texture then tw:Hide(); tw._paintSig = nil; return tw end
     local base
     if spec.mode == "contain" then
         tw:ClearAllPoints()
@@ -196,9 +197,8 @@ end
 function TextureService:Release(tw)
     if not tw then return end
     local p = self:_p()
-    tw._original = nil               -- let the weakly-cached original be collected if unused
     tw._paintSig = nil               -- a recycled widget must repaint, not be skipped by the memo
-    tw:Reset()
+    tw:Reset()                       -- Reset -> SetTexture(nil) frees this edit's texture file
     tw:SetParent(p.holder)
     p.pool[#p.pool + 1] = tw
 end
