@@ -17,7 +17,7 @@ ns.Monk.Base = MonkBase   -- so Brewmaster.lua (loads after) can extend it
 MonkBase.settings = {
     { type = "header", text = "Expel Harm" },
     { type = "toggle", key = "expelHarm", label = "Show heal-threshold marker", default = true,
-      desc = "A line on your health bar marking where Expel Harm would heal you to full." },
+      desc = "A line on your health bar marking where Expel Harm would heal you to. With Strength of Spirit it reaches further the more health you're missing." },
     { type = "color", key = "expelColor", label = "Ready colour", default = Monk.EXPEL_READY_COLOR, dependsOn = "expelHarm" },
     { type = "color", key = "expelInactiveColor", label = "On-cooldown colour", default = Monk.EXPEL_COOLDOWN_COLOR, dependsOn = "expelHarm" },
 }
@@ -73,8 +73,9 @@ function MonkBase:Unload()
     if p.expelWatch then ns.Cooldowns:Unwatch(p.expelWatch); p.expelWatch = nil end
     if p.marker then p.marker:Hide() end
     host:_HideOrbFill()
+    host:_HideScaleBar()
 end
 
 -- Expel Harm marker (event subs, Cooldowns watch, secret-safe paint).
 -- ns.SpellTooltipParser is a pure Lib (always available) -- not a service dep.
-ns.Monk.registerSpec("Monk-Base", MonkBase, "none", { "EventBus", "Cooldowns", "Secrets" })
+ns.Monk.registerSpec("Monk-Base", MonkBase, "none", { "EventBus", "Cooldowns", "Secrets", "Scaling" })

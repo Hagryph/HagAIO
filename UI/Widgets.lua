@@ -835,7 +835,8 @@ end
 --   opts: name (scrollbar frame name), perRow (3), aspect (image height/width, 0.5),
 --         gap (12), titleHeight (22)
 -- A tile in :SetTiles is { texture=path|fileID, atlas=bool, label=string, labelKey=paletteKey,
---   badge=string, badgeKey=paletteKey, selected=bool, onClick=function(tile) }.
+--   badge=string, badgeKey=paletteKey, selected=bool, onClick=function(tile),
+--   contain=bool (centre a square icon at the image's height instead of stretching to fill) }.
 -- Methods: :SetTiles(list)  :Refresh()  :ScrollTop()
 function Widgets.IconGrid(parent, opts)
     opts = opts or {}
@@ -889,9 +890,16 @@ function Widgets.IconGrid(parent, opts)
             local t = getTile(i)
             local col, rowi = (i - 1) % cols, math.floor((i - 1) / cols)
             t:SetSize(tw, th)
-            t.img:SetHeight(ih)
             t:ClearAllPoints()
             t:SetPoint("TOPLEFT", content, "TOPLEFT", col * (tw + GAP), -(rowi * (th + GAP)))
+            t.img:ClearAllPoints()
+            if d.contain then   -- centre a square icon (no aspect distortion) in the image band
+                t.img:SetSize(ih, ih)
+                t.img:SetPoint("TOP", t, "TOP", 0, -2)
+            else                -- full-bleed art fills the whole image band
+                t.img:SetPoint("TOPLEFT", 2, -2); t.img:SetPoint("TOPRIGHT", -2, -2)
+                t.img:SetHeight(ih)
+            end
             if d.texture then
                 if d.atlas then t.img:SetAtlas(d.texture, false) else t.img:SetTexture(d.texture) end
                 t.img:Show()

@@ -74,6 +74,10 @@ local function questColumns(chars, freq)
     return cols
 end
 
+-- The Home nav entry is icon-only (no text): a hearthstone (the game's "home" symbol) rendered
+-- inline. Selecting it shows the overview -- an icon grid of every category.
+local HOME_ICON = "|TInterface\\Icons\\INV_Misc_Rune_01:20:20|t"
+
 local CATEGORIES = {
     { key = "mplus", label = "Mythic+", columns = function()
         return {
@@ -97,7 +101,7 @@ function Dashboard:OnInitialize()
     local p = self:_p()
     p.built = false
     p.shown = false
-    p.category = "mplus"
+    p.category = "home"   -- open on the overview (an icon grid of every category)
 end
 
 function Dashboard:OnEnable()
@@ -259,17 +263,19 @@ function Dashboard:_ExpansionMap()
     if C_AddOns and C_AddOns.LoadAddOn then pcall(C_AddOns.LoadAddOn, "Blizzard_EncounterJournal") end
     local map, raidsByTier, dungeonsByTier, tierOrder, found = {}, {}, {}, {}, false
     local tierLevel = {}   -- tier name -> expansionLevel (EJ tier index 1 = Classic = expansion 0)
-    local image = {}       -- instance name -> EJ buttonImage1 (tile art)
+    local image = {}       -- instance name -> EJ buttonImage1 (compact tile art)
+    local bg = {}          -- instance name -> EJ bgImage (full-bleed scene; fills a wide tile)
     local prev = EJ_GetCurrentTier and EJ_GetCurrentTier()
     local function walk(tier, tierName, isRaid, sink)
         EJ_SelectTier(tier)
         local i = 1
         while true do
-            local instID, name, _, _, buttonImage = EJ_GetInstanceByIndex(i, isRaid)
+            local instID, name, _, bgImage, buttonImage = EJ_GetInstanceByIndex(i, isRaid)
             if not instID then break end
             if name and tierName then
                 map[name] = tierName; found = true
                 if buttonImage then image[name] = buttonImage end
+                if bgImage then bg[name] = bgImage end
                 if sink then sink[#sink + 1] = name end
             end
             i = i + 1
@@ -297,6 +303,7 @@ function Dashboard:_ExpansionMap()
         p.ejTierOrder = tierOrder             -- tiers with raids, newest first
         p.ejTierLevel = tierLevel             -- tier name -> expansionLevel (for native logos)
         p.ejImage = image                     -- instance name -> EJ tile art (buttonImage1)
+        p.ejBg = bg                           -- instance name -> EJ full-bleed scene (bgImage)
         p.currentExpansion = tierOrder[1] or EJ_GetTierInfo(EJ_GetNumTiers())   -- newest raid tier = current
     end
     return p.ejMap
@@ -317,19 +324,26 @@ function Dashboard:_ExpansionLogo(tierName)
     return info and info.logo or nil
 end
 
--- The EJ tile art for a specific instance (nil until the journal catalog is built).
+-- The EJ art for a specific instance. The full-bleed bgImage fills a wide tile; buttonImage1 is a
+-- compact image with transparent padding, so we prefer the bgImage and fall back to it.
 function Dashboard:_InstanceImage(name)
-    local img = self:_p().ejImage
-    return name and img and img[name] or nil
+    local p = self:_p()
+    if not name then return nil end
+    return (p.ejBg and p.ejBg[name]) or (p.ejImage and p.ejImage[name]) or nil
 end
 
--- The latest raid's tile art: the last (newest) raid in the current expansion's catalog. Used so
--- the current-tier raid tile shows the actual raid picture instead of the generic expansion logo.
+-- The last (newest) raid / dungeon in the current expansion's catalog -- the picture used for the
+-- current-tier tile, so it shows the real instance art instead of the generic expansion logo.
 function Dashboard:_LatestRaidImage()
     local p = self:_p()
     local raids = p.ejRaidsByTier and p.currentExpansion and p.ejRaidsByTier[p.currentExpansion]
-    if not (raids and #raids > 0) then return nil end
-    return self:_InstanceImage(raids[#raids])
+    return (raids and #raids > 0) and self:_InstanceImage(raids[#raids]) or nil
+end
+
+function Dashboard:_LatestDungeonImage()
+    local p = self:_p()
+    local d = p.ejDungeonsByTier and p.currentExpansion and p.ejDungeonsByTier[p.currentExpansion]
+    return (d and #d > 0) and self:_InstanceImage(d[#d]) or nil
 end
 
 -- Distinct expansions in the registry for one kind (raids if wantRaid, else dungeons), the
@@ -562,7 +576,7 @@ function Dashboard:_NavItems()
     -- expansion sub-nodes stay COLLAPSED until that category (or one of its sub-keys) is active
     local raidsOpen = cat == "raids" or cat:match("^raid:") ~= nil
     local dungeonsOpen = cat == "dungeons" or cat:match("^dungeon:") ~= nil
-    local items = {}
+    local items = { { key = "home", label = HOME_ICON } }   -- icon-only Home, above everything
     for _, c in ipairs(CATEGORIES) do
         if c.header then
             items[#items + 1] = { section = c.label }
@@ -645,6 +659,32 @@ function Dashboard:_SortedChars()
     return keys, chars
 end
 
+-- The Home overview tiles: one per top-level category (image + name), 3 per row. Raids/Dungeons
+-- use the latest instance art; the quest/keystone categories use a contained native icon. Hidden
+-- categories (settings) are skipped. Clicking a tile selects that category in the nav.
+function Dashboard:_CategoryTiles()
+    local p = self:_p()
+    local function go(key) return function() p.nav:Select(key) end end
+    local logo = self:_ExpansionLogo(p.currentExpansion)
+    local defs = {
+        { key = "mplus",    label = "Mythic+",       contain = true,
+          texture = "Interface\\Icons\\Achievement_ChallengeMode_Gold" },
+        { key = "raids",    label = "Raids",         texture = self:_LatestRaidImage() or logo },
+        { key = "dungeons", label = "Dungeons",      texture = self:_LatestDungeonImage() or logo },
+        { key = "weekly",   label = "Weekly Quests", contain = true,
+          texture = "Interface\\Icons\\Achievement_Quests_Completed_06" },
+        { key = "daily",    label = "Daily Quests",  contain = true,
+          texture = "Interface\\Icons\\INV_Misc_PocketWatch_01" },
+    }
+    local tiles = {}
+    for _, d in ipairs(defs) do
+        if self:_CategoryVisible(d.key) then
+            tiles[#tiles + 1] = { texture = d.texture, label = d.label, contain = d.contain, onClick = go(d.key) }
+        end
+    end
+    return tiles
+end
+
 -- The overview's icon tiles: one per expansion (native logo + name), clicking drills into that
 -- expansion's data grid. "raids" lists every raid tier; "dungeons" lists Current Season, the
 -- current expansion, then the legacy expansions we hold dungeon records for.
@@ -704,16 +744,22 @@ function Dashboard:_Render()
 
     local keys, chars = self:_SortedChars()
     local label, columnsFn = self:_ResolveCategory(p.category)
-    p.catTitle:SetText(label)
 
-    -- the Raids/Dungeons overview is a journal-style icon grid of expansions, not the data grid
-    if p.category == "raids" or p.category == "dungeons" then
+    -- the Home/Raids/Dungeons overviews are journal-style icon grids, not the data grid
+    if p.category == "home" or p.category == "raids" or p.category == "dungeons" then
         p.grid:Hide()
         p.iconGrid:Show()
-        p.iconGrid:SetTiles(self:_OverviewTiles(p.category))
+        if p.category == "home" then
+            p.catTitle:SetText("Overview")
+            p.iconGrid:SetTiles(self:_CategoryTiles())
+        else
+            p.catTitle:SetText(label)
+            p.iconGrid:SetTiles(self:_OverviewTiles(p.category))
+        end
         p.iconGrid:ScrollTop()
         return
     end
+    p.catTitle:SetText(label)
     p.iconGrid:Hide()
     p.grid:Show()
 

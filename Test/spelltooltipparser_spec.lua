@@ -34,12 +34,21 @@ describe("SpellTooltipParser", function()
         assert.is_nil(p:Damage("heals, no damage number"))
     end)
 
+    it("UpToPercent parses 'by up to N%' (Strength of Spirit)", function()
+        local p = parser()
+        assert.are.equal(100, p:UpToPercent("Expel Harm's healing is increased by up to 100%, based on your missing health."))
+        assert.are.equal(30, p:UpToPercent("increased by up to 30%"))
+        assert.is_nil(p:UpToPercent("Increases healing taken by 4%."))   -- no "up to"
+        assert.is_nil(p:UpToPercent(nil))
+    end)
+
     it("guards non-string, non-nil input", function()
         local p = parser()
         assert.is_nil(p:Heal(123))
         assert.is_nil(p:Percent({}))
         assert.is_nil(p:Damage(true))
         assert.is_nil(p:HealsYouFor(5))
+        assert.is_nil(p:UpToPercent(42))
     end)
 
     it("Damage prefers 'dealing N' over a later 'M damage'", function()

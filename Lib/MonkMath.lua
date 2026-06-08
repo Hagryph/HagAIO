@@ -34,6 +34,26 @@ function MonkMath:OrbFill(baseHeal, orbHeal, orbMax, maxHP, width)
     return min, orbMax, span
 end
 
+-- StatusBar min/max for a FULL-WIDTH bar (spanning the whole health bar, value = current
+-- health) whose fill right edge lands at the Expel Harm heal-to point WITH Strength of
+-- Spirit: heal = baseHeal * (1 + bonus * missingFraction), missingFraction = 1 - hp. Live
+-- health is a SECRET in restricted content, so we can't read it or evaluate the missing-
+-- health ramp ourselves -- we bake the linear ramp into min/max (plain math) and let
+-- StatusBar:SetValue(currentHealth) drive the fill untainted. With k = baseHeal/maxHP and
+-- h = currentHealth/maxHP, the fill fraction (value-min)/(max-min) at value = h*maxHP works
+-- out to h*(1 - k*bonus) + k*(1 + bonus) == h + heal/maxHP -- exactly the heal-to fraction.
+-- bonus = 0 degenerates to min = -baseHeal, max = maxHP - baseHeal (a plain current-health
+-- + baseHeal line). The 1e-9 floors guard div-by-zero and the implausible inverting case
+-- where baseHeal*bonus >= maxHP.
+function MonkMath:HealLineFill(baseHeal, bonus, maxHP)
+    bonus = bonus or 0
+    local k = baseHeal / max(maxHP, 1e-9)
+    local denom = max(1 - k * bonus, 1e-9)
+    local minV = -maxHP * k * (1 + bonus) / denom
+    local maxV = minV + maxHP / denom
+    return minV, maxV
+end
+
 -- Sum the non-secret ENERGY cost across several spells. `costsPerSpell` is a list of the
 -- cost-entry arrays C_Spell.GetSpellPowerCost returns (one per spell); each entry is
 -- { type = powerType, cost = n }. Skips other power types and any secret cost (isSecret(v),

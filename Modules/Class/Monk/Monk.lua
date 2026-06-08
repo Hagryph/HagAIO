@@ -23,6 +23,7 @@ local Spell = ns.Enum.new("MonkSpell", {
     GRACE_OF_CRANE      = 388811,   -- passive talent: increases healing taken
     GIFT_OF_THE_OX      = 124502,   -- Brewmaster talent: spheres on damage taken
     SPIRIT_OF_THE_OX    = 400629,   -- Brewmaster talent: spheres from Blackout Kick
+    STRENGTH_OF_SPIRIT  = 387276,   -- talent: Expel Harm heals more the more health you're missing
     TIGER_PALM          = 100780,
     KEG_SMASH           = 121253,
     SPINNING_CRANE_KICK = 101546,   -- 8-yd PBAoE; efficient at 3+ targets
@@ -94,6 +95,21 @@ local function orbHealAmount()
     return math.floor(n * healingTakenMultiplier() + 0.5)
 end
 
+-- Strength of Spirit (talent): Expel Harm's healing is increased by "up to N%", scaling
+-- linearly with your MISSING health (full bonus at 0% HP, none at full) -- SimC's
+-- missing_health_percentage_t with highPct=100, lowPct=0, no plateau. Read the N from the
+-- talent's own description (it has changed between builds -- 100% then 30% -- so never
+-- hardcode it; see [[feedback_check-simcraft]]) and return it as a fraction, or nil when the
+-- talent isn't learned. The health-dependent factor itself is applied per-draw (it needs the
+-- live health %), not folded into the stored heal like the flat Grace of the Crane bonus.
+local function strengthOfSpiritBonus()
+    if not (IsPlayerSpell and IsPlayerSpell(Spell.STRENGTH_OF_SPIRIT)) then return nil end
+    local desc = C_Spell and C_Spell.GetSpellDescription and C_Spell.GetSpellDescription(Spell.STRENGTH_OF_SPIRIT)
+    local pct = ns.SpellTooltipParser:UpToPercent(desc)
+    if not pct then return nil end
+    return pct / 100
+end
+
 -- The (current-stat) hit damage parsed from a spell's tooltip description: the
 -- number in "... dealing N <school> damage ...". Locale-dependent (enUS phrasing);
 -- nil if it can't be read, so callers fall back to a sensible default. Used to
@@ -160,9 +176,9 @@ end
 -- ===========================================================================
 -- Monk behaviour (methods on the shared ClassModule)
 -- ===========================================================================
--- depcheck-allow: Secrets, Range, ActionBars, Scheduler  -- used by the host methods below;
--- the per-spec submodules that actually drive them declare them (Base.lua: Secrets;
--- Brewmaster.lua: Secrets/Range/ActionBars/Scheduler), which is what enforces the load ordering.
+-- depcheck-allow: Secrets, Scaling, Range, ActionBars, Scheduler  -- used by the host methods
+-- below; the per-spec submodules that actually drive them declare them (Base.lua:
+-- Secrets/Scaling; Brewmaster.lua adds Range/ActionBars/Scheduler), which enforces load order.
 
 -- ---- Expel Harm marker ----------------------------------------------------
 -- Defer + debounce marker updates to the next frame. Reading bar:GetWidth()
@@ -224,6 +240,10 @@ function ClassModule:_RefreshHeal()
     p.baseHeal = readExpelHarmHeal()
     p.orbHeal = orbHealAmount()
     p.orbTalented = IsPlayerSpell and (IsPlayerSpell(Spell.GIFT_OF_THE_OX) or IsPlayerSpell(Spell.SPIRIT_OF_THE_OX)) or false
+    -- Strength of Spirit: a missing-health heal ramp (nil when not talented). Kept as a
+    -- Scaling spec and applied per-draw, since the factor depends on the live health %.
+    p.sosBonus = strengthOfSpiritBonus()
+    p.sosSpec = p.sosBonus and { bonus = p.sosBonus, highPct = 100, lowPct = 0, direction = "missing" } or nil
     self:_SnapshotMaxHP()
     if not p.baseHeal then
         -- description may not be loaded yet; retry shortly
@@ -241,6 +261,19 @@ end
 function ClassModule:_ExpelColor()
     return self:_p().onCooldown and (self:GetSetting("expelInactiveColor") or EXPEL_COOLDOWN_COLOR)
         or (self:GetSetting("expelColor") or EXPEL_READY_COLOR)
+end
+
+-- The live Strength of Spirit healing multiplier (>= 1), or nil when it can't be evaluated.
+-- Returns 1 when the talent isn't learned. nil means "talented but undeterminable": current
+-- health is a SECRET (restricted content) so the missing-health ramp can't be read in Lua --
+-- callers that need a plain factor fall back to the un-scaled (minimum) heal. The structural
+-- line path doesn't use this; it bakes the ramp into a StatusBar fed the secret health.
+function ClassModule:_SoSMultiplier()
+    local p = self:_p()
+    if not p.sosSpec then return 1 end
+    local h, mh = UnitHealth("player"), UnitHealthMax("player")
+    if not h or not mh or ns.Secrets:Is(h) or ns.Secrets:Is(mh) or mh <= 0 then return nil end
+    return ns.Scaling:Multiplier(p.sosSpec, h / mh * 100)
 end
 
 -- Shared host frame over the bar (clips children so a line never spills past the end).
@@ -280,6 +313,27 @@ function ClassModule:_EnsureOrbBar()
     return p.orbBar
 end
 
+-- The Strength-of-Spirit scale bar: a FULL-WIDTH, invisible StatusBar over the whole health
+-- bar. We feed it the (secret) current health and bake the missing-health heal ramp into its
+-- min/max, so its fill edge lands at the true heal-to point; the marker line hangs off that
+-- edge. Only the line is visible (the bar's own texture is transparent).
+function ClassModule:_EnsureScaleBar()
+    local p = self:_p()
+    if not p.scaleBar then
+        local sb = CreateFrame("StatusBar", nil, p.host)
+        sb:SetAllPoints(p.host)
+        sb:SetStatusBarTexture("Interface\\Buttons\\WHITE8X8")
+        sb:SetStatusBarColor(1, 1, 1, 0)   -- invisible: only the marker line it carries shows
+        p.scaleBar = sb
+    end
+    return p.scaleBar
+end
+
+function ClassModule:_HideScaleBar()
+    local p = self:_p()
+    if p.scaleBar then p.scaleBar:Hide() end
+end
+
 -- Drive the heal-amount fill off the (secret) cast count. The bar starts at the CURRENT
 -- HEALTH edge and fills to (baseHeal + count*orbHeal) -- the total you'd be healed to,
 -- including orbs (or just baseHeal at 0 orbs). Only SetValue takes the secret; the engine
@@ -297,8 +351,14 @@ function ClassModule:_DrawOrbFill(fill, maxHP, width)
             and C_Spell and C_Spell.GetSpellCastCount) then
         return false
     end
+    -- Strength of Spirit scales the whole Expel Harm heal (base + absorbed spheres) by the
+    -- missing-health multiplier. When health is readable we fold it into both heals so the
+    -- fill reaches the true heal-to point. In restricted content current health AND the orb
+    -- count are both secret -- their product can't be formed in one StatusBar -- so the
+    -- multiplier comes back nil and the fill shows the un-scaled minimum (still the floor).
+    local mult = self:_SoSMultiplier() or 1
     -- min/max bake the base heal into the secret-count fill; span is the full bar width (px).
-    local minV, maxV, span = MonkMath:OrbFill(p.baseHeal, p.orbHeal, ORB_MAX_COUNT, maxHP, width)
+    local minV, maxV, span = MonkMath:OrbFill(p.baseHeal * mult, p.orbHeal * mult, ORB_MAX_COUNT, maxHP, width)
     local c = self:_ExpelColor()
 
     local sb = self:_EnsureOrbBar()
@@ -326,6 +386,7 @@ function ClassModule:_UpdateMarker()
     local function hideAll()
         if p.marker then p.marker:Hide() end
         self:_HideOrbFill()
+        self:_HideScaleBar()
     end
 
     if not (self:IsEnabled() and p.expelActive and self:GetSetting("expelHarm")) then
@@ -357,22 +418,44 @@ function ClassModule:_UpdateMarker()
     -- secret count via SetValue, so it tracks the orbs in and out of combat.
     if self:_DrawOrbFill(fill, maxHP, width) then
         if p.marker then p.marker:Hide() end
+        self:_HideScaleBar()
         return
     end
     self:_HideOrbFill()
 
+    -- Strength of Spirit (no sphere talent): the heal-to point depends on MISSING health, so
+    -- the line can't sit at a fixed offset. Drive a full-width hidden StatusBar with the
+    -- (secret-safe) current health and min/max that bake the missing-health ramp, then hang
+    -- the marker on its fill edge. Correct in and out of restricted content.
+    if p.sosSpec then
+        local sb = self:_EnsureScaleBar()
+        local minV, maxV = MonkMath:HealLineFill(p.baseHeal, p.sosBonus, maxHP)
+        sb:SetMinMaxValues(minV, maxV)
+        sb:SetValue(UnitHealth("player"))      -- SECRET value -> engine places the fill edge
+        sb:Show()
+        self:_DrawMarkerLine(sb:GetStatusBarTexture(), 0)
+        return
+    end
+    self:_HideScaleBar()
+
     -- Otherwise: a single base-heal line at where Expel Harm alone heals you to. Anchor to
     -- the fill's right edge (current-health end) + the heal width, so it tracks the health
     -- bar automatically. We never read the secret current health — Blizzard moves the fill
-    -- texture, the line follows. Reset vertex colour to white (shown = texture x vertex).
+    -- texture, the line follows.
+    self:_DrawMarkerLine(fill, (p.baseHeal / maxHP) * width)
+end
+
+-- Show the marker line at `offset` pixels right of `anchor`'s right edge, in the current
+-- ready/on-cooldown colour. Anchoring to a fill texture's right edge lets the line track a
+-- live (even secret-driven) fill. Reset vertex colour to white (shown = texture x vertex).
+function ClassModule:_DrawMarkerLine(anchor, offset)
     local m = self:_EnsureMarker()
     local c = self:_ExpelColor()
     m:SetColorTexture(c[1], c[2], c[3], 1)
     m:SetVertexColor(1, 1, 1, 1)
-    local offset = (p.baseHeal / maxHP) * width
     m:ClearAllPoints()
-    m:SetPoint("TOP", fill, "TOPRIGHT", offset, 0)
-    m:SetPoint("BOTTOM", fill, "BOTTOMRIGHT", offset, 0)
+    m:SetPoint("TOP", anchor, "TOPRIGHT", offset, 0)
+    m:SetPoint("BOTTOM", anchor, "BOTTOMRIGHT", offset, 0)
     m:Show()
 end
 
