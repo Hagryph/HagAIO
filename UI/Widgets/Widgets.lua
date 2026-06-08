@@ -50,7 +50,12 @@ function Widget:SetPoint(point, a, b, c, d)
     else f:SetPoint(point, unwrap(a), b, c, d) end                                -- SetPoint(point, rel, relPoint, x, y)
     return self
 end
-function Widget:SetAllPoints(rel)  self:_p().frame:SetAllPoints(unwrap(rel)); return self end
+function Widget:SetAllPoints(rel)
+    -- NO-ARG must stay no-arg: frame:SetAllPoints(nil) does NOT default to the parent the way
+    -- frame:SetAllPoints() does, so a page that did widget:SetAllPoints() would end up unanchored.
+    if rel == nil then self:_p().frame:SetAllPoints() else self:_p().frame:SetAllPoints(unwrap(rel)) end
+    return self
+end
 function Widget:ClearAllPoints()   self:_p().frame:ClearAllPoints();         return self end
 function Widget:SetParent(p)       self:_p().frame:SetParent(unwrap(p));     return self end
 function Widget:SetSize(w, h)      self:_p().frame:SetSize(w, h);            return self end
