@@ -602,16 +602,19 @@ local function isDungeonM0(r)
     return r.diff == M0
 end
 
--- Does a registry entry's difficulty still EXIST for its instance? This is the general rule the
--- auto-prune uses. Almost every instance difficulty is STABLE (raids at any difficulty, dungeons at
--- Normal/Heroic) -- those never disappear, so the remembered entry is kept. The one difficulty that
--- comes and goes is a dungeon's Mythic 0: it exists ONLY while that dungeon is in the current M+
--- season, so an M0 entry is live only while its dungeon is in the season set.
+-- Does a registry entry's difficulty still EXIST for its instance? The auto-prune's rule. Almost
+-- every difficulty is STABLE (raids at any difficulty, dungeons at Normal/Heroic) and is always kept.
+-- The one that comes and goes is a dungeon's Mythic 0 -- BUT only for a LEGACY dungeon: it's M0-able
+-- solely while it's in the M+ season. The CURRENT expansion's dungeons stay runnable at Mythic 0 the
+-- whole expansion (only the keystone POOL rotates), so a current-expansion M0 lock is kept regardless
+-- of the season. (Can't classify the expansion yet -- journal map not built -- keep it; prune later.)
 function Dashboard:_DifficultyLive(r)
-    if not isDungeonM0(r) then return true end      -- stable difficulty -> always kept
+    if not isDungeonM0(r) then return true end        -- stable difficulty -> always kept
+    local curTier = self:_CurrentExpansionTier()
+    if not curTier or r.expansion == curTier then return true end   -- current expansion: always M0-able
     local s = self:_SeasonDungeons()
-    if not s then return true end                   -- season not known yet -> keep, prune a later pass
-    return s.set[r.name] == true
+    if not s then return true end                     -- season not known yet -> keep, prune a later pass
+    return s.set[r.name] == true                      -- a legacy dungeon: M0 only while in the season
 end
 
 -- Auto-cleanup, run on login (via _Snapshot): drop every saved instance whose difficulty no longer
