@@ -216,7 +216,10 @@ function ClassModule:_StartOrbPoll()
     local function poll()
         local pp = self:_p()
         if pp.orbPollGen ~= gen then return end        -- superseded / unloaded
-        if pp.orbTalented then self:_ScheduleUpdate() end
+        -- The orb count is secret (can't be compared), so each poll assumes it MAY have changed
+        -- and flags the geometry for a SetValue refresh. Health ticks don't set this, so they
+        -- stay cheap (colour-only). This is the orb-count refresh cadence.
+        if pp.orbTalented then pp.orbGeomDirty = true; self:_ScheduleUpdate() end
         if InCombatLockdown() then
             C_Timer.After(0.1, poll)                   -- combat: orbs change fast
             return
@@ -254,6 +257,7 @@ function ClassModule:_RefreshHeal()
     -- Scaling spec and applied per-draw, since the factor depends on the live health %.
     p.sosBonus = strengthOfSpiritBonus()
     p.sosSpec = p.sosBonus and { bonus = p.sosBonus, highPct = 100, lowPct = 0, direction = "missing" } or nil
+    p.orbGeomDirty = true   -- heal/orb/SoS changed -> orb-bar geometry must rebuild next draw
     self:_SnapshotMaxHP()
     if not p.baseHeal then
         -- description may not be loaded yet; retry shortly
@@ -271,19 +275,6 @@ end
 function ClassModule:_ExpelColor()
     return self:_p().onCooldown and (self:GetSetting("expelInactiveColor") or EXPEL_COOLDOWN_COLOR)
         or (self:GetSetting("expelColor") or EXPEL_READY_COLOR)
-end
-
--- The live Strength of Spirit healing multiplier (>= 1), or nil when it can't be evaluated.
--- Returns 1 when the talent isn't learned. nil means "talented but undeterminable": current
--- health is a SECRET (restricted content) so the missing-health ramp can't be read in Lua --
--- callers that need a plain factor fall back to the un-scaled (minimum) heal. The structural
--- line path doesn't use this; it bakes the ramp into a StatusBar fed the secret health.
-function ClassModule:_SoSMultiplier()
-    local p = self:_p()
-    if not p.sosSpec then return 1 end
-    local h, mh = UnitHealth("player"), UnitHealthMax("player")
-    if not h or not mh or ns.Secrets:Is(h) or ns.Secrets:Is(mh) or mh <= 0 then return nil end
-    return ns.Scaling:Multiplier(p.sosSpec, h / mh * 100)
 end
 
 -- Shared host frame over the bar (clips children so a line never spills past the end).
@@ -309,23 +300,10 @@ function ClassModule:_EnsureMarker()
     return p.marker
 end
 
--- The orb-fill StatusBar (lazily created over the bar's clipping host). A flat white
--- fill we tint; min/max are set per-draw (they depend on the live base/orb heal).
-function ClassModule:_EnsureOrbBar()
-    local p = self:_p()
-    if not p.orbBar then
-        local sb = CreateFrame("StatusBar", nil, p.host)
-        sb:SetStatusBarTexture("Interface\\Buttons\\WHITE8X8")  -- flat: tints to a clean colour
-        local tex = sb:GetStatusBarTexture()
-        if tex and tex.SetDesaturated then tex:SetDesaturated(true) end
-        p.orbBar = sb
-    end
-    return p.orbBar
-end
-
--- The Strength-of-Spirit ladder: ORB_LADDER_BANDS+1 stacked orb bars (lazily created), all
--- anchored at the current-health edge. Each is revealed by its own colour curve, so only the
--- band matching your live health is opaque. See ORB_LADDER_BANDS for the why.
+-- The orb-fill bars: ORB_LADDER_BANDS+1 stacked StatusBars (lazily created), all anchored at
+-- the current-health edge. With Strength of Spirit each is revealed by its own colour curve so
+-- only the band matching your live health is opaque; without it, only bar 0 is used as a plain
+-- translucent fill. This is the single orb-display path. See ORB_LADDER_BANDS for the why.
 function ClassModule:_EnsureOrbLadder()
     local p = self:_p()
     if not p.orbLadder then
@@ -368,37 +346,74 @@ function ClassModule:_BuildOrbLadderCurves(c)
     return curves
 end
 
--- Draw the ladder (restricted content + Strength of Spirit). Returns false if the colour-curve
--- APIs are unavailable (pre-12.0 / test paths) so the caller can fall back to the minimum.
+-- THE orb display (one unified path -- no separate "single bar" any more). `bands` is the
+-- number of health steps: ORB_LADDER_BANDS with Strength of Spirit (each step bakes its band's
+-- multiplier), or 0 without it / when the colour-curve APIs are missing (a single bar, no
+-- health scaling). The GEOMETRY (min/max, width, anchor, SetValue) is health-INDEPENDENT, so we
+-- only rebuild it when an input that affects it changed -- the orb count (orbGeomDirty, set by
+-- the poll since the count is secret and can't be compared), the heal/SoS (orbGeomDirty), or the
+-- layout (maxHP/width/band-count, compared here). SetValue redraws the fill texture, so health
+-- ticks must skip this and only re-colour (see _RefreshLadderColors). Always returns true.
 function ClassModule:_DrawOrbLadder(fill, maxHP, width)
-    if not (C_CurveUtil and C_CurveUtil.CreateColorCurve and UnitHealthPercent and CreateColor
-            and Enum and Enum.LuaCurveType) then
-        return false
-    end
     local p = self:_p()
-    local c = self:_ExpelColor()
+    local curveOK = C_CurveUtil and C_CurveUtil.CreateColorCurve and UnitHealthPercent
+        and CreateColor and Enum and Enum.LuaCurveType
+    local sos   = p.sosSpec and curveOK
+    local bands = sos and ORB_LADDER_BANDS or 0
     local L = self:_EnsureOrbLadder()
+
+    if p.orbGeomDirty or L.maxHP ~= maxHP or L.width ~= width or L.bands ~= bands then
+        local count = C_Spell.GetSpellCastCount(Spell.EXPEL_HARM)   -- SECRET -> SetValue
+        for i = 0, ORB_LADDER_BANDS do
+            local sb = L.bars[i]
+            if i <= bands then
+                -- band health % -> SoS multiplier (a plain constant); 1 when no SoS
+                local mult = sos and ns.Scaling:Multiplier(p.sosSpec, (i / bands) * 100) or 1
+                local minV, maxV, span = MonkMath:OrbFill(p.baseHeal * mult, p.orbHeal * mult, ORB_MAX_COUNT, maxHP, width)
+                sb:SetMinMaxValues(minV, maxV)
+                sb:ClearAllPoints()
+                sb:SetPoint("TOPLEFT",    fill, "TOPRIGHT",    0, 0)   -- start AT current health
+                sb:SetPoint("BOTTOMLEFT", fill, "BOTTOMRIGHT", 0, 0)
+                sb:SetWidth(span)
+                sb:SetValue(count)
+            else
+                sb:Hide()   -- band not in use (no SoS) -> stays hidden
+            end
+        end
+        L.maxHP, L.width, L.bands = maxHP, width, bands
+        p.orbGeomDirty = false
+    end
+
+    self:_RefreshLadderColors(bands)
+    return true
+end
+
+-- Cheap per-refresh pass: the colour/visibility only. With Strength of Spirit, each band's
+-- per-band curve (evaluated by the engine against the SECRET health %) yields the alpha that
+-- reveals just the matching band -- adjacent bands cross-fade, so the new bar appears as the
+-- old fades (no flicker, no Show/Hide churn). Without SoS it's one static translucent bar.
+-- Show() lives here (cheap, no redraw) so the ladder re-appears after a hide without a geometry
+-- rebuild. No SetValue here -> health ticks never redraw a fill texture.
+function ClassModule:_RefreshLadderColors(bands)
+    local p = self:_p()
+    local L = p.orbLadder
+    if not L then return end
+    local c = self:_ExpelColor()
+    if bands == 0 then
+        L.bars[0]:SetStatusBarColor(c[1], c[2], c[3], ORB_BAND_ALPHA)
+        L.bars[0]:Show()
+        return
+    end
     if not L.curves or L.cr ~= c[1] or L.cg ~= c[2] or L.cb ~= c[3] then
         L.curves = self:_BuildOrbLadderCurves(c)
         L.cr, L.cg, L.cb = c[1], c[2], c[3]
     end
-    local count = C_Spell.GetSpellCastCount(Spell.EXPEL_HARM)   -- SECRET -> SetValue on each bar
-    for i = 0, ORB_LADDER_BANDS do
+    for i = 0, bands do
         local sb = L.bars[i]
-        local mult = ns.Scaling:Multiplier(p.sosSpec, (i / ORB_LADDER_BANDS) * 100)  -- plain const
-        local minV, maxV, span = MonkMath:OrbFill(p.baseHeal * mult, p.orbHeal * mult, ORB_MAX_COUNT, maxHP, width)
-        sb:SetMinMaxValues(minV, maxV)
-        sb:ClearAllPoints()
-        sb:SetPoint("TOPLEFT",    fill, "TOPRIGHT",    0, 0)
-        sb:SetPoint("BOTTOMLEFT", fill, "BOTTOMRIGHT", 0, 0)
-        sb:SetWidth(span)
-        sb:SetValue(count)
         local color = UnitHealthPercent("player", true, L.curves[i])   -- SECRET-driven alpha
         if color then sb:SetStatusBarColor(color:GetRGBA()) end
         sb:Show()
     end
-    if p.orbBar then p.orbBar:Hide() end
-    return true
 end
 
 -- The Strength-of-Spirit scale bar: a FULL-WIDTH, invisible StatusBar over the whole health
@@ -422,64 +437,22 @@ function ClassModule:_HideScaleBar()
     if p.scaleBar then p.scaleBar:Hide() end
 end
 
--- Drive the heal-amount fill off the (secret) cast count. The bar starts at the CURRENT
--- HEALTH edge and fills to (baseHeal + count*orbHeal) -- the total you'd be healed to,
--- including orbs (or just baseHeal at 0 orbs). Only SetValue takes the secret; the engine
--- computes the fill extent untainted, so it's live in AND out of combat.
---
--- The fill fraction must equal (baseHeal + count*orbHeal)/span where span = the bar width
--- in heal (baseHeal + ORB_MAX_COUNT*orbHeal). StatusBar fraction = (value-min)/(max-min),
--- and value is the secret count we cannot offset/scale ourselves -- so we bake the base
--- heal into min/max instead (plain math): with min = -baseHeal/orbHeal and max =
--- ORB_MAX_COUNT, fraction at value=count is exactly (baseHeal + count*orbHeal)/span. Width
--- is the full span so the fill's right edge lands at the true heal-to point. Returns true.
+-- The orb heal fill: one unified path (the ladder), whether or not Strength of Spirit is
+-- talented. The min/max bake the base heal into the secret-count fill so the StatusBar fraction
+-- at value=count is exactly (baseHeal + count*orbHeal)/span (see MonkMath:OrbFill); SoS, when
+-- present, scales each band's heal too. Only SetValue consumes the secret count; the engine
+-- computes the fill untainted, live in AND out of combat. Returns false only when no sphere
+-- talent / spell API (caller then draws the plain base-heal line instead).
 function ClassModule:_DrawOrbFill(fill, maxHP, width)
     local p = self:_p()
     if not (p.orbTalented and p.orbHeal and p.orbHeal > 0
             and C_Spell and C_Spell.GetSpellCastCount) then
         return false
     end
-    -- Strength of Spirit scales the whole Expel Harm heal (base + absorbed spheres) by the
-    -- missing-health multiplier. When health is READABLE we fold it into both heals (one bar,
-    -- exact). When it's SECRET (restricted content) the multiplier can't be read -- but the orb
-    -- count and health, though both secret, can be split across two engine sinks via the LADDER
-    -- (SetValue + a health-driven colour curve), so the SoS bonus still shows. If the ladder's
-    -- colour-curve APIs are missing, fall back to the un-scaled minimum (still the floor).
-    if p.sosSpec then
-        local mult = self:_SoSMultiplier()         -- nil => health is secret
-        if mult == nil then
-            if self:_DrawOrbLadder(fill, maxHP, width) then return true end
-            mult = 1
-        end
-        return self:_DrawOrbBar(fill, maxHP, width, mult)
-    end
-    return self:_DrawOrbBar(fill, maxHP, width, 1)
-end
-
--- One translucent orb bar from the current-health edge, its heal scaled by `mult` (1 = no
--- Strength of Spirit). Hides the ladder, since the single bar carries this frame.
-function ClassModule:_DrawOrbBar(fill, maxHP, width, mult)
-    local p = self:_p()
-    -- min/max bake the base heal into the secret-count fill; span is the full bar width (px).
-    local minV, maxV, span = MonkMath:OrbFill(p.baseHeal * mult, p.orbHeal * mult, ORB_MAX_COUNT, maxHP, width)
-    local c = self:_ExpelColor()
-
-    local sb = self:_EnsureOrbBar()
-    sb:SetStatusBarColor(c[1], c[2], c[3], ORB_BAND_ALPHA) -- translucent: predicted-heal band
-    sb:SetMinMaxValues(minV, maxV)
-    sb:ClearAllPoints()
-    sb:SetPoint("TOPLEFT",    fill, "TOPRIGHT",    0, 0)    -- start AT current health
-    sb:SetPoint("BOTTOMLEFT", fill, "BOTTOMRIGHT", 0, 0)
-    sb:SetWidth(span)
-    sb:SetValue(C_Spell.GetSpellCastCount(Spell.EXPEL_HARM))     -- SECRET value -> engine fills it
-    sb:Show()
-    self:_HideOrbLadder()
-    return true
+    return self:_DrawOrbLadder(fill, maxHP, width)
 end
 
 function ClassModule:_HideOrbFill()
-    local p = self:_p()
-    if p.orbBar then p.orbBar:Hide() end
     self:_HideOrbLadder()
 end
 
