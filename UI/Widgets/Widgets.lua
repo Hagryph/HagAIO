@@ -31,9 +31,13 @@ local function unwrap(x)
     return x
 end
 
+-- region/frame -> the Widget that owns it (weak both ways). Lets :Dispose walk the frame tree and find
+-- the widgets nested under it, however they were parented, so teardown can cascade.
+local widgetOf = setmetatable({}, { __mode = "kv" })
+
 -- Subclasses call this once, from :Initialize, with the region they created (after unwrapping their
 -- own parent via `unwrap`). Stores it privately; everything below drives it through :_frame().
-function Widget:_attach(frame) self:_p().frame = frame; return frame end
+function Widget:_attach(frame) self:_p().frame = frame; widgetOf[frame] = self; return frame end
 
 -- PROTECTED: the private region, for subclasses building their own exposing methods. Not for callers
 -- (the lint forbids :_frame() outside this module) -- it is the single seam other widgets unwrap through.
@@ -70,9 +74,10 @@ function Widget:SetAlpha(a)        self:_p().frame:SetAlpha(a);             retu
 local CHANGED = "Widget.Changed"
 local Changeable = ns.Mixin.new("Changeable", {
     OnChange = function(self, fn)
-        return ns.EventBus and ns.EventBus:Subscribe(CHANGED, function(_, widget, value)
+        if not ns.EventBus then return end
+        return self:_track(ns.EventBus:Subscribe(CHANGED, function(_, widget, value)
             if widget == self then fn(widget, value) end
-        end)
+        end))
     end,
     _fireChange = function(self, value)
         if ns.EventBus then ns.EventBus:Emit(CHANGED, self, value) end
@@ -101,10 +106,43 @@ function Widget:EnableWhen(sources, predicate)
         end
     end
     if next(watch) and ns.EventBus then
-        ns.EventBus:Subscribe(CHANGED, function(_, widget) if watch[widget] then reeval() end end)
+        self:_track(ns.EventBus:Subscribe(CHANGED, function(_, widget) if watch[widget] then reeval() end end))
     end
     reeval()
     return self
+end
+
+-- Record an EventBus token so :Dispose drops the subscription. Returns the token (pass-through).
+function Widget:_track(token)
+    if token == nil then return token end
+    local p = self:_p()
+    p._tokens = p._tokens or {}
+    p._tokens[#p._tokens + 1] = token
+    return token
+end
+
+-- Walk a frame's whole subtree (through raw frames too) Disposing every Widget found under it.
+local function disposeChildren(frame)
+    if not (frame and frame.GetChildren) then return end
+    for _, child in ipairs({ frame:GetChildren() }) do
+        local w = widgetOf[child]
+        if w then w:Dispose() else disposeChildren(child) end
+    end
+end
+
+-- Tear this widget down: drop its EventBus subscriptions, recursively Dispose every child widget under
+-- it (so a whole subtree cleans up in one call), then hide its frame. Idempotent. Call it when you
+-- discard a widget subtree (e.g. a settings page on rebuild) so nothing leaks subscriptions.
+function Widget:Dispose()
+    local p = self:_p()
+    if p._disposed then return end
+    p._disposed = true
+    if p._tokens and ns.EventBus then
+        for i = 1, #p._tokens do ns.EventBus:Unsubscribe(CHANGED, p._tokens[i]) end
+        p._tokens = nil
+    end
+    disposeChildren(p.frame)
+    if p.frame and p.frame.Hide then p.frame:Hide() end
 end
 
 -- ---- FrameWidget: a widget backed by a real Frame/Button/etc. -- adds the general FRAME powers

@@ -425,7 +425,7 @@ function SettingsWindow:InvalidateModule(name)
     if not p.built then return end
     local page = p.modulePages[name]
     if not page then return end
-    page:Hide()
+    page:Dispose()   -- cascade teardown: drops every control's EventBus subscription, then hides
     p.modulePages[name] = nil
     if p.frame and p.frame:IsShown() and p.current == ("module:" .. name) then
         self:Show("module:" .. name)
@@ -439,7 +439,7 @@ function SettingsWindow:_EnsureModulePage(name)
     local module = ns.ModuleManager:GetModule(name)
     if not module then return nil end
 
-    local page = CreateFrame("Frame", nil, p.content)
+    local page = W.Container:New(p.content)   -- a widget so :Dispose tears its whole control tree down
     page:SetAllPoints()
 
     local back = W.TextButton:New(page, "< Modules")
