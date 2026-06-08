@@ -97,6 +97,9 @@ function SavedVars:Migrate()
     local g = p.global
     if g._schema == nil then g._schema = p.fresh and SCHEMA_VERSION or 1 end
     self:_RunMigrations(g, p.char, MIGRATIONS, SCHEMA_VERSION)
+    -- Mirror the version into the per-character root so a profile snapshot (taken from the
+    -- char DB) carries a _schema and re-imports/migrates cleanly on another character.
+    p.char._schema = g._schema
 end
 
 -- Bring an arbitrary global-shaped table (e.g. an imported profile snapshot) up to
@@ -109,8 +112,15 @@ function SavedVars:MigrateTable(tbl)
     return tbl
 end
 
--- The account-wide saved table (used by the Profiles service to snapshot config).
+-- The account-wide saved table: persistent cross-character DATA (flight routes, learned
+-- timed quests, the dashboard, the saved-profiles map). NOT a character's settings.
 function SavedVars:Global() return self:_p().global end
+
+-- The per-character saved table: the CONFIG root the Profiles service snapshots -- module
+-- enable states + every module/submodule settings namespace. Per character so a profile (an
+-- account-wide snapshot) actually means something, and a global profile only fills in
+-- characters that have none rather than overwriting one shared account-wide config.
+function SavedVars:Char() return self:_p().char end
 
 function SavedVars:IsLoaded()
     return self:_p().loaded

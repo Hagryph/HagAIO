@@ -84,7 +84,7 @@ function ModuleManager:_Start(module)
     if module:IsAlwaysOn() then
         shouldEnable = true   -- mandatory module: always enabled, persisted state ignored
     else
-        shouldEnable = ns.SavedVars:GetModuleState(module:GetName(), module:IsPerChar())
+        shouldEnable = ns.SavedVars:GetModuleState(module:GetName(), true)  -- per-character enable state
         if shouldEnable == nil then shouldEnable = module:IsDefaultEnabled() end
     end
     if shouldEnable then

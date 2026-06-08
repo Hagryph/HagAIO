@@ -64,14 +64,14 @@ function ClassModule:_BuildSettings()
     end
 end
 
--- Class settings are stored ACCOUNT-WIDE but BUCKETED by class+spec, so all your
--- characters of the same class+spec share one config, while different specs/classes
--- never collide -- and the buckets ride along in account-wide profiles. The active
--- bucket (chosen by the current character's class + spec) is what GetSetting/
--- SetSetting (ns.Component) read and write.
+-- Class settings live in the module's PER-CHARACTER namespace, BUCKETED by class+spec so a
+-- character's specs keep separate configs and never collide. (A character has one class, so
+-- bucketing is really per-spec here; the class half just keeps the key unambiguous.) The
+-- buckets ride along in this character's profile snapshot. The active bucket (the current
+-- spec) is what GetSetting/SetSetting (ns.Component) read and write.
 function ClassModule:_SettingsDB()
     local p = self:_p()
-    local db = self:GetDB()          -- module_Class (account-wide)
+    local db = self:_SettingsRoot()  -- module_Class settings (per character)
     if not db then return nil end
     db.specs = db.specs or {}
     local key = (p.class or "?") .. ":" .. tostring(self:CurrentSpecKey())

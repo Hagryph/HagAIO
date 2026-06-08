@@ -2,14 +2,16 @@ local addonName, ns = ...
 local Class = ns.Class
 
 -- Services/Profiles.lua
--- Named config profiles + copy-paste sharing, built on the SavedVars layer. A
--- profile is a deep snapshot of the account config (module enable states + every
--- module/submodule settings namespace + the schema version), stored under
--- HagAIODB.profiles[name]. Export runs it through ns.Serializer into a share
--- string; Import decodes + migrates a (possibly older) string back to a profile.
--- Loading a profile overwrites the live config in place and is finalised with a
--- /reload -- the standard, side-effect-free way to switch a full config. The UI
--- (Settings window -> Profiles page) drives all of this; this service is pure logic.
+-- Named config profiles + copy-paste sharing, built on the SavedVars layer. A profile is a
+-- deep snapshot of the PER-CHARACTER config (module enable states + every module/submodule
+-- settings namespace + the schema version) -- NOT account-wide persistent data (flight routes,
+-- learned timed quests), which is shared and never travels in a profile. The saved-profiles MAP
+-- itself lives account-wide (HagAIODB.profiles[name]) so profiles are shareable across all your
+-- characters; which one a given character has loaded is tracked per character. Export runs a
+-- snapshot through ns.Serializer into a share string; Import decodes + migrates a (possibly
+-- older) string back to a profile. Loading a profile overwrites THIS character's live config in
+-- place, finalised with a /reload. The UI (Settings window -> Profiles page) drives all of this;
+-- this service is pure logic.
 
 local Profiles = Class.new("Profiles", ns.Service)
 
@@ -19,9 +21,10 @@ local function clear(t)
     for k in pairs(t) do t[k] = nil end
 end
 
--- Account-wide keys that are NOT part of a profile's captured config: the profiles
--- map itself and the global-profile pointer. Excluded from snapshot + apply so
--- loading a profile never rewrites them.
+-- Per-character keys that are NOT part of a profile's captured config: the per-character
+-- "which profile is loaded here" marker (stored under `profiles`). Excluded from snapshot +
+-- apply so loading a profile never rewrites the marker mid-apply. (`globalProfile` lives in
+-- the account-wide root, which snapshots no longer touch, but it's listed for safety.)
 local META_KEYS = { profiles = true, globalProfile = true }
 
 -- The stored profiles map (account-wide), created on first use.
@@ -31,10 +34,10 @@ function Profiles:_Store()
     return g.profiles
 end
 
--- A deep copy of the current account config (everything except the profiles map).
+-- A deep copy of this character's config (every char-DB namespace except the loaded marker).
 function Profiles:Snapshot()
-    local snap, g = {}, ns.SavedVars:Global()
-    for k, v in pairs(g) do
+    local snap, c = {}, ns.SavedVars:Char()
+    for k, v in pairs(c) do
         if not META_KEYS[k] then snap[k] = deepcopy(v) end
     end
     return snap
@@ -98,23 +101,23 @@ function Profiles:Delete(name)
     return true
 end
 
--- Overwrite the live account config IN PLACE from a snapshot (migrated to the
--- current schema first), preserving the profiles map. Top-level tables are cleared +
--- copied rather than replaced, so a module's already-bound db reference stays valid.
+-- Overwrite THIS character's live config IN PLACE from a snapshot (migrated to the current
+-- schema first), preserving the per-character loaded marker. Top-level tables are cleared +
+-- copied rather than replaced, so a module's already-bound settings reference stays valid.
 function Profiles:_ApplyData(snap)
     if type(snap) ~= "table" then return false, "empty profile" end
     snap = ns.SavedVars:MigrateTable(deepcopy(snap))
-    local g = ns.SavedVars:Global()
-    for k in pairs(g) do
-        if not META_KEYS[k] and snap[k] == nil then g[k] = nil end  -- drop keys the profile omits
+    local c = ns.SavedVars:Char()
+    for k in pairs(c) do
+        if not META_KEYS[k] and snap[k] == nil then c[k] = nil end  -- drop keys the profile omits
     end
     for k, v in pairs(snap) do
         if not META_KEYS[k] then
-            if type(v) == "table" and type(g[k]) == "table" then
-                clear(g[k])
-                for kk, vv in pairs(v) do g[k][kk] = deepcopy(vv) end
+            if type(v) == "table" and type(c[k]) == "table" then
+                clear(c[k])
+                for kk, vv in pairs(v) do c[k][kk] = deepcopy(vv) end
             else
-                g[k] = deepcopy(v)
+                c[k] = deepcopy(v)
             end
         end
     end

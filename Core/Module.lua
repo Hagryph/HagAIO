@@ -17,6 +17,10 @@ local Module = Class.new("Module", ns.Component)
 --   opts = { title = string, description = string, defaultEnabled = bool,
 --            alwaysOn = bool, color = "RRGGBB", dbDefaults = table, deps = { "Service", ... },
 --            settings = { <schema entries> } }
+-- PERSISTENCE: a module's `settings` (schema values) and enable state are stored PER
+-- CHARACTER -- that's the config a profile captures. `dbSchema`/`dbDefaults` describe the
+-- module's ACCOUNT-WIDE persistent data (flight routes, learned timed quests), reached via
+-- GetDB(); it is shared across characters and is NOT part of any profile.
 -- `alwaysOn` makes the module MANDATORY: it enables at start, can't be disabled, and the
 -- settings UI shows no on/off toggle (used for always-active tooling like the Dev module).
 -- `deps` names the SERVICES this module needs; the ModuleManager won't start the
@@ -57,7 +61,6 @@ function Module:Initialize(name, opts)
     p.description = opts.description or ""
     p.alwaysOn = opts.alwaysOn and true or false  -- mandatory module: always enabled, no on/off toggle
     p.defaultEnabled = p.alwaysOn or (opts.defaultEnabled ~= false)
-    p.perChar = opts.perChar and true or false  -- store db + enable state per character
     p.serviceDeps = opts.deps or {}               -- services that must be loaded first
     p.addonDeps = opts.addonDeps or {}            -- external addons required to be available
     p.moduleDeps = opts.moduleDeps or {}          -- other modules that must be enabled
@@ -70,14 +73,18 @@ function Module:Initialize(name, opts)
     p.settingsWatch = opts.settingsWatch          -- declarative setting-key -> handler (see ns.Component)
     p.publishAs = opts.publishAs                   -- optional: publish this instance at ns.<alias> (see _Publish)
 
-    -- Seed saved-var defaults from the settings schema, then the declarative dbSchema
-    -- (structural nested tables this module persists), then any explicit dbDefaults on
-    -- top -- all deep-copied so table defaults aren't shared by reference. SavedVars
-    -- deep-merges these on bind, so a module never has to hand-init `db.x = db.x or {}`.
-    p.dbDefaults = ns.Component.SeedDefaults(p.settings, opts.dbSchema, opts.dbDefaults)
+    -- Defaults split by WHERE they persist (see _BindDB):
+    --   settings  -> the schema's keyed `default`s, stored PER CHARACTER (the config).
+    --   data      -> the declarative dbSchema + any explicit dbDefaults, stored ACCOUNT-WIDE
+    --                (persistent cross-character stuff: flight routes, learned timed quests).
+    -- All deep-copied so table defaults aren't shared by reference; SavedVars deep-merges them
+    -- on bind, so a module never has to hand-init `db.x = db.x or {}`.
+    p.settingsDefaults = ns.Component.SeedDefaults(p.settings)
+    p.dataDefaults     = ns.Component.SeedDefaults(nil, opts.dbSchema, opts.dbDefaults)
 
     p.enabled = false
-    p.db = nil
+    p.settingsDB = nil   -- per-character settings namespace (GetSetting/_SettingsDB)
+    p.dataDB = nil       -- account-wide persistent-data namespace (GetDB)
     p.log = nil
 end
 
@@ -105,13 +112,17 @@ function Module:IsEnabled() return self:_p().enabled end
 function Module:IsDefaultEnabled() return self:_p().defaultEnabled end
 -- Always-on (mandatory): enabled at start, can't be disabled, and shows no on/off toggle.
 function Module:IsAlwaysOn() return self:_p().alwaysOn end
-function Module:IsPerChar() return self:_p().perChar end
-function Module:GetDB() return self:_p().db end
+-- PUBLIC handle to the module's ACCOUNT-WIDE persistent-data namespace (flight routes,
+-- learned timed quests, ...). Settings do NOT live here -- they're per-character (GetSetting).
+function Module:GetDB() return self:_p().dataDB end
 -- GetLog + the Log* helpers are inherited from ns.Component (shared logging surface).
 
--- Settings live in the module's saved-var namespace (see ns.Component for the
--- shared GetSetting/SetSetting + the HagAIO_SettingChanged broadcast).
-function Module:_SettingsDB() return self:_p().db end
+-- Settings live in the module's PER-CHARACTER namespace (see ns.Component for the shared
+-- GetSetting/SetSetting + the HagAIO_SettingChanged broadcast). _SettingsRoot is the raw
+-- root table; subclasses that bucket their settings (e.g. the Class module, per spec) build
+-- off it instead of off GetDB() so their settings stay per-character too.
+function Module:_SettingsRoot() return self:_p().settingsDB end
+function Module:_SettingsDB() return self:_p().settingsDB end
 
 -- Turn a declarative spec (a method name or a function) into a handler invoked as
 -- handler(name, ...) -> spec(self, name, ...).
@@ -164,10 +175,14 @@ function Module:_Publish()
     if alias then ns[alias] = self end
 end
 
--- Internal: bind saved-variable namespace. Called by Module:_Init at startup.
+-- Internal: bind the saved-variable namespaces. Called by Module:_Init at startup. Two
+-- handles under the same "module_<name>" key but in DIFFERENT roots: settings per character,
+-- persistent data account-wide. Keeping the key identical means an old single-root profile
+-- (which captured module_<name> settings) still imports cleanly into the per-character config.
 function Module:_BindDB()
     local p = self:_p()
-    p.db = ns.SavedVars:Namespace("module_" .. p.name, p.dbDefaults, p.perChar)
+    p.settingsDB = ns.SavedVars:Namespace("module_" .. p.name, p.settingsDefaults, true)   -- per character
+    p.dataDB     = ns.SavedVars:Namespace("module_" .. p.name, p.dataDefaults, false)       -- account-wide
 end
 
 function Module:Enable()
@@ -184,7 +199,7 @@ function Module:Enable()
     local ok, err = pcall(self.OnEnable, self)  -- base no-op unless the subclass overrides
     if not ok then ns.Logger:Core():Warn(("%s OnEnable error: %s"):format(p.name, tostring(err))) end
     self:_WireDeclared()  -- declarative events/messages (auto-released on disable)
-    ns.SavedVars:SetModuleState(p.name, true, p.perChar)
+    ns.SavedVars:SetModuleState(p.name, true, true)  -- enable state is per character
     if p.log then p.log:Success("enabled") end
     if ns.EventBus and ns.EventBus.Emit then ns.EventBus:Emit("HagAIO_ModuleState", p.name, true) end
 end
@@ -197,7 +212,7 @@ function Module:Disable()
     local ok, err = pcall(self.OnDisable, self)  -- base no-op unless the subclass overrides
     if not ok then ns.Logger:Core():Warn(("%s OnDisable error: %s"):format(p.name, tostring(err))) end
     self:_ReleaseAll()  -- undo every self:On / self:Subscribe / self:Hook + declared wiring
-    ns.SavedVars:SetModuleState(p.name, false, p.perChar)
+    ns.SavedVars:SetModuleState(p.name, false, true)  -- enable state is per character
     if p.log then p.log:Info("disabled") end
     ns.ModuleManager:DisableDependents(p.name)  -- cascade: modules that needed this one
     if ns.EventBus and ns.EventBus.Emit then ns.EventBus:Emit("HagAIO_ModuleState", p.name, false) end

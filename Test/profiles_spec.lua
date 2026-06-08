@@ -29,7 +29,7 @@ end
 describe("Profiles", function()
     it("Snapshot deep-copies config but excludes the profiles map", function()
         local pr, sv = setup()
-        local g = sv:Global()
+        local g = sv:Char()
         g.module_Foo = { x = 1 }
         g.modules = { Foo = true }
         g.profiles = { existing = {} }
@@ -43,7 +43,7 @@ describe("Profiles", function()
 
     it("Save / List / Get / Has / Delete", function()
         local pr, sv = setup()
-        sv:Global().module_Foo = { x = 1 }
+        sv:Char().module_Foo = { x = 1 }
         assert.is_true((pr:Save("A")))
         assert.are.equal("A", pr:List()[1])
         assert.is_true(pr:Has("A"))
@@ -54,7 +54,7 @@ describe("Profiles", function()
 
     it("_ApplyData overwrites live config in place, keeping table identity", function()
         local pr, sv = setup()
-        local g = sv:Global()
+        local g = sv:Char()
         g.module_Foo = { x = 1, keep = 2 }
         local liveRef = g.module_Foo
         pr:_ApplyData({ module_Foo = { x = 9 } })
@@ -63,18 +63,17 @@ describe("Profiles", function()
         assert.is_nil(g.module_Foo.keep)          -- dropped
     end)
 
-    it("_ApplyData preserves the profiles map", function()
+    it("_ApplyData preserves the account-wide profiles map (config applies per character)", function()
         local pr, sv = setup()
-        local g = sv:Global()
-        g.profiles = { saved = { module_Foo = { x = 1 } } }
+        sv:Global().profiles = { saved = { module_Foo = { x = 1 } } }  -- saved-profiles map: account-wide
         pr:_ApplyData({ module_Bar = { y = 1 } })
-        assert.is_true(g.profiles.saved ~= nil)
-        assert.are.equal(1, g.module_Bar.y)
+        assert.is_true(sv:Global().profiles.saved ~= nil)   -- map untouched (different root)
+        assert.are.equal(1, sv:Char().module_Bar.y)         -- config landed in the char DB
     end)
 
     it("Export then Import round-trips a profile", function()
         local pr, sv = setup()
-        sv:Global().module_Foo = { x = 7 }
+        sv:Char().module_Foo = { x = 7 }
         pr:Save("A")
         local str = pr:Export("A")
         assert.is_true(type(str) == "string")
@@ -94,9 +93,9 @@ describe("Profiles", function()
 
     it("Save with an existing name overwrites it (single entry)", function()
         local pr, sv = setup()
-        sv:Global().module_Foo = { x = 1 }
+        sv:Char().module_Foo = { x = 1 }
         pr:Save("A")
-        sv:Global().module_Foo.x = 2
+        sv:Char().module_Foo.x = 2
         pr:Save("A")
         assert.are.equal(1, #pr:List())
         assert.are.equal(2, pr:Get("A").module_Foo.x)
@@ -125,12 +124,12 @@ describe("Profiles", function()
 
     it("ApplyGlobalForFreshChar applies the global once, then no-ops", function()
         local pr, sv = setup()
-        sv:Global().module_Foo = { x = 1 }
+        sv:Char().module_Foo = { x = 1 }
         pr:Save("A")
-        sv:Global().module_Foo.x = 2     -- diverge the live config
+        sv:Char().module_Foo.x = 2     -- diverge the live config
         pr:SetGlobal("A")
         assert.are.equal("A", pr:ApplyGlobalForFreshChar())
-        assert.are.equal(1, sv:Global().module_Foo.x)   -- global re-applied
+        assert.are.equal(1, sv:Char().module_Foo.x)   -- global re-applied
         assert.is_nil(pr:ApplyGlobalForFreshChar())     -- char already has a profile
     end)
 end)

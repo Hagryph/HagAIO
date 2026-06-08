@@ -51,10 +51,11 @@ function Submodule:Initialize(name, opts)
     p.dbSchema  = opts.dbSchema          -- structural nested tables to seed in the namespace
     -- Own saved-var namespace (the cached _Store from ns.Persisted), seeded with the schema
     -- + dbSchema defaults; resolved lazily once SavedVariables load, before any page is shown.
+    -- PER CHARACTER: a submodule's settings are config (captured by profiles), like a module's.
     self:_BindStore("submodule_" .. name, function()
         local pp = self:_p()
         return ns.Component.SeedDefaults(pp.settings, pp.dbSchema)
-    end)
+    end, true)
     p.loaded = false
 end
 
