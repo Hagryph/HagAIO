@@ -1,9 +1,9 @@
--- Test/color_spec.lua — ns.Color (Core/Color.lua), the RGBA value type.
+-- Test/color_spec.lua — ns.Color (Lib/Color.lua), the RGBA value type.
 local function colorNs()
     local ns = {}
     assert(loadfile("Core/Class.lua"))("HagAIO", ns)
     assert(loadfile("Core/Type.lua"))("HagAIO", ns)
-    assert(loadfile("Core/Color.lua"))("HagAIO", ns)
+    assert(loadfile("Lib/Color.lua"))("HagAIO", ns)
     return ns
 end
 

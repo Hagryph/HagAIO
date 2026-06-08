@@ -91,8 +91,6 @@ Core/
   Delegate.lua             A multicast DELEGATE / signal -- an object-owned event you Connect handlers to and Fire
   Contributions.lua        ns.Contributions -- the shared, PURE machinery for a feature's declarative cross-cutting
   Persisted.lua            ns.Persisted -- a MIXIN (ns.Mixin) for objects that own a lazily-resolved, CACHED SavedVars
-  Color.lua                ns.Color -- an RGBA colour VALUE TYPE (ns.Type)
-  Theme.lua                Static design system ported from the LoL Game Helper desktop app's
   DependencyGraph.lua      A generic dependency forest
   Logger.lua               Central logging service
   Registry.lua             Shared base for the three lifecycle registries (Module / Service / Submodule
@@ -107,11 +105,8 @@ Core/
   Lib.lua                  Base for a LIB: a pure-logic helper (no WoW API, no state, no dependencies) published
   LibManager.lua           Registry for the LIB tier (pure-logic helpers; see Core/Lib.lua)
   Init.lua                 The single Core initializer
-UI/
-  Widgets.lua              Static factory of themed building blocks (the LoL "dark + blue" language in
-  CopyWindow.lua           A themed, reusable "copy this text out of the game" window
-  SettingsWindow.lua       The unique, themed settings menu (replaces the default Blizzard options
 Lib/
+  Color.lua                ns.Color -- an RGBA colour VALUE TYPE (ns.Type)
   CVarHelper.lua           Pure helpers for reasoning about console-variable VALUES -- no WoW API
   FlightGraph.lua          Pure solver for ATOMIC FLIGHT-LEG times -- no WoW API
   FlightResolver.lua       Pure read-side algebra for flight-time queries over a solved atomic-leg table (the
@@ -122,6 +117,11 @@ Lib/
   SpellTooltipParser.lua   Pure parsers for the numbers embedded in a spell's description text
   TaskRules.lua            Pure rules for the Task List -- no WoW API
   Vector2D.lua             A pure 2D vector value-TYPE (ns.Type) -- no WoW API
+UI/
+  Theme.lua                Static design system ported from the LoL Game Helper desktop app's
+  Widgets.lua              Static factory of themed building blocks (the LoL "dark + blue" language in
+  CopyWindow.lua           A themed, reusable "copy this text out of the game" window
+  SettingsWindow.lua       The unique, themed settings menu (replaces the default Blizzard options
 Services/
   ActionBars.lua           Service for locating action buttons by what they cast and annotating them
   Cache.lua                Central caching service

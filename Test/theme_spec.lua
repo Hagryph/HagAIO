@@ -6,8 +6,8 @@ local function theme()
     local ns = {}
     assert(loadfile("Core/Class.lua"))("HagAIO", ns)
     assert(loadfile("Core/Type.lua"))("HagAIO", ns)
-    assert(loadfile("Core/Color.lua"))("HagAIO", ns)
-    assert(loadfile("Core/Theme.lua"))("HagAIO", ns)
+    assert(loadfile("Lib/Color.lua"))("HagAIO", ns)
+    assert(loadfile("UI/Theme.lua"))("HagAIO", ns)
     return ns.Theme
 end
 

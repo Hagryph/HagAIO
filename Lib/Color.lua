@@ -1,6 +1,6 @@
 local addonName, ns = ...
 
--- Core/Color.lua
+-- Lib/Color.lua
 -- ns.Color -- an RGBA colour VALUE TYPE (ns.Type). Immutable; r/g/b/a in 0..1. Built once
 -- for the palette (ns.Theme) and usable anywhere a colour is handed to WoW. :Unpack() spreads
 -- it into the colour setters (SetVertexColor / SetTextColor / ...).

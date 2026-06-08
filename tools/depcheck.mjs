@@ -34,8 +34,8 @@ const FIX = process.argv.includes("--fix");  // --fix: inject missing deps into 
 const EXEMPT = new Set([
   "Core/Namespace.lua", "Core/Class.lua", "Core/Type.lua", "Core/Enum.lua",
   "Core/Mixin.lua", "Core/Interface.lua", "Core/Delegate.lua",
-  "Core/Contributions.lua", "Core/Persisted.lua", "Core/Color.lua",
-  "Core/Theme.lua", "Core/DependencyGraph.lua",
+  "Core/Contributions.lua", "Core/Persisted.lua", "Lib/Color.lua",
+  "UI/Theme.lua", "Core/DependencyGraph.lua",
   "Core/Logger.lua", "Core/Loggable.lua", "Core/Service.lua", "Core/ServiceManager.lua",
   "Core/Component.lua", "Core/Module.lua", "Core/ModuleManager.lua", "Core/Submodule.lua",
   "Core/SubmoduleManager.lua", "Core/Registry.lua", "Core/Lib.lua", "Core/LibManager.lua",

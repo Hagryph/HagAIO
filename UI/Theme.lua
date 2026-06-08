@@ -1,7 +1,7 @@
 local addonName, ns = ...
 local Color = ns.Color
 
--- Core/Theme.lua
+-- UI/Theme.lua
 -- Static design system ported from the LoL Game Helper desktop app's
 -- "dark + blue" language: near-black blue-tinted panels, a single cyan accent
 -- (#4ab3e6, descendant of GrepolisMod's #4ad), restrained 1px accent borders,
