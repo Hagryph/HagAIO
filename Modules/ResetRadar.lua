@@ -266,33 +266,35 @@ function ResetRadar:_Build()
     rail:SetPoint("TOPLEFT", 0, 0)
     rail:SetPoint("BOTTOMLEFT", 0, 0)
 
-    -- character header: avatar + name + level/ilvl + rating
-    local av = rail:CreateTexture(nil, "ARTWORK")
-    av:SetSize(AVATAR, AVATAR)
-    av:SetPoint("TOPLEFT", 14, -14)
-    local avBorder = CreateFrame("Frame", nil, rail, "BackdropTemplate")
-    avBorder:SetPoint("TOPLEFT", av, "TOPLEFT", -2, 2)
-    avBorder:SetPoint("BOTTOMRIGHT", av, "BOTTOMRIGHT", 2, -2)
-    W.Style(avBorder, "panel2", "borderStrong")
+    -- character header: avatar + name + level/ilvl + rating. The portrait is a texture ON the
+    -- bordered frame's ARTWORK layer (above its backdrop) so the backdrop never hides it.
+    local avFrame = CreateFrame("Frame", nil, rail, "BackdropTemplate")
+    avFrame:SetSize(AVATAR, AVATAR)
+    avFrame:SetPoint("TOPLEFT", 14, -14)
+    W.Style(avFrame, "panel2", "borderStrong")
+    local av = avFrame:CreateTexture(nil, "ARTWORK")
+    av:SetPoint("TOPLEFT", 2, -2)
+    av:SetPoint("BOTTOMRIGHT", -2, 2)
+    av:SetTexCoord(0.08, 0.92, 0.08, 0.92)   -- trim the portrait's baked-in ring
     p.avatar = av
 
     local hName = W.Text(rail, "", "text", "GameFontNormal")
-    hName:SetPoint("TOPLEFT", av, "TOPRIGHT", 10, -2)
+    hName:SetPoint("TOPLEFT", avFrame, "TOPRIGHT", 10, -1)
     hName:SetWidth(RAIL_W - AVATAR - 30); hName:SetJustifyH("LEFT"); hName:SetWordWrap(false)
     local hInfo = W.Text(rail, "", "textDim", "GameFontHighlightSmall")
-    hInfo:SetPoint("TOPLEFT", hName, "BOTTOMLEFT", 0, -4)
+    hInfo:SetPoint("TOPLEFT", hName, "BOTTOMLEFT", 0, -5)
     local hRating = W.Text(rail, "", "accent", "GameFontHighlightSmall")
-    hRating:SetPoint("TOPLEFT", hInfo, "BOTTOMLEFT", 0, -2)
+    hRating:SetPoint("TOPLEFT", hInfo, "BOTTOMLEFT", 0, -3)
     p.hName, p.hInfo, p.hRating = hName, hInfo, hRating
 
     local div = W.Divider(rail)
-    div:SetPoint("TOPLEFT", av, "BOTTOMLEFT", 0, -12)
+    div:SetPoint("TOPLEFT", avFrame, "BOTTOMLEFT", 0, -14)
     div:SetPoint("RIGHT", rail, "RIGHT", -12, 0)
 
-    -- category tree
+    -- category tree (nav items start well below the header block)
     local menuLabel = W.SectionLabel(rail, "Categories")
-    menuLabel:SetPoint("TOPLEFT", div, "BOTTOMLEFT", 2, -10)
-    local y = -54
+    menuLabel:SetPoint("TOPLEFT", div, "BOTTOMLEFT", 2, -12)
+    local y = -118
     for _, cat in ipairs(CATEGORIES) do
         if cat.header then
             local h = W.SectionLabel(rail, cat.label)
@@ -389,7 +391,7 @@ function ResetRadar:_Render()
         local fs = p.colHdrCells[i]
         if not fs then fs = W.SectionLabel(p.colHdr, ""); p.colHdrCells[i] = fs end
         fs:ClearAllPoints(); fs:SetPoint("LEFT", x, 0)
-        fs:SetWidth(c.width); fs:SetText(c.label); fs:SetWordWrap(false); fs:Show()
+        fs:SetWidth(c.width); fs:SetText(c.label); fs:SetJustifyH("LEFT"); fs:SetWordWrap(false); fs:Show()
         x = x + c.width
     end
     local rowWidth = x
@@ -404,6 +406,7 @@ function ResetRadar:_Render()
         row:ClearAllPoints()
         row:SetPoint("TOPLEFT", 0, y)
         row:SetWidth(rowWidth)
+        if i % 2 == 0 then row.bg:SetColorTexture(Theme.Unpack("panel2", 0.45)) else row.bg:SetColorTexture(0, 0, 0, 0) end
 
         row.name:SetText(e.name or key)
         local cc = e.class and RAID_CLASS_COLORS and RAID_CLASS_COLORS[e.class]
@@ -412,8 +415,11 @@ function ResetRadar:_Render()
         local cx = NAME_COL
         for ci, c in ipairs(cols) do
             local fs = row.cells[ci]
+            local val = c.cell(e) or "-"
             fs:ClearAllPoints(); fs:SetPoint("LEFT", cx, 0); fs:SetWidth(c.width)
-            fs:SetText(c.cell(e) or "-"); fs:Show()
+            fs:SetText(val); fs:SetJustifyH("LEFT")
+            fs:SetTextColor(Theme.Unpack(val == "-" and "textFaint" or "text"))
+            fs:Show()
             cx = cx + c.width
         end
         for ci = #cols + 1, #row.cells do row.cells[ci]:Hide() end
@@ -433,6 +439,8 @@ function ResetRadar:_Row(index, nCells)
     if not row then
         row = CreateFrame("Frame", nil, p.scroll.content)
         row:SetHeight(22)
+        row.bg = row:CreateTexture(nil, "BACKGROUND")
+        row.bg:SetPoint("TOPLEFT", 0, 0); row.bg:SetPoint("BOTTOMRIGHT", 0, 2)
         row.name = W.Text(row, "", "text", "GameFontHighlightSmall")
         row.name:SetPoint("LEFT", 2, 0); row.name:SetWidth(NAME_COL - 6)
         row.name:SetJustifyH("LEFT"); row.name:SetWordWrap(false)
