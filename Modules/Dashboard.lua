@@ -78,6 +78,12 @@ end
 -- category. Re-clicking the already-active category also returns here (see the nav onReselect).
 local HOME_LABEL = "Overview"
 
+-- The current M+ season dungeon entry's label. Also used to DEDUPE the dungeon overview: the journal
+-- exposes the current dungeons under a "Current Season" pseudo-tier, so a per-expansion tile carrying
+-- this same label would just duplicate this entry (with no expansion logo) -- we drop it. (enUS, like
+-- the rest of this module's journal labels.)
+local SEASON_LABEL = "Current Season"
+
 -- The Encounter Journal crops its instance buttonImage1 art to this region (the rest is padding);
 -- see Blizzard_EncounterJournal.xml "EncounterInstanceButtonTemplate" bgImage TexCoords. We reuse
 -- it so our instance tiles fill the same way the journal's do (only used for the low-def banner
@@ -300,9 +306,13 @@ function Dashboard:_ExpansionMap()
             if not instID then break end
             if name == "Keystone Dungeons" then name = nil end   -- meta-entry, never a real instance
             if name and tierName then
+                -- map keeps the OLDEST tier (the home expansion); art keeps the NEWEST tier. Two
+                -- instances can share a name (a legacy dungeon AND a reworked current-season version,
+                -- e.g. Magister's Terrace) -- tiers are walked newest-first, so the first art we see is
+                -- the current version's, which is the one the M+ season uses.
                 map[name] = tierName; found = true
-                if buttonImage then image[name] = buttonImage end
-                if loreImage then lore[name] = loreImage end
+                if buttonImage and not image[name] then image[name] = buttonImage end
+                if loreImage  and not lore[name]  then lore[name]  = loreImage  end
                 if sink then sink[#sink + 1] = name end
             end
             i = i + 1
@@ -662,15 +672,17 @@ function Dashboard:_NavItems()
                 end
             elseif c.key == "dungeons" and dungeonsOpen then
                 if self:_SeasonDungeons() then
-                    items[#items + 1] = { key = "dungeon:current", label = "Current Season", indent = 2 }
+                    items[#items + 1] = { key = "dungeon:current", label = SEASON_LABEL, indent = 2 }
                 end
-                -- the current expansion's FULL dungeon catalog (not just the M+ season subset)
+                -- one node per expansion; skip the "Current Season" pseudo-tier (the entry above covers it)
                 local cur, dbt = self:_p().currentExpansion, self:_p().ejDungeonsByTier
-                if cur and dbt and dbt[cur] then
+                if cur and cur ~= SEASON_LABEL and dbt and dbt[cur] then
                     items[#items + 1] = { key = "dungeon:" .. cur, label = cur, indent = 2 }
                 end
                 for _, exp in ipairs(self:_KnownExpansions(false)) do
-                    if exp ~= cur then items[#items + 1] = { key = "dungeon:" .. exp, label = exp, indent = 2 } end
+                    if exp ~= cur and exp ~= SEASON_LABEL then
+                        items[#items + 1] = { key = "dungeon:" .. exp, label = exp, indent = 2 }
+                    end
                 end
             end
         end
@@ -701,15 +713,15 @@ function Dashboard:_ResolveCategory(key)
     end
     local dexp = key and key:match("^dungeon:(.+)$")
     if dexp == "current" then
-        return "Current Season", function() return self:_SeasonColumns() end
+        return SEASON_LABEL, function() return self:_SeasonColumns() end
     elseif dexp == self:_p().currentExpansion then
         return dexp .. " Dungeons", function() return self:_CatalogColumns(dexp, false) end   -- full catalog
     elseif dexp then
+        -- every dungeon of this expansion, INCLUDING any in the current M+ season (they also appear
+        -- under Current Season -- a season dungeon legitimately shows under both).
         return dexp .. " Dungeons", function()
-            local s = self:_SeasonDungeons()
             return self:_LockoutColumns(function(r)
-                if r.isRaid or (r.expansion or "Other") ~= dexp then return false end
-                return not (r.diff == M0 and s and s.set[r.name])   -- season M0 lives in Current Season
+                return not r.isRaid and (r.expansion or "Other") == dexp
             end)
         end
     end
@@ -787,15 +799,17 @@ function Dashboard:_OverviewTiles(key)
         end
     elseif key == "dungeons" then
         if self:_SeasonDungeons() then
-            tile("Current Season", p.currentExpansion, "dungeon:current")
+            tile(SEASON_LABEL, p.currentExpansion, "dungeon:current")
             -- Current Season shows a random season-dungeon scene, distinct from the expansion logo
             local art = self:_SeasonDungeonArt()
             if art then applyArt(tiles[#tiles], art) end
         end
+        -- one tile per expansion; skip the "Current Season" pseudo-tier (the entry above covers it,
+        -- and it has no expansion logo, so it would render as an empty tile)
         local cur, dbt = p.currentExpansion, p.ejDungeonsByTier
-        if cur and dbt and dbt[cur] then tile(cur, cur, "dungeon:" .. cur) end
+        if cur and cur ~= SEASON_LABEL and dbt and dbt[cur] then tile(cur, cur, "dungeon:" .. cur) end
         for _, exp in ipairs(self:_KnownExpansions(false)) do
-            if exp ~= cur then tile(exp, exp, "dungeon:" .. exp) end
+            if exp ~= cur and exp ~= SEASON_LABEL then tile(exp, exp, "dungeon:" .. exp) end
         end
     end
     return tiles
