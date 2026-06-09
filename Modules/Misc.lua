@@ -48,31 +48,31 @@ local Flight  = ns.FlightResolver
 local Quality = Flight.Quality
 
 -- The flight tables this module contributes to the ONE shared database (account-wide / GLOBAL
--- scope). A recorded route is one `flight_route` row keyed per direction + faction (UNIQUE
--- faction,src,dst), with its measured time + quality tier; the booked intermediate nodes it
--- spanned live RELATIONALLY as ordered `flight_hop` rows (FK to the route, cascade-deleted with
--- it) -- never a blob. Declared on the module (see registration); the module owns the small query
--- methods (_Flight*) over self:DB(). Table names are feature-qualified since the database is shared.
+-- scope). A recorded route is one `flight_route` row referencing two `flight_master` nodes by id
+-- (src, dst) with its measured time + quality tier -- it carries NO faction of its own; the faction
+-- is the masters' (a route is valid for you when both masters are your faction or Neutral). The
+-- booked intermediate nodes it spanned live RELATIONALLY as ordered `flight_hop` rows (each an FK to
+-- a flight_master, cascade-deleted with the route) -- never a blob. `flight_master` itself is a
+-- central CoreTable. The module owns the small query methods (_Flight*/_Master*) over self:DB().
 local FLIGHT_TABLES = {
     flight_route = {
         scope = "global",
         columns = {
-            { name = "id",      type = "integer", primaryKey = true, autoIncrement = true },
-            { name = "faction", type = "text",    nullable = false },
-            { name = "src",     type = "text",    nullable = false },
-            { name = "dst",     type = "text",    nullable = false },
+            { name = "id",  type = "integer", primaryKey = true, autoIncrement = true },
+            { name = "src", type = "integer", nullable = false, references = { table = "flight_master" } },
+            { name = "dst", type = "integer", nullable = false, references = { table = "flight_master" } },
             { name = "t",       type = "number",  nullable = false },
             { name = "quality", type = "integer", nullable = false },
         },
-        unique  = { { "faction", "src", "dst" } },
-        indices = { { columns = { "faction" } } },
+        unique  = { { "src", "dst" } },
+        indices = { { columns = { "src" } } },
     },
     flight_hop = {
         scope = "global",
         columns = {
             { name = "route_id", type = "integer", references = { table = "flight_route", onDelete = "cascade" } },
             { name = "ordinal",  type = "integer" },
-            { name = "node",     type = "text", nullable = false },
+            { name = "master",   type = "integer", nullable = false, references = { table = "flight_master" } },
         },
         primaryKey = { "route_id", "ordinal" },
     },
@@ -223,42 +223,68 @@ function Misc:_StoreIfNew(a, b, seconds, via)
     end
 end
 
--- ---- Flight database access (the module's own DAO over self:DB("Flight")) -------------------
--- src/dst/node are coerced to text so a numeric node id and its string form key the same route.
--- The routes table is small and only read while flying, so query-on-read is fine here.
+-- ---- Flight database access (the module's own DAO over self:DB()) ---------------------------
+-- A flight node is one `flight_master` row (faction + name; its zone is filled later by taxi-map
+-- discovery). A `flight_route` references two masters by id (src, dst) and carries no faction --
+-- the faction is the masters' (a route is valid for you when both are your faction or Neutral). The
+-- rest of the module works in node NAMES; this DAO translates names <-> master ids at the boundary,
+-- scoping every lookup to the current faction. Small tables, read only while flying -> query-on-read.
 
--- The flight_route row { id, t, quality } for one direction, or nil.
-function Misc:_FlightRow(faction, a, b)
+-- The flight_master id for a node name under the current faction. With `create`, inserts the master
+-- if missing; otherwise returns nil when unknown. nil if the faction can't be attributed.
+function Misc:_MasterId(name, create)
     local db = self:DB(); if not db then return nil end
+    local faction = self:_Faction()
+    if faction ~= "Alliance" and faction ~= "Horde" and faction ~= "Neutral" then return nil end
+    name = tostring(name)
+    local rows = db:Select("id"):From("flight_master")
+        :Where("faction", "=", faction):AndWhere("name", "=", name):Limit(1):Run()
+    if rows[1] then return rows[1].id end
+    if not create then return nil end
+    return db:Insert("flight_master", { faction = faction, name = name }).id
+end
+
+function Misc:_MasterName(id)
+    local db = self:DB(); if not db then return nil end
+    local rows = db:Select("name"):From("flight_master"):Where("id", "=", id):Limit(1):Run()
+    return rows[1] and rows[1].name or nil
+end
+
+-- The flight_route row { id, t, quality } for the directed master pair, or nil.
+function Misc:_FlightRow(srcId, dstId)
+    local db = self:DB(); if not db or not srcId or not dstId then return nil end
     local rows = db:Select("id", "t", "quality"):From("flight_route")
-        :Where("faction", "=", faction):AndWhere("src", "=", tostring(a)):AndWhere("dst", "=", tostring(b))
-        :Limit(1):Run()
+        :Where("src", "=", srcId):AndWhere("dst", "=", dstId):Limit(1):Run()
     return rows[1]
 end
 
--- The ordered booked intermediate node names for a route, or nil for an atomic leg.
+-- Ordered intermediate node NAMES for a route (hop master ids resolved back to names), or nil.
 function Misc:_FlightHops(routeId)
     local db = self:DB(); if not db then return nil end
-    local rows = db:Select("node"):From("flight_hop"):Where("route_id", "=", routeId):OrderBy("ordinal", "asc"):Run()
+    local rows = db:Select("master"):From("flight_hop"):Where("route_id", "=", routeId):OrderBy("ordinal", "asc"):Run()
     if #rows == 0 then return nil end
     local via = {}
-    for i, r in ipairs(rows) do via[i] = r.node end
+    for i, r in ipairs(rows) do via[i] = self:_MasterName(r.master) end
     return via
 end
 
--- A normalised entry { t, q, via } for the a -> b direction, or nil.
+-- The entry { t, q } for the a -> b direction (node names), or nil. Read-only (creates no master).
 function Misc:_FlightGet(faction, a, b)
-    local row = self:_FlightRow(faction, a, b)
+    local srcId, dstId = self:_MasterId(a, false), self:_MasterId(b, false)
+    local row = self:_FlightRow(srcId, dstId)
     if not row then return nil end
-    return { t = row.t, q = row.quality, via = self:_FlightHops(row.id) }
+    return { t = row.t, q = row.quality }
 end
 
--- Replace a route's hops with `via` (a list of node names; nil clears them).
+-- Replace a route's hops with `via` (node names -> intermediate master ids; nil clears them).
 function Misc:_FlightSetHops(routeId, via)
     local db = self:DB(); if not db then return end
     db:Delete("flight_hop", function(h) return h.route_id == routeId end)
     if via then
-        for i, n in ipairs(via) do db:Insert("flight_hop", { route_id = routeId, ordinal = i, node = tostring(n) }) end
+        for i, n in ipairs(via) do
+            local mid = self:_MasterId(n, true)
+            if mid then db:Insert("flight_hop", { route_id = routeId, ordinal = i, master = mid }) end
+        end
     end
 end
 
@@ -266,10 +292,11 @@ end
 -- direct-over-direct only when the time changed by >= 5s. Returns true if anything changed.
 function Misc:_FlightStore(faction, a, b, seconds, via)
     local db = self:DB(); if not db then return false end
-    a, b = tostring(a), tostring(b)
-    local row = self:_FlightRow(faction, a, b)
+    local srcId, dstId = self:_MasterId(a, true), self:_MasterId(b, true)
+    if not srcId or not dstId then return false end
+    local row = self:_FlightRow(srcId, dstId)
     if not row then
-        local r = db:Insert("flight_route", { faction = faction, src = a, dst = b, t = seconds, quality = Quality.DIRECT })
+        local r = db:Insert("flight_route", { src = srcId, dst = dstId, t = seconds, quality = Quality.DIRECT })
         self:_FlightSetHops(r.id, via)
         return true
     end
@@ -288,24 +315,29 @@ end
 -- Fill-only FLY write: insert only if the direction has no entry. Returns true if it inserted.
 function Misc:_FlightStoreIfNew(faction, a, b, seconds, via)
     local db = self:DB(); if not db then return false end
-    a, b = tostring(a), tostring(b)
-    if self:_FlightRow(faction, a, b) then return false end
-    local r = db:Insert("flight_route", { faction = faction, src = a, dst = b, t = seconds, quality = Quality.FLY })
+    local srcId, dstId = self:_MasterId(a, true), self:_MasterId(b, true)
+    if not srcId or not dstId then return false end
+    if self:_FlightRow(srcId, dstId) then return false end
+    local r = db:Insert("flight_route", { src = srcId, dst = dstId, t = seconds, quality = Quality.FLY })
     self:_FlightSetHops(r.id, via)
     return true
 end
 
--- Every recorded segment under `faction` as a FlightGraph record: an ordered node sequence
--- (src, hops..., dst) with its total time + quality.
+-- Every recorded segment whose masters belong to `faction`, as a FlightGraph record: an ordered
+-- node-name sequence (src, hops..., dst) with its total time + quality. The faction filter is a
+-- join to the src master (routes carry no faction of their own).
 function Misc:_FlightRecords(faction)
     local db = self:DB(); if not db then return {} end
-    local routes = db:Select("id", "src", "dst", "t", "quality"):From("flight_route"):Where("faction", "=", faction):Run()
+    local routes = db:Select("flight_route.id", "flight_route.src", "flight_route.dst", "flight_route.t", "flight_route.quality")
+        :From("flight_route")
+        :InnerJoin("flight_master", { on = { "flight_route.src", "flight_master.id" } })
+        :Where("flight_master.faction", "=", faction):Run()
     local out = {}
     for _, row in ipairs(routes) do
-        local seq = { row.src }
+        local seq = { self:_MasterName(row.src) }
         local via = self:_FlightHops(row.id)
         if via then for _, n in ipairs(via) do seq[#seq + 1] = n end end
-        seq[#seq + 1] = row.dst
+        seq[#seq + 1] = self:_MasterName(row.dst)
         out[#out + 1] = { seq = seq, t = row.t, q = row.quality }
     end
     return out

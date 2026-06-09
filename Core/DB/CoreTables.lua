@@ -49,17 +49,19 @@ ns.DB.CoreTables = {
         unique = { { "name" } },
     },
 
-    -- Discovered flight masters: account-wide, grown as the player opens taxi maps. JOINS to the
-    -- (local) faction table -- one shared faction definition, referenced from persisted data.
+    -- Discovered flight masters: account-wide, grown as routes are recorded (and, later, as taxi
+    -- maps are opened). JOINS to the (local) faction and zone tables -- one shared faction/zone
+    -- definition, referenced from persisted data. `zone` is nullable: a master created while
+    -- recording a flight isn't tagged with its zone until taxi-map discovery fills it in.
     flight_master = {
         scope = "global",
         columns = {
             { name = "id",      type = "integer", primaryKey = true, autoIncrement = true },
             { name = "faction", type = "text", nullable = false, references = { table = "faction", column = "tag" } },
-            { name = "zone",    type = "text", nullable = false },
+            { name = "zone",    type = "text", nullable = true,  references = { table = "zone", column = "name" } },
             { name = "name",    type = "text", nullable = false },   -- flight node name
         },
-        unique  = { { "faction", "zone", "name" } },
+        unique  = { { "faction", "name" } },
         indices = { { columns = { "faction" } } },
     },
 }
