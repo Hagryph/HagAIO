@@ -28,14 +28,6 @@ function Misc:_Faction()
     return UnitFactionGroup("player") or "?"
 end
 
--- The flight MASTER name only, stripped of the trailing ", <zone>" the taxi API tacks on
--- ("Stormwind, Elwynn" -> "Stormwind"). Both discovery and recording run names through this so a
--- node keys the same whichever path saw it.
-function Misc:_NodeName(raw)
-    if type(raw) ~= "string" then return raw end
-    return (raw:match("^%s*(.-)%s*,") or raw:match("^%s*(.-)%s*$") or raw)
-end
-
 -- ---- tunables (flight-path detection distances, yards) --------------------
 local ARRIVE_YARDS = 40    -- within this of a path node = we landed there
 local CROSS_MARGIN = 75   -- moved this many (linear) yards past the closest approach = passed it
@@ -160,7 +152,7 @@ end
 function Misc:_OnTaxiMap()
     self:_CaptureSource()
     self:_HookFlightPins()
-    self:_DiscoverNodes()   -- seed every flight master on this continent (name + zone)
+    -- flight-master DISCOVERY (seeding flight_master + zone) lives in the LocalTables service.
 end
 
 function Misc:_CaptureSource()
@@ -168,7 +160,7 @@ function Misc:_CaptureSource()
     if not (NumTaxiNodes and TaxiNodeGetType and TaxiNodeName) then return end
     for i = 1, NumTaxiNodes() do
         if TaxiNodeGetType(i) == "CURRENT" then
-            p.src = self:_NodeName(TaxiNodeName(i))
+            p.src = Flight:NodeName(TaxiNodeName(i))
             return
         end
     end
@@ -181,7 +173,7 @@ function Misc:_OnTakeTaxi(slot)
     -- Use the FLIGHT-MAP node name (matched by slotIndex) so the recorded key
     -- matches the one the map-hover tooltip builds; TaxiNodeName(slot) can return
     -- a differently-formatted name and would never match on lookup.
-    local dst = (p.nodeNames and p.nodeNames[slot]) or (TaxiNodeName and self:_NodeName(TaxiNodeName(slot)))
+    local dst = (p.nodeNames and p.nodeNames[slot]) or (TaxiNodeName and Flight:NodeName(TaxiNodeName(slot)))
     if not (p.src and dst) then return end
 
     p.dst = dst
@@ -233,24 +225,22 @@ function Misc:_StoreIfNew(a, b, seconds, via)
 end
 
 -- ---- Flight database access (the module's own DAO over self:DB()) ---------------------------
--- A flight node is one `flight_master` row (faction + name; its zone is filled later by taxi-map
--- discovery). A `flight_route` references two masters by id (src, dst) and carries no faction --
--- the faction is the masters' (a route is valid for you when both are your faction or Neutral). The
--- rest of the module works in node NAMES; this DAO translates names <-> master ids at the boundary,
--- scoping every lookup to the current faction. Small tables, read only while flying -> query-on-read.
+-- A flight node is one `flight_master` row (discovered, with its zone, by the LocalTables service).
+-- A `flight_route` references two masters by id (src, dst) and carries no faction -- the faction is
+-- the masters' (a route is valid for you when both are your faction or Neutral). The rest of the
+-- module works in node NAMES; this DAO translates names -> master ids at the boundary, scoping every
+-- lookup to the current faction. Recording only LOOKS masters up (discovery creates them); a node
+-- that hasn't been discovered yet is simply not recorded. Small tables, read while flying.
 
--- The flight_master id for a node name under the current faction. With `create`, inserts the master
--- if missing; otherwise returns nil when unknown. nil if the faction can't be attributed.
-function Misc:_MasterId(name, create)
+-- The flight_master id for a node name under the current faction, or nil if it hasn't been
+-- discovered (or the faction can't be attributed).
+function Misc:_MasterId(name)
     local db = self:DB(); if not db then return nil end
     local faction = self:_Faction()
     if faction ~= "Alliance" and faction ~= "Horde" and faction ~= "Neutral" then return nil end
-    name = tostring(name)
     local rows = db:Select("id"):From("flight_master")
-        :Where("faction", "=", faction):AndWhere("name", "=", name):Limit(1):Run()
-    if rows[1] then return rows[1].id end
-    if not create then return nil end
-    return db:Insert("flight_master", { faction = faction, name = name }).id
+        :Where("faction", "=", faction):AndWhere("name", "=", tostring(name)):Limit(1):Run()
+    return rows[1] and rows[1].id or nil
 end
 
 function Misc:_MasterName(id)
@@ -279,7 +269,7 @@ end
 
 -- The entry { t, q } for the a -> b direction (node names), or nil. Read-only (creates no master).
 function Misc:_FlightGet(faction, a, b)
-    local srcId, dstId = self:_MasterId(a, false), self:_MasterId(b, false)
+    local srcId, dstId = self:_MasterId(a), self:_MasterId(b)
     local row = self:_FlightRow(srcId, dstId)
     if not row then return nil end
     return { t = row.t, q = row.quality }
@@ -291,7 +281,7 @@ function Misc:_FlightSetHops(routeId, via)
     db:Delete("flight_hop", function(h) return h.route_id == routeId end)
     if via then
         for i, n in ipairs(via) do
-            local mid = self:_MasterId(n, true)
+            local mid = self:_MasterId(n)
             if mid then db:Insert("flight_hop", { route_id = routeId, ordinal = i, master = mid }) end
         end
     end
@@ -301,7 +291,7 @@ end
 -- direct-over-direct only when the time changed by >= 5s. Returns true if anything changed.
 function Misc:_FlightStore(faction, a, b, seconds, via)
     local db = self:DB(); if not db then return false end
-    local srcId, dstId = self:_MasterId(a, true), self:_MasterId(b, true)
+    local srcId, dstId = self:_MasterId(a), self:_MasterId(b)
     if not srcId or not dstId then return false end
     local row = self:_FlightRow(srcId, dstId)
     if not row then
@@ -324,7 +314,7 @@ end
 -- Fill-only FLY write: insert only if the direction has no entry. Returns true if it inserted.
 function Misc:_FlightStoreIfNew(faction, a, b, seconds, via)
     local db = self:DB(); if not db then return false end
-    local srcId, dstId = self:_MasterId(a, true), self:_MasterId(b, true)
+    local srcId, dstId = self:_MasterId(a), self:_MasterId(b)
     if not srcId or not dstId then return false end
     if self:_FlightRow(srcId, dstId) then return false end
     local r = db:Insert("flight_route", { src = srcId, dst = dstId, t = seconds, quality = Quality.FLY })
@@ -350,62 +340,6 @@ function Misc:_FlightRecords(faction)
         out[#out + 1] = { seq = seq, t = row.t, q = row.quality }
     end
     return out
-end
-
--- ---- taxi-map discovery (seed every flight master on the continent) --------------------------
--- On opening a flight master, C_TaxiMap.GetAllTaxiNodes returns EVERY node on that continent's taxi
--- map (canonical nodeID + name + map position + state). We record them all -- not just ones flown --
--- splitting the name to the flight-master name and resolving each node's ZONE from its position via
--- the world map (seeding the local zone table so flight_master.zone resolves). Faction can't be read
--- per node from the API, so we attribute to the player's faction (you only see your + neutral nodes).
-
--- The zone NAME at a map position, seeding the local zone table from the world map. nil if unknown.
-function Misc:_ZoneAt(mapID, position)
-    if not (C_Map and C_Map.GetMapInfoAtPosition and position) then return nil end
-    local x, y
-    if position.GetXY then x, y = position:GetXY() else x, y = position.x, position.y end
-    if not (x and y) then return nil end
-    local info = C_Map.GetMapInfoAtPosition(mapID, x, y)
-    if not (info and info.name and info.mapID) then return nil end
-    local db = self:DB()
-    if db and #db:Select("id"):From("zone"):Where("id", "=", info.mapID):Limit(1):Run() == 0 then
-        pcall(function() db:Insert("zone", { id = info.mapID, name = info.name }) end)
-    end
-    return info.name
-end
-
--- Insert or enrich the flight_master for (faction, name): set its canonical nodeID and zone.
-function Misc:_DiscoverMaster(faction, name, nodeID, zone)
-    local db = self:DB(); if not db then return end
-    local row = db:Select("id", "node_id", "zone"):From("flight_master")
-        :Where("faction", "=", faction):AndWhere("name", "=", name):Limit(1):Run()[1]
-    if not row then
-        db:Insert("flight_master", { faction = faction, name = name, node_id = nodeID, zone = zone })
-        return
-    end
-    local changes = {}
-    if nodeID and row.node_id ~= nodeID then changes.node_id = nodeID end
-    if zone and row.zone ~= zone then changes.zone = zone end
-    if next(changes) then db:Update("flight_master", changes, function(x) return x.id == row.id end) end
-end
-
--- Discover every node on the open taxi map (all flight masters on the continent).
-function Misc:_DiscoverNodes()
-    local db = self:DB(); if not db then return end
-    local faction = self:_Faction()
-    if faction ~= "Alliance" and faction ~= "Horde" and faction ~= "Neutral" then return end
-    if not (C_TaxiMap and C_TaxiMap.GetAllTaxiNodes and GetTaxiMapID) then return end
-    local mapID = GetTaxiMapID()
-    if not mapID then return end
-    local nodes = C_TaxiMap.GetAllTaxiNodes(mapID)
-    if not nodes then return end
-    for _, n in ipairs(nodes) do
-        if n.name and n.nodeID then
-            local name = self:_NodeName(n.name)
-            local zone = self:_ZoneAt(mapID, n.position)
-            pcall(function() self:_DiscoverMaster(faction, name, n.nodeID, zone) end)
-        end
-    end
 end
 
 -- Best known time for a current flight src -> dst as (seconds, isEstimate). Resolved in
@@ -789,7 +723,7 @@ function Misc:_HookFlightPins()
             end
             local d = pin.taxiNodeData
             if d and d.name and d.slotIndex then
-                local nodeName = module:_NodeName(d.name)
+                local nodeName = Flight:NodeName(d.name)
                 p.nodeNames[d.slotIndex] = nodeName
                 local pos = d.position
                 if pos then

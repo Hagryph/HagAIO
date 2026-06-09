@@ -30,11 +30,46 @@ function Database:Initialize(name, schema, slots)
     p.name = name
     p.schema = schema
     p.store = DB.RowStore:New(schema, slots or {})
+    self:_Conform()                              -- drop persisted rows that violate the current schema
     p.index = DB.IndexManager:New(schema, p.store)
     p.enforcer = DB.ConstraintEnforcer:New(schema, p.index, p.store)
     p.triggers = DB.TriggerManager:New(schema)   -- inert if the schema declares no triggers
     if p.store:Version() == nil then p.store:SetVersion(schema:Version()) end
     self:_RunSeeds()
+end
+
+-- Does a stored row satisfy the schema's column rules (NOT NULL + types)? Used by the load-time
+-- conformance sweep; unique/FK aren't checked here (they need the index, built afterwards).
+function Database:_RowConforms(tbl, row)
+    for _, col in ipairs(tbl:Columns()) do
+        local v = row[col:Name()]
+        if v == nil or v == DB.NULL then
+            if not col:IsNullable() then return false end
+        elseif not DB.checkType(col:Type(), v) then
+            return false
+        end
+    end
+    return true
+end
+
+-- On load, persisted data may predate a schema change (a column became NOT NULL, a type changed,
+-- ...). Drop every row that no longer conforms and WARN how many per table, so stale/invalid rows
+-- never silently poison queries or constraint checks. Runs before the index is built.
+function Database:_Conform()
+    local p = self:_p()
+    for _, tname in ipairs(p.schema:TableNames()) do
+        local tbl, rows = p.schema:Table(tname), p.store:Rows(tname)
+        local removed = 0
+        if rows then
+            for i = #rows, 1, -1 do
+                if not self:_RowConforms(tbl, rows[i]) then table.remove(rows, i); removed = removed + 1 end
+            end
+        end
+        if removed > 0 then
+            ns.Logger:Core():Warn(("db '%s': dropped %d non-conforming row(s) from '%s' on load (schema changed)")
+                :format(p.name, removed, tname))
+        end
+    end
 end
 
 -- Seed any table that declares a seed(db) and is currently empty: a LOCAL reference table every

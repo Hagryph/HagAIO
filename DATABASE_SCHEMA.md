@@ -55,7 +55,7 @@ The addon uses **one shared database**. Every service or module contributes the 
 | `id` | integer | no | PK auto |  |  |
 | `node_id` | integer | yes |  |  |  |
 | `faction` | text | no |  |  | → `faction.tag` |
-| `zone` | text | yes |  |  | → `zone.name` |
+| `zone` | text | no |  |  | → `zone.name` |
 | `name` | text | no |  |  |  |
 
 **Unique:** (faction, name)

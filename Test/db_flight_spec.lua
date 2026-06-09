@@ -42,15 +42,17 @@ local function built()
     local mgr = ns._captured["DatabaseManager"]
     mgr:OnInitialize()
     mgr:Contribute(FLIGHT_TABLES)
-    return mgr:Build(), ns
+    local db = mgr:Build()
+    db:Insert("zone", { id = 1, name = "TestZone" })   -- a zone for masters (flight_master.zone is NOT NULL)
+    return db, ns
 end
 
--- a small DAO mirroring Misc's _Master*/_Flight* (translate node names <-> master ids)
+-- a small DAO mirroring Misc's discovery + lookup (masters are created with a zone, like discovery)
 local function masterId(db, faction, name, create)
     local r = db:Select("id"):From("flight_master"):Where("faction", "=", faction):AndWhere("name", "=", name):Limit(1):Run()
     if r[1] then return r[1].id end
     if not create then return nil end
-    return db:Insert("flight_master", { faction = faction, name = name }).id
+    return db:Insert("flight_master", { faction = faction, name = name, zone = "TestZone" }).id
 end
 local function row(db, sid, did)
     return db:Select("id", "t", "quality"):From("flight_route"):Where("src", "=", sid):AndWhere("dst", "=", did):Limit(1):Run()[1]

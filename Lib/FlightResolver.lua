@@ -16,6 +16,14 @@ local FlightResolver = Class.new("FlightResolver", ns.Lib)
 -- higher quality wins ties; persisted as a flight_route row's `quality`, so the values stay 2/1.
 FlightResolver.Quality = ns.Enum.new("FlightQuality", { DIRECT = 2, FLY = 1 })
 
+-- The flight MASTER name only, stripped of the trailing ", <zone>" the taxi API appends
+-- ("Stormwind, Elwynn" -> "Stormwind"). Discovery and recording both normalise through this so a
+-- node keys the same whichever path saw it.
+function FlightResolver:NodeName(raw)
+    if type(raw) ~= "string" then return raw end
+    return (raw:match("^%s*(.-)%s*,") or raw:match("^%s*(.-)%s*$") or raw)
+end
+
 -- Best time for one ATOMIC leg a -> b from the solved leg table, in priority order:
 --   1 direct same > 2 direct reverse > 3 fly same > 4 fly reverse > 5 derived same >
 --   6 derived reverse.

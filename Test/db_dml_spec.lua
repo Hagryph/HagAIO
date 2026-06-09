@@ -102,6 +102,29 @@ describe("DB DML: insert", function()
     end)
 end)
 
+describe("DB load: conformance sweep", function()
+    it("drops persisted rows that violate the current schema (and keeps valid ones)", function()
+        local ns = newDmlNs()
+        -- a GLOBAL slot pre-populated with two routes: one missing the NOT NULL `faction`, one valid
+        local slot = { _meta = { autoIds = { routes = 2 } }, tables = { routes = {
+            { id = 1, src = 1, dst = 2, t = 5 },                       -- non-conforming: no faction
+            { id = 2, faction = "Horde", src = 1, dst = 2, t = 5 },    -- conforms
+        } } }
+        local db = ns.DB.Database:New("Flight", ns.DB.Schema.new("Flight", spec()), { [ns.DB.Scope.GLOBAL] = slot })
+        assert.are.equal(1, db:Store():Count("routes"))               -- the bad row was dropped on load
+        assert.are.equal("Horde", db:Store():Rows("routes")[1].faction)
+    end)
+
+    it("drops a row with a wrong-typed value", function()
+        local ns = newDmlNs()
+        local slot = { _meta = { autoIds = { routes = 1 } }, tables = { routes = {
+            { id = 1, faction = "Horde", src = "notanumber", dst = 2, t = 5 },   -- src must be integer
+        } } }
+        local db = ns.DB.Database:New("Flight", ns.DB.Schema.new("Flight", spec()), { [ns.DB.Scope.GLOBAL] = slot })
+        assert.are.equal(0, db:Store():Count("routes"))
+    end)
+end)
+
 describe("DB DML: update", function()
     it("updates matching rows, revalidates, returns a count", function()
         local ns = newDmlNs()

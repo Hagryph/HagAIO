@@ -173,6 +173,7 @@ Services/
   EditMode.lua             Standalone framework letting any module register a frame to be positioned via
   EventBus.lua             Singleton pub/sub layer over a hidden driver frame
   Hooks.lua                Removable secure-hook service
+  LocalTables.lua          Populates the shared database's general REFERENCE tables from the game world -- the data that is
   Memoize.lua              Memoization service: wrap a PURE function so repeat calls with the same arguments
   MinimapIcon.lua          A standalone minimap button (NOT LibDBIcon — no external libraries)
   Profiles.lua             Named config profiles + copy-paste sharing, built on the SavedVars cascade
