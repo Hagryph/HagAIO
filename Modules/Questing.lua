@@ -474,7 +474,7 @@ end
 ns.ModuleManager:Register(Questing:New("Questing", {
     title = "Questing",
     description = "XP-per-hour tracking, plus auto-accepting and turning in quests.",
-    defaultEnabled = true,
+    defaultEnabled = false,
     color = ns.Theme.hex.gold,
     deps = { "SlashCommand" },  -- for its declarative /hag xp sub-command
     commands = { xp = { handler = "_PrintSession", help = "session XP / hour" } },

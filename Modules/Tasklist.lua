@@ -663,7 +663,7 @@ end
 ns.ModuleManager:Register(Tasklist:New("Tasklist", {
     title = "Task List",
     description = "A movable objective tracker for one-time, daily and weekly tasks.",
-    defaultEnabled = true,
+    defaultEnabled = false,
     publishAs = "Tasks",         -- ns.Tasks: other modules register tasks through it
     color = ns.Theme.hex.amber,  -- distinct tag (Core uses accent)
     deps = { "EditMode", "SettingsWindow" },  -- movable frame, page refresh (events go through self:On)
