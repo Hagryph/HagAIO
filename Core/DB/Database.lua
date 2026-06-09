@@ -190,6 +190,21 @@ function Database:_Snapshot(row)
     return out
 end
 
+-- ---- reads ----------------------------------------------------------------
+-- Start a fluent SELECT. The projection is column refs ("col" / "alias.col" / "*" / "alias.*")
+-- and/or DB.Fn aggregates.
+function Database:Select(...)
+    return DB.QueryBuilder:New(self, { ... })
+end
+
+-- Run a declared view's query (its build(db) returns a QueryBuilder) and return its rows.
+function Database:View(name)
+    local v = self:_p().schema:Views()[name]
+    assert(v, ("DB: unknown view '%s'"):format(tostring(name)))
+    local qb = v.build(self)
+    return qb:Run()
+end
+
 -- ---- DDL ------------------------------------------------------------------
 function Database:Truncate(tname)
     local p = self:_p()
