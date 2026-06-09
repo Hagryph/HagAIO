@@ -6,7 +6,7 @@ local Class = ns.Class
 -- icon pinned to the minimap edge at a saved angle and draggable around the rim.
 -- Default OFF. Left-click toggles the settings window; right-click opens the log.
 
-local MinimapIcon = Class.new("MinimapIcon", ns.Service, { mixins = { ns.Persisted } })
+local MinimapIcon = Class.new("MinimapIcon", ns.Service)
 
 local DEFAULT_ANGLE = 225   -- degrees, measured from the minimap centre
 
@@ -20,21 +20,42 @@ local function activeDashboard()
 end
 
 function MinimapIcon:OnInitialize()
-    self:_BindStore("minimap", { shown = false, angle = DEFAULT_ANGLE })  -- cached _Store (ns.Persisted)
     ns.EventBus:On("PLAYER_LOGIN", function() self:Refresh() end)  -- self-apply on login
     -- Our General-page toggle is declared on registration (see below) and contributed
     -- by the Service base -- a push (icons -> window) with no cycle.
 end
 
-function MinimapIcon:IsShown()
-    return self:_Store().shown == true
+-- The single config row (account-wide), or nil before the database is built.
+function MinimapIcon:_Row()
+    local db = self:DB(); if not db then return nil end
+    return db:Select("shown", "angle"):From("minimap"):Where("id", "=", 1):Limit(1):Run()[1]
 end
 
--- Place the button on the minimap rim at the saved angle.
+-- Upsert the singleton row, merging `changes`.
+function MinimapIcon:_Set(changes)
+    local db = self:DB(); if not db then return end
+    if self:_Row() then db:Update("minimap", changes, function(x) return x.id == 1 end)
+    else changes.id = 1; db:Insert("minimap", changes) end
+end
+
+function MinimapIcon:IsShown()
+    local r = self:_Row()
+    return r and r.shown == true or false
+end
+
+-- The current rim angle: the in-progress drag value (cached) wins, else the saved one, else default.
+function MinimapIcon:_Angle()
+    local p = self:_p()
+    if p.angle then return p.angle end
+    local r = self:_Row()
+    return (r and r.angle and not ns.DB.isNull(r.angle)) and r.angle or DEFAULT_ANGLE
+end
+
+-- Place the button on the minimap rim at the current angle.
 function MinimapIcon:_Reposition()
     local p = self:_p()
     if not (p.button and Minimap) then return end
-    local rad = math.rad(self:_Store().angle or DEFAULT_ANGLE)
+    local rad = math.rad(self:_Angle())
     local r = (Minimap:GetWidth() / 2) + 5
     p.button:ClearAllPoints()
     p.button:SetPoint("CENTER", Minimap, "CENTER", r * math.cos(rad), r * math.sin(rad))
@@ -70,9 +91,12 @@ function MinimapIcon:_Build()
 
     b:SetHighlightTexture("Interface\\Minimap\\UI-Minimap-ZoomButton-Highlight")
 
-    -- drag around the rim
+    -- drag around the rim (angle is cached in memory during the drag, persisted once on release)
     b:SetScript("OnDragStart", function() b:SetScript("OnUpdate", function() self:_DragUpdate() end) end)
-    b:SetScript("OnDragStop",  function() b:SetScript("OnUpdate", nil) end)
+    b:SetScript("OnDragStop",  function()
+        b:SetScript("OnUpdate", nil)
+        if self:_p().angle then self:_Set({ angle = self:_p().angle }) end
+    end)
 
     b:SetScript("OnClick", function(_, btn) self:_OnClick(btn) end)
     b:SetScript("OnEnter", function() self:_OnEnter(b) end)
@@ -88,7 +112,7 @@ function MinimapIcon:_DragUpdate()
     local scale = Minimap:GetEffectiveScale()
     local px, py = GetCursorPosition()
     px, py = px / scale, py / scale
-    self:_Store().angle = math.deg(math.atan2(py - my, px - mx))
+    self:_p().angle = math.deg(math.atan2(py - my, px - mx))   -- cached; persisted on drag stop
     self:_Reposition()
 end
 
@@ -128,12 +152,17 @@ function MinimapIcon:Refresh()
 end
 
 function MinimapIcon:SetShown(on)
-    self:_Store().shown = on and true or false
+    self:_Set({ shown = on and true or false })
     self:Refresh()
 end
 
 ns.ServiceManager:Register(MinimapIcon:New("MinimapIcon", {
-    deps = { "EventBus", "SettingsWindow" },  -- SavedVars reached lazily via the ns.Persisted store
+    deps = { "EventBus", "SettingsWindow" },
+    tables = { minimap = { scope = "global", columns = {
+        { name = "id",    type = "integer", primaryKey = true },   -- singleton row (id = 1)
+        { name = "shown", type = "boolean" },
+        { name = "angle", type = "number" },
+    } } },
     generalToggles = {
         {
             section = "Icons",

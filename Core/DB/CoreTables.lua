@@ -20,6 +20,18 @@ ns.DB = ns.DB or {}
 -- ns.DB.Scope at build time. Using strings (not the enum) keeps this plain data file free of any
 -- load-order dependency on Types.lua (the .toc loads Core/DB/* alphabetically).
 ns.DB.CoreTables = {
+    -- Logger preferences (account-wide), a single row (id = 1). Logger is a core singleton, not a
+    -- DatabaseOwner, so it reaches this through ns.DatabaseManager:Shared().
+    logger = {
+        scope = "global",
+        columns = {
+            { name = "id",        type = "integer", primaryKey = true },
+            { name = "min_level", type = "integer" },
+            { name = "echo",      type = "boolean" },
+            { name = "keep",      type = "integer" },
+        },
+    },
+
     -- Alliance / Horde / Neutral, fixed by id. In memory only (rebuilt each session from this seed).
     faction = {
         scope = "local",

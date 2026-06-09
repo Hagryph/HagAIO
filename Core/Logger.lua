@@ -96,21 +96,30 @@ function Logger:Initialize()
     p.debug = false   -- when on, normally-silent DEBUG lines also surface to chat (dev aid; not persisted)
     p.keep = 500
     p.frame = DEFAULT_CHAT_FRAME
-    p.db = nil
 end
 
--- Pull persisted prefs once SavedVariables are available.
+-- The shared database (or nil before it's built), and the singleton logger-prefs row.
+local function sharedDB() return ns.DatabaseManager and ns.DatabaseManager:Shared() or nil end
+local function val(v, default) return (v ~= nil and not ns.DB.isNull(v)) and v or default end
+
+function Logger:_PrefRow()
+    local db = sharedDB(); if not db then return nil end
+    return db:Select("min_level", "echo", "keep"):From("logger"):Where("id", "=", 1):Limit(1):Run()[1]
+end
+
+-- Upsert the singleton logger row, merging `changes`.
+function Logger:_SetPref(changes)
+    local db = sharedDB(); if not db then return end
+    if self:_PrefRow() then db:Update("logger", changes, function(x) return x.id == 1 end)
+    else changes.id = 1; db:Insert("logger", changes) end
+end
+
+-- Pull persisted prefs from the shared database (built by the time this runs, on ADDON_LOADED).
 function Logger:LoadSettings()
-    local db = ns.SavedVars:Namespace("logger", {
-        minLevel = LEVELS.INFO.order,
-        echo = true,
-        keep = 500,
-    })
-    local p = self:_p()
-    p.db = db
-    p.minLevel = db.minLevel
-    p.echo = db.echo
-    p.keep = db.keep
+    local p, r = self:_p(), self:_PrefRow()
+    p.minLevel = val(r and r.min_level, LEVELS.INFO.order)
+    p.echo     = val(r and r.echo, true)
+    p.keep     = val(r and r.keep, 500)
 end
 
 -- Register is idempotent: the first registration of a name wins, so calling it
@@ -135,7 +144,7 @@ end
 function Logger:SetEcho(on)
     local p = self:_p()
     p.echo = on and true or false
-    if p.db then p.db.echo = p.echo end
+    self:_SetPref({ echo = p.echo })
 end
 function Logger:GetEcho() return self:_p().echo end
 
@@ -146,9 +155,8 @@ function Logger:SetDebug(on) self:_p().debug = on and true or false end
 function Logger:GetDebug()   return self:_p().debug end
 
 function Logger:SetMinLevel(order)
-    local p = self:_p()
-    p.minLevel = order
-    if p.db then p.db.minLevel = order end
+    self:_p().minLevel = order
+    self:_SetPref({ min_level = order })
 end
 function Logger:GetMinLevel() return self:_p().minLevel end
 

@@ -8,7 +8,7 @@ local Class = ns.Class
 -- right-click jumps to the activity log. This is NOT the legacy standalone
 -- minimap button (LibDBIcon) — it's an entry in the compartment menu.
 
-local Compartment = Class.new("Compartment", ns.Service, { mixins = { ns.Persisted } })
+local Compartment = Class.new("Compartment", ns.Service)
 
 -- The Dashboard module IFF enabled: then LEFT-click opens it and settings move to MIDDLE-click;
 -- otherwise the icon keeps LEFT-click = settings and middle does nothing. Lazy lookup so the
@@ -20,21 +20,32 @@ end
 
 function Compartment:OnInitialize()
     self:_p().registered = false
-    self:_BindStore("compartment", { shown = true })  -- account-wide; cached _Store (ns.Persisted)
     ns.EventBus:On("PLAYER_LOGIN", function() self:Register() end)  -- self-apply on login
     -- Our General-page toggle is declared on registration (see below) and contributed
     -- by the Service base -- a push (icons -> window) with no cycle.
 end
 
+-- The single config row (account-wide), or nil before the database is built.
+function Compartment:_Row()
+    local db = self:DB(); if not db then return nil end
+    return db:Select("shown"):From("compartment"):Where("id", "=", 1):Limit(1):Run()[1]
+end
+
 function Compartment:IsShown()
-    return self:_Store().shown ~= false
+    local r = self:_Row()
+    return (not r) or r.shown ~= false   -- default: shown
 end
 
 -- Toggle the compartment icon. Adding it takes effect immediately; the
 -- compartment API has no unregister, so REMOVING it only applies after /reload.
 -- Returns true if a /reload is needed to reflect the change.
 function Compartment:SetShown(on)
-    self:_Store().shown = on and true or false
+    local db = self:DB()
+    on = on and true or false
+    if db then
+        if self:_Row() then db:Update("compartment", { shown = on }, function(x) return x.id == 1 end)
+        else db:Insert("compartment", { id = 1, shown = on }) end
+    end
     if on then
         self:Register()
         return false
@@ -91,7 +102,11 @@ function Compartment:OnClick(button, owner)
 end
 
 ns.ServiceManager:Register(Compartment:New("Compartment", {
-    deps = { "EventBus", "SettingsWindow" },  -- SavedVars reached lazily via the ns.Persisted store
+    deps = { "EventBus", "SettingsWindow" },
+    tables = { compartment = { scope = "global", columns = {
+        { name = "id",    type = "integer", primaryKey = true },   -- singleton row (id = 1)
+        { name = "shown", type = "boolean" },
+    } } },
     generalToggles = {
         {
             section = "Icons",
