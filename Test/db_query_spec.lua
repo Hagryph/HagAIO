@@ -1,6 +1,6 @@
 local S = dofile("Test/support.lua")
 
-local DB_FILES = { "Types", "Schema", "RowStore", "IndexManager", "Constraints", "Database",
+local DB_FILES = { "Types", "Schema", "RowStore", "IndexManager", "Constraints", "TriggerManager", "Database",
                    "Aggregate", "WhereClause", "ColumnResolver", "QueryPlan", "QueryBuilder", "QueryExecutor" }
 
 local function newQueryNs()

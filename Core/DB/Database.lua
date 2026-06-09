@@ -29,7 +29,7 @@ function Database:Initialize(name, schema, slot, opts)
     p.store = DB.RowStore:New(slot, schema)
     p.index = DB.IndexManager:New(schema, p.store)
     p.enforcer = DB.ConstraintEnforcer:New(schema, p.index, p.store, opts.crossResolver)
-    p.triggers = nil       -- set by AttachTriggers() in Phase 5
+    p.triggers = DB.TriggerManager:New(schema)   -- inert if the schema declares no triggers
     if p.store:Version() == nil then p.store:SetVersion(schema:Version()) end
 end
 
@@ -49,22 +49,32 @@ function Database:_FireRow(time, event, tname, newRow, oldRow)
     if not tm then return true, false end
     return tm:FireRow(self, time, event, tname, newRow, oldRow)
 end
+function Database:_FireStmt(time, event, tname)
+    local tm = self:_p().triggers
+    if tm then tm:FireStatement(self, time, event, tname) end
+end
 
 -- ---- INSERT ---------------------------------------------------------------
 function Database:Insert(tname, values)
     local p = self:_p()
+    local INSERT = DB.TriggerEvent.INSERT
+    self:_FireStmt(DB.TriggerTime.BEFORE, INSERT, tname)
     local nextId = function(t) return p.store:NextId(t) end
     local row = p.enforcer:BuildRow(tname, values, nextId)
 
-    local proceed, replaced = self:_FireRow(DB.TriggerTime.BEFORE, DB.TriggerEvent.INSERT, tname, row, nil)
+    local proceed, replaced = self:_FireRow(DB.TriggerTime.BEFORE, INSERT, tname, row, nil)
     if not proceed then return nil end
     if not replaced then
+        -- a BEFORE trigger may have edited the row; auto/default columns are already filled, but
+        -- re-validate types so a trigger can't smuggle a bad value past the schema
+        p.enforcer:RecheckTypes(tname, row)
         p.enforcer:CheckUnique(tname, row, nil)
         p.enforcer:CheckForeignKeys(tname, row)
         p.store:Append(tname, row)
         p.index:OnInsert(tname, row)
+        self:_FireRow(DB.TriggerTime.AFTER, INSERT, tname, row, nil)
     end
-    self:_FireRow(DB.TriggerTime.AFTER, DB.TriggerEvent.INSERT, tname, row, nil)
+    self:_FireStmt(DB.TriggerTime.AFTER, INSERT, tname)
     return row
 end
 
@@ -83,6 +93,7 @@ function Database:Update(tname, changes, predicate)
     local tbl = p.schema:Table(tname)
     assert(tbl, ("unknown table '%s'"):format(tostring(tname)))
     local count = 0
+    self:_FireStmt(DB.TriggerTime.BEFORE, DB.TriggerEvent.UPDATE, tname)
     -- snapshot the matching rows first (we mutate the array's contents, not its membership)
     local targets = {}
     for _, row in ipairs(p.store:Rows(tname)) do
@@ -98,6 +109,7 @@ function Database:Update(tname, changes, predicate)
         local old = self:_Snapshot(row)
         local proceed, replaced = self:_FireRow(DB.TriggerTime.BEFORE, DB.TriggerEvent.UPDATE, tname, candidate, old)
         if proceed and not replaced then
+            p.enforcer:RecheckTypes(tname, candidate)       -- guard a BEFORE trigger's edits
             p.enforcer:CheckUnique(tname, candidate, row)
             p.enforcer:CheckForeignKeys(tname, candidate)
             p.index:OnDelete(tname, row)
@@ -107,6 +119,7 @@ function Database:Update(tname, changes, predicate)
             self:_FireRow(DB.TriggerTime.AFTER, DB.TriggerEvent.UPDATE, tname, row, old)
         end
     end
+    self:_FireStmt(DB.TriggerTime.AFTER, DB.TriggerEvent.UPDATE, tname)
     return count
 end
 
@@ -118,10 +131,12 @@ function Database:Delete(tname, predicate)
     for _, row in ipairs(p.store:Rows(tname)) do
         if predicate == nil or predicate(row) then targets[#targets + 1] = row end
     end
+    self:_FireStmt(DB.TriggerTime.BEFORE, DB.TriggerEvent.DELETE, tname)
     local count = 0
     for _, row in ipairs(targets) do
         count = count + self:_DeleteRow(tname, row)
     end
+    self:_FireStmt(DB.TriggerTime.AFTER, DB.TriggerEvent.DELETE, tname)
     return count
 end
 
@@ -155,8 +170,9 @@ function Database:_DeleteRow(tname, row)
         end
     end
 
-    local proceed = self:_FireRow(DB.TriggerTime.BEFORE, DB.TriggerEvent.DELETE, tname, nil, self:_Snapshot(row))
+    local proceed, replaced = self:_FireRow(DB.TriggerTime.BEFORE, DB.TriggerEvent.DELETE, tname, nil, self:_Snapshot(row))
     if not proceed then return 0 end
+    if replaced then return 1 end          -- an INSTEAD_OF trigger handled the delete; skip the base op
 
     -- 2) CASCADE / SET NULL the children before removing the parent.
     for _, ref in ipairs(refs) do

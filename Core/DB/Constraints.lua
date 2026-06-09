@@ -90,6 +90,20 @@ function ConstraintEnforcer:BuildRow(tname, values, nextId)
     return row
 end
 
+-- Re-validate an already-built row's NOT NULL + types (used after a BEFORE trigger may have edited
+-- it, so a trigger can't smuggle a wrong-typed / null value past the schema).
+function ConstraintEnforcer:RecheckTypes(tname, row)
+    local tbl = self:_p().schema:Table(tname)
+    for _, col in ipairs(tbl:Columns()) do
+        local cn, v = col:Name(), row[col:Name()]
+        if v == nil then
+            if not col:IsNullable() then fail(("NOT NULL constraint failed: %s.%s"):format(tname, cn)) end
+        elseif not DB.checkType(col:Type(), v) then
+            fail(("type error: %s.%s expects %s, got %s"):format(tname, cn, col:Type(), type(v)))
+        end
+    end
+end
+
 -- Raise if `row` duplicates a PK/UNIQUE key held by a different row (`exceptRow` is skipped, for
 -- updates).
 function ConstraintEnforcer:CheckUnique(tname, row, exceptRow)
