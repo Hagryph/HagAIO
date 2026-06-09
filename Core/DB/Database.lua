@@ -18,6 +18,9 @@ local Class = ns.Class
 ns.DB = ns.DB or {}
 local DB = ns.DB
 
+-- Public engine API kept for callers even when the current addon doesn't exercise every method.
+-- deadcode-allow: InsertAll, Names, Slot, HasTable
+
 local Database = Class.new("Database")
 
 -- opts = { crossResolver = function(dbName) -> Database }   (cross-DB FK resolution; optional)
@@ -38,13 +41,11 @@ function Database:Name()     return self:_p().name end
 function Database:Schema()   return self:_p().schema end
 function Database:Index()    return self:_p().index end
 function Database:Store()    return self:_p().store end
-function Database:Enforcer() return self:_p().enforcer end
 
--- ---- trigger hooks (filled in Phase 5; inert until then) ------------------
--- AttachTriggers(triggerManager) wires real firing. _FireRow returns (proceed, replaced):
+-- ---- trigger hooks --------------------------------------------------------
+-- _FireRow returns (proceed, replaced):
 --   proceed=false  -> a BEFORE trigger vetoed the op; skip it.
---   replaced=true  -> an INSTEAD_OF trigger handled it; skip the default write.
-function Database:AttachTriggers(tm) self:_p().triggers = tm end
+--   replaced=true  -> an INSTEAD_OF trigger handled it; skip the default write + AFTER.
 function Database:_FireRow(time, event, tname, newRow, oldRow)
     local tm = self:_p().triggers
     if not tm then return true, false end

@@ -16,6 +16,8 @@ local Class = ns.Class
 -- STATEMENT-level triggers fire once per DML call (FireStatement); ROW-level fire per row.
 -- A re-entrancy guard stops a trigger whose action issues DML on the same table+timing+event from
 -- recursing into itself forever.
+--
+-- deadcode-allow: _FireRowInner   (dispatched via pcall(self._FireRowInner, ...), not a : call)
 
 ns.DB = ns.DB or {}
 local DB = ns.DB
@@ -87,11 +89,6 @@ function TriggerManager:FireStatement(db, time, event, tname)
     for _, t in ipairs(self:_For(self:_p().stmt, tname, time, event) or {}) do
         if t.when == nil or t.when(ctx) then t.action(ctx) end
     end
-end
-
-function TriggerManager:HasAny()
-    local p = self:_p()
-    return next(p.row) ~= nil or next(p.stmt) ~= nil
 end
 
 DB.TriggerManager = TriggerManager

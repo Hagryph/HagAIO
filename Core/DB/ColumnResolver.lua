@@ -33,9 +33,6 @@ function ColumnResolver:Initialize(sources)
     end
 end
 
-function ColumnResolver:Aliases() return self:_p().aliasOrder end
-function ColumnResolver:TableFor(alias) return self:_p().byAlias[alias] end
-
 -- Split "alias.col" / "col"; returns alias (or nil) and column.
 local function split(ref)
     local a, c = ref:match("^([%w_]+)%.([%w_]+)$")
