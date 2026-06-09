@@ -53,6 +53,8 @@ function Initializer:Run()
         local sv = ns.SavedVars
         sv:Load()
         sv:Migrate()                 -- bring stored data up to the current schema
+        -- Register any databases declared by services (queued before the saved vars were ready).
+        if ns.DatabaseManager then ns.DatabaseManager:ResolvePending() end
         -- Per-module defaults are declarative now: each module's `defaultEnabled` gates its
         -- initial enable, and setting defaults (autoAccept/autoTurnIn = false, ...) come from
         -- the module's settings schema via SavedVars' deep-merge -- no seeding needed here.

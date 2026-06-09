@@ -24,9 +24,32 @@ function DatabaseManager:OnInitialize()
     local p = self:_p()
     p.dbs = {}            -- name -> Database
     p.reverseFK = {}      -- "parentDb\1parentTable" -> list of { childDb, childTable, childCol, refCol, onDelete }
+    p.pending = {}        -- declarations made before SavedVars loaded (registered on ResolvePending)
 end
 
 local function rk(dbName, table) return dbName .. "\1" .. table end
+
+-- Declare a database from a SCHEMA SPEC (the same shape Module/Service `databases` opts use).
+-- Registers immediately if the saved variables are loaded, otherwise queues it for ResolvePending
+-- (services init before ADDON_LOADED, so their databases register a beat later). Returns the live
+-- Database, or nil if deferred. opts = { perChar = bool }.
+function DatabaseManager:Declare(name, schemaSpec, opts)
+    local schema = ns.DB.Schema.new(name, schemaSpec)
+    if ns.SavedVars and ns.SavedVars:IsLoaded() then
+        return self:Register(name, schema, opts)
+    end
+    table.insert(self:_p().pending, { name = name, schema = schema, opts = opts })
+    return nil
+end
+
+-- Register every database queued by Declare before the saved variables were ready. Called once
+-- from the ADDON_LOADED path, right after SavedVars:Load()/Migrate().
+function DatabaseManager:ResolvePending()
+    local p = self:_p()
+    local queue = p.pending
+    p.pending = {}
+    for _, d in ipairs(queue) do self:Register(d.name, d.schema, d.opts) end
+end
 
 -- Register a database. opts = { perChar = bool }. Returns the live Database (also at ns.DB.<name>).
 function DatabaseManager:Register(name, schema, opts)

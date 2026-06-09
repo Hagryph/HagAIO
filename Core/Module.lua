@@ -10,7 +10,8 @@ local Class = ns.Class
 -- and the settings accessors live on ns.Component, the shared base; this class adds
 -- enable/disable, dependency gating, saved-var binding and logging.
 
-local Module = Class.new("Module", ns.Component)
+-- ns.DatabaseOwner adds the declarative `databases` surface (self:DB(name) + private DAOs).
+local Module = Class.new("Module", ns.Component, { mixins = { ns.DatabaseOwner } })
 
 -- Constructor. Subclasses that need their own constructor should override
 -- Initialize and call Module.Initialize(self, name, opts) first.
@@ -84,6 +85,11 @@ function Module:Initialize(name, opts)
     p.settingsDefaults = ns.Component.SeedDefaults(p.settings)
     p.dataDefaults     = ns.Component.SeedDefaults(nil, opts.dbSchema, opts.dbDefaults)
     p.dataPerChar      = opts.dataPerChar and true or false
+
+    -- Declared SQL databases (see ns.DatabaseOwner): self:DB(name) + the module's own DAOs. A
+    -- module that owns one depends on the DatabaseManager so it's available at init.
+    self:_DeclareDatabases(opts.databases)
+    if opts.databases and next(opts.databases) then p.serviceDeps = ns.AddDep(p.serviceDeps, "DatabaseManager") end
 
     p.enabled = false
     p.settingsDB = nil   -- per-character settings namespace (GetSetting/_SettingsDB)
@@ -164,6 +170,7 @@ function Module:_Init()
     self:_Publish()      -- ns.<alias> first (opts.publishAs), so OnInitialize can rely on it
     self:_AttachLogger()
     self:_BindDB()
+    self:_RegisterDatabases()   -- register owned databases (SavedVars are loaded by module init)
     self:OnInitialize()
 end
 

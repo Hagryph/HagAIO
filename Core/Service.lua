@@ -20,7 +20,8 @@ local Class = ns.Class
 --   function Foo:OnShutdown()  ... end         -- optional cleanup (reverse order)
 --   ns.ServiceManager:Register(Foo:New("Foo", { deps = { "EventBus" } }))
 
-local Service = Class.new("Service", ns.Loggable)
+-- ns.DatabaseOwner adds the declarative `databases` surface (self:DB(name) + private DAOs).
+local Service = Class.new("Service", ns.Loggable, { mixins = { ns.DatabaseOwner } })
 
 -- opts = { deps = { "OtherService", ... }, ui = bool, color = "RRGGBB",
 --          commands = { ... }, generalToggles = { ... } }
@@ -39,6 +40,11 @@ function Service:Initialize(name, opts)
     p.commands       = opts.commands
     p.generalToggles = opts.generalToggles
     p.log            = nil
+    -- Declared databases (see ns.DatabaseOwner). A service that owns a database depends on the
+    -- DatabaseManager so it's initialised first; the databases themselves register a beat later
+    -- (on ResolvePending, once the saved variables have loaded).
+    self:_DeclareDatabases(opts.databases)
+    if opts.databases and next(opts.databases) then p.deps = ns.AddDep(p.deps, "DatabaseManager") end
 end
 
 -- GetName is inherited from ns.Loggable (shared identity).
@@ -52,6 +58,7 @@ function Service:_Init()
     self:_Publish()
     self:_AttachLogger()
     self:_WireContributions()
+    self:_RegisterDatabases()   -- declare owned databases (deferred until SavedVars load)
     self:OnInitialize()
 end
 
