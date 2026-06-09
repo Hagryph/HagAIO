@@ -51,7 +51,8 @@ local function spec()
 end
 
 local function newDb(ns, slot)
-    return ns.DB.Database:New("Flight", ns.DB.Schema.new("Flight", spec()), slot or {})
+    -- the optional `slot` is bound as the GLOBAL backing (so tests can inspect what was persisted)
+    return ns.DB.Database:New("Flight", ns.DB.Schema.new("Flight", spec()), slot and { [ns.DB.Scope.GLOBAL] = slot } or {})
 end
 
 describe("DB DML: insert", function()

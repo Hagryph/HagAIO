@@ -4,10 +4,8 @@ local Class = ns.Class
 -- Lib/FlightResolver.lua
 -- Pure read-side algebra for flight-time queries over a solved atomic-leg table (the
 -- ns.FlightGraph Solve() result). No WoW API. Extracted from Misc.lua so its edge cases are
--- unit-testable. It owns the flight QUALITY enum and three pure operations the flight timer
+-- unit-testable. It owns the flight QUALITY enum and two pure operations the flight timer
 -- leans on:
---   * StoredTime -- normalise a stored DB entry (number | { t = .. }) to seconds.
---   * EntryQ     -- the entry's quality tier, decoding the legacy entry shapes.
 --   * LegTime    -- best time for one atomic leg, ranking the two directions by quality.
 --   * SumLegs    -- sum a route's atomic legs, returning nil if ANY leg is unknown
 --                   (the never-fabricate invariant: a route with a gap has no time).
@@ -15,24 +13,8 @@ local Class = ns.Class
 local FlightResolver = Class.new("FlightResolver", ns.Lib)
 
 -- DIRECT (a real landing) outranks FLY (a mid-flight closest-approach guess). Numeric so a
--- higher quality wins ties; persisted as a DB entry's `q`, so the values must stay 2/1.
+-- higher quality wins ties; persisted as a flight_route row's `quality`, so the values stay 2/1.
 FlightResolver.Quality = ns.Enum.new("FlightQuality", { DIRECT = 2, FLY = 1 })
-
--- Seconds recorded on a DB entry: a plain number (legacy) or a { t = seconds, ... } table.
-function FlightResolver:StoredTime(e)
-    if type(e) == "number" then return e end
-    return e and e.t
-end
-
--- Quality tier of a DB entry, decoding legacy shapes: nil -> nil; a plain number -> DIRECT
--- (an old direct record); an explicit `q` -> that; an old { est = true } saved estimate ->
--- FLY; otherwise DIRECT.
-function FlightResolver:EntryQ(e)
-    if e == nil then return nil end
-    if type(e) ~= "table" then return self.Quality.DIRECT end   -- legacy number
-    if e.q then return e.q end
-    return e.est and self.Quality.FLY or self.Quality.DIRECT     -- legacy saved estimate -> fly
-end
 
 -- Best time for one ATOMIC leg a -> b from the solved leg table, in priority order:
 --   1 direct same > 2 direct reverse > 3 fly same > 4 fly reverse > 5 derived same >

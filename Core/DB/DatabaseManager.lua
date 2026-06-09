@@ -52,8 +52,9 @@ function DatabaseManager:Build()
     if p.built then return p.shared end
     assert(ns.SavedVars and ns.SavedVars:IsLoaded(), "DatabaseManager:Build before SavedVars are loaded")
     local schema = DB.Schema.new("HagAIO", { version = SCHEMA_VERSION, tables = p.contrib })
-    p.shared = DB.Database:New("HagAIO", schema, ns.SavedVars:DataSlot("db_global", false), {
-        charSlot = ns.SavedVars:DataSlot("db_char", true),
+    p.shared = DB.Database:New("HagAIO", schema, {
+        [DB.Scope.GLOBAL] = ns.SavedVars:DataSlot("db_global", false),
+        [DB.Scope.CHAR]   = ns.SavedVars:DataSlot("db_char", true),
         -- LOCAL tables get a fresh in-memory backing automatically.
     })
     p.built = true

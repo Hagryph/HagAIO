@@ -34,18 +34,16 @@ local CROSS_MARGIN = 75   -- moved this many (linear) yards past the closest app
 local FLYOVER_RANGE = 75  -- closest approach must be within this to count as flying OVER a node;
                           -- farther than this and the node is skipped (never recorded)
 
--- A flight DB entry is { t = seconds, q = quality, via = { node, ... } }, keyed per
--- DIRECTION (see _DirKey). `via` is the ordered booked intermediate nodes this segment
--- spanned (empty/nil for an ATOMIC leg between adjacent stops); it lets the solver split
--- a span back into atomic legs by subtraction. Only measurements are stored: DIRECT (a
--- real landing) > FLY (a mid-flight closest-approach guess). Estimates are computed fresh
--- and never persisted. Legacy: a plain number = DIRECT (no via -> treated as atomic); an
--- old { t, est = true } (a saved estimate) is treated as FLY.
+-- A flight_route row carries { t = seconds, quality = q } per DIRECTION + faction; the booked
+-- intermediate nodes it spanned are ordered flight_hop rows (empty for an ATOMIC leg between
+-- adjacent stops), which let the solver split a span back into atomic legs by subtraction. Only
+-- measurements are stored: DIRECT (a real landing) > FLY (a mid-flight closest-approach guess).
+-- Estimates are computed fresh and never persisted.
 --
--- The read-side algebra over a solved leg table -- entry normalisation (StoredTime/EntryQ),
--- the per-leg quality ranking (LegTime) and the never-fabricate route sum (SumLegs) -- lives
--- in the pure, unit-tested ns.FlightResolver (Lib/FlightResolver.lua), which also owns the
--- quality enum (DIRECT = 2 > FLY = 1; the values are persisted as `e.q`).
+-- The read-side algebra over a solved leg table -- the per-leg quality ranking (LegTime) and the
+-- never-fabricate route sum (SumLegs) -- lives in the pure, unit-tested ns.FlightResolver
+-- (Lib/FlightResolver.lua), which also owns the quality enum (DIRECT = 2 > FLY = 1; persisted as
+-- a row's `quality`).
 local Flight  = ns.FlightResolver
 local Quality = Flight.Quality
 
@@ -248,8 +246,7 @@ function Misc:_FlightHops(routeId)
     return via
 end
 
--- A normalised entry { t, q, via } for the a -> b direction (the shape Flight:EntryQ/StoredTime
--- read), or nil. Mirrors the old per-direction DB entry.
+-- A normalised entry { t, q, via } for the a -> b direction, or nil.
 function Misc:_FlightGet(faction, a, b)
     local row = self:_FlightRow(faction, a, b)
     if not row then return nil end
@@ -330,10 +327,10 @@ end
 function Misc:_RouteTime(src, dst, slot, name)
     local faction = self:_Faction()
     local fwd, rev = self:_FlightGet(faction, src, dst), self:_FlightGet(faction, dst, src)
-    if fwd and Flight:EntryQ(fwd) == Quality.DIRECT then return Flight:StoredTime(fwd), false end  -- 1
-    if rev and Flight:EntryQ(rev) == Quality.DIRECT then return Flight:StoredTime(rev), true  end  -- 2
-    if fwd then return Flight:StoredTime(fwd), true end                       -- 3 (fwd is FLY here)
-    if rev then return Flight:StoredTime(rev), true end                       -- 4 (rev is FLY here)
+    if fwd and fwd.q == Quality.DIRECT then return fwd.t, false end           -- 1
+    if rev and rev.q == Quality.DIRECT then return rev.t, true  end           -- 2
+    if fwd then return fwd.t, true end                                        -- 3 (fwd is FLY here)
+    if rev then return rev.t, true end                                        -- 4 (rev is FLY here)
     local est = self:_EstimateRoute(slot, name)                               -- 5 (booked-path sum)
     if est then return est, true end
     return nil, false

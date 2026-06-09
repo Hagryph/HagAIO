@@ -79,7 +79,7 @@ function Column:Initialize(spec, tableName)
     p.hasDefault = (spec.default ~= nil)
     p.default = spec.default
 
-    -- Foreign-key reference (resolved against the target table at Schema build, or cross-DB later).
+    -- Foreign-key reference (resolved against the target table at Schema build).
     if spec.references then
         local r = spec.references
         assert(type(r) == "table", ("%s.%s: references must be a table"):format(where, p.name))
@@ -91,7 +91,6 @@ function Column:Initialize(spec, tableName)
             fail(("%s.%s: onDelete set_null needs a nullable column"):format(where, p.name))
         end
         p.ref = {
-            db       = r.db,                          -- nil = same database (cross-DB resolved later)
             table    = r.table,
             column   = r.column,                      -- nil = the referenced table's primary key
             onDelete = onDelete,
@@ -145,7 +144,7 @@ function Table:Initialize(name, spec)
         if col:IsUnique() and not col:IsPrimaryKey() then p.uniques[#p.uniques + 1] = { cn } end
         if col:Ref() then
             local r = col:Ref()
-            p.fks[#p.fks + 1] = { column = cn, db = r.db, table = r.table, refColumn = r.column, onDelete = r.onDelete }
+            p.fks[#p.fks + 1] = { column = cn, table = r.table, refColumn = r.column, onDelete = r.onDelete }
         end
     end
 
@@ -231,34 +230,32 @@ function Schema:Initialize(name, spec)
     self:_BuildViews(spec.views or {})
 end
 
--- Same-DB foreign keys must point at an existing table + a PK/unique column. Cross-DB refs
--- (ref.db set) are validated later by the DatabaseManager once both databases are registered.
+-- Every foreign key must point at an existing table + a PK/unique column (a nil reference column
+-- resolves to the target's primary key).
 function Schema:_ValidateForeignKeys()
     local p = self:_p()
     for tname, tbl in pairs(p.tables) do
         for _, fk in ipairs(tbl:ForeignKeys()) do
-            if fk.db == nil then
-                local target = p.tables[fk.table]
-                if not target then
-                    fail(("table '%s' FK '%s' references unknown table '%s'"):format(tname, fk.column, fk.table))
+            local target = p.tables[fk.table]
+            if not target then
+                fail(("table '%s' FK '%s' references unknown table '%s'"):format(tname, fk.column, fk.table))
+            end
+            local refCol = fk.refColumn
+            if refCol == nil then
+                local pk = target:PrimaryKey()
+                if #pk ~= 1 then
+                    fail(("table '%s' FK '%s' must name a column of '%s' (its PK is composite/absent)")
+                        :format(tname, fk.column, fk.table))
                 end
-                local refCol = fk.refColumn
-                if refCol == nil then
-                    local pk = target:PrimaryKey()
-                    if #pk ~= 1 then
-                        fail(("table '%s' FK '%s' must name a column of '%s' (its PK is composite/absent)")
-                            :format(tname, fk.column, fk.table))
-                    end
-                    refCol = pk[1]
-                    fk.refColumn = refCol
-                end
-                if not target:HasColumn(refCol) then
-                    fail(("table '%s' FK '%s' references unknown column '%s.%s'"):format(tname, fk.column, fk.table, refCol))
-                end
-                if not self:_IsReferenceable(target, refCol) then
-                    fail(("table '%s' FK '%s' must reference a PK or UNIQUE column ('%s.%s' is neither)")
-                        :format(tname, fk.column, fk.table, refCol))
-                end
+                refCol = pk[1]
+                fk.refColumn = refCol
+            end
+            if not target:HasColumn(refCol) then
+                fail(("table '%s' FK '%s' references unknown column '%s.%s'"):format(tname, fk.column, fk.table, refCol))
+            end
+            if not self:_IsReferenceable(target, refCol) then
+                fail(("table '%s' FK '%s' must reference a PK or UNIQUE column ('%s.%s' is neither)")
+                    :format(tname, fk.column, fk.table, refCol))
             end
         end
     end

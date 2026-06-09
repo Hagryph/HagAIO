@@ -12,10 +12,6 @@ local Class = ns.Class
 --     Database can CASCADE / RESTRICT / SET NULL.
 -- It validates only; the Database performs the actual mutation + index maintenance + triggers.
 -- NULL is normalised to an ABSENT key in the stored row (never the sentinel) so it persists safely.
---
--- Cross-database foreign keys (a column whose reference names another database) are resolved
--- through an injected `crossResolver(dbName) -> Database`; until the DatabaseManager wires that in
--- (Phase 6) only same-database FKs are enforced.
 
 ns.DB = ns.DB or {}
 local DB = ns.DB
@@ -24,27 +20,24 @@ local function fail(msg) error("DB: " .. msg, 0) end
 
 local ConstraintEnforcer = Class.new("DBConstraintEnforcer")
 
-function ConstraintEnforcer:Initialize(schema, index, store, crossResolver)
+function ConstraintEnforcer:Initialize(schema, index, store)
     local p = self:_p()
     p.schema = schema
     p.index = index
     p.store = store
-    p.cross = crossResolver        -- function(dbName) -> Database, or nil (same-DB only)
     self:_BuildChildRefs()
 end
 
--- childrenOf[parentTable] = list of { childTable, childCol, refCol, onDelete } -- the same-DB
--- reverse foreign-key map used to drive cascade on delete.
+-- childrenOf[parentTable] = list of { childTable, childCol, refCol, onDelete } -- the reverse
+-- foreign-key map used to drive cascade on delete.
 function ConstraintEnforcer:_BuildChildRefs()
     local p = self:_p()
     p.childrenOf = {}
     for _, tname in ipairs(p.schema:TableNames()) do
         for _, fk in ipairs(p.schema:Table(tname):ForeignKeys()) do
-            if fk.db == nil then
-                local list = p.childrenOf[fk.table]
-                if not list then list = {}; p.childrenOf[fk.table] = list end
-                list[#list + 1] = { childTable = tname, childCol = fk.column, refCol = fk.refColumn, onDelete = fk.onDelete }
-            end
+            local list = p.childrenOf[fk.table]
+            if not list then list = {}; p.childrenOf[fk.table] = list end
+            list[#list + 1] = { childTable = tname, childCol = fk.column, refCol = fk.refColumn, onDelete = fk.onDelete }
         end
     end
 end
@@ -129,13 +122,6 @@ end
 
 function ConstraintEnforcer:_ParentExists(fk, value)
     local p = self:_p()
-    if fk.db ~= nil then
-        local other = p.cross and p.cross(fk.db)
-        if not other then fail(("cross-database FK target '%s' is not registered"):format(tostring(fk.db))) end
-        local refCol = fk.refColumn or other:Schema():Table(fk.table):PrimaryKey()[1]
-        local hits = other:Index():FindByColumn(fk.table, refCol, value)
-        return hits ~= nil and #hits > 0
-    end
     local hits = p.index:FindByColumn(fk.table, fk.refColumn, value)
     if hits then return #hits > 0 end
     -- Not indexed (shouldn't happen for a PK/unique target) -> scan fallback.
