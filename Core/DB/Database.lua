@@ -30,6 +30,7 @@ function Database:Initialize(name, schema, slot, opts)
     p.index = DB.IndexManager:New(schema, p.store)
     p.enforcer = DB.ConstraintEnforcer:New(schema, p.index, p.store, opts.crossResolver)
     p.triggers = DB.TriggerManager:New(schema)   -- inert if the schema declares no triggers
+    p.crossChildren = opts.crossChildren         -- function(tname) -> cross-DB child refs (Phase 6)
     if p.store:Version() == nil then p.store:SetVersion(schema:Version()) end
 end
 
@@ -158,14 +159,21 @@ end
 
 function Database:_DeleteRow(tname, row)
     local p = self:_p()
-    local refs = p.enforcer:ChildRefs(tname)
+    local refs = p.enforcer:ChildRefs(tname)                 -- same-DB child refs
+    local cross = p.crossChildren and p.crossChildren(tname) or {}   -- cross-DB child refs
 
-    -- 1) RESTRICT: block the delete if any restricting child still references this row.
+    -- 1) RESTRICT: block the delete if any restricting child (here or in another DB) still refers.
     for _, ref in ipairs(refs) do
-        if ref.onDelete == DB.OnDelete.RESTRICT then
-            local kids = self:_ChildRows(ref, row[ref.refCol])
-            if #kids > 0 then
-                error(("DB: RESTRICT: %s row still referenced by %s.%s"):format(tname, ref.childTable, ref.childCol), 0)
+        if ref.onDelete == DB.OnDelete.RESTRICT and #self:_ChildRows(ref, row[ref.refCol]) > 0 then
+            error(("DB: RESTRICT: %s row still referenced by %s.%s"):format(tname, ref.childTable, ref.childCol), 0)
+        end
+    end
+    for _, cref in ipairs(cross) do
+        if cref.onDelete == DB.OnDelete.RESTRICT then
+            local hits = cref.targetDb:Index():FindByColumn(cref.childTable, cref.childCol, row[cref.refCol])
+            if hits and #hits > 0 then
+                error(("DB: RESTRICT: %s row still referenced by %s.%s.%s")
+                    :format(tname, cref.targetDb:Name(), cref.childTable, cref.childCol), 0)
             end
         end
     end
@@ -178,15 +186,23 @@ function Database:_DeleteRow(tname, row)
     for _, ref in ipairs(refs) do
         local value = row[ref.refCol]
         if ref.onDelete == DB.OnDelete.CASCADE then
-            for _, kid in ipairs(self:_ChildRows(ref, value)) do
-                self:_DeleteRow(ref.childTable, kid)
-            end
+            for _, kid in ipairs(self:_ChildRows(ref, value)) do self:_DeleteRow(ref.childTable, kid) end
         elseif ref.onDelete == DB.OnDelete.SET_NULL then
             for _, kid in ipairs(self:_ChildRows(ref, value)) do
                 p.index:OnDelete(ref.childTable, kid)
                 kid[ref.childCol] = nil
                 p.index:OnInsert(ref.childTable, kid)
             end
+        end
+    end
+    -- cross-DB children go through the OTHER database's public API, so its own cascades + triggers fire
+    for _, cref in ipairs(cross) do
+        local value = row[cref.refCol]
+        if cref.onDelete == DB.OnDelete.CASCADE then
+            cref.targetDb:Delete(cref.childTable, function(r) return r[cref.childCol] == value end)
+        elseif cref.onDelete == DB.OnDelete.SET_NULL then
+            cref.targetDb:Update(cref.childTable, { [cref.childCol] = DB.NULL },
+                function(r) return r[cref.childCol] == value end)
         end
     end
 
@@ -197,6 +213,9 @@ function Database:_DeleteRow(tname, row)
     self:_FireRow(DB.TriggerTime.AFTER, DB.TriggerEvent.DELETE, tname, nil, old)
     return 1
 end
+
+-- Rebuild the in-memory indexes from current rows (used after a migration bulk-edits storage).
+function Database:RebuildIndexes() self:_p().index:Rebuild() end
 
 -- A shallow copy of a stored row (used as the OLD/NEW trigger context, so handlers can't mutate
 -- live storage).

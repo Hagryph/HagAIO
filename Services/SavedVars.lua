@@ -133,6 +133,13 @@ function SavedVars:Namespace(key, defaults, perChar)
     return root[key]
 end
 
+-- A named storage SLOT for the Database engine: an empty sub-table the engine shapes and owns
+-- (account-wide, or per-character with perChar=true). This is the only handle the DB layer gets on
+-- the saved variables -- no caller touches HagAIODB / HagAIOCharDB directly.
+function SavedVars:DataSlot(name, perChar)
+    return self:Namespace(name, {}, perChar)
+end
+
 -- ---- settings (materialised) ----------------------------------------------
 -- The profile data the current character has loaded (the middle layer), or nil.
 function SavedVars:_ActiveProfile()

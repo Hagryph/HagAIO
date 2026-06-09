@@ -132,8 +132,9 @@ function ConstraintEnforcer:_ParentExists(fk, value)
     if fk.db ~= nil then
         local other = p.cross and p.cross(fk.db)
         if not other then fail(("cross-database FK target '%s' is not registered"):format(tostring(fk.db))) end
-        return other:Index():FindByColumn(fk.table, fk.refColumn, value) ~= nil
-            and #other:Index():FindByColumn(fk.table, fk.refColumn, value) > 0
+        local refCol = fk.refColumn or other:Schema():Table(fk.table):PrimaryKey()[1]
+        local hits = other:Index():FindByColumn(fk.table, refCol, value)
+        return hits ~= nil and #hits > 0
     end
     local hits = p.index:FindByColumn(fk.table, fk.refColumn, value)
     if hits then return #hits > 0 end
