@@ -240,8 +240,9 @@ function Misc:_MasterId(name)
     local db = self:DB(); if not db then return nil end
     local faction = self:_Faction()
     if faction ~= "Alliance" and faction ~= "Horde" and faction ~= "Neutral" then return nil end
+    -- Normalise here too (idempotent) so a raw taxi name from any caller still keys correctly.
     local rows = db:Select("node_id"):From("flight_master")
-        :Where("name", "=", tostring(name)):AndWhere("faction", "in", { faction, "Neutral" }):Limit(1):Run()
+        :Where("name", "=", Flight:NodeName(tostring(name))):AndWhere("faction", "in", { faction, "Neutral" }):Limit(1):Run()
     return rows[1] and rows[1].node_id or nil
 end
 
