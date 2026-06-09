@@ -53,6 +53,16 @@ function Initializer:Run()
         local sv = ns.SavedVars
         sv:Load()
         sv:Migrate()                 -- bring stored data up to the current schema
+        -- Build the ONE shared database now, before anything reads it (Logger prefs just below;
+        -- Compartment/MinimapIcon on their own PLAYER_LOGIN handlers). Every owner contributes its
+        -- tables first -- services already did at StartAll, modules/submodules contribute here -- so
+        -- the build sees the full schema. _ContributeTables is idempotent (the later _Init is a no-op).
+        if ns.DatabaseManager then
+            for _, reg in ipairs({ ns.ServiceManager, ns.ModuleManager, ns.SubmoduleManager }) do
+                for it in reg:Iterate() do if it._ContributeTables then it:_ContributeTables() end end
+            end
+            ns.DatabaseManager:Build()
+        end
         -- Per-module defaults are declarative now: each module's `defaultEnabled` gates its
         -- initial enable, and setting defaults (autoAccept/autoTurnIn = false, ...) come from
         -- the module's settings schema via SavedVars' deep-merge -- no seeding needed here.
@@ -70,10 +80,7 @@ function Initializer:Run()
     bus:On("PLAYER_LOGIN", function()
         ns.ModuleManager:StartAll()
         ns.SubmoduleManager:StartAll()   -- after modules: load condition-gated submodules
-        -- Every service + module has now contributed its tables -> build the one shared database
-        -- (seeds LOCAL reference tables, binds the GLOBAL/CHAR saved-var slots). self:DB() is live
-        -- from here on; no owner queries it before this point.
-        if ns.DatabaseManager then ns.DatabaseManager:Build() end
+        -- (the shared database was already built on ADDON_LOADED, before any owner reads it)
         -- The Compartment / MinimapIcon services apply their own saved state on
         -- PLAYER_LOGIN (they subscribe it themselves) -- Init doesn't manage them.
     end)

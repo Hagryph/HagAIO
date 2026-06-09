@@ -29,10 +29,16 @@ ns.DatabaseOwner = ns.Mixin.new("DatabaseOwner", {
         self:_p().dbTables = tables or {}
     end,
 
-    -- Hand the declared tables to the manager to aggregate into the shared schema (from _Init).
+    -- Hand the declared tables to the manager to aggregate into the shared schema. Idempotent:
+    -- it's called both in the ADDON_LOADED pre-build sweep and again from the owner's _Init, but the
+    -- tables are contributed exactly once (before the database is built).
     _ContributeTables = function(self)
-        local t = self:_p().dbTables
-        if t and next(t) and ns.DatabaseManager then ns.DatabaseManager:Contribute(t) end
+        local p = self:_p()
+        if p._dbContributed then return end
+        p._dbContributed = true
+        if p.dbTables and next(p.dbTables) and ns.DatabaseManager then
+            ns.DatabaseManager:Contribute(p.dbTables)
+        end
     end,
 
     -- The single shared Database (nil until built).

@@ -19,7 +19,7 @@ local W = ns.UI.Widgets
 -- ACCOUNT-WIDE registry -- so on every future encounter, on any character, it's
 -- skipped before acceptance.
 
-local Questing = Class.new("Questing", ns.Module, { mixins = { ns.Persisted } })
+local Questing = Class.new("Questing", ns.Module)
 
 local clock = ns.Format.Clock   -- pure duration formatter (Lib/Format.lua)
 
@@ -45,12 +45,12 @@ function Questing:_CurrentQuestID()
     return GetQuestID and GetQuestID() or nil
 end
 
--- The account-wide registry of known-timed quests ({ [questID] = totalSeconds }), or nil
--- before SavedVariables load. Learned over time (see _OnQuestAccepted), shared across
--- characters. (Older entries may be the boolean `true` -- pre-seconds; still truthy.)
-function Questing:_TimedRegistry()
-    local store = self:_Store()
-    return store and store.timed or nil
+-- Known-timed quests live account-wide in the shared DB's quest_timed table (quest_id PK, optional
+-- seconds). Learned over time (see _OnQuestAccepted), shared across characters.
+function Questing:_TimedRow(questID)
+    local db = self:DB()
+    if not (db and questID) then return nil end
+    return db:Select("seconds"):From("quest_timed"):Where("quest_id", "=", questID):Limit(1):Run()[1]
 end
 
 -- A quest's live time limit, in seconds, is only readable once it's in your log (offered
@@ -69,25 +69,29 @@ end
 -- on the very first encounter -- they're caught post-accept and remembered for next time.
 function Questing:_IsTimedQuest(questID)
     if not questID then return false end
-    local reg = self:_TimedRegistry()
-    if reg and reg[questID] then return true end
+    if self:_TimedRow(questID) then return true end
     return self:_LiveSeconds(questID) ~= nil
 end
 
 -- The known time limit (seconds) for a timed quest, or nil. Prefers a live in-log timer,
--- falls back to the learned registry value (a number; an older boolean entry yields nil).
+-- falls back to the learned table value (nil when the row stored no seconds).
 function Questing:_TimedSeconds(questID)
     local live = self:_LiveSeconds(questID)
     if live then return live end
-    local reg = self:_TimedRegistry()
-    local v = reg and questID and reg[questID]
-    return type(v) == "number" and v or nil
+    local row = self:_TimedRow(questID)
+    local v = row and row.seconds
+    return (v ~= nil and not ns.DB.isNull(v)) and v or nil
 end
 
--- Record a questID as timed in the account-wide registry, storing its time limit (seconds).
+-- Record a questID as timed account-wide, storing its time limit (seconds) when known.
 function Questing:_RememberTimed(questID, seconds)
-    local reg = self:_TimedRegistry()
-    if reg and questID then reg[questID] = seconds or true end
+    local db = self:DB()
+    if not (db and questID) then return end
+    if self:_TimedRow(questID) then
+        if seconds then db:Update("quest_timed", { seconds = seconds }, function(r) return r.quest_id == questID end) end
+    else
+        db:Insert("quest_timed", { quest_id = questID, seconds = seconds })
+    end
 end
 
 function Questing:_QuestTitle(questID)
@@ -181,8 +185,7 @@ function Questing:OnInitialize()
     -- quests
     p.skipTurnIn = {}     -- questIDs that need a manual reward choice
     p.pendingAccept = {}  -- questIDs WE auto-accepted, awaiting QUEST_ACCEPTED (for the timed check)
-    -- Account-wide registry of known-timed questIDs, learned as they're encountered.
-    self:_BindStore("timedQuests", { timed = {} })
+    -- Known-timed quests are learned account-wide in the shared DB's quest_timed table (see DAO below).
 end
 
 -- Event subscriptions are declared on the module (see registration below) and
@@ -472,6 +475,11 @@ end
 
 -- ---- registration ---------------------------------------------------------
 ns.ModuleManager:Register(Questing:New("Questing", {
+    -- Account-wide registry of known-timed quests (learned as they're encountered).
+    tables = { quest_timed = { scope = "global", columns = {
+        { name = "quest_id", type = "integer", primaryKey = true },
+        { name = "seconds",  type = "number" },
+    } } },
     title = "Questing",
     description = "XP-per-hour tracking, plus auto-accepting and turning in quests.",
     defaultEnabled = false,
