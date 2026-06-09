@@ -600,10 +600,11 @@ function SettingsWindow:_RenderSchema(content, host, width, y)
     return y
 end
 
--- A module page = the module's own schema, then the settings of every LOADED
--- submodule of that module. Submodule options therefore appear (and persist)
--- ONLY while the submodule is loaded -- e.g. the ATT submodule's option shows
--- only when AllTheThings is installed. No addon checks live here.
+-- A module page = the module's own schema, then the settings of every CONFIGURABLE submodule of
+-- that module. Settings content is never gated on the module's enable state: a submodule's
+-- options show whenever the submodule COULD load (its condition + availability deps hold),
+-- whether or not the parent module is enabled -- e.g. the ATT submodule's option shows when
+-- AllTheThings is installed, regardless of whether the parent module is on. No addon checks here.
 function SettingsWindow:_BuildModuleControls(sf, module)
     local content = sf:Content()
     local width = content:GetWidth()   -- the scroll area keeps the content width synced for us
@@ -615,7 +616,7 @@ function SettingsWindow:_BuildModuleControls(sf, module)
         rendered = true
     end
 
-    local subs = ns.SubmoduleManager and ns.SubmoduleManager:LoadedChildrenOf(module:GetName()) or {}
+    local subs = ns.SubmoduleManager and ns.SubmoduleManager:ConfigurableChildrenOf(module:GetName()) or {}
     for _, sub in ipairs(subs) do
         if sub.GetSettings and #sub:GetSettings() > 0 then
             local h = W.SectionLabel:New(content, sub:GetTitle())

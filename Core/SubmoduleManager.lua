@@ -36,13 +36,25 @@ function SubmoduleManager:IsLoaded(name)
     return s and s:IsLoaded() or false
 end
 
--- Loaded submodules whose parent is the given module (for the settings page to
--- surface their options only while loaded).
-function SubmoduleManager:LoadedChildrenOf(moduleName)
+-- Submodules of `moduleName` that COULD load if their parent module were enabled -- i.e. their
+-- own condition holds and every dependency EXCEPT the parent module is online (a required addon
+-- installed, a service loaded, ...). The settings page uses this so a submodule's options are
+-- configurable whether or not the parent module is enabled -- settings content is never gated on
+-- the module's enable state -- while still respecting real availability gates (e.g. the ATT
+-- option only existing when AllTheThings is installed).
+function SubmoduleManager:ConfigurableChildrenOf(moduleName)
     local out = {}
+    local g = self:_Graph()
+    local parentRef = "module:" .. moduleName
     for s in self:Iterate() do
         local par = s:GetParent()
-        if par and par.module == moduleName and s:IsLoaded() then out[#out + 1] = s end
+        if par and par.module == moduleName and s:_ConditionMet() then
+            local ok = true
+            for _, ref in ipairs(s:_Refs()) do
+                if ref ~= parentRef and not g:IsOnline(ref) then ok = false; break end
+            end
+            if ok then out[#out + 1] = s end
+        end
     end
     return out
 end

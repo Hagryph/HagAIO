@@ -67,17 +67,30 @@ describe("SubmoduleManager", function()
         assert.is_true(mgr:IsLoaded("x"))
     end)
 
-    it("LoadedChildrenOf returns only LOADED subs whose parent is that module", function()
+    it("ConfigurableChildrenOf returns subs whose condition holds, ignoring the parent's enable state", function()
         local ns = setup()
+        -- the parent module Foo is DISABLED, yet configurable children must still surface
+        ns.ModuleManager = { GetModule = function() return { IsEnabled = function() return false end } end }
         local mgr = ns.SubmoduleManager
-        local a = ns.Submodule:New("a", { parent = { module = "Foo" } })
-        local b = ns.Submodule:New("b", { parent = { module = "Bar" } })  -- other parent
-        local c = ns.Submodule:New("c", { parent = { module = "Foo" } })  -- right parent, unloaded
+        local a = ns.Submodule:New("a", { parent = { module = "Foo" }, condition = function() return true end })
+        local b = ns.Submodule:New("b", { parent = { module = "Foo" }, condition = function() return false end })
+        local c = ns.Submodule:New("c", { parent = { module = "Bar" }, condition = function() return true end })
         mgr:Register(a); mgr:Register(b); mgr:Register(c)
-        a:_Load(); b:_Load()
-        local kids = mgr:LoadedChildrenOf("Foo")
+        local kids = mgr:ConfigurableChildrenOf("Foo")
         assert.are.equal(1, #kids)
-        assert.are.equal("a", kids[1]:GetName())
+        assert.are.equal("a", kids[1]:GetName())   -- condition true, shown despite Foo disabled
+    end)
+
+    it("ConfigurableChildrenOf still respects non-parent availability deps (e.g. a required addon)", function()
+        local ns = setup()
+        ns.ModuleManager = { GetModule = function() return { IsEnabled = function() return false end } end }
+        _G.C_AddOns = { IsAddOnLoaded = function() return false end }
+        local mgr = ns.SubmoduleManager
+        local c = ns.Submodule:New("c", { parent = { module = "Foo" }, addonDeps = { "ATT" },
+                                          condition = function() return true end })
+        mgr:Register(c)
+        assert.are.equal(0, #mgr:ConfigurableChildrenOf("Foo"))   -- addon missing -> not configurable
+        _G.C_AddOns = nil
     end)
 
     it("handles re-entrant Reevaluate from an onLoad callback (guard + dirty re-sweep)", function()
