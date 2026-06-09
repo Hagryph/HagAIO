@@ -1,8 +1,8 @@
 local S = dofile("Test/support.lua")
 
 -- Locks the persistence model:
---   * a module's SETTINGS + ENABLE state are a per-character OVERRIDE/diff layer (cascade over the
---     loaded profile + code defaults), stored only when they differ from that baseline, and
+--   * a module's SETTINGS + ENABLE state are held in the live config for the session and written
+--     back to this character as DIFFS on Flush (logout), and
 --   * its declarative dbSchema/dbDefaults DATA lives ACCOUNT-WIDE (or per-char with dataPerChar).
 local function setup()
     _G.HagAIODB = nil
@@ -21,24 +21,21 @@ local function setup()
     return ns, sv, m
 end
 
-describe("Module persistence cascade", function()
-    it("settings resolve to the code default until the character overrides them", function()
+describe("Module persistence", function()
+    it("settings resolve to the code default; a change is written back as a diff on flush", function()
         local ns, sv, m = setup()
-        assert.are.equal(true, m:GetSetting("opt"))            -- default layer
-        assert.is_nil(sv:Char().overrides.module_Foo)          -- nothing stored yet
+        assert.are.equal(true, m:GetSetting("opt"))            -- default (materialised)
         m:SetSetting("opt", false)
-        assert.are.equal(false, sv:Char().overrides.module_Foo.opt)  -- stored as a diff
-        assert.are.equal(false, m:GetSetting("opt"))
-        m:SetSetting("opt", true)                              -- back to the default
-        assert.is_nil(sv:Char().overrides.module_Foo)          -- override dropped
+        assert.are.equal(false, m:GetSetting("opt"))           -- live
+        assert.is_nil(sv:Char().overrides.module_Foo)          -- not persisted yet
+        sv:Flush()
+        assert.are.equal(false, sv:Char().overrides.module_Foo.opt)  -- diff written
     end)
 
-    it("enable state cascades per character (registered defaultEnabled is the baseline)", function()
+    it("enable state cascades (registered defaultEnabled is the baseline)", function()
         local ns, sv, m = setup()
         assert.is_true(sv:GetModuleState("Foo"))               -- module default-enabled
-        sv:SetModuleState("Foo", true)                         -- equals default -> no override
-        assert.is_nil(sv:Char().overrides.modules)
-        sv:SetModuleState("Foo", false)
+        sv:SetModuleState("Foo", false); sv:Flush()
         assert.is_false(sv:GetModuleState("Foo"))
         assert.is_false(sv:Char().overrides.modules.Foo)
     end)

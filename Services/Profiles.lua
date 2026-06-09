@@ -80,6 +80,7 @@ function Profiles:LoadProfile(name)
     if not self:Has(name) then return false, "no profile named '" .. tostring(name) .. "'" end
     ns.SavedVars:ClearOverrides()
     ns.SavedVars:SetLoadedProfile(name)
+    ns.SavedVars:Rematerialize()   -- live config now resolves to the profile (+ defaults)
     return true
 end
 

@@ -14,7 +14,7 @@ describe("SavedVars data namespaces", function()
         local sv = setup()
         local t = sv:Namespace("m", { a = 1, b = 2 })
         t.a = 99
-        local t2 = sv:Namespace("m", { a = 5, c = 3 })  -- same table, fill-missing only
+        local t2 = sv:Namespace("m", { a = 5, c = 3 })
         assert.are.equal(t, t2)
         assert.are.equal(99, t2.a)
         assert.are.equal(2, t2.b)
@@ -24,7 +24,7 @@ describe("SavedVars data namespaces", function()
     it("keeps per-character and global DATA namespaces separate", function()
         local sv = setup()
         local g = sv:Namespace("k", { v = 1 })
-        local c = sv:Namespace("k", { v = 2 }, true)   -- perChar
+        local c = sv:Namespace("k", { v = 2 }, true)
         g.v = 10
         assert.is_true(g ~= c)
         assert.are.equal(10, g.v)
@@ -32,73 +32,92 @@ describe("SavedVars data namespaces", function()
     end)
 end)
 
-describe("SavedVars settings cascade", function()
-    it("resolves override ?? profile ?? code default", function()
+describe("SavedVars settings (materialised)", function()
+    it("materialises override <- profile <- code default on bind", function()
         local sv = setup()
-        sv:SettingsView("ns", { a = 1, b = 2 })            -- register code defaults
-        assert.are.equal(1, sv:GetSetting("ns", "a"))      -- default layer
-
-        sv:Global().profiles.P = { ns = { a = 9 } }
+        sv:Global().profiles.P = { ns = { a = 9, c = 3 } }
         sv:SetLoadedProfile("P")
-        assert.are.equal(9, sv:GetSetting("ns", "a"))      -- profile layer
-        assert.are.equal(2, sv:GetSetting("ns", "b"))      -- profile didn't set b -> default
-
-        sv:SetSetting("ns", "a", 7)                         -- char override over the profile
-        assert.are.equal(7, sv:GetSetting("ns", "a"))
-        assert.are.equal(7, sv:Char().overrides.ns.a)
+        sv:Char().overrides.ns = { a = 7 }            -- stored from a prior session
+        sv:SettingsView("ns", { a = 1, b = 2 })       -- bind -> materialise
+        assert.are.equal(7, sv:GetSetting("ns", "a")) -- override wins
+        assert.are.equal(2, sv:GetSetting("ns", "b")) -- default (profile/override absent)
+        assert.are.equal(3, sv:GetSetting("ns", "c")) -- profile (no default/override)
     end)
 
-    it("writes only diffs: setting a value equal to the baseline drops the override", function()
+    it("reads/writes hit the live config directly; the char layer isn't touched until Flush", function()
         local sv = setup()
         sv:SettingsView("ns", { a = 1 })
         sv:SetSetting("ns", "a", 5)
-        assert.are.equal(5, sv:Char().overrides.ns.a)
-        sv:SetSetting("ns", "a", 1)                         -- back to the default baseline
-        assert.is_nil(sv:Char().overrides.ns)              -- override dropped + empty ns cleaned
-        assert.are.equal(1, sv:GetSetting("ns", "a"))
-
-        sv:Global().profiles.P = { ns = { a = 9 } }
-        sv:SetLoadedProfile("P")
-        sv:SetSetting("ns", "a", 9)                         -- equals the PROFILE baseline now
-        assert.is_nil(sv:Char().overrides.ns)              -- still no override
+        assert.are.equal(5, sv:GetSetting("ns", "a"))  -- live
+        assert.is_nil(sv:Char().overrides.ns)          -- not persisted yet
+        sv:Flush()
+        assert.are.equal(5, sv:Char().overrides.ns.a)  -- diff written on flush
     end)
 
-    it("a settings view proxies reads/writes to the cascade", function()
+    it("Flush stores only diffs from the baseline (profile ?? default)", function()
+        local sv = setup()
+        sv:SettingsView("ns", { a = 1, b = 2 })
+        sv:SetSetting("ns", "a", 5)   -- differs from default -> stored
+        sv:SetSetting("ns", "b", 2)   -- equals default -> not stored
+        sv:Flush()
+        assert.are.equal(5, sv:Char().overrides.ns.a)
+        assert.is_nil(sv:Char().overrides.ns.b)
+    end)
+
+    it("Flush drops an override that was set back to the baseline", function()
+        local sv = setup()
+        sv:Char().overrides.ns = { a = 5 }   -- stored from a prior session
+        sv:SettingsView("ns", { a = 1 })
+        sv:SetSetting("ns", "a", 1)          -- back to the default
+        sv:Flush()
+        assert.is_nil(sv:Char().overrides.ns)
+    end)
+
+    it("Flush diffs against the loaded profile, not just the default", function()
+        local sv = setup()
+        sv:Global().profiles.P = { ns = { a = 9 } }
+        sv:SetLoadedProfile("P")
+        sv:SettingsView("ns", { a = 1 })
+        assert.are.equal(9, sv:GetSetting("ns", "a"))  -- materialised from the profile
+        sv:SetSetting("ns", "a", 9); sv:Flush()
+        assert.is_nil(sv:Char().overrides.ns)          -- equals profile -> no override
+        sv:SetSetting("ns", "a", 7); sv:Flush()
+        assert.are.equal(7, sv:Char().overrides.ns.a)  -- differs from profile -> stored
+    end)
+
+    it("preserves stored overrides for namespaces not loaded this session", function()
+        local sv = setup()
+        sv:Char().overrides.module_Ghost = { x = true }  -- never materialised this session
+        sv:SettingsView("ns", { a = 1 })
+        sv:SetSetting("ns", "a", 5)
+        sv:Flush()
+        assert.is_true(sv:Char().overrides.module_Ghost.x)
+    end)
+
+    it("a settings view proxies reads/writes to the live config", function()
         local sv = setup()
         local v = sv:SettingsView("ns", { x = 3 })
         assert.are.equal(3, v.x)
         v.x = 8
-        assert.are.equal(8, v.x)
         assert.are.equal(8, sv:GetSetting("ns", "x"))
-        assert.are.equal(8, sv:Char().overrides.ns.x)
-    end)
-
-    it("deep-equals table values (a colour set back to default drops the override)", function()
-        local sv = setup()
-        sv:SettingsView("ns", { col = { 1, 1, 1 } })
-        sv:SetSetting("ns", "col", { 0.5, 0.5, 0.5 })
-        assert.are.equal("table", type(sv:Char().overrides.ns.col))
-        sv:SetSetting("ns", "col", { 1, 1, 1 })            -- structurally equal to default
-        assert.is_nil(sv:Char().overrides.ns)
     end)
 end)
 
-describe("SavedVars module enable state (cascade)", function()
-    it("override ?? profile ?? registered defaultEnabled, diffed on write", function()
+describe("SavedVars module enable state", function()
+    it("override ?? profile ?? registered defaultEnabled, diffed on flush", function()
         local sv = setup()
         sv:RegisterModuleDefault("Foo", true)
-        assert.is_true(sv:GetModuleState("Foo"))           -- registered default
-
-        sv:SetModuleState("Foo", true)                     -- equals default -> no override
-        assert.is_nil(sv:Char().overrides.modules)
-        sv:SetModuleState("Foo", false)                    -- differs -> override
+        assert.is_true(sv:GetModuleState("Foo"))
+        sv:SetModuleState("Foo", true); sv:Flush()
+        assert.is_nil(sv:Char().overrides.modules)     -- equals default -> nothing stored
+        sv:SetModuleState("Foo", false); sv:Flush()
         assert.is_false(sv:GetModuleState("Foo"))
         assert.is_false(sv:Char().overrides.modules.Foo)
     end)
 end)
 
 describe("SavedVars SnapshotDiffs", function()
-    it("captures effective config as diffs from default only", function()
+    it("captures the live config as diffs from default only", function()
         local sv = setup()
         sv:SettingsView("ns", { a = 1, b = 2 })
         sv:RegisterModuleDefault("Foo", true)
@@ -106,8 +125,19 @@ describe("SavedVars SnapshotDiffs", function()
         sv:SetModuleState("Foo", false)
         local snap = sv:SnapshotDiffs()
         assert.are.equal(5, snap.ns.a)
-        assert.is_nil(snap.ns.b)                            -- unchanged -> not captured
+        assert.is_nil(snap.ns.b)
         assert.is_false(snap.modules.Foo)
+    end)
+end)
+
+describe("SavedVars Rematerialize", function()
+    it("rebuilds the live config from a newly loaded profile + (wiped) overrides", function()
+        local sv = setup()
+        sv:SettingsView("ns", { a = 1 })
+        sv:SetSetting("ns", "a", 5)
+        sv:Global().profiles.P = { ns = { a = 9 } }
+        sv:ClearOverrides(); sv:SetLoadedProfile("P"); sv:Rematerialize()
+        assert.are.equal(9, sv:GetSetting("ns", "a"))  -- now from the profile
     end)
 end)
 
@@ -116,13 +146,10 @@ describe("SavedVars._RunMigrations", function()
         local sv = setup()
         local order = {}
         local g = { _schema = 1 }
-        local migs = {
-            [2] = function() order[#order + 1] = 2 end,
-            [3] = function() order[#order + 1] = 3 end,
-        }
+        local migs = { [2] = function() order[#order + 1] = 2 end,
+                       [3] = function() order[#order + 1] = 3 end }
         assert.is_true(sv:_RunMigrations(g, {}, migs, 3))
-        assert.are.equal(2, order[1])
-        assert.are.equal(3, order[2])
+        assert.are.equal(2, order[1]); assert.are.equal(3, order[2])
         assert.are.equal(3, g._schema)
     end)
 
@@ -130,13 +157,9 @@ describe("SavedVars._RunMigrations", function()
         local sv = setup()
         local ran = {}
         local g = { _schema = 2 }
-        local migs = {
-            [2] = function() ran[2] = true end,
-            [3] = function() ran[3] = true end,
-        }
-        sv:_RunMigrations(g, {}, migs, 3)
-        assert.is_nil(ran[2])
-        assert.is_true(ran[3])
+        sv:_RunMigrations(g, {}, { [2] = function() ran[2] = true end,
+                                   [3] = function() ran[3] = true end }, 3)
+        assert.is_nil(ran[2]); assert.is_true(ran[3])
         assert.are.equal(3, g._schema)
     end)
 
@@ -144,14 +167,11 @@ describe("SavedVars._RunMigrations", function()
         local sv = setup()
         local ran = {}
         local g = { _schema = 1 }
-        local migs = {
-            [2] = function() ran[2] = true end,
-            [3] = function() error("boom") end,
-            [4] = function() ran[4] = true end,
-        }
+        local migs = { [2] = function() ran[2] = true end,
+                       [3] = function() error("boom") end,
+                       [4] = function() ran[4] = true end }
         assert.is_false(sv:_RunMigrations(g, {}, migs, 4))
-        assert.is_true(ran[2])
-        assert.is_nil(ran[4])
+        assert.is_true(ran[2]); assert.is_nil(ran[4])
         assert.are.equal(2, g._schema)
     end)
 end)

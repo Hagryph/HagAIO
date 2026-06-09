@@ -74,9 +74,11 @@ function Initializer:Run()
         -- PLAYER_LOGIN (they subscribe it themselves) -- Init doesn't manage them.
     end)
 
-    -- PLAYER_LOGOUT fires on /reload and full exit. Shut modules down first (they
-    -- depend on services), then the service layer in reverse dependency order.
+    -- PLAYER_LOGOUT fires on /reload and full exit. Write the session's live settings back to
+    -- this character (as diffs) FIRST, while everything is still up, then shut modules down (they
+    -- depend on services) and the service layer in reverse dependency order.
     bus:On("PLAYER_LOGOUT", function()
+        ns.SavedVars:Flush()
         ns.ModuleManager:Shutdown()
         ns.ServiceManager:ShutdownAll()
     end)
