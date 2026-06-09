@@ -65,7 +65,7 @@ function Get-PublishedServiceLibs {
                 }
             }
             # Module public aliases published via the declarative hook (opts.publishAs = "X",
-            # ns.Module:_Publish) -- e.g. ns.Tasks.
+            # ns.Module:_Publish).
             foreach ($m in [regex]::Matches($code, 'publishAs\s*=\s*["''](\w+)["'']')) {
                 $found += [pscustomobject]@{ Name = $m.Groups[1].Value; Path = $rel }
             }

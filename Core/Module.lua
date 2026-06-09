@@ -77,9 +77,8 @@ function Module:Initialize(name, opts)
     --   settings  -> the schema's keyed `default`s, stored PER CHARACTER (the config).
     --   data      -> the declarative dbSchema + any explicit dbDefaults. ACCOUNT-WIDE by
     --                default (persistent cross-character stuff: flight routes, learned timed
-    --                quests). Set opts.dataPerChar when the data is inherently per character
-    --                (e.g. the task list's per-character completion state) so GetDB() is
-    --                per character too -- it then rides along in this character's profile.
+    --                quests). Set opts.dataPerChar when the data is inherently per character so
+    --                GetDB() is per character too -- it then rides along in this char's profile.
     -- All deep-copied so table defaults aren't shared by reference; SavedVars deep-merges them
     -- on bind, so a module never has to hand-init `db.x = db.x or {}`.
     p.settingsDefaults = ns.Component.SeedDefaults(p.settings)
@@ -169,7 +168,7 @@ function Module:_Init()
 end
 
 -- Optional public alias: publish this module instance at ns.<opts.publishAs> so other code
--- can reach it directly (e.g. ns.Tasks -> the Tasklist module). Mirrors
+-- can reach it directly (e.g. ns.<Alias> -> the module). Mirrors
 -- Service:_Publish; replaces hand-written `ns.X = self` in OnInitialize. The alias is
 -- declared in the module's New opts and documented in the generated Namespace.lua slot block.
 function Module:_Publish()

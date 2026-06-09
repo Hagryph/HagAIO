@@ -110,3 +110,19 @@ describe("EditMode:_SnapAndSave", function()
         assert.is_true(moved)
     end)
 end)
+
+describe("EditMode:Unregister", function()
+    it("drops the frame so it no longer shows when Edit Mode is entered", function()
+        local em = newEM()
+        local f = makeFrame({ shown = false })
+        em:Register(f, { key = "k", default = { point = "CENTER", x = 0, y = 0 } })
+        em:Unregister(f)
+        em:_OnEnter()                  -- enter edit mode: only registered frames show
+        assert.is_false(f:IsShown())
+    end)
+
+    it("is a no-op for a frame that was never registered", function()
+        local em = newEM()
+        em:Unregister(makeFrame())     -- must not error
+    end)
+end)

@@ -75,6 +75,23 @@ function EditMode:Register(frame, opts)
     return reg
 end
 
+-- Drop a frame's registration (the inverse of Register): a module that's been disabled removes
+-- its frame so it no longer shows in Edit Mode or snaps against the others. The drag wiring is
+-- torn down and the frame hidden. No-op if the frame isn't registered.
+function EditMode:Unregister(frame)
+    local p = self:_p()
+    for i = #p.regs, 1, -1 do
+        if p.regs[i].frame == frame then
+            table.remove(p.regs, i)
+            frame:SetScript("OnDragStart", nil)
+            frame:SetScript("OnDragStop", nil)
+            frame:SetMovable(false)
+            frame:Hide()
+            return
+        end
+    end
+end
+
 -- ---- snapping -------------------------------------------------------------
 function EditMode:_GridSnap(cx, cy)
     local grid = EditModeManagerFrame and EditModeManagerFrame.Grid
@@ -132,7 +149,7 @@ function EditMode:_SnapAndSave(reg)
 
     -- Most frames store a CENTER offset (resize grows both ways). A frame can opt
     -- into a TOPLEFT anchor (reg.anchor) so its top-left stays put and it grows
-    -- downward/rightward on resize -- used by the Task List.
+    -- downward/rightward on resize (for list-like frames that extend as they fill).
     if reg.anchor == "TOPLEFT" then
         self:_Positions()[reg.key] = {
             point = "TOPLEFT",

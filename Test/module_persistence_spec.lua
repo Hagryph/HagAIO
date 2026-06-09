@@ -49,7 +49,7 @@ describe("Module persistence cascade", function()
         assert.are.equal(42, sv:Global().module_Foo.flights.RouteA)
     end)
 
-    it("dataPerChar=true stores the data namespace per character (e.g. the task list)", function()
+    it("dataPerChar=true stores the data namespace per character", function()
         local ns, sv = setup()
         local M = ns.Class.new("PerCharDataModule", ns.Module)
         local m = M:New("Bar", {

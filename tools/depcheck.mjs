@@ -16,7 +16,7 @@
 //   service : ServiceManager:Register(X:New("Name", ...))
 //   module  : ModuleManager:Register(X:New("Name", ...))
 //   alias   : inside a module's file, `ns.Alias = self` / `ns.Alias = ClassVar`
-//             (e.g. ns.Tasks = self -> the Tasklist module)
+//             (e.g. ns.Dash = self -> the module, via opts.publishAs)
 
 import { readdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { join, relative, basename, dirname } from "node:path";

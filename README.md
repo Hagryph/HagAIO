@@ -116,7 +116,6 @@ Lib/
   ResetLedger.lua          Pure data-shaping for the Dashboard module -- no WoW API
   SlashParse.lua           Pure parsing for slash sub-command strings -- no WoW API
   SpellTooltipParser.lua   Pure parsers for the numbers embedded in a spell's description text
-  TaskRules.lua            Pure rules for the Task List -- no WoW API
   Vector2D.lua             A pure 2D vector value-TYPE (ns.Type) -- no WoW API
 UI/
   Theme.lua                Static design system ported from the LoL Game Helper desktop app's
@@ -130,7 +129,6 @@ UI/
   Widgets\Divider.lua      1px horizontal hairline (anchor + width set by caller)
   Widgets\Fill.lua         A plain SOLID-COLOUR texture region (a tint/overlay/marker)
   Widgets\Grid.lua         Column-aligned GRID -- the one row/column layout engine
-  Widgets\HitButton.lua    A bare, transparent CLICK target with a centred label -- the building block for pooled in-world
   Widgets\IconGrid.lua     Auto-sizing ICON GRID -- Encounter-Journal-style tiles laid out a FIXED number per row, each
   Widgets\Input.lua        Themed single-line EditBox
   Widgets\MultilineEdit.lua A scrollable multi-line EditBox -- the copy-in/out surface
@@ -176,7 +174,6 @@ Modules/
   Dev.lua                  Developer settings module
   Misc.lua                 Miscellaneous helpers:
   Questing.lua             Everything around levelling through quests, in one module:
-  Tasklist.lua             A lightweight objective tracker
   UnitFrames.lua           Colours the player & target health bars by remaining health: green at full,
   Class\Monk\Monk.lua      Monk module entry point (loads before its per-spec siblings): the shared Monk behaviour
   Class\Monk\Base.lua      The no-specialisation Monk spec (CurrentSpecKey "none"): the Expel Harm heal-threshold

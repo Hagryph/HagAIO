@@ -86,11 +86,25 @@ local Changeable = ns.Mixin.new("Changeable", {
 
 -- REGISTRABLE mixin: lets a widget register ITSELF with EditMode (which then positions/moves it). The
 -- widget hands EditMode its OWN private frame, so callers never touch a raw frame to make something
--- movable. opts is the EditMode descriptor (key/label/default/active/onEnter/...). Mixed into widgets
--- that can be placed in Edit Mode (Window, Panel). Returns self.
+-- movable. opts is the EditMode descriptor (key/label/default/onEnter/...). Mixed into widgets that
+-- can be placed in Edit Mode (Window, Panel). Register/Unregister are IDEMPOTENT and reversible, so a
+-- module can register the frame only while it (and its setting) is enabled, and unregister when it's
+-- disabled -- pass the same opts each time; nothing happens if the state is already what's asked.
 local Registrable = ns.Mixin.new("Registrable", {
     RegisterEditMode = function(self, opts)
-        if ns.EditMode then ns.EditMode:Register(self:_frame(), opts) end
+        local p = self:_p()
+        if ns.EditMode and not p._editRegistered then
+            ns.EditMode:Register(self:_frame(), opts)
+            p._editRegistered = true
+        end
+        return self
+    end,
+    UnregisterEditMode = function(self)
+        local p = self:_p()
+        if ns.EditMode and p._editRegistered then
+            ns.EditMode:Unregister(self:_frame())
+            p._editRegistered = false
+        end
         return self
     end,
 })

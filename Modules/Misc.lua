@@ -90,8 +90,8 @@ function Misc:OnEnable()
     -- Enable-scoped subscriptions + hook are auto-released on disable.
     self:On("MERCHANT_SHOW",   function() self:_OnMerchantShow() end)
     self:On("MERCHANT_CLOSED", function() self:_OnMerchantClosed() end)
-    -- build + register the timer so it can be placed in Blizzard's Edit Mode
-    self:_BuildFrame()
+    -- register the timer with Edit Mode (only while the "in flight" setting is on)
+    self:_SyncEditMode()
 
     -- Redirect on Request-Stop / early landing: hook the API itself (always
     -- present; fires however it's triggered -- button, keybind, macro) rather than
@@ -114,7 +114,7 @@ function Misc:OnDisable()
     -- and stores the time), and flight recording must run even while the module is disabled.
     -- _Tick's recording is ungated; the DISPLAY is gated in _RefreshDisplay, so the frame
     -- stays hidden on its own. (Hiding the ticker here used to drop mid-flight recordings.)
-    if p.frame then p.frame:Hide() end
+    self:_SyncEditMode()  -- module disabled -> unregister the timer from Edit Mode + hide it
     if p.sellBtn then p.sellBtn:Hide() end
 end
 
@@ -449,7 +449,7 @@ end
 
 function Misc:_BuildFrame()
     local p = self:_p()
-    if p.frame then return end
+    if p.frame then return p.frame end
     local f = W.Panel:New(UIParent, "panel", "borderStrong")
     f:SetSize(230, 42)
     f:SetFrameStrata("HIGH")
@@ -471,19 +471,33 @@ function Misc:_BuildFrame()
     f:Hide()
     p.frame = f
 
-    -- The Panel widget registers ITSELF with Edit Mode (Registrable mixin) -- EditMode positions its
-    -- frame; we never hand out a raw frame. onEnter drives the widget children (f.dest / f.bar).
-    f:RegisterEditMode({
+    -- Edit-Mode descriptor; registered/unregistered by _SyncEditMode so the timer is only present
+    -- in Edit Mode while the module + "in flight" setting are on. onEnter drives the widget children.
+    p.editOpts = {
         key = "flightTimer",
         label = "Flight Timer",
         default = { point = "CENTER", x = 0, y = 210 },
-        active = function() return self:IsEnabled() and self:GetSetting("showInFlight") end,
         onEnter = function()
             f.dest:SetText("Flight Timer")
             f.time:SetText("1:23")
             f.bar:SetValue(0.5)
         end,
-    })
+    }
+    return f
+end
+
+-- Register the flight timer with Edit Mode ONLY while the module AND its display setting are on;
+-- unregister (and hide) otherwise. Called on enable/disable and when the setting changes, so a
+-- disabled timer never shows up in Edit Mode or snaps against other frames. Registration is
+-- idempotent (Registrable mixin), so repeat calls are cheap.
+function Misc:_SyncEditMode()
+    local p = self:_p()
+    if self:IsEnabled() and self:GetSetting("showInFlight") then
+        self:_BuildFrame():RegisterEditMode(p.editOpts)
+    elseif p.frame then
+        p.frame:UnregisterEditMode()
+        p.frame:Hide()
+    end
 end
 
 -- Display is gated by the module + "in flight" checkbox; recording is not.
@@ -706,7 +720,7 @@ ns.ModuleManager:Register(Misc:New("Misc", {
     color = ns.Theme.hex.grey,  -- distinct tag (accent=Core, green=UnitFrames, purple=Class, gold=Questing, red=CVars)
     deps = { "EventBus" },  -- recording/timer; Edit Mode is mediated by the Panel widget (Registrable mixin), route solver (ns.FlightGraph Lib) + proximity (ns.Vector2D class) are always available
     dbSchema = { flights = {} },        -- recorded route times (seeded on bind, before OnInitialize)
-    settingsWatch = { sellJunk = "_OnSellJunkChanged" },
+    settingsWatch = { sellJunk = "_OnSellJunkChanged", showInFlight = "_SyncEditMode" },
     settings = {
         { type = "header", text = "Flight timers" },
         { type = "toggle", key = "showInFlight", label = "Show timer while in flight", default = true },
