@@ -22,9 +22,10 @@ local fmt = ns.Format.MMSS   -- pure "M:SS" countdown formatter (Lib/Format.lua)
 -- DIRECTIONAL route key: a -> b is stored separately from b -> a, because the two
 -- directions don't always take the same time (path asymmetry). New recordings use this;
 -- the resolver (_RouteTime) prefers same-direction data and falls back to the reverse.
-function Misc:_DirKey(a, b)
-    local faction = UnitFactionGroup("player") or "?"
-    return faction .. "|" .. tostring(a) .. " -> " .. tostring(b)
+-- Flight times are recorded PER FACTION (the two factions have different flight masters and
+-- routes), so every query is scoped by this tag. "?" when the faction isn't known yet.
+function Misc:_Faction()
+    return UnitFactionGroup("player") or "?"
 end
 
 -- ---- tunables (flight-path detection distances, yards) --------------------
@@ -47,6 +48,37 @@ local FLYOVER_RANGE = 75  -- closest approach must be within this to count as fl
 -- quality enum (DIRECT = 2 > FLY = 1; the values are persisted as `e.q`).
 local Flight  = ns.FlightResolver
 local Quality = Flight.Quality
+
+-- The Flight database (account-wide). A recorded route is one `routes` row keyed per
+-- direction + faction (UNIQUE faction,src,dst), with its measured time + quality tier; the
+-- booked intermediate nodes it spanned live RELATIONALLY as ordered `route_hops` rows (FK to the
+-- route, cascade-deleted with it) -- never a blob. Declared on the module (see registration); the
+-- module owns the small query methods (_Flight*) over self:DB("Flight").
+local FLIGHT_SCHEMA = {
+    version = 1,
+    tables = {
+        routes = {
+            columns = {
+                { name = "id",      type = "integer", primaryKey = true, autoIncrement = true },
+                { name = "faction", type = "text",    nullable = false },
+                { name = "src",     type = "text",    nullable = false },
+                { name = "dst",     type = "text",    nullable = false },
+                { name = "t",       type = "number",  nullable = false },
+                { name = "quality", type = "integer", nullable = false },
+            },
+            unique  = { { "faction", "src", "dst" } },
+            indices = { { columns = { "faction" } } },
+        },
+        route_hops = {
+            columns = {
+                { name = "route_id", type = "integer", references = { table = "routes", onDelete = "cascade" } },
+                { name = "ordinal",  type = "integer" },
+                { name = "node",     type = "text", nullable = false },
+            },
+            primaryKey = { "route_id", "ordinal" },
+        },
+    },
+}
 
 -- Sell every sellable grey (Poor, quality 0) item in the bags. Returns the number
 -- of stacks sold and a list of { link, count } descriptors of what was sold.
@@ -71,8 +103,8 @@ function Misc:OnInitialize()
     p.phase = nil       -- nil / "boarding" / "flying"
     p.src = nil
 
-    -- Flight recording is ALWAYS on (builds the database even while disabled).
-    -- db.flights is pre-seeded from dbSchema (see registration).
+    -- Flight recording is ALWAYS on (builds the database even while disabled). Routes live in the
+    -- Flight SQL database declared on this module (self:DB("Flight"); see the _Flight* DAO).
     ns.EventBus:On("TAXIMAP_OPENED", function() self:_OnTaxiMap() end)
     -- TakeTaxiNode is a permanent secure hook, so it installs once per SESSION (the
     -- private latch on this singleton). It resolves the live registered Misc instance
@@ -180,32 +212,106 @@ end
 --   always replaces a lower-quality (fly) entry, even < 5s;
 --   direct-over-direct only when the time changed by >= 5s.
 function Misc:_Store(a, b, seconds, via)
-    local flights = self:GetDB().flights
-    local key = self:_DirKey(a, b)
-    local cur = flights[key]
-    self:_p().legsCache = nil   -- recorded data changed -> rebuild atomic legs lazily
-    if cur == nil then
-        flights[key] = { t = seconds, q = Quality.DIRECT, via = via }
-        return
-    end
-    local curQ = Flight:EntryQ(cur)
-    if type(cur) ~= "table" then cur = { t = Flight:StoredTime(cur), q = curQ }; flights[key] = cur end
-    if curQ < Quality.DIRECT then
-        cur.t, cur.q, cur.via = seconds, Quality.DIRECT, via    -- direct beats a fly entry
-    elseif math.abs(seconds - cur.t) >= 5 then
-        cur.t, cur.via = seconds, via                     -- +/-5s, direct over direct
+    if self:_FlightStore(self:_Faction(), a, b, seconds, via) then
+        self:_p().legsCache = nil   -- recorded data changed -> rebuild atomic legs lazily
     end
 end
 
 -- Fill-only write for fly-over (closest-approach) segment times in the a -> b direction,
 -- spanning `via`: the lowest quality tier, so it ONLY populates an empty slot.
 function Misc:_StoreIfNew(a, b, seconds, via)
-    local flights = self:GetDB().flights
-    local key = self:_DirKey(a, b)
-    if flights[key] == nil then
-        flights[key] = { t = seconds, q = Quality.FLY, via = via }
+    if self:_FlightStoreIfNew(self:_Faction(), a, b, seconds, via) then
         self:_p().legsCache = nil
     end
+end
+
+-- ---- Flight database access (the module's own DAO over self:DB("Flight")) -------------------
+-- src/dst/node are coerced to text so a numeric node id and its string form key the same route.
+-- The routes table is small and only read while flying, so query-on-read is fine here.
+
+-- The routes row { id, t, quality } for one direction, or nil.
+function Misc:_FlightRow(faction, a, b)
+    local db = self:DB("Flight"); if not db then return nil end
+    local rows = db:Select("id", "t", "quality"):From("routes")
+        :Where("faction", "=", faction):AndWhere("src", "=", tostring(a)):AndWhere("dst", "=", tostring(b))
+        :Limit(1):Run()
+    return rows[1]
+end
+
+-- The ordered booked intermediate node names for a route, or nil for an atomic leg.
+function Misc:_FlightHops(routeId)
+    local db = self:DB("Flight"); if not db then return nil end
+    local rows = db:Select("node"):From("route_hops"):Where("route_id", "=", routeId):OrderBy("ordinal", "asc"):Run()
+    if #rows == 0 then return nil end
+    local via = {}
+    for i, r in ipairs(rows) do via[i] = r.node end
+    return via
+end
+
+-- A normalised entry { t, q, via } for the a -> b direction (the shape Flight:EntryQ/StoredTime
+-- read), or nil. Mirrors the old per-direction DB entry.
+function Misc:_FlightGet(faction, a, b)
+    local row = self:_FlightRow(faction, a, b)
+    if not row then return nil end
+    return { t = row.t, q = row.quality, via = self:_FlightHops(row.id) }
+end
+
+-- Replace a route's hops with `via` (a list of node names; nil clears them).
+function Misc:_FlightSetHops(routeId, via)
+    local db = self:DB("Flight"); if not db then return end
+    db:Delete("route_hops", function(h) return h.route_id == routeId end)
+    if via then
+        for i, n in ipairs(via) do db:Insert("route_hops", { route_id = routeId, ordinal = i, node = tostring(n) }) end
+    end
+end
+
+-- A measured DIRECT (landing) write: always replaces a lower-quality (fly) entry, even < 5s;
+-- direct-over-direct only when the time changed by >= 5s. Returns true if anything changed.
+function Misc:_FlightStore(faction, a, b, seconds, via)
+    local db = self:DB("Flight"); if not db then return false end
+    a, b = tostring(a), tostring(b)
+    local row = self:_FlightRow(faction, a, b)
+    if not row then
+        local r = db:Insert("routes", { faction = faction, src = a, dst = b, t = seconds, quality = Quality.DIRECT })
+        self:_FlightSetHops(r.id, via)
+        return true
+    end
+    if row.quality < Quality.DIRECT then
+        db:Update("routes", { t = seconds, quality = Quality.DIRECT }, function(x) return x.id == row.id end)
+        self:_FlightSetHops(row.id, via)
+        return true
+    elseif math.abs(seconds - row.t) >= 5 then
+        db:Update("routes", { t = seconds }, function(x) return x.id == row.id end)
+        self:_FlightSetHops(row.id, via)
+        return true
+    end
+    return false
+end
+
+-- Fill-only FLY write: insert only if the direction has no entry. Returns true if it inserted.
+function Misc:_FlightStoreIfNew(faction, a, b, seconds, via)
+    local db = self:DB("Flight"); if not db then return false end
+    a, b = tostring(a), tostring(b)
+    if self:_FlightRow(faction, a, b) then return false end
+    local r = db:Insert("routes", { faction = faction, src = a, dst = b, t = seconds, quality = Quality.FLY })
+    self:_FlightSetHops(r.id, via)
+    return true
+end
+
+-- Every recorded segment under `faction` as a FlightGraph record: an ordered node sequence
+-- (src, hops..., dst) with its total time + quality.
+function Misc:_FlightRecords(faction)
+    local db = self:DB("Flight"); if not db then return {} end
+    local routes = db:Select("id", "src", "dst", "t", "quality"):From("routes"):Where("faction", "=", faction):Run()
+    local out = {}
+    for _, row in ipairs(routes) do
+        local seq = { row.src }
+        local via = self:_FlightHops(row.id)
+        if via then for _, n in ipairs(via) do seq[#seq + 1] = n end end
+        seq[#seq + 1] = row.dst
+        out[#out + 1] = { seq = seq, t = row.t, q = row.quality }
+    end
+    return out
 end
 
 -- Best known time for a current flight src -> dst as (seconds, isEstimate). Resolved in
@@ -222,8 +328,8 @@ end
 -- different routing (e.g. estimating a direct hop by detouring through some other node).
 -- Only a same-direction DIRECT is exact; the rest are estimates, prefixed with "~".
 function Misc:_RouteTime(src, dst, slot, name)
-    local f = self:GetDB().flights
-    local fwd, rev = f[self:_DirKey(src, dst)], f[self:_DirKey(dst, src)]
+    local faction = self:_Faction()
+    local fwd, rev = self:_FlightGet(faction, src, dst), self:_FlightGet(faction, dst, src)
     if fwd and Flight:EntryQ(fwd) == Quality.DIRECT then return Flight:StoredTime(fwd), false end  -- 1
     if rev and Flight:EntryQ(rev) == Quality.DIRECT then return Flight:StoredTime(rev), true  end  -- 2
     if fwd then return Flight:StoredTime(fwd), true end                       -- 3 (fwd is FLY here)
@@ -609,22 +715,7 @@ end
 function Misc:_AtomicLegs()
     local p = self:_p()
     if p.legsCache then return p.legsCache end
-    local flights = self:GetDB().flights
-    local prefix = (UnitFactionGroup("player") or "?") .. "|"
-    local records = {}
-    for key, e in pairs(flights) do
-        if key:sub(1, #prefix) == prefix then
-            local a, b = key:sub(#prefix + 1):match("^(.-) %-> (.+)$")
-            if a and b then
-                local seq = { a }
-                local via = (type(e) == "table") and e.via
-                if via then for _, n in ipairs(via) do seq[#seq + 1] = n end end
-                seq[#seq + 1] = b
-                records[#records + 1] = { seq = seq, t = Flight:StoredTime(e), q = Flight:EntryQ(e) }
-            end
-        end
-    end
-    p.legsCache = ns.FlightGraph:Solve(records)
+    p.legsCache = ns.FlightGraph:Solve(self:_FlightRecords(self:_Faction()))
     return p.legsCache
 end
 
@@ -719,7 +810,7 @@ ns.ModuleManager:Register(Misc:New("Misc", {
     defaultEnabled = false,
     color = ns.Theme.hex.grey,  -- distinct tag (accent=Core, green=UnitFrames, purple=Class, gold=Questing, red=CVars)
     deps = { "EventBus" },  -- recording/timer; Edit Mode is mediated by the Panel widget (Registrable mixin), route solver (ns.FlightGraph Lib) + proximity (ns.Vector2D class) are always available
-    dbSchema = { flights = {} },        -- recorded route times (seeded on bind, before OnInitialize)
+    databases = { Flight = { schema = FLIGHT_SCHEMA } },   -- recorded route times (account-wide SQL db; self:DB("Flight"))
     settingsWatch = { sellJunk = "_OnSellJunkChanged", showInFlight = "_SyncEditMode" },
     settings = {
         { type = "header", text = "Flight timers" },
