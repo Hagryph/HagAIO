@@ -104,6 +104,25 @@ function Dev:BuildSettingsPage(sf)
     relayout()
 end
 
+-- The "Debug" General-page toggle: surfaces DEBUG log lines in chat. The state is persisted
+-- PER CHARACTER (the module's own settings store) and applied to the Logger's runtime flag --
+-- the flag itself stays session-only, the Dev module just remembers your choice and re-applies
+-- it. Default ON. Because the Dev module exists ONLY on a whitelisted dev character, this toggle
+-- (its generalToggle) only ever shows up there.
+function Dev:_DebugOn()
+    local on = self:GetSetting("debug")
+    if on == nil then on = true end
+    return on
+end
+function Dev:_GetDebug() return self:_DebugOn() end
+function Dev:_SetDebug(on)
+    self:SetSetting("debug", on and true or false)
+    ns.Logger:SetDebug(on)
+end
+function Dev:OnInitialize()
+    ns.Logger:SetDebug(self:_DebugOn())  -- apply the saved (default-on) choice for this character
+end
+
 -- Registered (always-on) ONLY on a whitelisted dev character. The `not ns.IsDevChar` arm keeps the
 -- headless test harness -- which doesn't load Core/Namespace.lua -- able to load this file.
 if (not ns.IsDevChar) or ns.IsDevChar() then
@@ -112,5 +131,11 @@ if (not ns.IsDevChar) or ns.IsDevChar() then
         description = "Developer tooling for this character. Live-tunes the Dashboard scene art.",
         alwaysOn = true,
         color = ns.Theme.hex.red,
+        deps = { "SettingsWindow" },  -- contributes the Debug toggle to the General page
+        settings = { { type = "toggle", key = "debug", label = "Debug", default = true } },  -- per-char; seeds default ON
+        generalToggles = {
+            { section = "Developer", label = "Debug", desc = "Show debug messages in chat.",
+              get = "_GetDebug", set = "_SetDebug" },
+        },
     }))
 end
