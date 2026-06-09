@@ -40,11 +40,11 @@ function Service:Initialize(name, opts)
     p.commands       = opts.commands
     p.generalToggles = opts.generalToggles
     p.log            = nil
-    -- Declared databases (see ns.DatabaseOwner). A service that owns a database depends on the
-    -- DatabaseManager so it's initialised first; the databases themselves register a beat later
-    -- (on ResolvePending, once the saved variables have loaded).
-    self:_DeclareDatabases(opts.databases)
-    if opts.databases and next(opts.databases) then p.deps = ns.AddDep(p.deps, "DatabaseManager") end
+    -- Tables contributed to the shared database (see ns.DatabaseOwner). A service that contributes
+    -- tables depends on the DatabaseManager so it's initialised first; the shared database is built
+    -- later (Init.lua, on PLAYER_LOGIN), once every owner has contributed and saved vars exist.
+    self:_DeclareTables(opts.tables)
+    if opts.tables and next(opts.tables) then p.deps = ns.AddDep(p.deps, "DatabaseManager") end
 end
 
 -- GetName is inherited from ns.Loggable (shared identity).
@@ -58,7 +58,7 @@ function Service:_Init()
     self:_Publish()
     self:_AttachLogger()
     self:_WireContributions()
-    self:_RegisterDatabases()   -- declare owned databases (deferred until SavedVars load)
+    self:_ContributeTables()    -- contribute owned tables to the shared database (built later)
     self:OnInitialize()
 end
 

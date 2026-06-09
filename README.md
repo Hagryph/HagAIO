@@ -95,7 +95,7 @@ Core/
   Logger.lua               Central logging service
   Registry.lua             Shared base for the three lifecycle registries (Module / Service / Submodule
   Loggable.lua             The shared LOGGING surface, in one place
-  DatabaseOwner.lua        Mixin shared by ns.Module and ns.Service so either can OWN one or more SQL databases declaratively
+  DatabaseOwner.lua        Mixin shared by ns.Component (so Module + Submodule inherit it) and ns.Service, letting any of
   Component.lua            Shared base for the two things that have an on/off lifecycle plus a settings page:
   Service.lua              Abstract base for every framework SERVICE -- the long-lived singletons the
   ServiceManager.lua       Registry that owns the lifecycle of every Service
@@ -108,13 +108,14 @@ Core/
   DB\Aggregate.lua         Immutable aggregate-function specs used in a SELECT projection and in HAVING
   DB\ColumnResolver.lua    Resolves column references against the set of row-sources active in a query (the FROM table plus
   DB\Constraints.lua       ConstraintEnforcer: turns a caller's { col = value } map into a validated, normalised row, and
+  DB\CoreTables.lua        The central "predefined tables" location: common reference data that belongs to the addon as a
   DB\Database.lua          The database facade
-  DB\DatabaseManager.lua   The registry service that turns a Schema into a live Database
+  DB\DatabaseManager.lua   Owns the ONE shared database
   DB\IndexManager.lua      In-memory lookup structures derived from the rows: the primary-key map, one map per UNIQUE
   DB\QueryBuilder.lua      The fluent SELECT builder, one instance per Database:Select(...) call
   DB\QueryExecutor.lua     Runs a QueryPlan against a Database as a relational-algebra PIPELINE, following SQL's LOGICAL
   DB\QueryPlan.lua         A frozen description of one SELECT, produced by QueryBuilder:Run() and consumed by
-  DB\RowStore.lua          The ONLY thing that reads or writes the persistence slot
+  DB\RowStore.lua          The ONLY thing that reads or writes the persistence backing
   DB\Schema.lua            The schema DSL: immutable Column / Table / Schema objects built from a declarative spec
   DB\TriggerManager.lua    Holds a schema's triggers and fires them around the Database's DML, in SQL order:
   DB\Types.lua             Frozen vocabulary for the SQL-style database engine: the column/join/cascade/trigger

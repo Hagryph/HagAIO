@@ -23,18 +23,38 @@ local DB = ns.DB
 
 local Database = Class.new("Database")
 
--- opts = { crossResolver = function(dbName) -> Database }   (cross-DB FK resolution; optional)
-function Database:Initialize(name, schema, slot, opts)
+-- `globalSlot` is the GLOBAL (account) backing; opts may add { charSlot, localSlot } for the other
+-- scopes (each defaults to a fresh in-memory table -- LOCAL is always in-memory). A bare slot keeps
+-- back-compat: a schema whose tables are all GLOBAL stores everything there.
+-- opts = { charSlot, localSlot, crossResolver, crossChildren }
+function Database:Initialize(name, schema, globalSlot, opts)
     opts = opts or {}
     local p = self:_p()
     p.name = name
     p.schema = schema
-    p.store = DB.RowStore:New(slot, schema)
+    local slots = {
+        [DB.Scope.LOCAL]  = opts.localSlot,
+        [DB.Scope.GLOBAL] = globalSlot or {},
+        [DB.Scope.CHAR]   = opts.charSlot,
+    }
+    p.store = DB.RowStore:New(schema, slots)
     p.index = DB.IndexManager:New(schema, p.store)
     p.enforcer = DB.ConstraintEnforcer:New(schema, p.index, p.store, opts.crossResolver)
     p.triggers = DB.TriggerManager:New(schema)   -- inert if the schema declares no triggers
-    p.crossChildren = opts.crossChildren         -- function(tname) -> cross-DB child refs (Phase 6)
+    p.crossChildren = opts.crossChildren         -- function(tname) -> cross-DB child refs (rarely used now)
     if p.store:Version() == nil then p.store:SetVersion(schema:Version()) end
+    self:_RunSeeds()
+end
+
+-- Seed any table that declares a seed(db) and is currently empty: a LOCAL reference table every
+-- session (it starts empty), a GLOBAL/CHAR table once on first install. Runs after the indexes are
+-- built so seeded rows are validated + indexed like any insert.
+function Database:_RunSeeds()
+    local p = self:_p()
+    for _, tname in ipairs(p.schema:TableNames()) do
+        local seed = p.schema:Table(tname):Seed()
+        if seed and p.store:Count(tname) == 0 then seed(self) end
+    end
 end
 
 function Database:Name()     return self:_p().name end

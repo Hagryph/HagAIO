@@ -49,34 +49,34 @@ local FLYOVER_RANGE = 75  -- closest approach must be within this to count as fl
 local Flight  = ns.FlightResolver
 local Quality = Flight.Quality
 
--- The Flight database (account-wide). A recorded route is one `routes` row keyed per
--- direction + faction (UNIQUE faction,src,dst), with its measured time + quality tier; the
--- booked intermediate nodes it spanned live RELATIONALLY as ordered `route_hops` rows (FK to the
--- route, cascade-deleted with it) -- never a blob. Declared on the module (see registration); the
--- module owns the small query methods (_Flight*) over self:DB("Flight").
-local FLIGHT_SCHEMA = {
-    version = 1,
-    tables = {
-        routes = {
-            columns = {
-                { name = "id",      type = "integer", primaryKey = true, autoIncrement = true },
-                { name = "faction", type = "text",    nullable = false },
-                { name = "src",     type = "text",    nullable = false },
-                { name = "dst",     type = "text",    nullable = false },
-                { name = "t",       type = "number",  nullable = false },
-                { name = "quality", type = "integer", nullable = false },
-            },
-            unique  = { { "faction", "src", "dst" } },
-            indices = { { columns = { "faction" } } },
+-- The flight tables this module contributes to the ONE shared database (account-wide / GLOBAL
+-- scope). A recorded route is one `flight_route` row keyed per direction + faction (UNIQUE
+-- faction,src,dst), with its measured time + quality tier; the booked intermediate nodes it
+-- spanned live RELATIONALLY as ordered `flight_hop` rows (FK to the route, cascade-deleted with
+-- it) -- never a blob. Declared on the module (see registration); the module owns the small query
+-- methods (_Flight*) over self:DB(). Table names are feature-qualified since the database is shared.
+local FLIGHT_TABLES = {
+    flight_route = {
+        scope = "global",
+        columns = {
+            { name = "id",      type = "integer", primaryKey = true, autoIncrement = true },
+            { name = "faction", type = "text",    nullable = false },
+            { name = "src",     type = "text",    nullable = false },
+            { name = "dst",     type = "text",    nullable = false },
+            { name = "t",       type = "number",  nullable = false },
+            { name = "quality", type = "integer", nullable = false },
         },
-        route_hops = {
-            columns = {
-                { name = "route_id", type = "integer", references = { table = "routes", onDelete = "cascade" } },
-                { name = "ordinal",  type = "integer" },
-                { name = "node",     type = "text", nullable = false },
-            },
-            primaryKey = { "route_id", "ordinal" },
+        unique  = { { "faction", "src", "dst" } },
+        indices = { { columns = { "faction" } } },
+    },
+    flight_hop = {
+        scope = "global",
+        columns = {
+            { name = "route_id", type = "integer", references = { table = "flight_route", onDelete = "cascade" } },
+            { name = "ordinal",  type = "integer" },
+            { name = "node",     type = "text", nullable = false },
         },
+        primaryKey = { "route_id", "ordinal" },
     },
 }
 
@@ -103,8 +103,8 @@ function Misc:OnInitialize()
     p.phase = nil       -- nil / "boarding" / "flying"
     p.src = nil
 
-    -- Flight recording is ALWAYS on (builds the database even while disabled). Routes live in the
-    -- Flight SQL database declared on this module (self:DB("Flight"); see the _Flight* DAO).
+    -- Flight recording is ALWAYS on (builds the data even while disabled). Routes live in the
+    -- shared SQL database as flight_route + flight_hop (contributed by this module; see _Flight* DAO).
     ns.EventBus:On("TAXIMAP_OPENED", function() self:_OnTaxiMap() end)
     -- TakeTaxiNode is a permanent secure hook, so it installs once per SESSION (the
     -- private latch on this singleton). It resolves the live registered Misc instance
@@ -229,10 +229,10 @@ end
 -- src/dst/node are coerced to text so a numeric node id and its string form key the same route.
 -- The routes table is small and only read while flying, so query-on-read is fine here.
 
--- The routes row { id, t, quality } for one direction, or nil.
+-- The flight_route row { id, t, quality } for one direction, or nil.
 function Misc:_FlightRow(faction, a, b)
-    local db = self:DB("Flight"); if not db then return nil end
-    local rows = db:Select("id", "t", "quality"):From("routes")
+    local db = self:DB(); if not db then return nil end
+    local rows = db:Select("id", "t", "quality"):From("flight_route")
         :Where("faction", "=", faction):AndWhere("src", "=", tostring(a)):AndWhere("dst", "=", tostring(b))
         :Limit(1):Run()
     return rows[1]
@@ -240,8 +240,8 @@ end
 
 -- The ordered booked intermediate node names for a route, or nil for an atomic leg.
 function Misc:_FlightHops(routeId)
-    local db = self:DB("Flight"); if not db then return nil end
-    local rows = db:Select("node"):From("route_hops"):Where("route_id", "=", routeId):OrderBy("ordinal", "asc"):Run()
+    local db = self:DB(); if not db then return nil end
+    local rows = db:Select("node"):From("flight_hop"):Where("route_id", "=", routeId):OrderBy("ordinal", "asc"):Run()
     if #rows == 0 then return nil end
     local via = {}
     for i, r in ipairs(rows) do via[i] = r.node end
@@ -258,30 +258,30 @@ end
 
 -- Replace a route's hops with `via` (a list of node names; nil clears them).
 function Misc:_FlightSetHops(routeId, via)
-    local db = self:DB("Flight"); if not db then return end
-    db:Delete("route_hops", function(h) return h.route_id == routeId end)
+    local db = self:DB(); if not db then return end
+    db:Delete("flight_hop", function(h) return h.route_id == routeId end)
     if via then
-        for i, n in ipairs(via) do db:Insert("route_hops", { route_id = routeId, ordinal = i, node = tostring(n) }) end
+        for i, n in ipairs(via) do db:Insert("flight_hop", { route_id = routeId, ordinal = i, node = tostring(n) }) end
     end
 end
 
 -- A measured DIRECT (landing) write: always replaces a lower-quality (fly) entry, even < 5s;
 -- direct-over-direct only when the time changed by >= 5s. Returns true if anything changed.
 function Misc:_FlightStore(faction, a, b, seconds, via)
-    local db = self:DB("Flight"); if not db then return false end
+    local db = self:DB(); if not db then return false end
     a, b = tostring(a), tostring(b)
     local row = self:_FlightRow(faction, a, b)
     if not row then
-        local r = db:Insert("routes", { faction = faction, src = a, dst = b, t = seconds, quality = Quality.DIRECT })
+        local r = db:Insert("flight_route", { faction = faction, src = a, dst = b, t = seconds, quality = Quality.DIRECT })
         self:_FlightSetHops(r.id, via)
         return true
     end
     if row.quality < Quality.DIRECT then
-        db:Update("routes", { t = seconds, quality = Quality.DIRECT }, function(x) return x.id == row.id end)
+        db:Update("flight_route", { t = seconds, quality = Quality.DIRECT }, function(x) return x.id == row.id end)
         self:_FlightSetHops(row.id, via)
         return true
     elseif math.abs(seconds - row.t) >= 5 then
-        db:Update("routes", { t = seconds }, function(x) return x.id == row.id end)
+        db:Update("flight_route", { t = seconds }, function(x) return x.id == row.id end)
         self:_FlightSetHops(row.id, via)
         return true
     end
@@ -290,10 +290,10 @@ end
 
 -- Fill-only FLY write: insert only if the direction has no entry. Returns true if it inserted.
 function Misc:_FlightStoreIfNew(faction, a, b, seconds, via)
-    local db = self:DB("Flight"); if not db then return false end
+    local db = self:DB(); if not db then return false end
     a, b = tostring(a), tostring(b)
     if self:_FlightRow(faction, a, b) then return false end
-    local r = db:Insert("routes", { faction = faction, src = a, dst = b, t = seconds, quality = Quality.FLY })
+    local r = db:Insert("flight_route", { faction = faction, src = a, dst = b, t = seconds, quality = Quality.FLY })
     self:_FlightSetHops(r.id, via)
     return true
 end
@@ -301,8 +301,8 @@ end
 -- Every recorded segment under `faction` as a FlightGraph record: an ordered node sequence
 -- (src, hops..., dst) with its total time + quality.
 function Misc:_FlightRecords(faction)
-    local db = self:DB("Flight"); if not db then return {} end
-    local routes = db:Select("id", "src", "dst", "t", "quality"):From("routes"):Where("faction", "=", faction):Run()
+    local db = self:DB(); if not db then return {} end
+    local routes = db:Select("id", "src", "dst", "t", "quality"):From("flight_route"):Where("faction", "=", faction):Run()
     local out = {}
     for _, row in ipairs(routes) do
         local seq = { row.src }
@@ -810,7 +810,7 @@ ns.ModuleManager:Register(Misc:New("Misc", {
     defaultEnabled = false,
     color = ns.Theme.hex.grey,  -- distinct tag (accent=Core, green=UnitFrames, purple=Class, gold=Questing, red=CVars)
     deps = { "EventBus" },  -- recording/timer; Edit Mode is mediated by the Panel widget (Registrable mixin), route solver (ns.FlightGraph Lib) + proximity (ns.Vector2D class) are always available
-    databases = { Flight = { schema = FLIGHT_SCHEMA } },   -- recorded route times (account-wide SQL db; self:DB("Flight"))
+    tables = FLIGHT_TABLES,   -- flight_route + flight_hop contributed to the shared database (GLOBAL)
     settingsWatch = { sellJunk = "_OnSellJunkChanged", showInFlight = "_SyncEditMode" },
     settings = {
         { type = "header", text = "Flight timers" },

@@ -87,10 +87,10 @@ function Module:Initialize(name, opts)
     p.dataDefaults     = ns.Component.SeedDefaults(nil, opts.dbSchema, opts.dbDefaults)
     p.dataPerChar      = opts.dataPerChar and true or false
 
-    -- Declared SQL databases (see ns.DatabaseOwner): self:DB(name) + the module's own DAOs. A
-    -- module that owns one depends on the DatabaseManager so it's available at init.
-    self:_DeclareDatabases(opts.databases)
-    if opts.databases and next(opts.databases) then p.serviceDeps = ns.AddDep(p.serviceDeps, "DatabaseManager") end
+    -- Tables contributed to the shared database (see ns.DatabaseOwner): self:DB() + the module's
+    -- own DAOs. A module that contributes tables depends on the DatabaseManager.
+    self:_DeclareTables(opts.tables)
+    if opts.tables and next(opts.tables) then p.serviceDeps = ns.AddDep(p.serviceDeps, "DatabaseManager") end
 
     p.enabled = false
     p.settingsDB = nil   -- per-character settings namespace (GetSetting/_SettingsDB)
@@ -171,7 +171,7 @@ function Module:_Init()
     self:_Publish()      -- ns.<alias> first (opts.publishAs), so OnInitialize can rely on it
     self:_AttachLogger()
     self:_BindDB()
-    self:_RegisterDatabases()   -- register owned databases (SavedVars are loaded by module init)
+    self:_ContributeTables()    -- contribute owned tables to the shared database (built later)
     self:OnInitialize()
 end
 

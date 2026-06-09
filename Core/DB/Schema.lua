@@ -121,6 +121,10 @@ function Table:Initialize(name, spec)
     assert(type(spec) == "table", ("table '%s' spec must be a table"):format(tostring(name)))
     local p = self:_p()
     p.name = name
+    p.scope = spec.scope or DB.Scope.GLOBAL          -- where rows live (default: account-wide)
+    if not ns.Enum.has(DB.Scope, p.scope) then fail(("table '%s': unknown scope '%s'"):format(name, tostring(p.scope))) end
+    p.seed = spec.seed                                -- optional seed(db) run once when the table is empty
+    if p.seed ~= nil then assert(type(p.seed) == "function", ("table '%s': seed must be a function"):format(name)) end
     p.order = {}          -- ordered column names
     p.cols = {}           -- name -> Column
     p.fks = {}            -- list of { column, db, table, column=refCol, onDelete }
@@ -182,6 +186,8 @@ function Table:_ForceNotNull(colName)
 end
 
 function Table:Name()         return self:_p().name end
+function Table:Scope()        return self:_p().scope end
+function Table:Seed()         return self:_p().seed end
 function Table:ColumnNames()  return self:_p().order end
 function Table:Column(n)      return self:_p().cols[n] end
 function Table:HasColumn(n)   return self:_p().cols[n] ~= nil end

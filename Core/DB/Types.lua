@@ -51,6 +51,12 @@ DB.OnDelete = Enum.new("DBOnDelete", {
     NO_ACTION = "no_action",   -- leave children dangling (no enforcement on delete)
 })
 
+-- Where a TABLE's rows live. The database is ONE shared store; each table chooses its scope:
+--   LOCAL  -- in-memory only, rebuilt from code each session (reference data: faction, zones);
+--   GLOBAL -- account-wide saved variables (shared across all characters);
+--   CHAR   -- this character's saved variables.
+DB.Scope = Enum.new("DBScope", { LOCAL = "local", GLOBAL = "global", CHAR = "char" })
+
 DB.TriggerTime  = Enum.new("DBTriggerTime",  { BEFORE = "before", AFTER = "after", INSTEAD_OF = "instead_of" })
 DB.TriggerEvent = Enum.new("DBTriggerEvent", { INSERT = "insert", UPDATE = "update", DELETE = "delete" })
 DB.TriggerLevel = Enum.new("DBTriggerLevel", { ROW = "row", STATEMENT = "statement" })
