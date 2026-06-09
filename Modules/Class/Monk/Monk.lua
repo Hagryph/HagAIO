@@ -136,6 +136,10 @@ ns.Monk = {
 -- services the spec uses; SettingsWindow (the shared settings refresh) is prepended.
 function ns.Monk.registerSpec(name, SpecClass, specKey, serviceDeps)
     local spec = SpecClass:New(classMod)
+    -- Make the spec resolvable for the settings page even while the Class module is disabled
+    -- (so spec options show without enabling first). Only on Monk chars, so its spec indices
+    -- never collide with another class's in the shared registry.
+    if isMonk() then classMod:_RegisterSpec(specKey, spec) end
     local deps = { "SettingsWindow" }
     for _, d in ipairs(serviceDeps) do deps[#deps + 1] = d end
     ns.SubmoduleManager:Register(ns.Submodule:New(name, {

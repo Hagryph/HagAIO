@@ -47,35 +47,52 @@ function ClassModule:OnInitialize()
     self:_BuildSettings()
 end
 
--- (Re)build the settings schema from the active spec submodule and seed any missing
--- saved-var defaults. Called from a spec submodule's onLoad (load / spec change).
+-- Specs register themselves here (keyed by specKey) so the module can resolve the CURRENT spec's
+-- settings for display even while the module is disabled and its spec submodule isn't loaded --
+-- only the per-character class's specs register (the registerSpec hook gates on class), so a
+-- spec index never collides across classes.
+function ClassModule:_RegisterSpec(specKey, spec)
+    local p = self:_p()
+    p.specs = p.specs or {}
+    p.specs[specKey] = spec
+end
+
+-- The spec driving the settings page: the loaded spec submodule if any (its behaviour is live),
+-- else the registered spec for the current specialisation (so settings still show when disabled).
+function ClassModule:_ActiveSpec()
+    local p = self:_p()
+    return p.activeSub or (p.specs and p.specs[self:CurrentSpecKey()])
+end
+
+-- (Re)build the settings schema from the active spec. Defaults come from the per-spec settings
+-- view (see _SettingsDB) via the cascade -- no manual seeding.
 function ClassModule:_BuildSettings()
     local p = self:_p()
-    local sub = p.activeSub
-    p.settings = (sub and sub:GetSettings())
+    local spec = self:_ActiveSpec()
+    p.settings = (spec and spec:GetSettings())
         or { { type = "note", text = "Nothing for your current specialisation yet." } }
+end
 
-    local db = self:_SettingsDB()
-    if db then
-        -- Fill any unset keys from the schema defaults (deep-copied via Component.SeedDefaults).
-        for k, v in pairs(ns.Component.SeedDefaults(p.settings)) do
-            if db[k] == nil then db[k] = v end
-        end
-    end
+-- The settings page reads this; rebuild from the CURRENT spec each time so it reflects the spec
+-- even when the module is disabled (the spec submodule -- and thus activeSub -- isn't loaded).
+function ClassModule:GetSettings()
+    self:_BuildSettings()
+    return self:_p().settings
 end
 
 -- Class settings live in the module's PER-CHARACTER namespace, BUCKETED by class+spec so a
 -- character's specs keep separate configs and never collide. (A character has one class, so
 -- bucketing is really per-spec here; the class half just keeps the key unambiguous.) The
--- buckets ride along in this character's profile snapshot. The active bucket (the current
--- spec) is what GetSetting/SetSetting (ns.Component) read and write.
+-- buckets ride along in this character's profile. The active bucket (the current spec) is what
+-- GetSetting/SetSetting (ns.Component) read and write; the namespace's code defaults are the
+-- active spec's own settings defaults, so the cascade resolves them without manual seeding.
 function ClassModule:_SettingsDB()
     if not (ns.SavedVars and ns.SavedVars:IsLoaded()) then return nil end
+    local spec = self:_ActiveSpec()
+    if not spec then return nil end
     local p = self:_p()
-    -- One settings namespace per class+spec, so each spec keeps its own override layer (and
-    -- they ride into the profile as separate namespaces). Same code defaults for every spec.
     local key = (p.class or "?") .. ":" .. tostring(self:CurrentSpecKey())
-    return ns.SavedVars:SettingsView("module_Class#" .. key, p.settingsDefaults)
+    return ns.SavedVars:SettingsView("module_Class#" .. key, ns.Component.SeedDefaults(spec:GetSettings()))
 end
 
 -- Run the inherited declarative settingsWatch, then forward the change to the active spec
