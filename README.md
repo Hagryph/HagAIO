@@ -161,9 +161,9 @@ Services/
   Hooks.lua                Removable secure-hook service
   Memoize.lua              Memoization service: wrap a PURE function so repeat calls with the same arguments
   MinimapIcon.lua          A standalone minimap button (NOT LibDBIcon — no external libraries)
-  Profiles.lua             Named config profiles + copy-paste sharing, built on the SavedVars layer
+  Profiles.lua             Named config profiles + copy-paste sharing, built on the SavedVars cascade
   Range.lua                Range service: "is this enemy within N yards?" and "how many enemies within N
-  SavedVars.lua            Singleton wrapper around the global + per-character saved-variable tables
+  SavedVars.lua            Singleton over the account (HagAIODB) + per-character (HagAIOCharDB) saved tables
   Scaling.lua              Models WoW "up to X% more" health-based scaling (damage OR healing) as a clamped linear
   Scheduler.lua            Thin, cancellable wrapper over C_Timer
   Secrets.lua              Thin, allocation-free helpers around 12.0 Secret Values, so modules don't each

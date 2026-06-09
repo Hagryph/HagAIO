@@ -24,10 +24,11 @@ local Class = ns.Class
 --       onLoad = function(host) ... end, onUnload = function(host) ... end,
 --   }))
 
--- Inherits ns.Component for the auto-released resource registry (self:On/Every/...
--- with named scopes) and the shared settings accessors + broadcast; mixes in ns.Persisted
--- for the cached lazy saved-var store (_BindStore/_Store).
-local Submodule = Class.new("Submodule", ns.Component, { mixins = { ns.Persisted } })
+-- Inherits ns.Component for the auto-released resource registry (self:On/Every/... with named
+-- scopes) and the shared settings accessors + broadcast. Settings are a per-character override
+-- layer over the loaded profile + code defaults (the ns.SavedVars cascade), via a lazily-bound
+-- settings view in _SettingsDB.
+local Submodule = Class.new("Submodule", ns.Component)
 
 function Submodule:Initialize(name, opts)
     opts = opts or {}
@@ -49,13 +50,6 @@ function Submodule:Initialize(name, opts)
     p.onSettingChanged = opts.onSettingChanged
     p.settingsWatch = opts.settingsWatch -- declarative setting-key -> handler (see ns.Component)
     p.dbSchema  = opts.dbSchema          -- structural nested tables to seed in the namespace
-    -- Own saved-var namespace (the cached _Store from ns.Persisted), seeded with the schema
-    -- + dbSchema defaults; resolved lazily once SavedVariables load, before any page is shown.
-    -- PER CHARACTER: a submodule's settings are config (captured by profiles), like a module's.
-    self:_BindStore("submodule_" .. name, function()
-        local pp = self:_p()
-        return ns.Component.SeedDefaults(pp.settings, pp.dbSchema)
-    end, true)
     p.loaded = false
 end
 
@@ -63,9 +57,18 @@ end
 function Submodule:GetTitle() local p = self:_p(); return p.title or p.name end
 function Submodule:GetSettings() return self:_p().settings end
 
--- Settings hooks for ns.Component: values live in this submodule's namespace, the
--- broadcast id is "sub:<name>", and a change forwards to the opts onSettingChanged.
-function Submodule:_SettingsDB() return self:_Store() end
+-- Settings hooks for ns.Component: a submodule's settings are a per-character override layer
+-- (cascade in ns.SavedVars) over the loaded profile + code defaults, same as a module's. The
+-- view is created lazily on first access (after SavedVariables load) and cached. The broadcast
+-- id is "sub:<name>", and a change forwards to the opts onSettingChanged.
+function Submodule:_SettingsDB()
+    local p = self:_p()
+    if not p._view and ns.SavedVars and ns.SavedVars:IsLoaded() then
+        p._view = ns.SavedVars:SettingsView("submodule_" .. p.name,
+            ns.Component.SeedDefaults(p.settings, p.dbSchema))
+    end
+    return p._view
+end
 function Submodule:_SettingsOwnerId() return "sub:" .. self:_p().name end
 function Submodule:OnSettingChanged(key, value)
     Submodule.super.OnSettingChanged(self, key, value)  -- inherited declarative settingsWatch

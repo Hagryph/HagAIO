@@ -121,11 +121,9 @@ function Module:IsAlwaysOn() return self:_p().alwaysOn end
 function Module:GetDB() return self:_p().dataDB end
 -- GetLog + the Log* helpers are inherited from ns.Component (shared logging surface).
 
--- Settings live in the module's PER-CHARACTER namespace (see ns.Component for the shared
--- GetSetting/SetSetting + the HagAIO_SettingChanged broadcast). _SettingsRoot is the raw
--- root table; subclasses that bucket their settings (e.g. the Class module, per spec) build
--- off it instead of off GetDB() so their settings stay per-character too.
-function Module:_SettingsRoot() return self:_p().settingsDB end
+-- Settings are a per-character override layer over the loaded profile + code defaults (the
+-- cascade in ns.SavedVars; see ns.Component for the shared GetSetting/SetSetting + the
+-- HagAIO_SettingChanged broadcast). The settings DB is the proxy view bound in _BindDB.
 function Module:_SettingsDB() return self:_p().settingsDB end
 
 -- Turn a declarative spec (a method name or a function) into a handler invoked as
@@ -185,8 +183,11 @@ end
 -- (which captured module_<name> settings) still imports cleanly into the per-character config.
 function Module:_BindDB()
     local p = self:_p()
-    p.settingsDB = ns.SavedVars:Namespace("module_" .. p.name, p.settingsDefaults, true)             -- per character
-    p.dataDB     = ns.SavedVars:Namespace("module_" .. p.name, p.dataDefaults, p.dataPerChar)        -- account-wide unless dataPerChar
+    -- Settings are a per-character override layer over the loaded profile + code defaults
+    -- (cascade in ns.SavedVars). Enable state cascades the same way -- register its baseline.
+    p.settingsDB = ns.SavedVars:SettingsView("module_" .. p.name, p.settingsDefaults)
+    ns.SavedVars:RegisterModuleDefault(p.name, p.defaultEnabled)
+    p.dataDB     = ns.SavedVars:Namespace("module_" .. p.name, p.dataDefaults, p.dataPerChar)  -- account-wide unless dataPerChar
 end
 
 function Module:Enable()
@@ -203,7 +204,7 @@ function Module:Enable()
     local ok, err = pcall(self.OnEnable, self)  -- base no-op unless the subclass overrides
     if not ok then ns.Logger:Core():Warn(("%s OnEnable error: %s"):format(p.name, tostring(err))) end
     self:_WireDeclared()  -- declarative events/messages (auto-released on disable)
-    ns.SavedVars:SetModuleState(p.name, true, true)  -- enable state is per character
+    ns.SavedVars:SetModuleState(p.name, true)  -- per-character enable override (diffed vs profile/default)
     if p.log then p.log:Success("enabled") end
     if ns.EventBus and ns.EventBus.Emit then ns.EventBus:Emit("HagAIO_ModuleState", p.name, true) end
 end
@@ -216,7 +217,7 @@ function Module:Disable()
     local ok, err = pcall(self.OnDisable, self)  -- base no-op unless the subclass overrides
     if not ok then ns.Logger:Core():Warn(("%s OnDisable error: %s"):format(p.name, tostring(err))) end
     self:_ReleaseAll()  -- undo every self:On / self:Subscribe / self:Hook + declared wiring
-    ns.SavedVars:SetModuleState(p.name, false, true)  -- enable state is per character
+    ns.SavedVars:SetModuleState(p.name, false)  -- per-character enable override (diffed vs profile/default)
     if p.log then p.log:Info("disabled") end
     ns.ModuleManager:DisableDependents(p.name)  -- cascade: modules that needed this one
     if ns.EventBus and ns.EventBus.Emit then ns.EventBus:Emit("HagAIO_ModuleState", p.name, false) end

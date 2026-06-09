@@ -31,10 +31,11 @@ end
 
 function EditMode:IsEditing() return self:_p().editing end
 
--- Frame layout is per-character config (different characters/roles want different layouts),
--- so it's stored per character and travels in that character's profile snapshot.
+-- Frame layout is per-character config (a cascade namespace, keyed by frame key -> {point,x,y}):
+-- this char's override ?? the loaded profile ?? nil (then the frame's coded default). So layouts
+-- differ per character and travel in that character's profile, storing only what was moved.
 function EditMode:_Positions()
-    return ns.SavedVars:Namespace("editmode", { positions = {} }, true).positions
+    return ns.SavedVars:SettingsView("editmode", {})
 end
 
 -- Anchor a registered frame from its saved (or default) CENTER offset.

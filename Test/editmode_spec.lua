@@ -32,8 +32,10 @@ local function newEM(opts)
     _G.EditModeManagerFrame = opts.grid and { Grid = opts.grid } or nil
     _G.EventRegistry = nil   -- skip the edit-mode hook wiring
     local ns = S.newNs()
+    -- EditMode now reads/writes positions through a SavedVars settings view (a key -> {point,x,y}
+    -- proxy); stub it as a plain table so the spec can inspect what was stored.
     local positions = {}
-    ns.SavedVars = { Namespace = function() return { positions = positions } end }
+    ns.SavedVars = { SettingsView = function() return positions end }
     S.load(ns, "Services/EditMode.lua")
     local em = ns._captured["EditMode"]; em:OnInitialize()
     return em, positions

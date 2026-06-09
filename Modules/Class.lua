@@ -70,13 +70,12 @@ end
 -- buckets ride along in this character's profile snapshot. The active bucket (the current
 -- spec) is what GetSetting/SetSetting (ns.Component) read and write.
 function ClassModule:_SettingsDB()
+    if not (ns.SavedVars and ns.SavedVars:IsLoaded()) then return nil end
     local p = self:_p()
-    local db = self:_SettingsRoot()  -- module_Class settings (per character)
-    if not db then return nil end
-    db.specs = db.specs or {}
+    -- One settings namespace per class+spec, so each spec keeps its own override layer (and
+    -- they ride into the profile as separate namespaces). Same code defaults for every spec.
     local key = (p.class or "?") .. ":" .. tostring(self:CurrentSpecKey())
-    db.specs[key] = db.specs[key] or {}
-    return db.specs[key]
+    return ns.SavedVars:SettingsView("module_Class#" .. key, p.settingsDefaults)
 end
 
 -- Run the inherited declarative settingsWatch, then forward the change to the active spec
@@ -96,10 +95,11 @@ ns.ModuleManager:Register(ClassModule:New("Class", {
     title = "Class",
     description = "Helpers for your current class.",
     defaultEnabled = false,
-    -- Account-wide: settings are bucketed by class+spec (see _SettingsDB), so they're
-    -- shared across same-class+spec alts and captured by profiles.
+    -- Per character: settings are bucketed by class+spec (see _SettingsDB) into their own
+    -- cascade namespaces, so each spec keeps its own config and they're captured by profiles.
     color = ns.Theme.hex.purple,
-    -- No service deps: event subscriptions go through self:On (ns.Component), and each
-    -- spec submodule declares the services ITS features use.
+    deps = { "SavedVars" },  -- _SettingsDB builds a per-spec settings view directly off ns.SavedVars
+    -- Event subscriptions go through self:On (ns.Component); each spec submodule declares the
+    -- services ITS features use.
     settings = {},   -- built per spec from the active spec submodule
 }))

@@ -2,45 +2,29 @@ local addonName, ns = ...
 local Class = ns.Class
 
 -- Services/Profiles.lua
--- Named config profiles + copy-paste sharing, built on the SavedVars layer. A profile is a
--- deep snapshot of the PER-CHARACTER config (module enable states + every module/submodule
--- settings namespace + the schema version) -- NOT account-wide persistent data (flight routes,
--- learned timed quests), which is shared and never travels in a profile. The saved-profiles MAP
--- itself lives account-wide (HagAIODB.profiles[name]) so profiles are shareable across all your
--- characters; which one a given character has loaded is tracked per character. Export runs a
--- snapshot through ns.Serializer into a share string; Import decodes + migrates a (possibly
--- older) string back to a profile. Loading a profile overwrites THIS character's live config in
--- place, finalised with a /reload. The UI (Settings window -> Profiles page) drives all of this;
--- this service is pure logic.
+-- Named config profiles + copy-paste sharing, built on the SavedVars cascade. A profile records
+-- ONLY what it changed from the code defaults (the same diff a character's override layer stores),
+-- and lives in the account-wide saved table (HagAIODB.profiles[name]) so it's shared across all
+-- your characters. It is NEVER deep-copied onto a character: each character records which profile
+-- it has LOADED (SavedVars char.loadedProfile), and that profile is resolved LIVE as the middle
+-- layer of the cascade (override -> profile -> default). So editing a profile updates every
+-- character using it, and a setting a profile didn't touch falls through to the code default.
+--
+--   Save(name)    snapshot this character's current effective config (as diffs) into a profile.
+--   LoadProfile   wipe this character's overrides and point it at the profile -> everything then
+--                 resolves to the profile (and code defaults). Finalised with a /reload.
+--   global profile  one profile may be flagged global; a character that has loaded none gets it
+--                   pointed-to automatically on login (it then fills every value it set).
+-- Export runs a profile's diffs through ns.Serializer into a share string; Import decodes (and
+-- migrates) one back into the profiles map. The UI (Settings -> Profiles) drives all of this.
 
 local Profiles = Class.new("Profiles", ns.Service)
-
-local deepcopy = ns.Helpers.DeepCopy   -- shared pure helper (Lib/Helpers.lua)
-
-local function clear(t)
-    for k in pairs(t) do t[k] = nil end
-end
-
--- Per-character keys that are NOT part of a profile's captured config: the per-character
--- "which profile is loaded here" marker (stored under `profiles`). Excluded from snapshot +
--- apply so loading a profile never rewrites the marker mid-apply. (`globalProfile` lives in
--- the account-wide root, which snapshots no longer touch, but it's listed for safety.)
-local META_KEYS = { profiles = true, globalProfile = true }
 
 -- The stored profiles map (account-wide), created on first use.
 function Profiles:_Store()
     local g = ns.SavedVars:Global()
     g.profiles = g.profiles or {}
     return g.profiles
-end
-
--- A deep copy of this character's config (every char-DB namespace except the loaded marker).
-function Profiles:Snapshot()
-    local snap, c = {}, ns.SavedVars:Char()
-    for k, v in pairs(c) do
-        if not META_KEYS[k] then snap[k] = deepcopy(v) end
-    end
-    return snap
 end
 
 function Profiles:List()
@@ -53,39 +37,24 @@ end
 function Profiles:Has(name) return self:_Store()[name] ~= nil end
 function Profiles:Get(name) return self:_Store()[name] end
 
+-- This character's current effective config captured as diffs-from-default (see SavedVars).
+function Profiles:Snapshot() return ns.SavedVars:SnapshotDiffs() end
+
 -- ---- global profile -------------------------------------------------------
--- One profile (account-wide) may be flagged GLOBAL: a character that has never
--- loaded a profile gets it applied automatically on login. The flag is exclusive --
--- setting it replaces any previous one -- and may be cleared (nil = no global, so a
--- fresh character just starts from defaults).
-function Profiles:GetGlobal()
-    return ns.SavedVars:Global().globalProfile
-end
-
-function Profiles:IsGlobal(name)
-    return name ~= nil and self:GetGlobal() == name
-end
-
--- Mark `name` as the global profile, or pass nil to clear it (no global profile).
+-- One profile (account-wide) may be flagged GLOBAL: a character that has never loaded a profile
+-- gets it auto-applied on login. The flag is exclusive and may be cleared (nil = no global).
+function Profiles:GetGlobal() return ns.SavedVars:Global().globalProfile end
+function Profiles:IsGlobal(name) return name ~= nil and self:GetGlobal() == name end
 function Profiles:SetGlobal(name)
     local g = ns.SavedVars:Global()
-    if name == nil then
-        g.globalProfile = nil
-        return true
-    end
+    if name == nil then g.globalProfile = nil; return true end
     if not self:Has(name) then return false, "no profile named '" .. tostring(name) .. "'" end
     g.globalProfile = name
     return true
 end
 
--- Per-character record of the last profile applied here (account-wide profiles, but
--- which one a given character uses is per character). nil = this character has never
--- loaded a profile.
-function Profiles:_CharState()
-    return ns.SavedVars:Namespace("profiles", { loaded = false }, true)
-end
-
-function Profiles:GetLoaded() return self:_CharState().loaded or nil end
+-- Which profile THIS character has loaded (nil = none -> pure code defaults under its overrides).
+function Profiles:GetLoaded() return ns.SavedVars:LoadedProfile() end
 
 function Profiles:Save(name)
     if type(name) ~= "string" or name == "" then return false, "a profile name is required" end
@@ -97,72 +66,45 @@ function Profiles:Delete(name)
     local store = self:_Store()
     if store[name] == nil then return false, "no profile named '" .. tostring(name) .. "'" end
     store[name] = nil
-    if self:IsGlobal(name) then self:SetGlobal(nil) end  -- don't leave a dangling global
-    return true
-end
-
--- Overwrite THIS character's live config IN PLACE from a snapshot (migrated to the current
--- schema first), preserving the per-character loaded marker. Top-level tables are cleared +
--- copied rather than replaced, so a module's already-bound settings reference stays valid.
-function Profiles:_ApplyData(snap)
-    if type(snap) ~= "table" then return false, "empty profile" end
-    snap = ns.SavedVars:MigrateTable(deepcopy(snap))
-    local c = ns.SavedVars:Char()
-    for k in pairs(c) do
-        if not META_KEYS[k] and snap[k] == nil then c[k] = nil end  -- drop keys the profile omits
-    end
-    for k, v in pairs(snap) do
-        if not META_KEYS[k] then
-            if type(v) == "table" and type(c[k]) == "table" then
-                clear(c[k])
-                for kk, vv in pairs(v) do c[k][kk] = deepcopy(vv) end
-            else
-                c[k] = deepcopy(v)
-            end
-        end
+    if self:IsGlobal(name) then self:SetGlobal(nil) end          -- don't leave a dangling global
+    if ns.SavedVars:LoadedProfile() == name then                  -- this char was on it -> fall to defaults
+        ns.SavedVars:SetLoadedProfile(nil)
     end
     return true
 end
 
--- Load a saved profile into the live config (persists immediately; /reload applies).
--- Records it as this character's loaded profile so the global profile won't override
--- it on future logins.
+-- Load a profile into THIS character: wipe its override layer and point it at the profile, so
+-- everything resolves to the profile (and code defaults beneath it). Persists immediately; a
+-- /reload re-applies it to already-built frames. Other characters are unaffected.
 function Profiles:LoadProfile(name)
-    local snap = self:Get(name)
-    if not snap then return false, "no profile named '" .. tostring(name) .. "'" end
-    local ok, err = self:_ApplyData(snap)
-    if ok then self:_CharState().loaded = name end
-    return ok, err
+    if not self:Has(name) then return false, "no profile named '" .. tostring(name) .. "'" end
+    ns.SavedVars:ClearOverrides()
+    ns.SavedVars:SetLoadedProfile(name)
+    return true
 end
 
--- On login, if this character has never loaded a profile, apply the account's global
--- profile (if one is set + still exists). Call AFTER SavedVars load/migrate/defaults
--- and BEFORE modules bind their namespaces, so the fresh config takes effect without a
--- /reload. Returns the applied profile name, or nil if nothing was applied.
+-- On login, if this character has loaded no profile, point it at the account's global profile
+-- (if set + still exists). It then fills every value the global profile set, while anything it
+-- didn't set falls through to code defaults -- exactly like a normal loaded profile, but without
+-- wiping any overrides the character already has. Returns the applied name, or nil.
 function Profiles:ApplyGlobalForFreshChar()
-    local cs = self:_CharState()
-    if cs.loaded then return nil end          -- this character already uses a profile
+    if ns.SavedVars:LoadedProfile() then return nil end   -- this character already uses a profile
     local name = self:GetGlobal()
     if not name or not self:Has(name) then return nil end
-    if self:_ApplyData(self:Get(name)) then
-        cs.loaded = name
-        return name
-    end
-    return nil
+    ns.SavedVars:SetLoadedProfile(name)
+    return name
 end
 
--- name (or nil = the live config) -> share string.
+-- name (or nil = this character's current config) -> share string.
 function Profiles:Export(name)
-    local snap = name and self:Get(name) or self:Snapshot()
-    if not snap then return nil, "no profile named '" .. tostring(name) .. "'" end
-    return ns.Serializer:Encode(snap)
+    local data = name and self:Get(name) or self:Snapshot()
+    if not data then return nil, "no profile named '" .. tostring(name) .. "'" end
+    return ns.Serializer:Encode(data)
 end
 
--- share string -> saved under `name` (decoded + migrated). Does NOT apply; the user
--- then loads it. Returns (true, name) or (false, reason).
--- A profile is a map of saved-var namespace -> table (e.g. module_Questing = { ... }).
--- Require at least one string-keyed table entry so a decoded blob of garbage (an array,
--- scalars, an empty table) is rejected before it can overwrite live config on load.
+-- A profile is a map of namespace -> diff table (e.g. module_Questing = { autoAccept = true }).
+-- Require at least one string-keyed table entry so a decoded blob of garbage is rejected before
+-- it can be stored.
 local function looksLikeProfile(t)
     if type(t) ~= "table" then return false end
     for k, v in pairs(t) do
@@ -171,6 +113,8 @@ local function looksLikeProfile(t)
     return false
 end
 
+-- share string -> saved under `name` (decoded + migrated). Does NOT load it; the user then loads
+-- it. Returns (true, name) or (false, reason).
 function Profiles:Import(str, name)
     local value, err = ns.Serializer:Decode(str)
     if not value then return false, err end
