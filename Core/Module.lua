@@ -17,12 +17,12 @@ local Module = Class.new("Module", ns.Component)
 -- Constructor. Subclasses that need their own constructor should override
 -- Initialize and call Module.Initialize(self, name, opts) first.
 --   opts = { title = string, description = string, defaultEnabled = bool,
---            alwaysOn = bool, color = "RRGGBB", dbDefaults = table, deps = { "Service", ... },
---            settings = { <schema entries> } }
+--            alwaysOn = bool, color = "RRGGBB", deps = { "Service", ... },
+--            tables = { <db table schemas> }, settings = { <schema entries> } }
 -- PERSISTENCE: a module's `settings` (schema values) and enable state are stored PER
--- CHARACTER -- that's the config a profile captures. `dbSchema`/`dbDefaults` describe the
--- module's ACCOUNT-WIDE persistent data (flight routes, learned timed quests), reached via
--- GetDB(); it is shared across characters and is NOT part of any profile.
+-- CHARACTER -- that's the config a profile captures. Its ACCOUNT-WIDE persistent data
+-- (flight routes, learned timed quests) lives in the shared Database -- declared via the
+-- `tables` opt and reached through self:DB() (see ns.DatabaseOwner), never a private namespace.
 -- `alwaysOn` makes the module MANDATORY: it enables at start, can't be disabled, and the
 -- settings UI shows no on/off toggle (used for always-active tooling like the Dev module).
 -- `deps` names the SERVICES this module needs; the ModuleManager won't start the
@@ -75,17 +75,11 @@ function Module:Initialize(name, opts)
     p.settingsWatch = opts.settingsWatch          -- declarative setting-key -> handler (see ns.Component)
     p.publishAs = opts.publishAs                   -- optional: publish this instance at ns.<alias> (see _Publish)
 
-    -- Defaults split by WHERE they persist (see _BindDB):
-    --   settings  -> the schema's keyed `default`s, stored PER CHARACTER (the config).
-    --   data      -> the declarative dbSchema + any explicit dbDefaults. ACCOUNT-WIDE by
-    --                default (persistent cross-character stuff: flight routes, learned timed
-    --                quests). Set opts.dataPerChar when the data is inherently per character so
-    --                GetDB() is per character too -- it then rides along in this char's profile.
-    -- All deep-copied so table defaults aren't shared by reference; SavedVars deep-merges them
-    -- on bind, so a module never has to hand-init `db.x = db.x or {}`.
+    -- Settings defaults: the schema's keyed `default`s, stored PER CHARACTER (the config the
+    -- profile captures). Deep-copied so table defaults aren't shared by reference; SavedVars
+    -- deep-merges them on bind. A module's ACCOUNT-WIDE persistent data lives in the shared
+    -- Database now (declarative `tables` + self:DB()), not a private saved-var namespace.
     p.settingsDefaults = ns.Component.SeedDefaults(p.settings)
-    p.dataDefaults     = ns.Component.SeedDefaults(nil, opts.dbSchema, opts.dbDefaults)
-    p.dataPerChar      = opts.dataPerChar and true or false
 
     -- Tables contributed to the shared database (see ns.DatabaseOwner): self:DB() + the module's
     -- own DAOs. A module that contributes tables depends on the DatabaseManager.
@@ -94,7 +88,6 @@ function Module:Initialize(name, opts)
 
     p.enabled = false
     p.settingsDB = nil   -- per-character settings namespace (GetSetting/_SettingsDB)
-    p.dataDB = nil       -- account-wide persistent-data namespace (GetDB)
     p.log = nil
 end
 
@@ -122,9 +115,8 @@ function Module:IsEnabled() return self:_p().enabled end
 function Module:IsDefaultEnabled() return self:_p().defaultEnabled end
 -- Always-on (mandatory): enabled at start, can't be disabled, and shows no on/off toggle.
 function Module:IsAlwaysOn() return self:_p().alwaysOn end
--- PUBLIC handle to the module's ACCOUNT-WIDE persistent-data namespace (flight routes,
--- learned timed quests, ...). Settings do NOT live here -- they're per-character (GetSetting).
-function Module:GetDB() return self:_p().dataDB end
+-- A module's ACCOUNT-WIDE persistent data lives in the shared Database (declarative `tables`
+-- reached via self:DB(); see ns.DatabaseOwner). Settings are per-character (GetSetting).
 -- GetLog + the Log* helpers are inherited from ns.Component (shared logging surface).
 
 -- Settings are a per-character override layer over the loaded profile + code defaults (the
@@ -163,7 +155,7 @@ end
 -- Internal: the fixed one-time init sequence the ModuleManager runs for this module
 -- (on PLAYER_LOGIN, or immediately for a late registration). Logger first, then the
 -- saved-var binding, then OnInitialize -- so a subclass's OnInitialize can always
--- rely on GetLog() and GetDB() being ready. Keeping the order here, next to the
+-- rely on GetLog() and self:DB() being ready. Keeping the order here, next to the
 -- pieces it sequences, means the manager just calls one method and no module author
 -- has to know the order. (It can't move to the constructor: SavedVars aren't loaded
 -- until ADDON_LOADED, long after modules are constructed at file load.)
@@ -184,17 +176,14 @@ function Module:_Publish()
     if alias then ns[alias] = self end
 end
 
--- Internal: bind the saved-variable namespaces. Called by Module:_Init at startup. Two
--- handles under the same "module_<name>" key but in DIFFERENT roots: settings per character,
--- persistent data account-wide. Keeping the key identical means an old single-root profile
--- (which captured module_<name> settings) still imports cleanly into the per-character config.
+-- Internal: bind the per-character settings view. Called by Module:_Init at startup. Settings
+-- are a per-character override layer over the loaded profile + code defaults (the cascade in
+-- ns.SavedVars); enable state cascades the same way, so register its baseline here too. A
+-- module's persistent DATA is not bound here -- it lives in the shared Database (self:DB()).
 function Module:_BindDB()
     local p = self:_p()
-    -- Settings are a per-character override layer over the loaded profile + code defaults
-    -- (cascade in ns.SavedVars). Enable state cascades the same way -- register its baseline.
     p.settingsDB = ns.SavedVars:SettingsView("module_" .. p.name, p.settingsDefaults)
     ns.SavedVars:RegisterModuleDefault(p.name, p.defaultEnabled)
-    p.dataDB     = ns.SavedVars:Namespace("module_" .. p.name, p.dataDefaults, p.dataPerChar)  -- account-wide unless dataPerChar
 end
 
 function Module:Enable()

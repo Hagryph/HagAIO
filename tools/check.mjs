@@ -25,6 +25,7 @@ const LINT = [
   ["deadcode", ["tools/deadcode.mjs"]],
   ["frames", ["tools/check-frames.mjs"]],
   ["widgets", ["tools/check-widgets.mjs"]],
+  ["savedvars", ["tools/savedvarscheck.mjs"]],
 ];
 
 function run(label, cmd, cmdArgs) {

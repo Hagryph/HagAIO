@@ -12,11 +12,50 @@ The addon uses **one shared database**. Every service or module contributes the 
 
 | Table | Scope | Columns | Primary key | Defined in |
 |---|---|---|---|---|
+| [`compartment`](#compartment) | `global` | 2 | id | `Services/Compartment.lua` |
+| [`cvar_custom`](#cvar_custom) | `global` | 2 | name | `Modules/CVars.lua` |
+| [`cvar_managed`](#cvar_managed) | `global` | 2 | name | `Modules/CVars.lua` |
 | [`faction`](#faction) | `local` | 2 | tag | `Core/DB/CoreTables.lua` |
 | [`flight_hop`](#flight_hop) | `global` | 3 | route_id, ordinal | `Modules/Misc.lua` |
 | [`flight_master`](#flight_master) | `global` | 6 | node_id | `Core/DB/CoreTables.lua` |
 | [`flight_route`](#flight_route) | `global` | 5 | id | `Modules/Misc.lua` |
+| [`logger`](#logger) | `global` | 4 | id | `Core/DB/CoreTables.lua` |
+| [`minimap`](#minimap) | `global` | 3 | id | `Services/MinimapIcon.lua` |
+| [`quest_timed`](#quest_timed) | `global` | 2 | quest_id | `Modules/Questing.lua` |
 | [`zone`](#zone) | `local` | 1 | name | `Core/DB/CoreTables.lua` |
+
+---
+
+### `compartment`  ·  scope `global`
+
+*Defined in `Services/Compartment.lua`.*
+
+| Column | Type | Null | Key | Default | References |
+|---|---|---|---|---|---|
+| `id` | integer | no | PK |  |  |
+| `shown` | boolean | yes |  |  |  |
+
+---
+
+### `cvar_custom`  ·  scope `global`
+
+*Defined in `Modules/CVars.lua`.*
+
+| Column | Type | Null | Key | Default | References |
+|---|---|---|---|---|---|
+| `name` | text | no | PK |  |  |
+| `type` | text | yes |  |  |  |
+
+---
+
+### `cvar_managed`  ·  scope `global`
+
+*Defined in `Modules/CVars.lua`.*
+
+| Column | Type | Null | Key | Default | References |
+|---|---|---|---|---|---|
+| `name` | text | no | PK |  |  |
+| `value` | text | yes |  |  |  |
 
 ---
 
@@ -77,6 +116,42 @@ The addon uses **one shared database**. Every service or module contributes the 
 **Unique:** (src, dst)
 
 **Indexes:** (src)
+
+---
+
+### `logger`  ·  scope `global`
+
+*Defined in `Core/DB/CoreTables.lua`.*
+
+| Column | Type | Null | Key | Default | References |
+|---|---|---|---|---|---|
+| `id` | integer | no | PK |  |  |
+| `min_level` | integer | yes |  |  |  |
+| `echo` | boolean | yes |  |  |  |
+| `keep` | integer | yes |  |  |  |
+
+---
+
+### `minimap`  ·  scope `global`
+
+*Defined in `Services/MinimapIcon.lua`.*
+
+| Column | Type | Null | Key | Default | References |
+|---|---|---|---|---|---|
+| `id` | integer | no | PK |  |  |
+| `shown` | boolean | yes |  |  |  |
+| `angle` | number | yes |  |  |  |
+
+---
+
+### `quest_timed`  ·  scope `global`
+
+*Defined in `Modules/Questing.lua`.*
+
+| Column | Type | Null | Key | Default | References |
+|---|---|---|---|---|---|
+| `quest_id` | integer | no | PK |  |  |
+| `seconds` | number | yes |  |  |  |
 
 ---
 

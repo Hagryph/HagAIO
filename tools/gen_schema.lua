@@ -53,7 +53,7 @@ ns.LibManager       = { Register = function(_, item) return item end }
 
 local FRAMEWORK = {
     "Core/Class.lua", "Core/Type.lua", "Core/Enum.lua", "Core/Mixin.lua", "Core/Interface.lua",
-    "Core/Delegate.lua", "Core/Contributions.lua", "Core/Persisted.lua", "Core/Loggable.lua",
+    "Core/Delegate.lua", "Core/Contributions.lua", "Core/Loggable.lua",
     "Core/DatabaseOwner.lua", "Core/Lib.lua", "Lib/Helpers.lua", "Core/Component.lua",
     "Core/Service.lua", "Core/Module.lua", "Core/Submodule.lua",
 }

@@ -90,7 +90,6 @@ Core/
   Interface.lua            INTERFACE factory -- a sibling of ns.Class for CONTRACTS: a named list of method names a
   Delegate.lua             A multicast DELEGATE / signal -- an object-owned event you Connect handlers to and Fire
   Contributions.lua        ns.Contributions -- the shared, PURE machinery for a feature's declarative cross-cutting
-  Persisted.lua            ns.Persisted -- a MIXIN (ns.Mixin) for objects that own a lazily-resolved, CACHED SavedVars
   DependencyGraph.lua      A generic dependency forest
   Logger.lua               Central logging service
   Registry.lua             Shared base for the three lifecycle registries (Module / Service / Submodule

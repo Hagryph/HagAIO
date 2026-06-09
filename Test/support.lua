@@ -73,7 +73,6 @@ function M.newNs()
     assert(loadfile("Core/Interface.lua"))("HagAIO", ns)      -- interface (contract) factory
     assert(loadfile("Core/Delegate.lua"))("HagAIO", ns)       -- multicast delegate / signal
     assert(loadfile("Core/Contributions.lua"))("HagAIO", ns)  -- declarative-contribution builders
-    assert(loadfile("Core/Persisted.lua"))("HagAIO", ns)      -- cached saved-var store mixin
     ns.Theme = { hex = setmetatable({}, { __index = function() return "ffffff" end }) }
     local noop = function() end
     local channel = { Debug = noop, Info = noop, Success = noop, Warn = noop, Error = noop }

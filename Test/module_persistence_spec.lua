@@ -1,9 +1,9 @@
 local S = dofile("Test/support.lua")
 
--- Locks the persistence model:
---   * a module's SETTINGS + ENABLE state are held in the live config for the session and written
---     back to this character as DIFFS on Flush (logout), and
---   * its declarative dbSchema/dbDefaults DATA lives ACCOUNT-WIDE (or per-char with dataPerChar).
+-- Locks the persistence model: a module's SETTINGS + ENABLE state are held in the live config for
+-- the session and written back to this character as DIFFS on Flush (logout). A module's account-wide
+-- DATA no longer lives in a private saved-var namespace -- it goes through the shared Database
+-- (declarative `tables` + self:DB()); that path is covered by the db_* specs.
 local function setup()
     _G.HagAIODB = nil
     _G.HagAIOCharDB = nil
@@ -15,7 +15,6 @@ local function setup()
     local M = ns.Class.new("PersistTestModule", ns.Module)
     local m = M:New("Foo", {
         settings = { { type = "toggle", key = "opt", label = "Opt", default = true } },  -- per-character config
-        dbSchema = { flights = {} },                                                       -- account-wide data
     })
     m:_BindDB()
     return ns, sv, m
@@ -38,25 +37,5 @@ describe("Module persistence", function()
         sv:SetModuleState("Foo", false); sv:Flush()
         assert.is_false(sv:GetModuleState("Foo"))
         assert.is_false(sv:Char().overrides.modules.Foo)
-    end)
-
-    it("GetDB returns the account-wide data store (where flight routes live)", function()
-        local ns, sv, m = setup()
-        m:GetDB().flights.RouteA = 42
-        assert.are.equal(42, sv:Global().module_Foo.flights.RouteA)
-    end)
-
-    it("dataPerChar=true stores the data namespace per character", function()
-        local ns, sv = setup()
-        local M = ns.Class.new("PerCharDataModule", ns.Module)
-        local m = M:New("Bar", {
-            settings = { { type = "toggle", key = "opt", label = "Opt", default = true } },
-            dbSchema = { items = {} },
-            dataPerChar = true,
-        })
-        m:_BindDB()
-        m:GetDB().items.X = 1
-        assert.are.equal(1, sv:Char().module_Bar.items.X)   -- data -> char DB
-        assert.is_nil(sv:Global().module_Bar)               -- nothing in the account DB
     end)
 end)

@@ -17,7 +17,6 @@ $script:CoreSlots = [ordered]@{
     'Interface'        = 'Core\Interface.lua'
     'Delegate'         = 'Core\Delegate.lua'
     'Contributions'    = 'Core\Contributions.lua'
-    'Persisted'        = 'Core\Persisted.lua'
     'Color'            = 'Lib\Color.lua'
     'Theme'            = 'UI\Theme.lua'
     'Registry'         = 'Core\Registry.lua'
