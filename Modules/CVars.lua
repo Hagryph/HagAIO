@@ -104,9 +104,42 @@ end
 function CVars:OnInitialize()
     local p = self:_p()
     p.sections = {}
-    -- db.managed / db.custom are pre-seeded from dbSchema (see registration).
-    -- The "/hag cvar" sub-command is declared on registration and wired by the base
-    -- on enable (removed on disable), like the module's events.
+    -- Globalised CVars (cvar_managed) and user-added custom CVars (cvar_custom) live in the shared
+    -- DB; see the DAO below. The "/hag cvar" sub-command is declared on registration.
+end
+
+-- ---- persistence (cvar_managed: name -> forced value; cvar_custom: name -> control type) -------
+function CVars:_IsManaged(name)
+    local db = self:DB(); if not db then return false end
+    return #db:Select("name"):From("cvar_managed"):Where("name", "=", name):Limit(1):Run() > 0
+end
+function CVars:_ManagedValue(name)
+    local db = self:DB(); if not db then return nil end
+    local r = db:Select("value"):From("cvar_managed"):Where("name", "=", name):Limit(1):Run()[1]
+    return r and r.value or nil
+end
+function CVars:_ManagedAll()   -- array of { name, value }
+    local db = self:DB(); return db and db:Select("name", "value"):From("cvar_managed"):Run() or {}
+end
+function CVars:_SetManaged(name, value)
+    local db = self:DB(); if not db then return end
+    if self:_IsManaged(name) then db:Update("cvar_managed", { value = value }, function(x) return x.name == name end)
+    else db:Insert("cvar_managed", { name = name, value = value }) end
+end
+function CVars:_ClearManaged(name)
+    local db = self:DB(); if db then db:Delete("cvar_managed", function(x) return x.name == name end) end
+end
+function CVars:_CustomAll()    -- array of { name, type }
+    local db = self:DB(); return db and db:Select("name", "type"):From("cvar_custom"):Run() or {}
+end
+function CVars:_SetCustom(name, t)
+    local db = self:DB(); if not db then return end
+    if #db:Select("name"):From("cvar_custom"):Where("name", "=", name):Limit(1):Run() > 0 then
+        db:Update("cvar_custom", { type = t }, function(x) return x.name == name end)
+    else db:Insert("cvar_custom", { name = name, type = t }) end
+end
+function CVars:_ClearCustom(name)
+    local db = self:DB(); if db then db:Delete("cvar_custom", function(x) return x.name == name end) end
 end
 
 function CVars:OnEnable()
@@ -117,8 +150,8 @@ end
 -- Re-apply every globalised CVar (only while enabled; disabling stops forcing).
 function CVars:_ApplyAll()
     if not (C_CVar and C_CVar.SetCVar) then return end
-    for name, value in pairs(self:GetDB().managed) do
-        pcall(C_CVar.SetCVar, name, value)
+    for _, r in ipairs(self:_ManagedAll()) do
+        pcall(C_CVar.SetCVar, r.name, r.value)
     end
 end
 
@@ -135,7 +168,7 @@ function CVars:_SetCVar(name, value)
     if cur == nil then self:LogWarn("unknown CVar: " .. name); return false end
     if readOnly then self:LogWarn(name .. " is read-only"); return false end
     if not pcall(C_CVar.SetCVar, name, value) then self:LogWarn("couldn't set " .. name); return false end
-    if self:GetDB().managed[name] ~= nil then self:GetDB().managed[name] = value end
+    if self:_IsManaged(name) then self:_SetManaged(name, value) end
     return true
 end
 
@@ -148,13 +181,13 @@ end
 function CVars:_SetGlobalise(name, on)
     if on then
         if not (C_CVar and C_CVar.GetCVar) then return end
-        self:GetDB().managed[name] = C_CVar.GetCVar(name)
+        self:_SetManaged(name, C_CVar.GetCVar(name))
         self:LogSuccess("saving " .. name .. " on every character")
         if not self:IsEnabled() then
             self:LogWarn("enable the CVars module so this re-applies on every login")
         end
     else
-        self:GetDB().managed[name] = nil
+        self:_ClearManaged(name)
         self:LogInfo("stopped saving " .. name .. " globally (current value kept)")
     end
 end
@@ -163,7 +196,7 @@ end
 -- a value implies you want it forced). Returns true on success.
 function CVars:_ApplyCVar(name, value)
     if not self:_SetCVar(name, value) then return false end
-    self:GetDB().managed[name] = value
+    self:_SetManaged(name, value)
     if not self:IsEnabled() then
         self:LogWarn("module is disabled -- enable CVars to re-apply this on every login")
     end
@@ -230,9 +263,9 @@ function CVars:_BuildSection(titleText, defs, prependAdd)
 end
 
 function CVars:_BuildCustomSection()
-    local custom = self:GetDB().custom
     local defs = {}
-    for name, t in pairs(custom) do
+    for _, row in ipairs(self:_CustomAll()) do
+        local name, t = row.name, row.type
         if self:_Exists(name) then
             defs[#defs + 1] = { name = name, label = name, type = t,
                 options = KNOWN[name] and KNOWN[name].options, custom = true }
@@ -273,7 +306,7 @@ function CVars:_PlaceAddRow(box, y, width)
             return
         end
         local t = self:_DetectType(name)
-        self:GetDB().custom[name] = t
+        self:_SetCustom(name, t)
         self:LogSuccess(("added custom CVar %s (%s)"):format(name, t))
         input:SetValue("")
         if ns.UI.SettingsWindow then ns.UI.SettingsWindow:InvalidateModule(self:GetName()) end
@@ -307,7 +340,7 @@ function CVars:_PlaceRow(box, def, y, width)
         rm:SetScript("OnEnter", function() rm:SetTextColor(Theme.Unpack("text")) end)
         rm:SetScript("OnLeave", function() rm:SetTextColor(Theme.Unpack("red")) end)
         rm:SetScript("OnClick", function()
-            self:GetDB().custom[def.name] = nil
+            self:_ClearCustom(def.name)
             self:LogInfo("removed custom CVar " .. def.name)
             if ns.UI.SettingsWindow then ns.UI.SettingsWindow:InvalidateModule(self:GetName()) end
         end)
@@ -319,7 +352,7 @@ function CVars:_PlaceRow(box, def, y, width)
     if perChar then
         local g = W.Toggle:New(box, nil)
         g:SetPoint("TOPRIGHT", box, "TOPRIGHT", -cursor, y)
-        g:SetChecked(self:GetDB().managed[def.name] ~= nil)
+        g:SetChecked(self:_IsManaged(def.name))
         g:SetOnToggle(function(on) self:_SetGlobalise(def.name, on) end)
         local glbl = W.Text:New(box, "Global", "textDim", "GameFontHighlightSmall")
         glbl:SetPoint("RIGHT", g, "LEFT", -6, 0)
@@ -433,7 +466,7 @@ function CVars:_Get(name)
     if secure then flags[#flags + 1] = "secure" end
     if locked then flags[#flags + 1] = "locked" end
     if ro then flags[#flags + 1] = "read-only" end
-    local managed = self:GetDB().managed[name]
+    local managed = self:_ManagedValue(name)
     self:LogInfo(("%s = %s  (default %s, %s%s)%s"):format(
         name, tostring(v), tostring(d), scope,
         #flags > 0 and (", " .. table.concat(flags, ", ")) or "",
@@ -441,20 +474,18 @@ function CVars:_Get(name)
 end
 
 function CVars:_Clear(name)
-    if self:GetDB().managed[name] == nil then self:LogInfo("not globalising: " .. name); return end
-    self:GetDB().managed[name] = nil
+    if not self:_IsManaged(name) then self:LogInfo("not globalising: " .. name); return end
+    self:_ClearManaged(name)
     self:LogSuccess("stopped globalising " .. name .. " (current value kept)")
 end
 
 function CVars:_List()
-    local managed = self:GetDB().managed
-    local names = {}
-    for n in pairs(managed) do names[#names + 1] = n end
-    table.sort(names)
-    if #names == 0 then self:LogInfo("not globalising any CVars yet (try /hag cvar set <name> <value>)"); return end
-    self:LogInfo(("globalising %d CVar%s:"):format(#names, #names == 1 and "" or "s"))
-    for _, n in ipairs(names) do
-        self:LogInfo(("  %s = %s"):format(n, tostring(managed[n])))
+    local rows = self:_ManagedAll()
+    table.sort(rows, function(a, b) return a.name < b.name end)
+    if #rows == 0 then self:LogInfo("not globalising any CVars yet (try /hag cvar set <name> <value>)"); return end
+    self:LogInfo(("globalising %d CVar%s:"):format(#rows, #rows == 1 and "" or "s"))
+    for _, r in ipairs(rows) do
+        self:LogInfo(("  %s = %s"):format(r.name, tostring(r.value)))
     end
 end
 
@@ -470,9 +501,15 @@ ns.ModuleManager:Register(CVars:New("CVars", {
         return "console variables: " .. ((ns.IsDevChar and ns.IsDevChar()) and "dump [filter] / " or "")
             .. "set <name> <value> / get <name> / clear <name> / list"
     end } },
-    -- Persisted structure (seeded on bind, before OnInitialize):
-    dbSchema = {
-        managed = {},  -- name -> value (account-wide, re-applied each login)
-        custom  = {},  -- name -> type, the user-added "custom" CVars
+    -- Account-wide CVar data in the shared database.
+    tables = {
+        cvar_managed = { scope = "global", columns = {   -- forced CVars, re-applied each login
+            { name = "name",  type = "text", primaryKey = true },
+            { name = "value", type = "text" },
+        } },
+        cvar_custom = { scope = "global", columns = {     -- user-added "custom" CVars
+            { name = "name", type = "text", primaryKey = true },
+            { name = "type", type = "text" },
+        } },
     },
 }))
