@@ -57,11 +57,13 @@ ns.DB.CoreTables = {
         scope = "global",
         columns = {
             { name = "id",      type = "integer", primaryKey = true, autoIncrement = true },
+            { name = "node_id", type = "integer", nullable = true },   -- canonical C_TaxiMap nodeID (set on discovery)
             { name = "faction", type = "text", nullable = false, references = { table = "faction", column = "tag" } },
             { name = "zone",    type = "text", nullable = true,  references = { table = "zone", column = "name" } },
-            { name = "name",    type = "text", nullable = false },   -- flight node name
+            { name = "name",    type = "text", nullable = false },     -- flight master name only (e.g. "Stormwind")
         },
         unique  = { { "faction", "name" } },
-        indices = { { columns = { "faction" } } },
+        -- node_id is NOT unique: a neutral node shares one nodeID but is stored once per faction here.
+        indices = { { columns = { "faction" } }, { columns = { "node_id" } } },
     },
 }
