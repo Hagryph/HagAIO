@@ -14,7 +14,7 @@ The addon uses **one shared database**. Every service or module contributes the 
 |---|---|---|---|---|
 | [`faction`](#faction) | `local` | 3 | id | `Core/DB/CoreTables.lua` |
 | [`flight_hop`](#flight_hop) | `global` | 3 | route_id, ordinal | `Modules/Misc.lua` |
-| [`flight_master`](#flight_master) | `global` | 5 | id | `Core/DB/CoreTables.lua` |
+| [`flight_master`](#flight_master) | `global` | 7 | id | `Core/DB/CoreTables.lua` |
 | [`flight_route`](#flight_route) | `global` | 5 | id | `Modules/Misc.lua` |
 | [`zone`](#zone) | `local` | 2 | id | `Core/DB/CoreTables.lua` |
 
@@ -53,14 +53,14 @@ The addon uses **one shared database**. Every service or module contributes the 
 | Column | Type | Null | Key | Default | References |
 |---|---|---|---|---|---|
 | `id` | integer | no | PK auto |  |  |
-| `node_id` | integer | yes |  |  |  |
+| `node_id` | integer | no | unique |  |  |
 | `faction` | text | no |  |  | → `faction.tag` |
 | `zone` | text | no |  |  | → `zone.name` |
 | `name` | text | no |  |  |  |
+| `x` | number | yes |  |  |  |
+| `y` | number | yes |  |  |  |
 
-**Unique:** (faction, name)
-
-**Indexes:** (faction), (node_id)
+**Indexes:** (faction), (name)
 
 ---
 

@@ -49,21 +49,24 @@ ns.DB.CoreTables = {
         unique = { { "name" } },
     },
 
-    -- Flight masters, discovered (with their zone) by the LocalTables service whenever a taxi map
-    -- opens. JOINS to the (local) faction and zone tables -- one shared faction/zone definition,
-    -- referenced from persisted data. A master is ONLY created once its zone is known (zone is NOT
-    -- NULL), so the recording side looks masters up rather than creating partial rows.
+    -- Flight masters, discovered (with their zone + map coords) by the LocalTables service whenever a
+    -- taxi map opens. JOINS to the (local) faction and zone tables. Keyed by node_id -- the canonical
+    -- C_TaxiMap nodeID, GLOBALLY UNIQUE per physical flight point -- so there is exactly one row per
+    -- node. A neutral flight point has ONE nodeID seen by BOTH factions, so when the rival faction
+    -- discovers an existing node its faction is flipped to "Neutral" (see LocalTables._DiscoverMaster).
+    -- A master is only created once its zone is known (zone is NOT NULL); recording looks masters up.
     flight_master = {
         scope = "global",
         columns = {
             { name = "id",      type = "integer", primaryKey = true, autoIncrement = true },
-            { name = "node_id", type = "integer", nullable = true },   -- canonical C_TaxiMap nodeID (set on discovery)
+            { name = "node_id", type = "integer", nullable = false },   -- canonical C_TaxiMap nodeID (unique per point)
             { name = "faction", type = "text", nullable = false, references = { table = "faction", column = "tag" } },
             { name = "zone",    type = "text", nullable = false, references = { table = "zone", column = "name" } },
-            { name = "name",    type = "text", nullable = false },     -- flight master name only (e.g. "Stormwind")
+            { name = "name",    type = "text", nullable = false },      -- flight master name only (e.g. "Stormwind")
+            { name = "x",       type = "number" },                      -- node position on the continent map
+            { name = "y",       type = "number" },
         },
-        unique  = { { "faction", "name" } },
-        -- node_id is NOT unique: a neutral node shares one nodeID but is stored once per faction here.
-        indices = { { columns = { "faction" } }, { columns = { "node_id" } } },
+        unique  = { { "node_id" } },
+        indices = { { columns = { "faction" } }, { columns = { "name" } } },
     },
 }

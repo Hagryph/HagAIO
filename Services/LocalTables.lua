@@ -23,7 +23,8 @@ function LocalTables:OnInitialize()
     ns.EventBus:On("TAXIMAP_OPENED", function() self:_DiscoverNodes() end)
 end
 
--- The zone NAME at a map position, seeding the local `zone` table from the world map; nil if unknown.
+-- The zone NAME (and map x,y) at a position, seeding the local `zone` table from the world map.
+-- Returns (zoneName, x, y); nil if the zone can't be resolved.
 function LocalTables:_ZoneAt(mapID, position)
     if not (C_Map and C_Map.GetMapInfoAtPosition and position) then return nil end
     local x, y
@@ -35,27 +36,31 @@ function LocalTables:_ZoneAt(mapID, position)
     if db and #db:Select("id"):From("zone"):Where("id", "=", info.mapID):Limit(1):Run() == 0 then
         pcall(function() db:Insert("zone", { id = info.mapID, name = info.name }) end)
     end
-    return info.name
+    return info.name, x, y
 end
 
--- Insert or enrich the flight_master for (faction, name): set its canonical nodeID + zone. `zone` is
--- required (NOT NULL) -- a node whose zone is unknown is skipped (retried next time the map opens).
-function LocalTables:_DiscoverMaster(faction, name, nodeID, zone)
-    local db = self:DB(); if not db or not zone then return end
-    local row = db:Select("id", "node_id", "zone"):From("flight_master")
-        :Where("faction", "=", faction):AndWhere("name", "=", name):Limit(1):Run()[1]
+-- Insert or enrich the flight_master for this canonical nodeID. The node is keyed by node_id (one
+-- row per physical flight point). If a row already exists under a DIFFERENT faction, BOTH factions
+-- can see this point, so it's NEUTRAL -- flip it. `zone` is required (NOT NULL); a node whose zone
+-- is unknown is skipped (retried next time the map opens).
+function LocalTables:_DiscoverMaster(faction, name, nodeID, zone, x, y)
+    local db = self:DB(); if not db or not zone or not nodeID then return end
+    local row = db:Select("id", "faction", "zone", "name"):From("flight_master")
+        :Where("node_id", "=", nodeID):Limit(1):Run()[1]
     if not row then
-        db:Insert("flight_master", { faction = faction, name = name, node_id = nodeID, zone = zone })
+        db:Insert("flight_master", { node_id = nodeID, faction = faction, zone = zone, name = name, x = x, y = y })
         return
     end
     local changes = {}
-    if nodeID and row.node_id ~= nodeID then changes.node_id = nodeID end
+    if row.faction ~= faction and row.faction ~= "Neutral" then changes.faction = "Neutral" end  -- seen by both factions
     if zone and row.zone ~= zone then changes.zone = zone end
-    if next(changes) then db:Update("flight_master", changes, function(x) return x.id == row.id end) end
+    if name and row.name ~= name then changes.name = name end
+    if next(changes) then db:Update("flight_master", changes, function(r) return r.id == row.id end) end
 end
 
 -- Discover every node on the open taxi map (all flight masters on the continent). Faction can't be
--- read per node from the API, so it's the player's (you only see your own + neutral nodes).
+-- read per node from the API, so it starts as the player's; cross-faction rediscovery flips it to
+-- Neutral above.
 function LocalTables:_DiscoverNodes()
     local db = self:DB(); if not db then return end
     local faction = playerFaction()
@@ -68,8 +73,8 @@ function LocalTables:_DiscoverNodes()
     for _, n in ipairs(nodes) do
         if n.name and n.nodeID then
             local name = ns.FlightResolver:NodeName(n.name)
-            local zone = self:_ZoneAt(mapID, n.position)
-            pcall(function() self:_DiscoverMaster(faction, name, n.nodeID, zone) end)
+            local zone, x, y = self:_ZoneAt(mapID, n.position)
+            pcall(function() self:_DiscoverMaster(faction, name, n.nodeID, zone, x, y) end)
         end
     end
 end

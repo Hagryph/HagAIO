@@ -232,14 +232,14 @@ end
 -- lookup to the current faction. Recording only LOOKS masters up (discovery creates them); a node
 -- that hasn't been discovered yet is simply not recorded. Small tables, read while flying.
 
--- The flight_master id for a node name under the current faction, or nil if it hasn't been
--- discovered (or the faction can't be attributed).
+-- The flight_master id for a node name usable by the player -- one of the player's faction or a
+-- Neutral point -- or nil if it hasn't been discovered (or the faction can't be attributed).
 function Misc:_MasterId(name)
     local db = self:DB(); if not db then return nil end
     local faction = self:_Faction()
     if faction ~= "Alliance" and faction ~= "Horde" and faction ~= "Neutral" then return nil end
     local rows = db:Select("id"):From("flight_master")
-        :Where("faction", "=", faction):AndWhere("name", "=", tostring(name)):Limit(1):Run()
+        :Where("name", "=", tostring(name)):AndWhere("faction", "in", { faction, "Neutral" }):Limit(1):Run()
     return rows[1] and rows[1].id or nil
 end
 
@@ -330,7 +330,7 @@ function Misc:_FlightRecords(faction)
     local routes = db:Select("flight_route.id", "flight_route.src", "flight_route.dst", "flight_route.t", "flight_route.quality")
         :From("flight_route")
         :InnerJoin("flight_master", { on = { "flight_route.src", "flight_master.id" } })
-        :Where("flight_master.faction", "=", faction):Run()
+        :Where("flight_master.faction", "in", { faction, "Neutral" }):Run()
     local out = {}
     for _, row in ipairs(routes) do
         local seq = { self:_MasterName(row.src) }
