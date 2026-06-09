@@ -331,10 +331,10 @@ function SettingsWindow:_BuildProfilesPage(parent)
     local save = W.TextButton:New(page, "Save")
     save:SetPoint("LEFT", input, "RIGHT", 16, 0)
     save:SetScript("OnClick", function()
-        local name = input:GetText()
+        local name = input:GetValue()
         if name and name ~= "" then
             ns.Profiles:Save(name)
-            input:SetText("")
+            input:SetValue("")
             self:LogSuccess("saved profile '" .. name .. "'")
             self:_RefreshProfilesPage()
         end
