@@ -780,7 +780,11 @@ function Misc:_OnPinEnter(pin)
     local src = self:_p().src
     if not src then return end
 
-    local dur, estimated = self:_RouteTime(src, d.name, d.slotIndex, d.name)
+    -- Split the pin name to the flight-master name (e.g. "Rut'theran Village, Teldrassil" ->
+    -- "Rut'theran Village") so it keys against the stored masters -- otherwise the reverse/estimate
+    -- lookup never matches and the tooltip shows "-:--".
+    local dst = Flight:NodeName(d.name)
+    local dur, estimated = self:_RouteTime(src, dst, d.slotIndex, dst)
 
     local r, g, b = Theme.Unpack("accent")
     local prefix = estimated and "Flight: ~" or "Flight: "  -- "~" = summed estimate
