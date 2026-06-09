@@ -11,6 +11,17 @@ local W = ns.UI.Widgets
 
 local SettingsWindow = Class.new("SettingsWindow", ns.Service)
 
+-- A General-page contribution may carry `visibleDeps` (a list of SERVICE names): it shows only
+-- when every one of them is loaded. A soft, visibility-only dependency (e.g. a dev-only toggle
+-- gated on the "Dev" service), distinct from a module's `deps`, which gate whether it starts.
+local function allServicesLoaded(deps)
+    if not deps then return true end
+    for _, name in ipairs(deps) do
+        if not ns.ServiceManager:IsLoaded(name) then return false end
+    end
+    return true
+end
+
 function SettingsWindow:OnInitialize()
     local p = self:_p()
     p.built = false
@@ -263,6 +274,7 @@ function SettingsWindow:_BuildGeneralPage(parent)
     local y = -90
     local lastSection = nil
     for _, d in ipairs(p.generalToggles or {}) do
+        if allServicesLoaded(d.visibleDeps) then  -- soft visibility dep: hide unless all listed services are loaded
         local section = d.section or "General"
         if section ~= lastSection then
             local label = W.SectionLabel:New(page, section)
@@ -287,6 +299,7 @@ function SettingsWindow:_BuildGeneralPage(parent)
             desc:SetPoint("TOPLEFT", 46, y)
             y = y - 22
         end
+        end  -- if allServicesLoaded
     end
 
     return page

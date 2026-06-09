@@ -68,11 +68,15 @@ end
 
 -- Build a live General-toggle descriptor (the shape RegisterGeneralToggle expects),
 -- binding the spec's get/set to `owner`. Plain fields pass through untouched.
+--   visibleDeps : optional list of SERVICE names; the toggle is hidden unless every one of
+--                 them is loaded (a soft, visibility-only dependency -- distinct from a
+--                 module's `deps`, which gate whether the module starts). E.g. a dev-only
+--                 toggle uses visibleDeps = { "Dev" } so it never shows without the Dev service.
 function Contributions.BuildGeneralToggle(owner, spec)
     local g, s = spec.get, spec.set
     return {
         section = spec.section, label = spec.label, desc = spec.desc,
-        reload = spec.reload, reloadMsg = spec.reloadMsg,
+        reload = spec.reload, reloadMsg = spec.reloadMsg, visibleDeps = spec.visibleDeps,
         get = g and (type(g) == "string" and function() return owner[g](owner) end
                                           or function() return g(owner) end),
         set = s and (type(s) == "string" and function(on) return owner[s](owner, on) end

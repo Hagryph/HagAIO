@@ -135,7 +135,7 @@ if (not ns.IsDevChar) or ns.IsDevChar() then
         settings = { { type = "toggle", key = "debug", label = "Debug", default = true } },  -- per-char; seeds default ON
         generalToggles = {
             { section = "Developer", label = "Debug", desc = "Show debug messages in chat.",
-              get = "_GetDebug", set = "_SetDebug" },
+              get = "_GetDebug", set = "_SetDebug", visibleDeps = { "Dev" } },  -- only with the Dev service
         },
     }))
 end
