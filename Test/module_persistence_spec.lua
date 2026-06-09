@@ -46,4 +46,18 @@ describe("Module persistence split", function()
         assert.are.equal(42, sv:Global().module_Foo.flights.RouteA)
         assert.is_nil(rawget(sv:Char().module_Foo, "flights"))
     end)
+
+    it("dataPerChar=true stores the data namespace per character (e.g. the task list)", function()
+        local ns, sv = setup()
+        local M = ns.Class.new("PerCharDataModule", ns.Module)
+        local m = M:New("Bar", {
+            settings = { { type = "toggle", key = "opt", label = "Opt", default = true } },
+            dbSchema = { items = {} },
+            dataPerChar = true,
+        })
+        m:_BindDB()
+        m:GetDB().items.X = 1
+        assert.are.equal(1, sv:Char().module_Bar.items.X)   -- data -> char DB
+        assert.is_nil(sv:Global().module_Bar)               -- nothing in the account DB
+    end)
 end)

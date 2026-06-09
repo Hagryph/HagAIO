@@ -667,6 +667,7 @@ ns.ModuleManager:Register(Tasklist:New("Tasklist", {
     publishAs = "Tasks",         -- ns.Tasks: other modules register tasks through it
     color = ns.Theme.hex.amber,  -- distinct tag (Core uses accent)
     deps = { "EditMode", "SettingsWindow" },  -- movable frame, page refresh (events go through self:On)
+    dataPerChar = true,  -- tasks + completion state are per character (each char tracks/completes its own)
     -- Persisted structure (seeded on bind, before OnInitialize):
     dbSchema = {
         state   = {},  -- key -> { done, resetAt }

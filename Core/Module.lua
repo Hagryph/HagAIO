@@ -75,12 +75,16 @@ function Module:Initialize(name, opts)
 
     -- Defaults split by WHERE they persist (see _BindDB):
     --   settings  -> the schema's keyed `default`s, stored PER CHARACTER (the config).
-    --   data      -> the declarative dbSchema + any explicit dbDefaults, stored ACCOUNT-WIDE
-    --                (persistent cross-character stuff: flight routes, learned timed quests).
+    --   data      -> the declarative dbSchema + any explicit dbDefaults. ACCOUNT-WIDE by
+    --                default (persistent cross-character stuff: flight routes, learned timed
+    --                quests). Set opts.dataPerChar when the data is inherently per character
+    --                (e.g. the task list's per-character completion state) so GetDB() is
+    --                per character too -- it then rides along in this character's profile.
     -- All deep-copied so table defaults aren't shared by reference; SavedVars deep-merges them
     -- on bind, so a module never has to hand-init `db.x = db.x or {}`.
     p.settingsDefaults = ns.Component.SeedDefaults(p.settings)
     p.dataDefaults     = ns.Component.SeedDefaults(nil, opts.dbSchema, opts.dbDefaults)
+    p.dataPerChar      = opts.dataPerChar and true or false
 
     p.enabled = false
     p.settingsDB = nil   -- per-character settings namespace (GetSetting/_SettingsDB)
@@ -181,8 +185,8 @@ end
 -- (which captured module_<name> settings) still imports cleanly into the per-character config.
 function Module:_BindDB()
     local p = self:_p()
-    p.settingsDB = ns.SavedVars:Namespace("module_" .. p.name, p.settingsDefaults, true)   -- per character
-    p.dataDB     = ns.SavedVars:Namespace("module_" .. p.name, p.dataDefaults, false)       -- account-wide
+    p.settingsDB = ns.SavedVars:Namespace("module_" .. p.name, p.settingsDefaults, true)             -- per character
+    p.dataDB     = ns.SavedVars:Namespace("module_" .. p.name, p.dataDefaults, p.dataPerChar)        -- account-wide unless dataPerChar
 end
 
 function Module:Enable()
