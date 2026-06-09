@@ -30,9 +30,11 @@ ns.DB.CoreTables = {
         },
         unique = { { "tag" } },
         seed = function(db)
-            db:Insert("faction", { id = 1, tag = "Alliance", name = "Alliance" })
-            db:Insert("faction", { id = 2, tag = "Horde",    name = "Horde" })
-            db:Insert("faction", { id = 3, tag = "Neutral",  name = "Neutral" })
+            db:InsertAll("faction", {            -- batch insert (one call), not row-by-row
+                { id = 1, tag = "Alliance", name = "Alliance" },
+                { id = 2, tag = "Horde",    name = "Horde" },
+                { id = 3, tag = "Neutral",  name = "Neutral" },
+            })
         end,
     },
 

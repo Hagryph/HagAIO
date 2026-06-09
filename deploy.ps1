@@ -46,8 +46,8 @@ New-Item -ItemType Directory -Force -Path $dest | Out-Null
 # of the deployed copy. HagAIO.toc is excluded from the mirror because the full manifest
 # (header template + generated file list) is written into dest below, after the mirror.
 $exclDirs  = @(".git", ".github", ".claude", "tools", "Test", "Dev")
-$exclFiles = @("deploy.ps1", "README.md", "CONTRIBUTING.md", "package.json", "package-lock.json",
-    ".gitignore", "LICENSE", "HagAIO.toc", "*.zip", "*.ps1", "*.py")
+$exclFiles = @("deploy.ps1", "README.md", "CONTRIBUTING.md", "DATABASE_SCHEMA.md", "package.json",
+    "package-lock.json", ".gitignore", "LICENSE", "HagAIO.toc", "*.zip", "*.ps1", "*.py")
 
 robocopy $src $dest /MIR /XD $exclDirs /XF $exclFiles /NFL /NDL /NJH /NJS /NP | Out-Null
 
@@ -63,6 +63,19 @@ Write-Utf8NoBom -Path (Join-Path $dest "HagAIO.toc") -Text (New-TocText -Root $s
 Update-DeployedNamespaceSlots -Root $src -DeployedFile (Join-Path $dest "Core\Namespace.lua")
 # 3. README: regenerate the repo doc's managed regions so they track the source.
 Update-Readme -Root $src
+# 4. Database schema doc: rebuild DATABASE_SCHEMA.md from the live table definitions (needs LuaJIT;
+#    the generator loads the real engine + every module headless, so the doc can't drift).
+$luajit = (Get-Command luajit -ErrorAction SilentlyContinue).Source
+if (-not $luajit) {
+    $cand = Join-Path $env:LOCALAPPDATA "Programs\LuaJIT\bin\luajit.exe"
+    if (Test-Path $cand) { $luajit = $cand }
+}
+if ($luajit) {
+    Push-Location $src
+    try { & $luajit "tools\gen_schema.lua" } finally { Pop-Location }
+} else {
+    Write-Host "Skipped DATABASE_SCHEMA.md (no luajit/lua found)." -ForegroundColor Yellow
+}
 
 Write-Host "Deployed HagAIO -> $dest" -ForegroundColor Green
 Write-Host "Autogen: .toc + namespace slots (deployed), README (repo) regenerated." -ForegroundColor DarkGray

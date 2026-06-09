@@ -1,0 +1,182 @@
+-- tools/gen_schema.lua
+-- Auto-generates DATABASE_SCHEMA.md from the ONE shared database: every table contributed anywhere
+-- in the code (the central ns.DB.CoreTables plus each module/service's `tables` opt), with its
+-- columns, types, keys, constraints, indices and scope. Run on deploy:
+--     luajit tools/gen_schema.lua        (from the repo root)
+-- It loads the real engine and every Service/Module headless in a permissive sandbox, then builds
+-- the actual schema and renders it -- so the doc is always derived from the code, never by hand.
+
+local WIN = package.config:sub(1, 1) == "\\"
+
+local function loadInto(path, ns)
+    local chunk, err = loadfile(path)
+    if not chunk then return false, err end
+    return pcall(chunk, "HagAIO", ns)
+end
+
+-- repo-relative display path for a Services/Modules/Lib/Core file (dir /b /s gives absolute paths)
+local function rel(p)
+    p = p:gsub("\\", "/")
+    return p:match("/(Services/.+)$") or p:match("/(Modules/.+)$") or p:match("/(Lib/.+)$") or p:match("/(Core/.+)$") or p
+end
+
+local function listLua(dir)
+    local cmd = WIN and ('dir /b /s "' .. dir .. '\\*.lua" 2>nul') or ('find "' .. dir .. '" -name "*.lua" 2>/dev/null')
+    local out, p = {}, io.popen(cmd)
+    if p then for line in p:lines() do out[#out + 1] = line end p:close() end
+    table.sort(out)
+    return out
+end
+
+-- ===========================================================================
+-- 1) the framework (loaded for real) + the minimal stubs its constructors touch
+-- ===========================================================================
+local ns = { UI = {} }
+ns.Theme = { hex = setmetatable({}, { __index = function() return "ffffff" end }) }
+ns.Log = { Print = function() end, Warn = function() end, Error = function() end }
+local noop = function() end
+ns.Logger = { Core = function() return { Debug = noop, Info = noop, Success = noop, Warn = noop, Error = noop } end,
+              Register = function() return {} end }
+
+local currentSource = "framework"
+local function reg(_, item)
+    if item then
+        if item._Publish then pcall(function() item:_Publish() end) end
+        if item._ContributeTables then pcall(function() item:_ContributeTables() end) end
+    end
+    return item
+end
+ns.ServiceManager   = { Register = reg, IsLoaded = function() return true end }
+ns.ModuleManager    = { Register = reg, GetModule = function() return nil end }
+ns.SubmoduleManager = { Register = reg }
+ns.LibManager       = { Register = function(_, item) return item end }
+
+local FRAMEWORK = {
+    "Core/Class.lua", "Core/Type.lua", "Core/Enum.lua", "Core/Mixin.lua", "Core/Interface.lua",
+    "Core/Delegate.lua", "Core/Contributions.lua", "Core/Persisted.lua", "Core/Loggable.lua",
+    "Core/DatabaseOwner.lua", "Core/Lib.lua", "Lib/Helpers.lua", "Core/Component.lua",
+    "Core/Service.lua", "Core/Module.lua", "Core/Submodule.lua",
+}
+for _, f in ipairs(FRAMEWORK) do
+    local ok, err = loadInto(f, ns)
+    if not ok then io.stderr:write("gen_schema: framework load failed " .. f .. ": " .. tostring(err) .. "\n"); os.exit(1) end
+end
+
+-- ===========================================================================
+-- 2) the DB engine + central tables
+-- ===========================================================================
+local DBFILES = { "Types", "Schema", "RowStore", "IndexManager", "Constraints", "TriggerManager",
+                  "Database", "Aggregate", "WhereClause", "ColumnResolver", "QueryPlan",
+                  "QueryBuilder", "QueryExecutor", "CoreTables", "DatabaseManager" }
+for _, f in ipairs(DBFILES) do
+    local ok, err = loadInto("Core/DB/" .. f .. ".lua", ns)
+    if not ok then io.stderr:write("gen_schema: DB load failed " .. f .. ": " .. tostring(err) .. "\n"); os.exit(1) end
+end
+
+local mgr = ns.DatabaseManager
+-- attribute each table to the file that contributed it (wrap the single add choke point)
+local source = {}
+local origAdd = mgr._Add
+mgr._Add = function(self, name, spec) source[name] = currentSource; return origAdd(self, name, spec) end
+
+currentSource = "Core/DB/CoreTables.lua"
+mgr:OnInitialize()   -- seeds the central CoreTables
+
+-- ===========================================================================
+-- 3) permissive sandbox so feature files load headless, then scan Lib + Services + Modules
+-- ===========================================================================
+local stub
+stub = setmetatable({}, { __index = function() return stub end, __call = function() return stub end,
+                          __concat = function() return "" end })
+setmetatable(ns, { __index = function() return stub end })
+setmetatable(_G, { __index = function() return stub end })
+
+for _, path in ipairs(listLua("Lib")) do currentSource = rel(path); loadInto(path, ns) end
+
+local scanned, skipped = {}, {}
+for _, dir in ipairs({ "Services", "Modules" }) do
+    for _, path in ipairs(listLua(dir)) do
+        currentSource = rel(path)
+        local ok, err = loadInto(path, ns)
+        if ok then scanned[#scanned + 1] = currentSource else skipped[#skipped + 1] = { currentSource, err } end
+    end
+end
+
+-- ===========================================================================
+-- 4) build the real shared database and introspect its schema
+-- ===========================================================================
+ns.SavedVars = { IsLoaded = function() return true end, DataSlot = function() return {} end }
+local ok, err = pcall(function() mgr:Build() end)
+if not ok then io.stderr:write("gen_schema: build failed: " .. tostring(err) .. "\n"); os.exit(1) end
+local schema = mgr:Shared():Schema()
+
+-- ===========================================================================
+-- 5) render markdown
+-- ===========================================================================
+local b = {}
+local function w(s) b[#b + 1] = s end
+
+w("# HagAIO Database Schema\n\n")
+w("_Auto-generated by `tools/gen_schema.lua` on deploy — do not edit by hand._\n\n")
+w("The addon uses **one shared database**. Every service or module contributes the tables it needs; ")
+w("common reference tables are defined centrally in `Core/DB/CoreTables.lua`. Each table declares a **scope**:\n\n")
+w("- **local** — in-memory, rebuilt from code each session (reference data; never persisted)\n")
+w("- **global** — account-wide saved variables (shared across characters)\n")
+w("- **char** — this character's saved variables\n")
+
+w("\n## Tables\n\n")
+w("| Table | Scope | Columns | Primary key | Defined in |\n|---|---|---|---|---|\n")
+for _, tname in ipairs(schema:TableNames()) do
+    local t = schema:Table(tname)
+    local pk = table.concat(t:PrimaryKey(), ", ")
+    w(("| [`%s`](#%s) | `%s` | %d | %s | `%s` |\n")
+        :format(tname, tname, t:Scope(), #t:ColumnNames(), pk ~= "" and pk or "—", source[tname] or "—"))
+end
+
+for _, tname in ipairs(schema:TableNames()) do
+    local t = schema:Table(tname)
+    local fkByCol = {}
+    for _, fk in ipairs(t:ForeignKeys()) do fkByCol[fk.column] = fk end
+    local pkset = {}; for _, c in ipairs(t:PrimaryKey()) do pkset[c] = true end
+    local uniqSingle, uniqComposite = {}, {}
+    for _, u in ipairs(t:Uniques()) do
+        if #u == 1 then uniqSingle[u[1]] = true else uniqComposite[#uniqComposite + 1] = u end
+    end
+
+    w(("\n---\n\n### `%s`  ·  scope `%s`\n\n"):format(tname, t:Scope()))
+    if source[tname] then w(("*Defined in `%s`.*\n\n"):format(source[tname])) end
+    w("| Column | Type | Null | Key | Default | References |\n|---|---|---|---|---|---|\n")
+    for _, col in ipairs(t:Columns()) do
+        local name = col:Name()
+        local keys = {}
+        if pkset[name]       then keys[#keys + 1] = col:IsAuto() and "PK auto" or "PK" end
+        if uniqSingle[name]  then keys[#keys + 1] = "unique" end
+        local refs, fk = "", fkByCol[name]
+        if fk then
+            local od = (fk.onDelete and fk.onDelete ~= "no_action") and (" on delete " .. fk.onDelete) or ""
+            refs = ("→ `%s.%s`%s"):format(fk.table, fk.refColumn, od)
+        end
+        local def = col:HasDefault() and ("`" .. tostring(col:Default()) .. "`") or ""
+        w(("| `%s` | %s | %s | %s | %s | %s |\n")
+            :format(name, col:Type(), col:IsNullable() and "yes" or "no", table.concat(keys, ", "), def, refs))
+    end
+    if #t:PrimaryKey() > 1 then w(("\n**Primary key:** (%s)\n"):format(table.concat(t:PrimaryKey(), ", "))) end
+    for _, u in ipairs(uniqComposite) do w(("\n**Unique:** (%s)\n"):format(table.concat(u, ", "))) end
+    if #t:Indices() > 0 then
+        local parts = {}
+        for _, ix in ipairs(t:Indices()) do parts[#parts + 1] = "(" .. table.concat(ix.columns, ", ") .. ")" end
+        w(("\n**Indexes:** %s\n"):format(table.concat(parts, ", ")))
+    end
+end
+
+if #skipped > 0 then
+    w("\n---\n\n_These files could not be introspected headless and were skipped (their tables, if any, are not shown):_\n\n")
+    table.sort(skipped, function(a, b) return a[1] < b[1] end)
+    for _, s in ipairs(skipped) do w(("- `%s`\n"):format(s[1])) end
+end
+
+local out = assert(io.open("DATABASE_SCHEMA.md", "w"))
+out:write(table.concat(b))
+out:close()
+print(("gen_schema: wrote DATABASE_SCHEMA.md (%d tables; %d files scanned%s)")
+    :format(#schema:TableNames(), #scanned, #skipped > 0 and (", " .. #skipped .. " skipped") or ""))
