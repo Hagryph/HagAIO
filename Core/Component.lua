@@ -20,8 +20,10 @@ local Class = ns.Class
 -- A nil scope means the DEFAULT scope: the lifetime of one enable / load.
 
 -- Logging (GetLog / _AttachLogger / Log*) is inherited from ns.Loggable, the shared
--- mixin both Component and Service pull in (see Core/Loggable.lua).
-local Component = Class.new("Component", ns.Loggable)
+-- mixin both Component and Service pull in (see Core/Loggable.lua). ns.DatabaseOwner adds the
+-- declarative `databases` surface (self:DB(name) + private DAOs) here on the shared base, so both
+-- Module and Submodule inherit it; Service mixes it in separately (it doesn't descend Component).
+local Component = Class.new("Component", ns.Loggable, { mixins = { ns.DatabaseOwner } })
 
 local DEFAULT = "_default"
 

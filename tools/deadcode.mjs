@@ -102,6 +102,10 @@ for (const path of [...FILES, ...TEST_FILES]) {
   const code = strip(readFileSync(path, "utf8"));
   for (const m of code.matchAll(/[:.]([A-Za-z_]\w*)\s*\(/g)) bump(refCount, m[1]);
   for (const m of code.matchAll(/["']([A-Za-z_]\w*)["']/g)) bump(refCount, m[1]);
+  // A method passed as a VALUE to (x)pcall is a real call the `:m(` scan misses, e.g.
+  //   pcall(self._FireRowInner, self, ...)   xpcall(obj.Handler, onErr, ...)
+  // Count the referenced method name so dynamic dispatch through pcall isn't seen as dead.
+  for (const m of code.matchAll(/\b[xp]?pcall\(\s*[A-Za-z_][\w.]*[:.]([A-Za-z_]\w*)/g)) bump(refCount, m[1]);
 }
 // Split by confidence: a never-called PRIVATE method (_name) is internal-only, so
 // it's genuinely dead -> error. A never-called PUBLIC method is API surface that may

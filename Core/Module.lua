@@ -10,8 +10,9 @@ local Class = ns.Class
 -- and the settings accessors live on ns.Component, the shared base; this class adds
 -- enable/disable, dependency gating, saved-var binding and logging.
 
--- ns.DatabaseOwner adds the declarative `databases` surface (self:DB(name) + private DAOs).
-local Module = Class.new("Module", ns.Component, { mixins = { ns.DatabaseOwner } })
+-- The declarative `databases` surface (self:DB(name) + private DAOs) is inherited from ns.Component
+-- (via the ns.DatabaseOwner mixin applied there), shared with Submodule.
+local Module = Class.new("Module", ns.Component)
 
 -- Constructor. Subclasses that need their own constructor should override
 -- Initialize and call Module.Initialize(self, name, opts) first.

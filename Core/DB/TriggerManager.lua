@@ -16,8 +16,6 @@ local Class = ns.Class
 -- STATEMENT-level triggers fire once per DML call (FireStatement); ROW-level fire per row.
 -- A re-entrancy guard stops a trigger whose action issues DML on the same table+timing+event from
 -- recursing into itself forever.
---
--- deadcode-allow: _FireRowInner   (dispatched via pcall(self._FireRowInner, ...), not a : call)
 
 ns.DB = ns.DB or {}
 local DB = ns.DB
