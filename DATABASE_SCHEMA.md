@@ -15,6 +15,11 @@ The addon uses **one shared database**. Every service or module contributes the 
 | [`compartment`](#compartment) | `global` | 2 | id | `Services/Compartment.lua` |
 | [`cvar_custom`](#cvar_custom) | `global` | 2 | name | `Modules/CVars.lua` |
 | [`cvar_managed`](#cvar_managed) | `global` | 2 | name | `Modules/CVars.lua` |
+| [`dashboard_char`](#dashboard_char) | `global` | 11 | char_key | `Modules/Dashboard.lua` |
+| [`dashboard_instance`](#dashboard_instance) | `global` | 7 | key | `Modules/Dashboard.lua` |
+| [`dashboard_lockout`](#dashboard_lockout) | `global` | 8 | char_key, ordinal | `Modules/Dashboard.lua` |
+| [`dashboard_quest`](#dashboard_quest) | `global` | 4 | char_key, freq, quest_id | `Modules/Dashboard.lua` |
+| [`dashboard_vault`](#dashboard_vault) | `global` | 6 | char_key, ordinal | `Modules/Dashboard.lua` |
 | [`faction`](#faction) | `local` | 2 | tag | `Core/DB/CoreTables.lua` |
 | [`flight_hop`](#flight_hop) | `global` | 3 | route_id, ordinal | `Modules/Misc.lua` |
 | [`flight_master`](#flight_master) | `global` | 6 | node_id | `Core/DB/CoreTables.lua` |
@@ -56,6 +61,93 @@ The addon uses **one shared database**. Every service or module contributes the 
 |---|---|---|---|---|---|
 | `name` | text | no | PK |  |  |
 | `value` | text | yes |  |  |  |
+
+---
+
+### `dashboard_char`  ·  scope `global`
+
+*Defined in `Modules/Dashboard.lua`.*
+
+| Column | Type | Null | Key | Default | References |
+|---|---|---|---|---|---|
+| `char_key` | text | no | PK |  |  |
+| `name` | text | yes |  |  |  |
+| `realm` | text | yes |  |  |  |
+| `class` | text | yes |  |  |  |
+| `level` | integer | yes |  |  |  |
+| `ilvl` | integer | yes |  |  |  |
+| `last_seen` | integer | yes |  |  |  |
+| `rating` | number | yes |  |  |  |
+| `ks_mapid` | integer | yes |  |  |  |
+| `ks_level` | integer | yes |  |  |  |
+| `ks_name` | text | yes |  |  |  |
+
+---
+
+### `dashboard_instance`  ·  scope `global`
+
+*Defined in `Modules/Dashboard.lua`.*
+
+| Column | Type | Null | Key | Default | References |
+|---|---|---|---|---|---|
+| `key` | text | no | PK |  |  |
+| `name` | text | yes |  |  |  |
+| `diff` | text | yes |  |  |  |
+| `is_raid` | boolean | yes |  |  |  |
+| `diff_id` | integer | yes |  |  |  |
+| `total` | integer | yes |  |  |  |
+| `expansion` | text | yes |  |  |  |
+
+---
+
+### `dashboard_lockout`  ·  scope `global`
+
+*Defined in `Modules/Dashboard.lua`.*
+
+| Column | Type | Null | Key | Default | References |
+|---|---|---|---|---|---|
+| `char_key` | text | no | PK |  | → `dashboard_char.char_key` on delete cascade |
+| `ordinal` | integer | no | PK |  |  |
+| `name` | text | yes |  |  |  |
+| `diff` | text | yes |  |  |  |
+| `total` | integer | yes |  |  |  |
+| `progress` | integer | yes |  |  |  |
+| `is_raid` | boolean | yes |  |  |  |
+| `reset` | integer | yes |  |  |  |
+
+**Primary key:** (char_key, ordinal)
+
+---
+
+### `dashboard_quest`  ·  scope `global`
+
+*Defined in `Modules/Dashboard.lua`.*
+
+| Column | Type | Null | Key | Default | References |
+|---|---|---|---|---|---|
+| `char_key` | text | no | PK |  | → `dashboard_char.char_key` on delete cascade |
+| `freq` | text | no | PK |  |  |
+| `quest_id` | integer | no | PK |  |  |
+| `title` | text | yes |  |  |  |
+
+**Primary key:** (char_key, freq, quest_id)
+
+---
+
+### `dashboard_vault`  ·  scope `global`
+
+*Defined in `Modules/Dashboard.lua`.*
+
+| Column | Type | Null | Key | Default | References |
+|---|---|---|---|---|---|
+| `char_key` | text | no | PK |  | → `dashboard_char.char_key` on delete cascade |
+| `ordinal` | integer | no | PK |  |  |
+| `type` | integer | yes |  |  |  |
+| `level` | integer | yes |  |  |  |
+| `progress` | integer | yes |  |  |  |
+| `threshold` | integer | yes |  |  |  |
+
+**Primary key:** (char_key, ordinal)
 
 ---
 

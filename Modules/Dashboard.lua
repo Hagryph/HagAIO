@@ -164,72 +164,173 @@ function Dashboard:OnDisable()
     self:Hide()   -- hiding the window hides every page's tiles + textures, so WoW frees their VRAM
 end
 
--- ---- account-wide store ---------------------------------------------------
--- `chars` = per-character snapshots; `instances` = a SELF-CURATING registry of every instance
--- ever locked (key "name|difficulty" -> { name, diff, isRaid, total, expansion }), so the
--- dashboard remembers and keeps showing a dungeon/raid even after its lockout expires.
-function Dashboard:_Store()
-    return ns.SavedVars:Namespace("dashboard", { chars = {}, instances = {} })
+-- ---- account-wide store (the shared relational Database) -------------------
+-- Per-character snapshots and a SELF-CURATING instance registry (every instance ever locked, so the
+-- dashboard keeps showing a dungeon/raid after its lockout expires) live in the shared Database (see
+-- ns.DatabaseOwner / self:DB()) across five flat tables -- never a nested saved-var blob:
+--   dashboard_char     one row per character (scalars + the flattened keystone)
+--   dashboard_vault    the character's Great-Vault slots          (child, cascades on char delete)
+--   dashboard_lockout  the character's current raid/dungeon locks (child, cascades)
+--   dashboard_quest    recorded weekly/daily quest turn-ins        (child, cascades)
+--   dashboard_instance the "name|difficulty" registry (account-wide, not per character)
+-- The reader helpers RECONSTRUCT the document shape the renderers expect ({ vault = { slots = {} },
+-- lockouts = {}, quests = { freq = { id = title } }, keystone = {} }) from these tables, so the
+-- rendering stays document-oriented while storage is purely relational.
+
+-- A projected column is the DB.NULL sentinel (not Lua nil) when absent; collapse it to nil so the
+-- reconstructed documents read exactly like the old plain-Lua snapshots (l.progress or 0, etc.).
+local function denull(v) if v == nil or ns.DB.isNull(v) then return nil end return v end
+
+-- Only a plain number is allowed into the typed columns: ns.Secrets:Number returns nil for a SECRET
+-- value (restricted content), so a secret is stored as NULL rather than smuggled in as a non-scalar.
+local function plainNum(v)
+    if ns.Secrets then return ns.Secrets:Number(v) end   -- nil for a secret
+    return v
 end
-function Dashboard:_Chars()     return self:_Store().chars end
-function Dashboard:_Instances() return self:_Store().instances end
 
 function Dashboard:_SelfKey()
     local realm = (GetNormalizedRealmName and GetNormalizedRealmName()) or GetRealmName()
     return Ledger:CharKey(UnitName("player"), realm)
 end
 
-function Dashboard:_SelfEntry()
-    local chars = self:_Chars()
+-- The raw dashboard_char row for a key (or nil).
+function Dashboard:_CharRow(key)
+    local db = self:DB(); if not db then return nil end
+    return db:Select("*"):From("dashboard_char"):Where("char_key", "=", key):Limit(1):Run()[1]
+end
+
+-- Upsert the viewing character's dashboard_char row, merging `changes` and stamping last_seen. Ensures
+-- the row EXISTS first, so the child tables' FKs (vault/lockout/quest -> char) always resolve. This is
+-- the relational stand-in for the old _SelfEntry() (which lazily created the nested entry + lastSeen).
+function Dashboard:_SetSelf(changes)
+    local db = self:DB(); if not db then return end
     local key = self:_SelfKey()
-    local e = chars[key]
-    if not e then e = {}; chars[key] = e end
-    e.lastSeen = (GetServerTime and GetServerTime()) or time()
-    return e
+    changes = changes or {}
+    changes.last_seen = (GetServerTime and GetServerTime()) or time()
+    if self:_CharRow(key) then db:Update("dashboard_char", changes, function(x) return x.char_key == key end)
+    else changes.char_key = key; db:Insert("dashboard_char", changes) end
+end
+
+-- Replace ALL of the viewing character's rows in a child table (dashboard_vault / dashboard_lockout)
+-- with `rows` (each a column map; an `ordinal` is stamped to complete the composite PK). Delete-then-
+-- insert mirrors the old whole-substructure replacement (e.vault = {...}, e.lockouts = {...}).
+function Dashboard:_ReplaceSelfChildren(tname, rows)
+    local db = self:DB(); if not db then return end
+    local key = self:_SelfKey()
+    db:Delete(tname, function(x) return x.char_key == key end)
+    if #rows == 0 then return end
+    for i, r in ipairs(rows) do r.char_key, r.ordinal = key, i end
+    db:InsertAll(tname, rows)
+end
+
+-- Reconstruct every character's snapshot as a document keyed by char_key (one query per table; the
+-- children are bucketed in memory). Mirrors the old chars[key] = { ... nested ... } map exactly.
+function Dashboard:_Chars()
+    local db = self:DB(); if not db then return {} end
+    local chars = {}
+    for _, c in ipairs(db:Select("*"):From("dashboard_char"):Run()) do
+        local doc = {
+            name = denull(c.name), realm = denull(c.realm), class = denull(c.class),
+            level = denull(c.level), ilvl = denull(c.ilvl),
+            lastSeen = denull(c.last_seen), rating = denull(c.rating),
+            lockouts = {}, vault = { slots = {} }, quests = {},
+        }
+        if denull(c.ks_mapid) then
+            doc.keystone = { mapID = c.ks_mapid, level = denull(c.ks_level), name = denull(c.ks_name) }
+        end
+        chars[c.char_key] = doc
+    end
+    for _, v in ipairs(db:Select("*"):From("dashboard_vault"):Run()) do
+        local doc = chars[v.char_key]
+        if doc then
+            local s = doc.vault.slots
+            s[#s + 1] = { type = denull(v.type), level = denull(v.level),
+                progress = denull(v.progress), threshold = denull(v.threshold) }
+        end
+    end
+    for _, l in ipairs(db:Select("*"):From("dashboard_lockout"):Run()) do
+        local doc = chars[l.char_key]
+        if doc then
+            local lk = doc.lockouts
+            lk[#lk + 1] = { name = denull(l.name), diff = denull(l.diff), total = denull(l.total),
+                progress = denull(l.progress), isRaid = denull(l.is_raid), reset = denull(l.reset) }
+        end
+    end
+    for _, q in ipairs(db:Select("*"):From("dashboard_quest"):Run()) do
+        local doc = chars[q.char_key]
+        if doc then
+            doc.quests[q.freq] = doc.quests[q.freq] or {}
+            doc.quests[q.freq][q.quest_id] = denull(q.title) or ("Quest " .. q.quest_id)
+        end
+    end
+    return chars
+end
+
+-- Reconstruct the instance registry keyed by "name|difficulty". Read-only; the writers below mutate
+-- dashboard_instance directly (the old code mutated this returned table in place).
+function Dashboard:_Instances()
+    local db = self:DB(); if not db then return {} end
+    local out = {}
+    for _, r in ipairs(db:Select("*"):From("dashboard_instance"):Run()) do
+        out[r.key] = { name = denull(r.name), diff = denull(r.diff), isRaid = denull(r.is_raid),
+            diffID = denull(r.diff_id), total = denull(r.total), expansion = denull(r.expansion) }
+    end
+    return out
+end
+
+-- Upsert one dashboard_instance row (key = "name|difficulty"), merging `changes` (omitted keys keep
+-- their stored value -- so a later sighting with a nil diffID/total never clobbers a known one).
+function Dashboard:_SetInstance(key, changes)
+    local db = self:DB(); if not db then return end
+    local exists = db:Select("key"):From("dashboard_instance"):Where("key", "=", key):Limit(1):Run()[1]
+    if exists then db:Update("dashboard_instance", changes, function(x) return x.key == key end)
+    else changes.key = key; db:Insert("dashboard_instance", changes) end
 end
 
 -- ---- collectors (each guarded so a missing API is a no-op, never an error) -
 function Dashboard:_CollectInfo()
-    local e = self:_SelfEntry()
-    e.name  = UnitName("player")
-    e.realm = (GetNormalizedRealmName and GetNormalizedRealmName()) or GetRealmName()
+    local changes = {
+        name  = UnitName("player"),
+        realm = (GetNormalizedRealmName and GetNormalizedRealmName()) or GetRealmName(),
+        level = UnitLevel("player"),
+    }
     local _, classFile = UnitClass("player")
-    e.class = classFile
-    e.level = UnitLevel("player")
+    changes.class = classFile
     if GetAverageItemLevel then
         local _, equipped = GetAverageItemLevel()
-        e.ilvl = equipped and math.floor(equipped + 0.5) or e.ilvl
+        if equipped then changes.ilvl = math.floor(equipped + 0.5) end   -- else keep the stored ilvl
     end
+    self:_SetSelf(changes)
 end
 
 function Dashboard:_CollectKeystone()
-    local e = self:_SelfEntry()
+    local changes = {}
     local mapID = C_MythicPlus and C_MythicPlus.GetOwnedKeystoneMapID and C_MythicPlus.GetOwnedKeystoneMapID()
     local level = C_MythicPlus and C_MythicPlus.GetOwnedKeystoneLevel and C_MythicPlus.GetOwnedKeystoneLevel()
     if mapID and level and level > 0 then
         local name = C_ChallengeMode and C_ChallengeMode.GetMapUIInfo and C_ChallengeMode.GetMapUIInfo(mapID)
-        e.keystone = { mapID = mapID, level = level, name = name }
+        changes.ks_mapid, changes.ks_level, changes.ks_name = mapID, level, name
     else
-        e.keystone = nil
+        changes.ks_mapid, changes.ks_level, changes.ks_name = ns.DB.NULL, ns.DB.NULL, ns.DB.NULL  -- clear
     end
     local summary = C_PlayerInfo and C_PlayerInfo.GetPlayerMythicPlusRatingSummary
         and C_PlayerInfo.GetPlayerMythicPlusRatingSummary("player")
-    if summary and summary.currentSeasonScore then e.rating = summary.currentSeasonScore end
+    if summary and summary.currentSeasonScore then changes.rating = summary.currentSeasonScore end
+    self:_SetSelf(changes)
 end
 
 function Dashboard:_CollectVault()
-    local e = self:_SelfEntry()
+    self:_SetSelf({})   -- ensure the char row (FK target) + last_seen, as the old _SelfEntry() did
     local acts = C_WeeklyRewards and C_WeeklyRewards.GetActivities and C_WeeklyRewards.GetActivities()
     if not acts then return end
     local slots = {}
     for _, a in ipairs(acts) do
-        -- progress/threshold can be secret in restricted content -- store only a plain number
-        -- (ns.Secrets:Number returns nil for a secret), so a cross-char cell never computes on one.
-        local prog = ns.Secrets and ns.Secrets:Number(a.progress) or a.progress
-        local thr  = ns.Secrets and ns.Secrets:Number(a.threshold) or a.threshold
-        slots[#slots + 1] = { type = a.type, level = a.level, progress = prog, threshold = thr }
+        -- progress/threshold can be secret in restricted content -- store only a plain number, so a
+        -- cross-char cell never computes on a secret (see plainNum; a secret is stored as NULL).
+        slots[#slots + 1] = { type = a.type, level = a.level,
+            progress = plainNum(a.progress), threshold = plainNum(a.threshold) }
     end
-    e.vault = { slots = slots }
+    self:_ReplaceSelfChildren("dashboard_vault", slots)
 end
 
 -- All saved instances the character is locked to (raids AND dungeons, every difficulty, current
@@ -238,25 +339,25 @@ end
 -- isn't. We capture the difficulty name so a multi-difficulty lock (e.g. LFR + Heroic of one raid)
 -- shows as separate entries.
 function Dashboard:_CollectLockouts()
-    local e = self:_SelfEntry()
+    self:_SetSelf({})   -- ensure the char row (FK target) + last_seen, as the old _SelfEntry() did
     local n = (GetNumSavedInstances and GetNumSavedInstances()) or 0
-    local locks, inst = {}, self:_Instances()
+    local locks = {}
     for i = 1, n do
         local name, _, reset, diffID, locked, _, _, isRaid, _, diff, numEnc, prog = GetSavedInstanceInfo(i)
         if locked and reset and reset > 0 then
-            locks[#locks + 1] = { name = name, diff = diff, total = numEnc, progress = prog,
-                isRaid = isRaid, reset = reset }
-            -- remember this instance forever in the self-curating registry
-            local key = name .. "|" .. (diff or "")
-            local r = inst[key]
-            if not r then r = { name = name, diff = diff, isRaid = isRaid and true or false }; inst[key] = r end
-            r.diffID = diffID or r.diffID   -- the difficulty ID (locale-proof; drives the prune)
-            r.total = numEnc or r.total
+            locks[#locks + 1] = { name = name, diff = diff, total = numEnc, progress = plainNum(prog),
+                is_raid = isRaid and true or false, reset = reset }
+            -- remember this instance forever in the self-curating registry (omitted keys keep their
+            -- stored value, so a sighting with a nil diffID/total never clobbers a known one)
+            local changes = { name = name, diff = diff, is_raid = isRaid and true or false }
+            if diffID then changes.diff_id = diffID end   -- the difficulty ID (locale-proof; drives the prune)
+            if numEnc then changes.total = numEnc end
             local exp = self:_InstanceExpansion(name)
-            if exp ~= "Other" then r.expansion = exp end   -- fill the tier once the journal map is ready
+            if exp ~= "Other" then changes.expansion = exp end   -- fill the tier once the journal map is ready
+            self:_SetInstance(name .. "|" .. (diff or ""), changes)
         end
     end
-    e.lockouts = locks
+    self:_ReplaceSelfChildren("dashboard_lockout", locks)
 end
 
 -- Record a turned-in quest under its reset frequency (daily/weekly), so the dashboard shows
@@ -269,12 +370,18 @@ function Dashboard:_RecordQuest(questID)
     if f == (Enum and Enum.QuestFrequency and Enum.QuestFrequency.Daily) then freq = "daily"
     elseif f == (Enum and Enum.QuestFrequency and Enum.QuestFrequency.Weekly) then freq = "weekly" end
     if not freq then return end
-    local e = self:_SelfEntry()
-    e.quests = e.quests or {}
-    e.quests[freq] = e.quests[freq] or {}
     local title = (C_QuestLog and C_QuestLog.GetTitleForQuestID and C_QuestLog.GetTitleForQuestID(questID))
         or (info and info(questID)) or ("Quest " .. questID)
-    e.quests[freq][questID] = title
+    self:_SetSelf({})   -- ensure the char row exists (FK target for dashboard_quest) + last_seen
+    local db = self:DB()
+    if db then
+        local key = self:_SelfKey()
+        local match = function(x) return x.char_key == key and x.freq == freq and x.quest_id == questID end
+        local exists = db:Select("quest_id"):From("dashboard_quest")
+            :Where("char_key", "=", key):AndWhere("freq", "=", freq):AndWhere("quest_id", "=", questID):Limit(1):Run()[1]
+        if exists then db:Update("dashboard_quest", { title = title }, match)
+        else db:Insert("dashboard_quest", { char_key = key, freq = freq, quest_id = questID, title = title }) end
+    end
     self:_RenderIfShown()
 end
 
@@ -642,10 +749,11 @@ end
 -- whole pass is a no-op.
 function Dashboard:_PruneRegistry()
     if not GetDifficultyInfo then return end
-    local inst = self:_Instances()
-    for key, r in pairs(inst) do
-        if not r.isRaid and not (r.diffID and GetDifficultyInfo(r.diffID)) then inst[key] = nil end
-    end
+    local db = self:DB(); if not db then return end
+    -- predicate runs on the RAW stored row (absent field = nil, not the NULL sentinel)
+    db:Delete("dashboard_instance", function(r)
+        return not r.is_raid and not (r.diff_id and GetDifficultyInfo(r.diff_id))
+    end)
 end
 
 -- Sort the current M+ season's dungeons into the registry under their HOME expansion (Mythic 0), so a
@@ -656,14 +764,11 @@ end
 function Dashboard:_SeedSeasonDungeons()
     local s = self:_SeasonDungeons()
     if not s then return end
-    local inst = self:_Instances()
     for _, name in ipairs(s.list) do
         local exp = self:_InstanceExpansion(name)
         if exp ~= "Other" then
-            local key = name .. "|" .. M0
-            local r = inst[key]
-            if not r then r = { name = name, diff = M0, diffID = M0_ID, isRaid = false }; inst[key] = r end
-            r.expansion = exp
+            self:_SetInstance(name .. "|" .. M0,
+                { name = name, diff = M0, diff_id = M0_ID, is_raid = false, expansion = exp })
         end
     end
 end
@@ -998,9 +1103,14 @@ function Dashboard:_Render()
     self:_SeedSeasonDungeons()           -- place season dungeons under their home expansion (legacy ones + their tile)
     -- backfill the tier on any registry entry recorded before the journal map was ready
     local map = self:_p().ejMap
-    if map then
-        for _, r in pairs(self:_Instances()) do
-            if (not r.expansion or r.expansion == "Other") and map[r.name] then r.expansion = map[r.name] end
+    local db = self:DB()
+    if map and db then
+        for _, r in ipairs(db:Select("key", "name", "expansion"):From("dashboard_instance"):Run()) do
+            local exp = denull(r.expansion)
+            if (not exp or exp == "Other") and map[r.name] then
+                local k = r.key
+                db:Update("dashboard_instance", { expansion = map[r.name] }, function(x) return x.key == k end)
+            end
         end
     end
 
@@ -1116,7 +1226,66 @@ ns.ModuleManager:Register(Dashboard:New("Dashboard", {
     description = "A cross-character view of weekly/daily resets: Great Vault, M+ keystone, lockouts and recurring quests.",
     defaultEnabled = false,
     color = ns.Theme.hex.accent,
-    deps = { "SavedVars", "SlashCommand", "Secrets" },
+    deps = { "SlashCommand", "Secrets" },   -- DatabaseManager is added automatically (see `tables`)
+    -- Account-wide cross-character snapshots, stored relationally (no nested blobs). The three child
+    -- tables cascade-delete with their character; dashboard_instance is the account-wide registry.
+    tables = {
+        dashboard_char = { scope = "global", columns = {
+            { name = "char_key",  type = "text",    primaryKey = true },   -- "Name-Realm"
+            { name = "name",      type = "text" },
+            { name = "realm",     type = "text" },
+            { name = "class",     type = "text" },                         -- class file (e.g. "MAGE")
+            { name = "level",     type = "integer" },
+            { name = "ilvl",      type = "integer" },
+            { name = "last_seen", type = "integer" },                      -- server epoch seconds
+            { name = "rating",    type = "number" },                       -- current-season M+ score
+            { name = "ks_mapid",  type = "integer" },                      -- owned keystone (flattened)
+            { name = "ks_level",  type = "integer" },
+            { name = "ks_name",   type = "text" },
+        } },
+        dashboard_vault = { scope = "global",
+            columns = {
+                { name = "char_key",  type = "text", nullable = false,
+                    references = { table = "dashboard_char", column = "char_key", onDelete = "cascade" } },
+                { name = "ordinal",   type = "integer", nullable = false },   -- slot order within the character
+                { name = "type",      type = "integer" },                     -- activity type
+                { name = "level",     type = "integer" },
+                { name = "progress",  type = "integer" },                     -- plain number only (secrets stored NULL)
+                { name = "threshold", type = "integer" },
+            },
+            primaryKey = { "char_key", "ordinal" } },
+        dashboard_lockout = { scope = "global",
+            columns = {
+                { name = "char_key", type = "text", nullable = false,
+                    references = { table = "dashboard_char", column = "char_key", onDelete = "cascade" } },
+                { name = "ordinal",  type = "integer", nullable = false },
+                { name = "name",     type = "text" },
+                { name = "diff",     type = "text" },                         -- difficulty name (e.g. "Heroic")
+                { name = "total",    type = "integer" },                      -- boss count
+                { name = "progress", type = "integer" },                      -- bosses killed (plain number only)
+                { name = "is_raid",  type = "boolean" },
+                { name = "reset",    type = "integer" },                      -- lockout reset epoch
+            },
+            primaryKey = { "char_key", "ordinal" } },
+        dashboard_quest = { scope = "global",
+            columns = {
+                { name = "char_key", type = "text", nullable = false,
+                    references = { table = "dashboard_char", column = "char_key", onDelete = "cascade" } },
+                { name = "freq",     type = "text",    nullable = false },    -- "daily" | "weekly"
+                { name = "quest_id", type = "integer", nullable = false },
+                { name = "title",    type = "text" },
+            },
+            primaryKey = { "char_key", "freq", "quest_id" } },
+        dashboard_instance = { scope = "global", columns = {
+            { name = "key",       type = "text", primaryKey = true },         -- "name|difficulty"
+            { name = "name",      type = "text" },
+            { name = "diff",      type = "text" },
+            { name = "is_raid",   type = "boolean" },
+            { name = "diff_id",   type = "integer" },                         -- locale-proof difficulty id (drives the prune)
+            { name = "total",     type = "integer" },
+            { name = "expansion", type = "text" },                           -- journal tier name once known
+        } },
+    },
     commands = {
         dashboard = { handler = "Toggle", help = "open the cross-character Dashboard" },
     },

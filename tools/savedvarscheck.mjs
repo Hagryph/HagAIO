@@ -18,11 +18,9 @@ const SCAN = ["Core", "Services", "Modules", "UI", "Lib"];
 const SAVEDVARS_FILE = "Services/SavedVars.lua";          // sole owner of the raw globals + data handles
 const isEngine = (rel) => rel.startsWith("Core/DB/") || rel === SAVEDVARS_FILE;
 
-// TEMPORARY allowlist: files still on the old SavedVars data path, to be migrated/removed. Shrinks
-// to empty as the conversion completes. A file here may call :Namespace (NOT the raw globals).
-const TODO_DATA = new Set([
-  "Modules/Dashboard.lua",  // per-character snapshots not yet migrated to relational tables
-]);
+// Allowlist for files still on the old SavedVars data path (a file here may call :Namespace, never
+// the raw globals). Now EMPTY: every data store has been migrated to the shared Database.
+const TODO_DATA = new Set([]);
 
 function luaFiles(dir, out = []) {
   let names;
