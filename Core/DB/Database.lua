@@ -52,22 +52,52 @@ function Database:_RowConforms(tbl, row)
     return true
 end
 
--- On load, persisted data may predate a schema change (a column became NOT NULL, a type changed,
--- ...). Drop every row that no longer conforms and WARN how many per table, so stale/invalid rows
--- never silently poison queries or constraint checks. Runs before the index is built.
+-- A type-tagged combined key over `cols` for de-duplication; nil if any part is NULL (SQL allows
+-- many NULLs in a unique key, so NULL rows aren't treated as duplicates).
+local function conformKey(row, cols)
+    local parts = {}
+    for i = 1, #cols do
+        local v = row[cols[i]]
+        if v == nil or v == DB.NULL then return nil end
+        local t = type(v)
+        parts[i] = (t == "string" and "s" or t == "number" and "n" or t == "boolean" and "b" or "?") .. tostring(v)
+    end
+    return table.concat(parts, "\31")
+end
+
+-- On load, persisted data may predate a schema change (a column became NOT NULL, a type changed, a
+-- column became the primary key, ...). Drop every row that no longer conforms -- bad NULL/type, OR a
+-- DUPLICATE primary-key / unique key (keeping the first) -- and WARN how many per table, so stale or
+-- invalid rows never silently poison queries or constraint checks. Runs before the index is built.
 function Database:_Conform()
     local p = self:_p()
     for _, tname in ipairs(p.schema:TableNames()) do
         local tbl, rows = p.schema:Table(tname), p.store:Rows(tname)
-        local removed = 0
-        if rows then
-            for i = #rows, 1, -1 do
-                if not self:_RowConforms(tbl, rows[i]) then table.remove(rows, i); removed = removed + 1 end
+        if rows and #rows > 0 then
+            local pkCols, uniques = tbl:PrimaryKey(), tbl:Uniques()
+            local seenPK, seenU = {}, {}
+            for i = 1, #uniques do seenU[i] = {} end
+            local kept, removed = {}, 0
+            for _, row in ipairs(rows) do
+                local ok = self:_RowConforms(tbl, row)
+                if ok and #pkCols > 0 then
+                    local k = conformKey(row, pkCols)
+                    if k and seenPK[k] then ok = false elseif k then seenPK[k] = true end
+                end
+                if ok then
+                    for i, u in ipairs(uniques) do
+                        local k = conformKey(row, u)
+                        if k and seenU[i][k] then ok = false; break elseif k then seenU[i][k] = true end
+                    end
+                end
+                if ok then kept[#kept + 1] = row else removed = removed + 1 end
             end
-        end
-        if removed > 0 then
-            ns.Logger:Core():Warn(("db '%s': dropped %d non-conforming row(s) from '%s' on load (schema changed)")
-                :format(p.name, removed, tname))
+            if removed > 0 then
+                for i = #rows, 1, -1 do rows[i] = nil end
+                for i = 1, #kept do rows[i] = kept[i] end
+                ns.Logger:Core():Warn(("db '%s': dropped %d non-conforming/duplicate row(s) from '%s' on load")
+                    :format(p.name, removed, tname))
+            end
         end
     end
 end

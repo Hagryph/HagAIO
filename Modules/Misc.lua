@@ -59,8 +59,9 @@ local FLIGHT_TABLES = {
         scope = "global",
         columns = {
             { name = "id",  type = "integer", primaryKey = true, autoIncrement = true },
-            { name = "src", type = "integer", nullable = false, references = { table = "flight_master" } },
-            { name = "dst", type = "integer", nullable = false, references = { table = "flight_master" } },
+            -- src/dst are flight_master node ids; if a master is deleted, its routes go with it.
+            { name = "src", type = "integer", nullable = false, references = { table = "flight_master", onDelete = "cascade" } },
+            { name = "dst", type = "integer", nullable = false, references = { table = "flight_master", onDelete = "cascade" } },
             { name = "t",       type = "number",  nullable = false },
             { name = "quality", type = "integer", nullable = false },
         },
@@ -72,7 +73,8 @@ local FLIGHT_TABLES = {
         columns = {
             { name = "route_id", type = "integer", references = { table = "flight_route", onDelete = "cascade" } },
             { name = "ordinal",  type = "integer" },
-            { name = "master",   type = "integer", nullable = false, references = { table = "flight_master" } },
+            -- the intermediate flight_master node id; deleting that master removes the hop.
+            { name = "master",   type = "integer", nullable = false, references = { table = "flight_master", onDelete = "cascade" } },
         },
         primaryKey = { "route_id", "ordinal" },
     },
@@ -232,20 +234,20 @@ end
 -- lookup to the current faction. Recording only LOOKS masters up (discovery creates them); a node
 -- that hasn't been discovered yet is simply not recorded. Small tables, read while flying.
 
--- The flight_master id for a node name usable by the player -- one of the player's faction or a
--- Neutral point -- or nil if it hasn't been discovered (or the faction can't be attributed).
+-- The flight_master node id (its PK) for a node name usable by the player -- one of the player's
+-- faction or a Neutral point -- or nil if undiscovered (or the faction can't be attributed).
 function Misc:_MasterId(name)
     local db = self:DB(); if not db then return nil end
     local faction = self:_Faction()
     if faction ~= "Alliance" and faction ~= "Horde" and faction ~= "Neutral" then return nil end
-    local rows = db:Select("id"):From("flight_master")
+    local rows = db:Select("node_id"):From("flight_master")
         :Where("name", "=", tostring(name)):AndWhere("faction", "in", { faction, "Neutral" }):Limit(1):Run()
-    return rows[1] and rows[1].id or nil
+    return rows[1] and rows[1].node_id or nil
 end
 
-function Misc:_MasterName(id)
+function Misc:_MasterName(nodeId)
     local db = self:DB(); if not db then return nil end
-    local rows = db:Select("name"):From("flight_master"):Where("id", "=", id):Limit(1):Run()
+    local rows = db:Select("name"):From("flight_master"):Where("node_id", "=", nodeId):Limit(1):Run()
     return rows[1] and rows[1].name or nil
 end
 
@@ -329,7 +331,7 @@ function Misc:_FlightRecords(faction)
     local db = self:DB(); if not db then return {} end
     local routes = db:Select("flight_route.id", "flight_route.src", "flight_route.dst", "flight_route.t", "flight_route.quality")
         :From("flight_route")
-        :InnerJoin("flight_master", { on = { "flight_route.src", "flight_master.id" } })
+        :InnerJoin("flight_master", { on = { "flight_route.src", "flight_master.node_id" } })
         :Where("flight_master.faction", "in", { faction, "Neutral" }):Run()
     local out = {}
     for _, row in ipairs(routes) do

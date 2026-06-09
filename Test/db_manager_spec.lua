@@ -49,7 +49,7 @@ describe("DatabaseManager: one shared database", function()
     it("seeds the LOCAL faction reference table", function()
         local mgr = newManager()
         local db = mgr:Build()
-        local rows = db:Select("id", "tag"):From("faction"):OrderBy("id"):Run()
+        local rows = db:Select("tag"):From("faction"):OrderBy("tag"):Run()   -- tag is the PK
         assert.are.equal(3, #rows)
         assert.are.equal("Alliance", rows[1].tag)
         assert.are.equal("Horde", rows[2].tag)
@@ -93,15 +93,15 @@ describe("DatabaseManager: per-table scope routing", function()
     it("a GLOBAL table can FK-join a LOCAL reference table (flight_master -> faction)", function()
         local mgr = newManager()
         local db = mgr:Build()
-        db:Insert("zone", { id = 1, name = "Durotar" })
+        db:Insert("zone", { name = "Durotar" })
         db:Insert("flight_master", { node_id = 1, faction = "Horde", name = "Orgrimmar", zone = "Durotar" })
         -- inserting with an unknown faction tag violates the cross-scope FK
         assert.is_false(pcall(function()
             db:Insert("flight_master", { node_id = 2, faction = "Pandaren", name = "Y", zone = "Durotar" })
         end))
-        local joined = db:Select("flight_master.name", "faction.id"):From("flight_master")
+        local joined = db:Select("flight_master.name", "faction.tag"):From("flight_master")
             :InnerJoin("faction", { on = { "flight_master.faction", "faction.tag" } }):Run()
         assert.are.equal("Orgrimmar", joined[1].name)   -- the flight node
-        assert.are.equal(2, joined[1].id)               -- joined Horde faction id
+        assert.are.equal("Horde", joined[1].tag)        -- joined faction tag
     end)
 end)

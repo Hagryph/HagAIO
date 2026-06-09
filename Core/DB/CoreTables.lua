@@ -24,29 +24,25 @@ ns.DB.CoreTables = {
     faction = {
         scope = "local",
         columns = {
-            { name = "id",   type = "integer", primaryKey = true },
-            { name = "tag",  type = "text", nullable = false },   -- UnitFactionGroup value
+            { name = "tag",  type = "text", primaryKey = true },   -- UnitFactionGroup value (the PK)
             { name = "name", type = "text", nullable = false },
         },
-        unique = { { "tag" } },
         seed = function(db)
             db:InsertAll("faction", {            -- batch insert (one call), not row-by-row
-                { id = 1, tag = "Alliance", name = "Alliance" },
-                { id = 2, tag = "Horde",    name = "Horde" },
-                { id = 3, tag = "Neutral",  name = "Neutral" },
+                { tag = "Alliance", name = "Alliance" },
+                { tag = "Horde",    name = "Horde" },
+                { tag = "Neutral",  name = "Neutral" },
             })
         end,
     },
 
-    -- Map zones, rebuilt at runtime from the world map (no seed here -- the owner populates it once
-    -- the map API is available). LOCAL: cheap to regenerate, never worth persisting.
+    -- Map zones, rebuilt at runtime from the world map (the LocalTables service inserts each zone
+    -- name as flight masters are discovered). LOCAL: cheap to regenerate, never worth persisting.
     zone = {
         scope = "local",
         columns = {
-            { name = "id",   type = "integer", primaryKey = true },   -- UiMapID
-            { name = "name", type = "text", nullable = false },
+            { name = "name", type = "text", primaryKey = true },   -- zone name (the PK), e.g. "Elwynn Forest"
         },
-        unique = { { "name" } },
     },
 
     -- Flight masters, discovered (with their zone + map coords) by the LocalTables service whenever a
@@ -58,15 +54,13 @@ ns.DB.CoreTables = {
     flight_master = {
         scope = "global",
         columns = {
-            { name = "id",      type = "integer", primaryKey = true, autoIncrement = true },
-            { name = "node_id", type = "integer", nullable = false },   -- canonical C_TaxiMap nodeID (unique per point)
+            { name = "node_id", type = "integer", primaryKey = true },  -- canonical C_TaxiMap nodeID (the PK; unique per point)
             { name = "faction", type = "text", nullable = false, references = { table = "faction", column = "tag" } },
             { name = "zone",    type = "text", nullable = false, references = { table = "zone", column = "name" } },
-            { name = "name",    type = "text", nullable = false },      -- flight master name only (e.g. "Stormwind")
-            { name = "x",       type = "number" },                      -- node position on the continent map
+            { name = "name",    type = "text", nullable = false },       -- flight master name only (e.g. "Stormwind")
+            { name = "x",       type = "number" },                       -- node position on the continent map
             { name = "y",       type = "number" },
         },
-        unique  = { { "node_id" } },
         indices = { { columns = { "faction" } }, { columns = { "name" } } },
     },
 }

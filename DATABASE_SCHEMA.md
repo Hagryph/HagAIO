@@ -12,11 +12,11 @@ The addon uses **one shared database**. Every service or module contributes the 
 
 | Table | Scope | Columns | Primary key | Defined in |
 |---|---|---|---|---|
-| [`faction`](#faction) | `local` | 3 | id | `Core/DB/CoreTables.lua` |
+| [`faction`](#faction) | `local` | 2 | tag | `Core/DB/CoreTables.lua` |
 | [`flight_hop`](#flight_hop) | `global` | 3 | route_id, ordinal | `Modules/Misc.lua` |
-| [`flight_master`](#flight_master) | `global` | 7 | id | `Core/DB/CoreTables.lua` |
+| [`flight_master`](#flight_master) | `global` | 6 | node_id | `Core/DB/CoreTables.lua` |
 | [`flight_route`](#flight_route) | `global` | 5 | id | `Modules/Misc.lua` |
-| [`zone`](#zone) | `local` | 2 | id | `Core/DB/CoreTables.lua` |
+| [`zone`](#zone) | `local` | 1 | name | `Core/DB/CoreTables.lua` |
 
 ---
 
@@ -26,8 +26,7 @@ The addon uses **one shared database**. Every service or module contributes the 
 
 | Column | Type | Null | Key | Default | References |
 |---|---|---|---|---|---|
-| `id` | integer | no | PK |  |  |
-| `tag` | text | no | unique |  |  |
+| `tag` | text | no | PK |  |  |
 | `name` | text | no |  |  |  |
 
 ---
@@ -40,7 +39,7 @@ The addon uses **one shared database**. Every service or module contributes the 
 |---|---|---|---|---|---|
 | `route_id` | integer | no | PK |  | → `flight_route.id` on delete cascade |
 | `ordinal` | integer | no | PK |  |  |
-| `master` | integer | no |  |  | → `flight_master.id` |
+| `master` | integer | no |  |  | → `flight_master.node_id` on delete cascade |
 
 **Primary key:** (route_id, ordinal)
 
@@ -52,8 +51,7 @@ The addon uses **one shared database**. Every service or module contributes the 
 
 | Column | Type | Null | Key | Default | References |
 |---|---|---|---|---|---|
-| `id` | integer | no | PK auto |  |  |
-| `node_id` | integer | no | unique |  |  |
+| `node_id` | integer | no | PK |  |  |
 | `faction` | text | no |  |  | → `faction.tag` |
 | `zone` | text | no |  |  | → `zone.name` |
 | `name` | text | no |  |  |  |
@@ -71,8 +69,8 @@ The addon uses **one shared database**. Every service or module contributes the 
 | Column | Type | Null | Key | Default | References |
 |---|---|---|---|---|---|
 | `id` | integer | no | PK auto |  |  |
-| `src` | integer | no |  |  | → `flight_master.id` |
-| `dst` | integer | no |  |  | → `flight_master.id` |
+| `src` | integer | no |  |  | → `flight_master.node_id` on delete cascade |
+| `dst` | integer | no |  |  | → `flight_master.node_id` on delete cascade |
 | `t` | number | no |  |  |  |
 | `quality` | integer | no |  |  |  |
 
@@ -88,8 +86,7 @@ The addon uses **one shared database**. Every service or module contributes the 
 
 | Column | Type | Null | Key | Default | References |
 |---|---|---|---|---|---|
-| `id` | integer | no | PK |  |  |
-| `name` | text | no | unique |  |  |
+| `name` | text | no | PK |  |  |
 
 ---
 

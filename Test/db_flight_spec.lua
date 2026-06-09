@@ -1,10 +1,10 @@
 local S = dofile("Test/support.lua")
 
--- Proves the Flight feature's normalised model against the engine. flight_master is keyed by the
--- canonical node_id (one row per physical flight point); a flight_route references two masters by
--- id and carries no faction (derived from the masters); flight_hop references intermediate masters.
--- Mirrors the split between the LocalTables discovery (creates masters, keyed by node_id, flips a
--- node seen by both factions to Neutral) and Misc recording (looks masters up by name + faction).
+-- Proves the Flight model against the engine. flight_master is keyed by node_id (its PK, the
+-- canonical C_TaxiMap nodeID -- one row per physical flight point). flight_route references two
+-- masters by node id (src, dst, ON DELETE CASCADE) and carries no faction; flight_hop references an
+-- intermediate master (ON DELETE CASCADE). Mirrors LocalTables discovery (creates masters by
+-- node_id; flips a node seen by both factions to Neutral) and Misc recording (looks masters up).
 
 local DB_FILES = { "Types", "Schema", "RowStore", "IndexManager", "Constraints", "TriggerManager",
                    "Database", "Aggregate", "WhereClause", "ColumnResolver", "QueryPlan",
@@ -17,8 +17,8 @@ local FLIGHT_TABLES = {
         scope = "global",
         columns = {
             { name = "id",  type = "integer", primaryKey = true, autoIncrement = true },
-            { name = "src", type = "integer", nullable = false, references = { table = "flight_master" } },
-            { name = "dst", type = "integer", nullable = false, references = { table = "flight_master" } },
+            { name = "src", type = "integer", nullable = false, references = { table = "flight_master", onDelete = "cascade" } },
+            { name = "dst", type = "integer", nullable = false, references = { table = "flight_master", onDelete = "cascade" } },
             { name = "t",       type = "number",  nullable = false },
             { name = "quality", type = "integer", nullable = false },
         },
@@ -29,7 +29,7 @@ local FLIGHT_TABLES = {
         columns = {
             { name = "route_id", type = "integer", references = { table = "flight_route", onDelete = "cascade" } },
             { name = "ordinal",  type = "integer" },
-            { name = "master",   type = "integer", nullable = false, references = { table = "flight_master" } },
+            { name = "master",   type = "integer", nullable = false, references = { table = "flight_master", onDelete = "cascade" } },
         },
         primaryKey = { "route_id", "ordinal" },
     },
@@ -44,24 +44,25 @@ local function built()
     mgr:OnInitialize()
     mgr:Contribute(FLIGHT_TABLES)
     local db = mgr:Build()
-    db:Insert("zone", { id = 1, name = "Z" })           -- a zone for masters (flight_master.zone NOT NULL)
+    db:Insert("zone", { name = "Z" })                   -- a zone for masters (flight_master.zone NOT NULL)
     return db
 end
 
--- discovery: create a master under `faction` with a fresh canonical node_id + zone
+-- discovery: create a master under `faction` with a fresh node_id (its PK) + zone; returns node_id
 local function seed(db, faction, name)
     nextNode = nextNode + 1
-    return db:Insert("flight_master", { node_id = nextNode, faction = faction, name = name, zone = "Z" }).id
+    db:Insert("flight_master", { node_id = nextNode, faction = faction, name = name, zone = "Z" })
+    return nextNode
 end
--- recording: look a master up by name, valid for the player (their faction or Neutral)
+-- recording: look a master's node id up by name, valid for the player (their faction or Neutral)
 local function masterId(db, faction, name)
-    local r = db:Select("id"):From("flight_master")
+    local r = db:Select("node_id"):From("flight_master")
         :Where("name", "=", name):AndWhere("faction", "in", { faction, "Neutral" }):Limit(1):Run()
-    return r[1] and r[1].id or nil
+    return r[1] and r[1].node_id or nil
 end
 local function idOrSeed(db, faction, name) return masterId(db, faction, name) or seed(db, faction, name) end
 
-local function row(db, sid, did)
+local function route(db, sid, did)
     return db:Select("id", "t", "quality"):From("flight_route"):Where("src", "=", sid):AndWhere("dst", "=", did):Limit(1):Run()[1]
 end
 local function setHops(db, faction, rid, via)
@@ -70,7 +71,7 @@ local function setHops(db, faction, rid, via)
 end
 local function store(db, faction, a, b, secs, via)
     local sid, did = idOrSeed(db, faction, a), idOrSeed(db, faction, b)
-    local x = row(db, sid, did)
+    local x = route(db, sid, did)
     if not x then setHops(db, faction, db:Insert("flight_route", { src = sid, dst = did, t = secs, quality = DIRECT }).id, via); return true end
     if x.quality < DIRECT then
         db:Update("flight_route", { t = secs, quality = DIRECT }, function(r) return r.id == x.id end); setHops(db, faction, x.id, via); return true
@@ -81,13 +82,14 @@ local function store(db, faction, a, b, secs, via)
 end
 local function storeIfNew(db, faction, a, b, secs)
     local sid, did = idOrSeed(db, faction, a), idOrSeed(db, faction, b)
-    if row(db, sid, did) then return false end
+    if route(db, sid, did) then return false end
     db:Insert("flight_route", { src = sid, dst = did, t = secs, quality = FLY }); return true
 end
+local function nameOf(db, nodeId) return db:Select("name"):From("flight_master"):Where("node_id", "=", nodeId):Run()[1].name end
 local function hopNames(db, rid)
     local r = db:Select("master"):From("flight_hop"):Where("route_id", "=", rid):OrderBy("ordinal", "asc"):Run()
     local out = {}
-    for i, x in ipairs(r) do out[i] = db:Select("name"):From("flight_master"):Where("id", "=", x.master):Run()[1].name end
+    for i, x in ipairs(r) do out[i] = nameOf(db, x.master) end
     return out
 end
 
@@ -95,7 +97,7 @@ describe("Flight DB model (flight_master keyed by node_id)", function()
     it("records a DIRECT leg, storing intermediates as flight_master refs", function()
         local db = built()
         store(db, "Horde", "A", "C", 120, { "B" })
-        local r = row(db, masterId(db, "Horde", "A"), masterId(db, "Horde", "C"))
+        local r = route(db, masterId(db, "Horde", "A"), masterId(db, "Horde", "C"))
         assert.are.equal(DIRECT, r.quality); assert.are.equal(120, r.t)
         local v = hopNames(db, r.id)
         assert.are.equal(1, #v); assert.are.equal("B", v[1])
@@ -105,55 +107,51 @@ describe("Flight DB model (flight_master keyed by node_id)", function()
         local db = built()
         store(db, "Horde", "A", "B", 50)
         store(db, "Horde", "A", "C", 60)
-        assert.are.equal(1, #db:Select("id"):From("flight_master"):Where("name", "=", "A"):Run())
+        assert.are.equal(1, #db:Select("node_id"):From("flight_master"):Where("name", "=", "A"):Run())
     end)
 
-    it("node_id is unique (one row per physical flight point)", function()
+    it("rejects a duplicate node_id (PRIMARY KEY) insert", function()
         local db = built()
         db:Insert("flight_master", { node_id = 5, faction = "Alliance", name = "A", zone = "Z" })
-        assert.is_false(pcall(function()
+        local ok, err = pcall(function()
             db:Insert("flight_master", { node_id = 5, faction = "Horde", name = "B", zone = "Z" })
-        end))
+        end)
+        assert.is_false(ok)
+        assert.is_true(tostring(err):find("PRIMARY KEY") ~= nil)
     end)
 
     it("a node seen by both factions becomes Neutral and is usable by either", function()
         local db = built()
         db:Insert("flight_master", { node_id = 50, faction = "Alliance", name = "Booty Bay", zone = "Z" })
-        -- discovery rule: the rival faction rediscovers the same node_id -> flip to Neutral
-        local r = db:Select("id", "faction"):From("flight_master"):Where("node_id", "=", 50):Run()[1]
+        local r = db:Select("faction"):From("flight_master"):Where("node_id", "=", 50):Run()[1]
         if r.faction ~= "Horde" and r.faction ~= "Neutral" then
-            db:Update("flight_master", { faction = "Neutral" }, function(x) return x.id == r.id end)
+            db:Update("flight_master", { faction = "Neutral" }, function(x) return x.node_id == 50 end)
         end
         assert.are.equal("Neutral", db:Select("faction"):From("flight_master"):Where("node_id", "=", 50):Run()[1].faction)
         assert.is_true(masterId(db, "Horde", "Booty Bay") ~= nil)
         assert.is_true(masterId(db, "Alliance", "Booty Bay") ~= nil)
     end)
 
-    it("storeIfNew only fills an empty direction; DIRECT then replaces a FLY entry", function()
+    it("DIRECT-over-DIRECT only updates on a >= 5s change; FLY is replaced by DIRECT", function()
         local db = built()
         assert.is_true(storeIfNew(db, "Horde", "A", "B", 52))
-        assert.is_false(storeIfNew(db, "Horde", "A", "B", 99))
-        assert.is_true(store(db, "Horde", "A", "B", 50))
-        local r = row(db, masterId(db, "Horde", "A"), masterId(db, "Horde", "B"))
-        assert.are.equal(DIRECT, r.quality); assert.are.equal(50, r.t)
-    end)
-
-    it("DIRECT-over-DIRECT only updates on a >= 5s change", function()
-        local db = built()
-        store(db, "Horde", "A", "B", 100)
+        assert.is_true(store(db, "Horde", "A", "B", 50))           -- DIRECT replaces FLY
         local sid, did = masterId(db, "Horde", "A"), masterId(db, "Horde", "B")
-        assert.is_false(store(db, "Horde", "A", "B", 103))
-        assert.are.equal(100, row(db, sid, did).t)
-        assert.is_true(store(db, "Horde", "A", "B", 108))
-        assert.are.equal(108, row(db, sid, did).t)
+        assert.are.equal(DIRECT, route(db, sid, did).quality)
+        assert.is_false(store(db, "Horde", "A", "B", 53))          -- +3s ignored
+        assert.are.equal(50, route(db, sid, did).t)
+        assert.is_true(store(db, "Horde", "A", "B", 58))           -- +8s applied
+        assert.are.equal(58, route(db, sid, did).t)
     end)
 
-    it("deleting a route cascades its hops", function()
+    it("deleting a master CASCADES its routes (src/dst) and their hops", function()
         local db = built()
         store(db, "Horde", "A", "C", 120, { "B" })
-        local r = row(db, masterId(db, "Horde", "A"), masterId(db, "Horde", "C"))
-        assert.are.equal(1, db:Store():Count("flight_hop"))
-        db:Delete("flight_route", function(x) return x.id == r.id end)
+        store(db, "Horde", "C", "A", 118)
+        assert.are.equal(2, db:Store():Count("flight_route"))
+        local aId = masterId(db, "Horde", "A")
+        db:Delete("flight_master", function(m) return m.node_id == aId end)   -- A is an endpoint of both
+        assert.are.equal(0, db:Store():Count("flight_route"))
         assert.are.equal(0, db:Store():Count("flight_hop"))
     end)
 
@@ -170,12 +168,12 @@ describe("Flight DB model (flight_master keyed by node_id)", function()
         store(db, "Alliance", "X", "Y", 10)
         local rows = db:Select("flight_route.id", "flight_route.src", "flight_route.dst")
             :From("flight_route")
-            :InnerJoin("flight_master", { on = { "flight_route.src", "flight_master.id" } })
+            :InnerJoin("flight_master", { on = { "flight_route.src", "flight_master.node_id" } })
             :Where("flight_master.faction", "in", { "Horde", "Neutral" }):Run()
         assert.are.equal(1, #rows)
-        local seq = { db:Select("name"):From("flight_master"):Where("id", "=", rows[1].src):Run()[1].name }
+        local seq = { nameOf(db, rows[1].src) }
         for _, n in ipairs(hopNames(db, rows[1].id)) do seq[#seq + 1] = n end
-        seq[#seq + 1] = db:Select("name"):From("flight_master"):Where("id", "=", rows[1].dst):Run()[1].name
+        seq[#seq + 1] = nameOf(db, rows[1].dst)
         assert.are.equal(4, #seq)
         assert.are.equal("A", seq[1]); assert.are.equal("D", seq[4])
     end)

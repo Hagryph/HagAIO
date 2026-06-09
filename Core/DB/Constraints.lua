@@ -98,11 +98,17 @@ function ConstraintEnforcer:RecheckTypes(tname, row)
 end
 
 -- Raise if `row` duplicates a PK/UNIQUE key held by a different row (`exceptRow` is skipped, for
--- updates).
+-- updates). The message names whether it was the PRIMARY KEY or a UNIQUE constraint.
 function ConstraintEnforcer:CheckUnique(tname, row, exceptRow)
-    local cols = self:_p().index:UniqueViolation(tname, row, exceptRow)
+    local p = self:_p()
+    local cols = p.index:UniqueViolation(tname, row, exceptRow)
     if cols then
-        fail(("UNIQUE constraint failed: %s(%s)"):format(tname, table.concat(cols, ", ")))
+        local pk, isPK = p.schema:Table(tname):PrimaryKey(), false
+        if #pk == #cols then
+            isPK = true
+            for i = 1, #pk do if pk[i] ~= cols[i] then isPK = false; break end end
+        end
+        fail(("%s constraint failed: %s(%s)"):format(isPK and "PRIMARY KEY" or "UNIQUE", tname, table.concat(cols, ", ")))
     end
 end
 
