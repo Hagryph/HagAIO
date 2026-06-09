@@ -83,6 +83,8 @@ function IndexManager:_InitTable(tname)
     for _, c in ipairs(pkCols) do ensureCol(c) end
     for _, cols in ipairs(tbl:Uniques()) do if #cols == 1 then ensureCol(cols[1]) end end
     for _, idx in ipairs(tbl:Indices()) do for _, c in ipairs(idx.columns) do ensureCol(c) end end
+    -- FK columns are indexed too, so cascade/SET NULL child lookups and FK joins are O(1).
+    for _, fk in ipairs(tbl:ForeignKeys()) do ensureCol(fk.column) end
 end
 
 -- ---- incremental maintenance (rows are pre-validated by ConstraintEnforcer) ----
