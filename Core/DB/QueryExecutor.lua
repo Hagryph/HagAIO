@@ -2,11 +2,19 @@ local addonName, ns = ...
 local Class = ns.Class
 
 -- Core/DB/QueryExecutor.lua
--- Runs a QueryPlan against a Database, following SQL's LOGICAL processing order so the pieces
--- compose exactly as SQL promises:
+-- Runs a QueryPlan against a Database as a relational-algebra PIPELINE, following SQL's LOGICAL
+-- processing order so the pieces compose exactly as SQL promises:
 --   FROM/JOIN -> WHERE -> GROUP BY -> (aggregates) -> HAVING -> SELECT/DISTINCT -> ORDER BY -> LIMIT/OFFSET
--- The working set is a list of COMPOSITE rows: each is a map alias -> stored-row (or nil for the
--- unmatched side of an outer join), so a join never flattens away which table a column came from.
+-- Each stage consumes the previous stage's relation and produces a new, usually NARROWER one, so
+-- work shrinks as the query progresses -- exactly how a SQL engine reduces the row set down a plan.
+--
+-- ISOLATION: the FROM/JOIN stages SNAPSHOT each source table -- every row is shallow-copied into
+-- the working set, so the pipeline never holds a reference into live storage and a query can never
+-- mutate the database. A shallow copy is a COMPLETE clone here because a row is a flat map of native
+-- scalars (there are no blob/table columns -- nesting is always relational), so nothing is shared.
+--
+-- The working set is a list of COMPOSITE rows: each is a map alias -> (copied) row, or nil for the
+-- unmatched side of an outer join, so a join never flattens away which table a column came from.
 -- Stateless: one executor is reused by a Database; all per-query state is local to :Run.
 
 ns.DB = ns.DB or {}
@@ -26,6 +34,14 @@ end
 
 local function shallow(t) local o = {}; if t then for k, v in pairs(t) do o[k] = v end end; return o end
 local function bareName(ref) return tostring(ref):match("([%w_]+)$") or ref end
+
+-- Snapshot a source table into the pipeline: a fresh array of shallow row copies (a full clone,
+-- since rows are flat scalar maps). The query then works on this copy and never touches storage.
+local function snapshotRows(db, tableName)
+    local out = {}
+    for _, r in ipairs(db:Store():Rows(tableName) or {}) do out[#out + 1] = shallow(r) end
+    return out
+end
 
 -- ---- aggregates -----------------------------------------------------------
 local function computeAgg(agg, rows, resolver)
@@ -133,12 +149,12 @@ function QueryExecutor:Run(db, plan)
     end
     local resolver = DB.ColumnResolver:New(sources)
 
-    -- FROM
+    -- FROM: snapshot the base table into the working relation (one composite row per copied row)
     local rows = {}
-    for _, r in ipairs(db:Store():Rows(plan.from.table) or {}) do rows[#rows + 1] = { [plan.from.alias] = r } end
-    -- JOIN
+    for _, r in ipairs(snapshotRows(db, plan.from.table)) do rows[#rows + 1] = { [plan.from.alias] = r } end
+    -- JOIN: each join snapshots its table, then narrows/extends the relation
     for _, j in ipairs(plan.joins) do
-        rows = applyJoin(rows, j, db:Store():Rows(j.table) or {}, resolver)
+        rows = applyJoin(rows, j, snapshotRows(db, j.table), resolver)
     end
 
     -- WHERE

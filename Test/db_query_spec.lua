@@ -243,6 +243,18 @@ describe("DB query: group by + aggregates + having", function()
     end)
 end)
 
+describe("DB query: pipeline isolation", function()
+    it("works on a snapshot -- results never alias stored rows", function()
+        local ns = newQueryNs()
+        local db = seeded(ns)
+        local stored = db:Store():Rows("routes")[1]
+        local rows = db:Select("*"):From("routes"):Where("id", "=", 1):Run()
+        assert.is_false(rows[1] == stored)            -- a fresh row, not the live one
+        rows[1].t = 999
+        assert.are.equal(30, stored.t)               -- mutating the result leaves storage untouched
+    end)
+end)
+
 describe("DB query: views + LIKE translation", function()
     it("runs a declared view", function()
         local ns = newQueryNs()
