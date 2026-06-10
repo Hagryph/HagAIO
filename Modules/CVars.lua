@@ -104,11 +104,14 @@ end
 function CVars:OnInitialize()
     local p = self:_p()
     p.sections = {}
-    -- Globalised CVars (cvar_managed) and user-added custom CVars (cvar_custom) live in the shared
-    -- DB; see the DAO below. The "/hag cvar" sub-command is declared on registration.
+    -- Forced CVars (cvar_managed: name -> value) and the tracked-CVar catalog (cvar_tracked: every
+    -- curated + custom CVar) live in the shared DB; see the DAO below. The tracked catalog is synced
+    -- (backfill new code CVars + prune ones the client lost) once per session, off the loading screen,
+    -- here at init so it stays current even while the module is disabled. /hag cvar declared on registration.
+    self:_ScheduleSync()
 end
 
--- ---- persistence (cvar_managed: name -> forced value; cvar_custom: name -> control type) -------
+-- ---- persistence (cvar_managed: name -> forced value; cvar_tracked: name -> control type) ------
 function CVars:_IsManaged(name)
     local db = self:DB(); if not db then return false end
     return #db:Select("name"):From("cvar_managed"):Where("name", "=", name):Limit(1):Run() > 0
@@ -129,17 +132,52 @@ end
 function CVars:_ClearManaged(name)
     local db = self:DB(); if db then db:Delete("cvar_managed", function(x) return x.name == name end) end
 end
-function CVars:_CustomAll()    -- array of { name, type }
-    local db = self:DB(); return db and db:Select("name", "type"):From("cvar_custom"):Run() or {}
+function CVars:_TrackedAll()    -- array of { name, type } -- every tracked CVar (curated + custom)
+    local db = self:DB(); return db and db:Select("name", "type"):From("cvar_tracked"):Run() or {}
 end
-function CVars:_SetCustom(name, t)
+function CVars:_IsTracked(name)
+    local db = self:DB(); if not db then return false end
+    return #db:Select("name"):From("cvar_tracked"):Where("name", "=", name):Limit(1):Run() > 0
+end
+function CVars:_SetTracked(name, t)
     local db = self:DB(); if not db then return end
-    if #db:Select("name"):From("cvar_custom"):Where("name", "=", name):Limit(1):Run() > 0 then
-        db:Update("cvar_custom", { type = t }, function(x) return x.name == name end)
-    else db:Insert("cvar_custom", { name = name, type = t }) end
+    if self:_IsTracked(name) then db:Update("cvar_tracked", { type = t }, function(x) return x.name == name end)
+    else db:Insert("cvar_tracked", { name = name, type = t }) end
 end
-function CVars:_ClearCustom(name)
-    local db = self:DB(); if db then db:Delete("cvar_custom", function(x) return x.name == name end) end
+function CVars:_ClearTracked(name)
+    local db = self:DB(); if db then db:Delete("cvar_tracked", function(x) return x.name == name end) end
+end
+
+-- Backfill the code catalog into cvar_tracked (add any curated CVar not yet tracked) and PRUNE rows
+-- whose CVar the client no longer has -- the CVar equivalent of the dashboard instance seed/prune.
+-- Tracking every curated CVar means one later REMOVED from the code stays tracked and resurfaces under
+-- "Custom" (see _BuildCustomSection), so a value the player configured is never silently dropped.
+function CVars:_BackfillTracked()
+    if not (C_CVar and C_CVar.GetCVarInfo) then return end   -- never seed/prune blind
+    for name in pairs(KNOWN) do
+        if self:_Exists(name) and not self:_IsTracked(name) then
+            self:_SetTracked(name, KNOWN[name].type)
+        end
+    end
+end
+function CVars:_PruneTracked()
+    if not (C_CVar and C_CVar.GetCVarInfo) then return end   -- API down -> don't wipe against nothing
+    local db = self:DB(); if not db then return end
+    db:Delete("cvar_tracked", function(r) return not self:_Exists(r.name) end)
+end
+
+-- Sync the tracked catalog once per session, off the loading screen (C_Timer doesn't fire while a
+-- loading screen is up). Mirrors the deferred passes elsewhere.
+function CVars:_ScheduleSync()
+    local p = self:_p()
+    if p.syncPending or p.synced then return end
+    p.syncPending = true
+    C_Timer.After(0, function()
+        p.syncPending = false
+        self:_BackfillTracked()
+        self:_PruneTracked()
+        p.synced = true
+    end)
 end
 
 function CVars:OnEnable()
@@ -243,7 +281,11 @@ function CVars:BuildSettingsPage(sf)
     intro:SetJustifyH("LEFT")
     p.introH = intro:GetStringHeight() + 12
 
-    -- curated categories
+    -- keep the tracked catalog current before drawing it (idempotent with the login sync)
+    self:_BackfillTracked()
+    self:_PruneTracked()
+
+    -- curated categories, in code order, under their code-defined category name
     for _, cat in ipairs(CURATED) do
         local defs = {}
         for _, c in ipairs(cat.cvars) do
@@ -252,7 +294,8 @@ function CVars:BuildSettingsPage(sf)
         if #defs > 0 then self:_BuildSection(cat.name, defs, false) end
     end
 
-    -- the user's custom CVars (plus the add field)
+    -- "Custom": every tracked CVar NOT in the code catalog -- user-added ones AND any the code dropped
+    -- (so a configured value never disappears just because its curated entry was removed); plus the add field.
     self:_BuildCustomSection()
 
     self:_Relayout()
@@ -278,11 +321,10 @@ end
 
 function CVars:_BuildCustomSection()
     local defs = {}
-    for _, row in ipairs(self:_CustomAll()) do
+    for _, row in ipairs(self:_TrackedAll()) do
         local name, t = row.name, row.type
-        if self:_Exists(name) then
-            defs[#defs + 1] = { name = name, label = name, type = t,
-                options = KNOWN[name] and KNOWN[name].options, custom = true }
+        if not KNOWN[name] and self:_Exists(name) then   -- only CVars not in the code catalog
+            defs[#defs + 1] = { name = name, label = name, type = t, custom = true }
         end
     end
     table.sort(defs, function(a, b) return a.name:lower() < b.name:lower() end)
@@ -320,7 +362,7 @@ function CVars:_PlaceAddRow(box, y, width)
             return
         end
         local t = self:_DetectType(name)
-        self:_SetCustom(name, t)
+        self:_SetTracked(name, t)
         self:LogSuccess(("added custom CVar %s (%s)"):format(name, t))
         input:SetValue("")
         if ns.UI.SettingsWindow then ns.UI.SettingsWindow:InvalidateModule(self:GetName()) end
@@ -354,7 +396,7 @@ function CVars:_PlaceRow(box, def, y, width)
         rm:SetScript("OnEnter", function() rm:SetTextColor(Theme.Unpack("text")) end)
         rm:SetScript("OnLeave", function() rm:SetTextColor(Theme.Unpack("red")) end)
         rm:SetScript("OnClick", function()
-            self:_ClearCustom(def.name)
+            self:_ClearTracked(def.name)
             self:LogInfo("removed custom CVar " .. def.name)
             if ns.UI.SettingsWindow then ns.UI.SettingsWindow:InvalidateModule(self:GetName()) end
         end)
@@ -521,9 +563,11 @@ ns.ModuleManager:Register(CVars:New("CVars", {
             { name = "name",  type = "text", primaryKey = true },
             { name = "value", type = "text" },
         } },
-        cvar_custom = { scope = "global", columns = {     -- user-added "custom" CVars
+        -- Every CVar we TRACK -- curated (backfilled from the code catalog) AND user-added. Whether a
+        -- row renders under its code category or under "Custom" is decided at render time, not stored.
+        cvar_tracked = { scope = "global", columns = {
             { name = "name", type = "text", primaryKey = true },
-            { name = "type", type = "text" },
+            { name = "type", type = "text" },   -- control type (used when the CVar isn't in the code catalog)
         } },
     },
 }))

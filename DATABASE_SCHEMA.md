@@ -13,8 +13,8 @@ The addon uses **one shared database**. Every service or module contributes the 
 | Table | Scope | Columns | Primary key | Defined in |
 |---|---|---|---|---|
 | [`compartment`](#compartment) | `global` | 2 | id | `Services/Compartment.lua` |
-| [`cvar_custom`](#cvar_custom) | `global` | 2 | name | `Modules/CVars.lua` |
 | [`cvar_managed`](#cvar_managed) | `global` | 2 | name | `Modules/CVars.lua` |
+| [`cvar_tracked`](#cvar_tracked) | `global` | 2 | name | `Modules/CVars.lua` |
 | [`dashboard_char`](#dashboard_char) | `global` | 10 | char_key | `Modules/Dashboard.lua` |
 | [`dashboard_instance`](#dashboard_instance) | `global` | 7 | key | `Modules/Dashboard.lua` |
 | [`dashboard_lockout`](#dashboard_lockout) | `global` | 5 | char_key, instance_key | `Modules/Dashboard.lua` |
@@ -43,17 +43,6 @@ The addon uses **one shared database**. Every service or module contributes the 
 
 ---
 
-### `cvar_custom`  ·  scope `global`
-
-*Defined in `Modules/CVars.lua`.*
-
-| Column | Type | Null | Key | Default | References |
-|---|---|---|---|---|---|
-| `name` | text | no | PK |  |  |
-| `type` | text | yes |  |  |  |
-
----
-
 ### `cvar_managed`  ·  scope `global`
 
 *Defined in `Modules/CVars.lua`.*
@@ -62,6 +51,17 @@ The addon uses **one shared database**. Every service or module contributes the 
 |---|---|---|---|---|---|
 | `name` | text | no | PK |  |  |
 | `value` | text | yes |  |  |  |
+
+---
+
+### `cvar_tracked`  ·  scope `global`
+
+*Defined in `Modules/CVars.lua`.*
+
+| Column | Type | Null | Key | Default | References |
+|---|---|---|---|---|---|
+| `name` | text | no | PK |  |  |
+| `type` | text | yes |  |  |  |
 
 ---
 
