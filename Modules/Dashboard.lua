@@ -143,10 +143,10 @@ function Dashboard:OnEnable()
     -- Targeted collectors keep each fire cheap (the never-debounce rule): a bag update only
     -- re-reads the keystone, a quest turn-in only records that quest.
     -- The full snapshot scans several APIs and writes many DB rows, so it is DEFERRED past the loading
-    -- screen (see _ScheduleSnapshot): running it inline on PLAYER_ENTERING_WORLD / at enable stretched
+    -- screen (see _ScheduleRefresh): running it inline on PLAYER_ENTERING_WORLD / at enable stretched
     -- the load bar. The targeted collectors below stay inline -- each fire is cheap (the never-debounce
     -- rule): a bag update only re-reads the keystone, a quest turn-in only records that quest.
-    self:On("PLAYER_ENTERING_WORLD",      function() self:_ScheduleSnapshot() end)
+    self:On("PLAYER_ENTERING_WORLD",      function() self:_ScheduleRefresh() end)
     self:On("PLAYER_LOGOUT",              function() self:_Snapshot() end)   -- inline: must finish before logout
     self:On("WEEKLY_REWARDS_UPDATE",      function() self:_CollectVault();    self:_RenderIfShown() end)
     self:On("CHALLENGE_MODE_COMPLETED",   function() self:_CollectKeystone(); self:_RenderIfShown() end)
@@ -155,7 +155,7 @@ function Dashboard:OnEnable()
     self:On("UPDATE_INSTANCE_INFO",       function() self:_CollectLockouts(); self:_RenderIfShown() end)
     self:On("BOSS_KILL",                  function() self:_CollectLockouts() end)
     self:On("QUEST_TURNED_IN",            function(_, questID) self:_RecordQuest(questID) end)
-    self:_ScheduleSnapshot()                        -- deferred; immediate when enabled mid-session
+    self:_ScheduleRefresh()                         -- deferred; builds the catalog + snapshots
     if RequestRaidInfo then RequestRaidInfo() end   -- async -> UPDATE_INSTANCE_INFO fills lockouts
 end
 
@@ -378,10 +378,13 @@ function Dashboard:_CollectLockouts()
     for i = 1, n do
         local name, _, reset, diffID, locked, _, _, isRaid, _, diff, numEnc, prog = GetSavedInstanceInfo(i)
         if locked and reset and reset > 0 then
-            local instKey = name .. "|" .. (diff or "")
+            -- Use the difficulty's CANONICAL name (from its id) so a lock matches the seeded catalog
+            -- row for the same instance+difficulty instead of forking a duplicate registry entry.
+            local diffName = (diffID and GetDifficultyInfo and GetDifficultyInfo(diffID)) or diff
+            local instKey = name .. "|" .. (diffName or "")
             -- remember the instance forever in the self-curating registry FIRST (the lock's FK target);
             -- omitted keys keep their stored value, so a sighting with a nil diffID/total never clobbers one
-            local changes = { name = name, diff = diff, is_raid = isRaid and true or false }
+            local changes = { name = name, diff = diffName, is_raid = isRaid and true or false }
             if diffID then changes.diff_id = diffID end   -- the difficulty ID (locale-proof; drives the prune)
             if numEnc then changes.total = numEnc end
             local exp = self:_InstanceExpansion(name)
@@ -425,19 +428,53 @@ function Dashboard:_RecordQuest(questID)
     self:_RenderIfShown()
 end
 
--- Run the full snapshot AFTER the world is on screen, never during the loading screen. C_Timer
--- callbacks don't fire while a loading screen is up, so a pass scheduled on PLAYER_LOGIN / at enable
--- runs on the first real frame once the world has loaded -- exactly where the user asked the data to
--- load. Coalesced: rapid re-fires (every PLAYER_ENTERING_WORLD on a zone/instance change) collapse
--- into ONE pending pass rather than stacking a fresh scan per loading screen.
-function Dashboard:_ScheduleSnapshot()
+-- Refresh AFTER the world is on screen, never during the loading screen. C_Timer callbacks don't fire
+-- while a loading screen is up, so a pass scheduled on PLAYER_LOGIN / at enable runs on the first real
+-- frame once the world has loaded -- exactly where the data should load. Coalesced: rapid re-fires
+-- (every PLAYER_ENTERING_WORLD on a zone/instance change) collapse into ONE pending pass. Each pass
+-- (re)builds the instance catalog (once the journal is available) and snapshots this character.
+function Dashboard:_ScheduleRefresh()
     local p = self:_p()
-    if p.snapshotPending then return end
-    p.snapshotPending = true
+    if p.refreshPending then return end
+    p.refreshPending = true
     C_Timer.After(0, function()
-        p.snapshotPending = false
-        if self:IsEnabled() then self:_Snapshot() end   -- skip if disabled before the frame ran
+        p.refreshPending = false
+        if not self:IsEnabled() then return end   -- skip if disabled before the frame ran
+        self:_BuildCatalog()
+        self:_Snapshot()
     end)
+end
+
+-- Populate dashboard_instance with the full catalog the dashboard shows -- every raid (one row per
+-- difficulty) and the latest expansion's + current season's dungeons -- and drop rows whose instance
+-- or difficulty no longer exists. The heavy raid/dungeon seed + prune run ONCE per session (the
+-- journal catalog is static within a client); the small season pool re-seeds each pass since it can
+-- finalise a moment after login. No-op until the Encounter Journal has loaded (retried next refresh).
+function Dashboard:_BuildCatalog()
+    local p = self:_p()
+    self:_ExpansionMap()                 -- walk the journal once (cached); the seed/prune source
+    if not p.ejMap then return end       -- journal not ready yet -- try again on the next refresh
+    if not p.seededCatalog then
+        self:_SeedInstances()            -- all raids (per difficulty) + latest-expansion dungeons
+        self:_BackfillExpansions()       -- fix lockout rows recorded before the journal was ready
+        self:_PruneInstances()           -- drop instances/difficulties Blizzard has removed
+        p.seededCatalog = true
+    end
+    self:_SeedSeasonDungeons()           -- current M+ season pool (cheap + idempotent)
+end
+
+-- Fill the expansion on any dashboard_instance row recorded (by a lockout sighting) before the
+-- journal map was ready, so it groups under the right tier instead of "Other".
+function Dashboard:_BackfillExpansions()
+    local map, db = self:_p().ejMap, self:DB()
+    if not (map and db) then return end
+    for _, r in ipairs(db:Select("key", "name", "expansion"):From("dashboard_instance"):Run()) do
+        local exp = denull(r.expansion)
+        if (not exp or exp == "Other") and map[r.name] then
+            local k = r.key
+            db:Update("dashboard_instance", { expansion = map[r.name] }, function(x) return x.key == k end)
+        end
+    end
 end
 
 function Dashboard:_Snapshot()
@@ -445,7 +482,6 @@ function Dashboard:_Snapshot()
     self:_CollectKeystone()
     self:_CollectVault()
     self:_CollectLockouts()
-    self:_PruneRegistry()   -- drop saved dungeons whose difficulty Blizzard removed (id no longer resolves)
     self:_RenderIfShown()
 end
 
@@ -710,37 +746,20 @@ function Dashboard:_KnownExpansions(wantRaid)
 end
 
 -- ---- raids: the FULL catalog (every raid has a weekly lockout, so show them all) -----------
--- Tiers that have raids, newest first (from the Encounter Journal catalog).
+-- Raid tiers, newest first -- now read from the seeded dashboard_instance catalog (not the live
+-- journal), so the nav reflects exactly what's in the table.
 function Dashboard:_RaidExpansions()
-    return self:_p().ejTierOrder or {}
+    return self:_KnownExpansions(true)
 end
 
--- One column per instance in `tierName`'s catalog (raids if isRaid, else dungeons; defaults to
--- the current tier). Cell = the character's highest-difficulty lock for it, or "-".
+-- Columns for one expansion's catalog (raids if isRaid, else dungeons; defaults to the current
+-- expansion) -- sourced from the seeded dashboard_instance table. With raids seeded one row per
+-- difficulty, this yields a column per (instance, difficulty); the cell is that character's lock.
 function Dashboard:_CatalogColumns(tierName, isRaid)
-    local byTier = isRaid and self:_p().ejRaidsByTier or self:_p().ejDungeonsByTier
     tierName = tierName or self:_p().currentExpansion
-    local list = (byTier and byTier[tierName]) or {}
-    local cols = {}
-    for _, name in ipairs(list) do
-        local nm = name
-        cols[#cols + 1] = { label = nm, width = 130, cell = function(e) return self:_BestLockText(e, nm, isRaid) end }
-    end
-    return cols
-end
-
--- A character's lockout for one instance: the HIGHEST difficulty it's saved at, as "D x/y", else "-".
-function Dashboard:_BestLockText(e, name, isRaid)
-    local best, bestRank
-    for _, l in ipairs(e.lockouts or {}) do
-        if (l.isRaid and true or false) == isRaid and l.name == name then
-            local rank = (DIFF[l.diff] and DIFF[l.diff].rank) or 0
-            if not best or rank > bestRank then best, bestRank = l, rank end
-        end
-    end
-    if not best then return "-" end
-    local d = (DIFF[best.diff] and DIFF[best.diff].abbr) or (best.diff and best.diff:sub(1, 1)) or ""
-    return (d ~= "" and d .. " " or "") .. (best.progress or 0) .. "/" .. (best.total or "?")
+    return self:_LockoutColumns(function(r)
+        return (r.isRaid and true or false) == isRaid and (r.expansion or "Other") == tierName
+    end)
 end
 
 -- ---- dungeons: the CURRENT M+ SEASON (always shown with Mythic 0) --------------------------
@@ -796,26 +815,67 @@ function Dashboard:_SeasonColumns()
     return cols
 end
 
--- Auto-cleanup, run on login (via _Snapshot): drop any DUNGEON whose difficulty Blizzard has REMOVED
--- from the game, i.e. its difficulty id no longer resolves via GetDifficultyInfo. One uniform rule --
--- it doesn't care which difficulty or which expansion the dungeon is, only whether that difficulty
--- still exists. A dungeon with NO difficulty id at all is also dropped (nothing valid to anchor it).
--- RAIDS are left alone (their difficulties aren't retired). Before GetDifficultyInfo is available the
--- whole pass is a no-op.
-function Dashboard:_PruneRegistry()
-    if not GetDifficultyInfo then return end
+-- The modern flexible RAID difficulties (ids), used to seed one catalog row per raid per difficulty.
+-- Resolved to LOCALE names via GetDifficultyInfo so a row's `diff` matches a lockout's difficulty
+-- name (which is likewise derived from its id in _CollectLockouts).
+local RAID_DIFF_IDS = { 17, 14, 15, 16 }   -- Raid Finder, Normal, Heroic, Mythic
+
+-- Insert a catalog row only if it's MISSING. The catalog is static reference data, so an existing
+-- row never needs rewriting (its expansion is corrected by _BackfillExpansions, its lock state lives
+-- on dashboard_lockout) -- a plain existence check avoids ~200 redundant updates on every re-seed.
+function Dashboard:_SeedInstance(key, fields)
+    local db = self:DB(); if not db then return end
+    if db:Select("key"):From("dashboard_instance"):Where("key", "=", key):Limit(1):Run()[1] then return end
+    fields.key = key
+    db:Insert("dashboard_instance", fields)
+end
+
+-- Seed the instance CATALOG into dashboard_instance from the Encounter Journal: every raid (one row
+-- per difficulty) and every dungeon of the latest expansion (Mythic 0). The current M+ season pool is
+-- seeded separately (_SeedSeasonDungeons). Insert-if-missing; needs the journal map (caller guards).
+function Dashboard:_SeedInstances()
+    if not (GetDifficultyInfo and self:_p().ejMap) then return end
+    for tier, names in pairs(self:_p().ejRaidsByTier or {}) do
+        for _, name in ipairs(names) do
+            for _, id in ipairs(RAID_DIFF_IDS) do
+                local diffName = GetDifficultyInfo(id)
+                if diffName then
+                    self:_SeedInstance(name .. "|" .. diffName,
+                        { name = name, diff = diffName, diff_id = id, is_raid = true, expansion = tier })
+                end
+            end
+        end
+    end
+    local cur = self:_CurrentExpansionTier()
+    for _, name in ipairs((self:_p().ejDungeonsByTier or {})[cur] or {}) do
+        self:_SeedInstance(name .. "|" .. M0,
+            { name = name, diff = M0, diff_id = M0_ID, is_raid = false, expansion = cur })
+    end
+end
+
+-- Drop catalog rows whose INSTANCE or DIFFICULTY no longer exists: the difficulty id no longer
+-- resolves (GetDifficultyInfo), or the instance name is gone from the Encounter Journal catalog
+-- (raids + dungeons across every tier). Only runs once the journal is loaded (else the existence set
+-- would be empty and wipe everything); a deleted instance cascades to every character's lockout row.
+function Dashboard:_PruneInstances()
+    if not (GetDifficultyInfo and self:_p().ejMap) then return end
+    local exists = {}
+    for _, names in pairs(self:_p().ejRaidsByTier or {})    do for _, n in ipairs(names) do exists[n] = true end end
+    for _, names in pairs(self:_p().ejDungeonsByTier or {}) do for _, n in ipairs(names) do exists[n] = true end end
+    if not next(exists) then return end   -- journal somehow empty -- never prune against nothing
     local db = self:DB(); if not db then return end
     -- predicate runs on the RAW stored row (absent field = nil, not the NULL sentinel)
     db:Delete("dashboard_instance", function(r)
-        return not r.is_raid and not (r.diff_id and GetDifficultyInfo(r.diff_id))
+        if r.diff_id and not GetDifficultyInfo(r.diff_id) then return true end   -- difficulty retired
+        return not exists[r.name]                                               -- instance gone from the catalog
     end)
 end
 
 -- Sort the current M+ season's dungeons into the registry under their HOME expansion (Mythic 0), so a
 -- season dungeon from a PAST expansion (e.g. Magister's Terrace) makes that expansion appear as a tile
 -- and renders under it -- not only under Current Season. Idempotent; needs the journal map for the
--- home lookup (skips a dungeon whose expansion isn't known yet); _PruneRegistry removes these again
--- when the dungeon rotates out of the season.
+-- home lookup (skips a dungeon whose expansion isn't known yet); _PruneInstances removes these again
+-- if the dungeon's difficulty is ever retired.
 function Dashboard:_SeedSeasonDungeons()
     local s = self:_SeasonDungeons()
     if not s then return end
@@ -828,14 +888,17 @@ function Dashboard:_SeedSeasonDungeons()
     end
 end
 
--- Columns from the self-curating registry, filtered by predicate(registryEntry). Each cell is the
--- character's CURRENT lock for that instance (boss progress) or "-" when not currently locked.
+-- Columns from the seeded instance catalog, filtered by predicate(registryEntry). Each cell is the
+-- character's CURRENT lock for that instance+difficulty (boss progress) or "-" when not locked.
+-- Ordered by instance name, then by difficulty RANK (LFR < Normal < Heroic < Mythic) so a raid's
+-- difficulty columns read in ascending order rather than alphabetically.
 function Dashboard:_LockoutColumns(predicate)
     local cols = {}
     for _, r in pairs(self:_Instances()) do
         if predicate(r) then
             local name, diff, total = r.name, r.diff, r.total
             cols[#cols + 1] = { label = diff and (name .. " (" .. diff .. ")") or name,
+                _name = name, _rank = (DIFF[diff] and DIFF[diff].rank) or 0,
                 width = 110, cell = function(e)
                     for _, l in ipairs(e.lockouts or {}) do
                         if l.name == name and l.diff == diff then
@@ -846,7 +909,10 @@ function Dashboard:_LockoutColumns(predicate)
                 end }
         end
     end
-    table.sort(cols, function(a, b) return a.label < b.label end)
+    table.sort(cols, function(a, b)
+        if a._name ~= b._name then return a._name < b._name end
+        return a._rank < b._rank
+    end)
     return cols
 end
 
@@ -1154,21 +1220,9 @@ function Dashboard:_Render()
     if not p.built then return end
     self:_UpdateHeader()
     self:_UpdateCountdown()
-    self:_ExpansionMap()                 -- build the raid->expansion map (no-op once cached)
+    self:_ExpansionMap()                 -- build the raid->expansion map (no-op once cached); for tile art
     self:_SeedKeystones()                -- fill local keystone names for every alt's stored map id
-    self:_SeedSeasonDungeons()           -- place season dungeons under their home expansion (legacy ones + their tile)
-    -- backfill the tier on any registry entry recorded before the journal map was ready
-    local map = self:_p().ejMap
-    local db = self:DB()
-    if map and db then
-        for _, r in ipairs(db:Select("key", "name", "expansion"):From("dashboard_instance"):Run()) do
-            local exp = denull(r.expansion)
-            if (not exp or exp == "Other") and map[r.name] then
-                local k = r.key
-                db:Update("dashboard_instance", { expansion = map[r.name] }, function(x) return x.key == k end)
-            end
-        end
-    end
+    -- (the instance catalog -- seed, expansion backfill, prune -- is built on the deferred refresh pass)
 
     local items = self:_NavItems()
     -- keep the selection valid: if the active category was hidden, fall back to the first one
