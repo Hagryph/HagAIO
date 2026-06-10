@@ -212,21 +212,27 @@ function Dashboard:_SetSelf(changes)
 end
 
 -- Replace ALL of the viewing character's rows in a child table (dashboard_vault / dashboard_lockout)
--- with `rows` (each a column map; an `ordinal` is stamped to complete the composite PK). Delete-then-
--- insert mirrors the old whole-substructure replacement (e.vault = {...}, e.lockouts = {...}).
+-- with `rows` (each a column map already carrying the rest of its PK -- vault an `ordinal`, lockout an
+-- `instance_key`). Delete-then-insert mirrors the old whole-substructure replacement.
 function Dashboard:_ReplaceSelfChildren(tname, rows)
     local db = self:DB(); if not db then return end
     local key = self:_SelfKey()
     db:Delete(tname, function(x) return x.char_key == key end)
     if #rows == 0 then return end
-    for i, r in ipairs(rows) do r.char_key, r.ordinal = key, i end
+    for _, r in ipairs(rows) do r.char_key = key end
     db:InsertAll(tname, rows)
 end
 
 -- Reconstruct every character's snapshot as a document keyed by char_key (one query per table; the
--- children are bucketed in memory). Mirrors the old chars[key] = { ... nested ... } map exactly.
+-- children + reference rows are bucketed in memory). The reference tables resolve the normalised
+-- foreign keys back into the document fields the renderers read (keystone name, lockout instance
+-- name/difficulty, quest title). Mirrors the old chars[key] = { ... nested ... } map exactly.
 function Dashboard:_Chars()
     local db = self:DB(); if not db then return {} end
+    local ksName, qTitle, inst = {}, {}, self:_Instances()
+    for _, k in ipairs(db:Select("*"):From("keystone"):Run()) do ksName[k.mapid] = denull(k.name) end
+    for _, q in ipairs(db:Select("quest_id", "title"):From("quest"):Run()) do qTitle[q.quest_id] = denull(q.title) end
+
     local chars = {}
     for _, c in ipairs(db:Select("*"):From("dashboard_char"):Run()) do
         local doc = {
@@ -235,9 +241,8 @@ function Dashboard:_Chars()
             lastSeen = denull(c.last_seen), rating = denull(c.rating),
             lockouts = {}, vault = { slots = {} }, quests = {},
         }
-        if denull(c.ks_mapid) then
-            doc.keystone = { mapID = c.ks_mapid, level = denull(c.ks_level), name = denull(c.ks_name) }
-        end
+        local mapid = denull(c.ks_mapid)
+        if mapid then doc.keystone = { mapID = mapid, level = denull(c.ks_level), name = ksName[mapid] } end
         chars[c.char_key] = doc
     end
     for _, v in ipairs(db:Select("*"):From("dashboard_vault"):Run()) do
@@ -249,21 +254,44 @@ function Dashboard:_Chars()
         end
     end
     for _, l in ipairs(db:Select("*"):From("dashboard_lockout"):Run()) do
-        local doc = chars[l.char_key]
-        if doc then
+        local doc, ref = chars[l.char_key], inst[l.instance_key]
+        if doc and ref then
             local lk = doc.lockouts
-            lk[#lk + 1] = { name = denull(l.name), diff = denull(l.diff), total = denull(l.total),
-                progress = denull(l.progress), isRaid = denull(l.is_raid), reset = denull(l.reset) }
+            lk[#lk + 1] = { name = ref.name, diff = ref.diff, isRaid = ref.isRaid,
+                total = denull(l.total), progress = denull(l.progress), reset = denull(l.reset) }
         end
     end
     for _, q in ipairs(db:Select("*"):From("dashboard_quest"):Run()) do
         local doc = chars[q.char_key]
         if doc then
             doc.quests[q.freq] = doc.quests[q.freq] or {}
-            doc.quests[q.freq][q.quest_id] = denull(q.title) or ("Quest " .. q.quest_id)
+            doc.quests[q.freq][q.quest_id] = qTitle[q.quest_id] or ("Quest " .. q.quest_id)
         end
     end
     return chars
+end
+
+-- Upsert the local keystone name table (map id -> display name); the keystone names are reference
+-- data, rebuilt each session, that dashboard_char's ks_mapid FK points at.
+function Dashboard:_SetKeystone(mapid, name)
+    local db = self:DB(); if not (db and mapid) then return end
+    if db:Select("mapid"):From("keystone"):Where("mapid", "=", mapid):Limit(1):Run()[1] then
+        db:Update("keystone", { name = name }, function(x) return x.mapid == mapid end)
+    else db:Insert("keystone", { mapid = mapid, name = name }) end
+end
+
+-- Ensure the local keystone table has a name for every map id any character holds, so an alt's
+-- keystone (its map id persists on dashboard_char, but the local name table is rebuilt each session)
+-- still renders a name. Cheap: GetMapUIInfo resolves any map id offline.
+function Dashboard:_SeedKeystones()
+    local db = self:DB(); if not db then return end
+    if not (C_ChallengeMode and C_ChallengeMode.GetMapUIInfo) then return end
+    for _, c in ipairs(db:Select("ks_mapid"):From("dashboard_char"):Run()) do
+        local mapid = denull(c.ks_mapid)
+        if mapid and not db:Select("mapid"):From("keystone"):Where("mapid", "=", mapid):Limit(1):Run()[1] then
+            self:_SetKeystone(mapid, C_ChallengeMode.GetMapUIInfo(mapid))
+        end
+    end
 end
 
 -- Reconstruct the instance registry keyed by "name|difficulty". Read-only; the writers below mutate
@@ -309,9 +337,10 @@ function Dashboard:_CollectKeystone()
     local level = C_MythicPlus and C_MythicPlus.GetOwnedKeystoneLevel and C_MythicPlus.GetOwnedKeystoneLevel()
     if mapID and level and level > 0 then
         local name = C_ChallengeMode and C_ChallengeMode.GetMapUIInfo and C_ChallengeMode.GetMapUIInfo(mapID)
-        changes.ks_mapid, changes.ks_level, changes.ks_name = mapID, level, name
+        self:_SetKeystone(mapID, name)   -- the FK target must exist before ks_mapid points at it
+        changes.ks_mapid, changes.ks_level = mapID, level
     else
-        changes.ks_mapid, changes.ks_level, changes.ks_name = ns.DB.NULL, ns.DB.NULL, ns.DB.NULL  -- clear
+        changes.ks_mapid, changes.ks_level = ns.DB.NULL, ns.DB.NULL   -- clear
     end
     local summary = C_PlayerInfo and C_PlayerInfo.GetPlayerMythicPlusRatingSummary
         and C_PlayerInfo.GetPlayerMythicPlusRatingSummary("player")
@@ -324,10 +353,10 @@ function Dashboard:_CollectVault()
     local acts = C_WeeklyRewards and C_WeeklyRewards.GetActivities and C_WeeklyRewards.GetActivities()
     if not acts then return end
     local slots = {}
-    for _, a in ipairs(acts) do
+    for i, a in ipairs(acts) do
         -- progress/threshold can be secret in restricted content -- store only a plain number, so a
         -- cross-char cell never computes on a secret (see plainNum; a secret is stored as NULL).
-        slots[#slots + 1] = { type = a.type, level = a.level,
+        slots[#slots + 1] = { ordinal = i, type = a.type, level = a.level,
             progress = plainNum(a.progress), threshold = plainNum(a.threshold) }
     end
     self:_ReplaceSelfChildren("dashboard_vault", slots)
@@ -341,20 +370,24 @@ end
 function Dashboard:_CollectLockouts()
     self:_SetSelf({})   -- ensure the char row (FK target) + last_seen, as the old _SelfEntry() did
     local n = (GetNumSavedInstances and GetNumSavedInstances()) or 0
-    local locks = {}
+    local locks, seen = {}, {}
     for i = 1, n do
         local name, _, reset, diffID, locked, _, _, isRaid, _, diff, numEnc, prog = GetSavedInstanceInfo(i)
         if locked and reset and reset > 0 then
-            locks[#locks + 1] = { name = name, diff = diff, total = numEnc, progress = plainNum(prog),
-                is_raid = isRaid and true or false, reset = reset }
-            -- remember this instance forever in the self-curating registry (omitted keys keep their
-            -- stored value, so a sighting with a nil diffID/total never clobbers a known one)
+            local instKey = name .. "|" .. (diff or "")
+            -- remember the instance forever in the self-curating registry FIRST (the lock's FK target);
+            -- omitted keys keep their stored value, so a sighting with a nil diffID/total never clobbers one
             local changes = { name = name, diff = diff, is_raid = isRaid and true or false }
             if diffID then changes.diff_id = diffID end   -- the difficulty ID (locale-proof; drives the prune)
             if numEnc then changes.total = numEnc end
             local exp = self:_InstanceExpansion(name)
             if exp ~= "Other" then changes.expansion = exp end   -- fill the tier once the journal map is ready
-            self:_SetInstance(name .. "|" .. (diff or ""), changes)
+            self:_SetInstance(instKey, changes)
+            if not seen[instKey] then   -- one lock row per instance (the PK is char + instance_key)
+                seen[instKey] = true
+                locks[#locks + 1] = { instance_key = instKey, total = numEnc,
+                    progress = plainNum(prog), reset = reset }
+            end
         end
     end
     self:_ReplaceSelfChildren("dashboard_lockout", locks)
@@ -375,12 +408,15 @@ function Dashboard:_RecordQuest(questID)
     self:_SetSelf({})   -- ensure the char row exists (FK target for dashboard_quest) + last_seen
     local db = self:DB()
     if db then
+        -- record the title on the shared `quest` table (the FK target), preserving any `time` Questing
+        -- learned; the per-character row then just references the quest id under its frequency
+        if db:Select("quest_id"):From("quest"):Where("quest_id", "=", questID):Limit(1):Run()[1] then
+            db:Update("quest", { title = title }, function(x) return x.quest_id == questID end)
+        else db:Insert("quest", { quest_id = questID, title = title }) end
         local key = self:_SelfKey()
-        local match = function(x) return x.char_key == key and x.freq == freq and x.quest_id == questID end
         local exists = db:Select("quest_id"):From("dashboard_quest")
             :Where("char_key", "=", key):AndWhere("freq", "=", freq):AndWhere("quest_id", "=", questID):Limit(1):Run()[1]
-        if exists then db:Update("dashboard_quest", { title = title }, match)
-        else db:Insert("dashboard_quest", { char_key = key, freq = freq, quest_id = questID, title = title }) end
+        if not exists then db:Insert("dashboard_quest", { char_key = key, freq = freq, quest_id = questID }) end
     end
     self:_RenderIfShown()
 end
@@ -1100,6 +1136,7 @@ function Dashboard:_Render()
     self:_UpdateHeader()
     self:_UpdateCountdown()
     self:_ExpansionMap()                 -- build the raid->expansion map (no-op once cached)
+    self:_SeedKeystones()                -- fill local keystone names for every alt's stored map id
     self:_SeedSeasonDungeons()           -- place season dungeons under their home expansion (legacy ones + their tile)
     -- backfill the tier on any registry entry recorded before the journal map was ready
     local map = self:_p().ejMap
@@ -1227,9 +1264,17 @@ ns.ModuleManager:Register(Dashboard:New("Dashboard", {
     defaultEnabled = false,
     color = ns.Theme.hex.accent,
     deps = { "SlashCommand", "Secrets" },   -- DatabaseManager is added automatically (see `tables`)
-    -- Account-wide cross-character snapshots, stored relationally (no nested blobs). The three child
-    -- tables cascade-delete with their character; dashboard_instance is the account-wide registry.
+    -- Account-wide cross-character snapshots, stored relationally (no nested blobs, no duplicated
+    -- reference data). Vault/lockout/quest cascade-delete with their character; a lockout references
+    -- the account-wide dashboard_instance registry (its name/difficulty), a quest references the
+    -- shared `quest` table (its title), and a keystone references the local keystone name table.
     tables = {
+        -- keystone map id -> display name. LOCAL: pure reference data, rebuilt each session from
+        -- C_ChallengeMode.GetMapUIInfo (see _SetKeystone / _SeedKeystones); dashboard_char points at it.
+        keystone = { scope = "local", columns = {
+            { name = "mapid", type = "integer", primaryKey = true },
+            { name = "name",  type = "text" },
+        } },
         dashboard_char = { scope = "global", columns = {
             { name = "char_key",  type = "text",    primaryKey = true },   -- "Name-Realm"
             { name = "name",      type = "text" },
@@ -1239,9 +1284,9 @@ ns.ModuleManager:Register(Dashboard:New("Dashboard", {
             { name = "ilvl",      type = "integer" },
             { name = "last_seen", type = "integer" },                      -- server epoch seconds
             { name = "rating",    type = "number" },                       -- current-season M+ score
-            { name = "ks_mapid",  type = "integer" },                      -- owned keystone (flattened)
-            { name = "ks_level",  type = "integer" },
-            { name = "ks_name",   type = "text" },
+            { name = "ks_mapid",  type = "integer",                        -- owned keystone map (name via keystone)
+                references = { table = "keystone", column = "mapid" } },
+            { name = "ks_level",  type = "integer" },                      -- this character's keystone level
         } },
         dashboard_vault = { scope = "global",
             columns = {
@@ -1254,26 +1299,28 @@ ns.ModuleManager:Register(Dashboard:New("Dashboard", {
                 { name = "threshold", type = "integer" },
             },
             primaryKey = { "char_key", "ordinal" } },
+        -- One row per (character, instance) lock. name/difficulty/is_raid live on dashboard_instance;
+        -- this carries only the per-character lock state. Cascades from BOTH the character and the
+        -- instance (a pruned instance drops its locks).
         dashboard_lockout = { scope = "global",
             columns = {
-                { name = "char_key", type = "text", nullable = false,
+                { name = "char_key",     type = "text", nullable = false,
                     references = { table = "dashboard_char", column = "char_key", onDelete = "cascade" } },
-                { name = "ordinal",  type = "integer", nullable = false },
-                { name = "name",     type = "text" },
-                { name = "diff",     type = "text" },                         -- difficulty name (e.g. "Heroic")
-                { name = "total",    type = "integer" },                      -- boss count
-                { name = "progress", type = "integer" },                      -- bosses killed (plain number only)
-                { name = "is_raid",  type = "boolean" },
-                { name = "reset",    type = "integer" },                      -- lockout reset epoch
+                { name = "instance_key", type = "text", nullable = false,
+                    references = { table = "dashboard_instance", column = "key", onDelete = "cascade" } },
+                { name = "progress",     type = "integer" },                  -- bosses killed (plain number only)
+                { name = "total",        type = "integer" },                  -- boss count
+                { name = "reset",        type = "integer" },                  -- lockout reset epoch
             },
-            primaryKey = { "char_key", "ordinal" } },
+            primaryKey = { "char_key", "instance_key" } },
+        -- One row per (character, freq, quest). The title lives on the shared `quest` table.
         dashboard_quest = { scope = "global",
             columns = {
                 { name = "char_key", type = "text", nullable = false,
                     references = { table = "dashboard_char", column = "char_key", onDelete = "cascade" } },
                 { name = "freq",     type = "text",    nullable = false },    -- "daily" | "weekly"
-                { name = "quest_id", type = "integer", nullable = false },
-                { name = "title",    type = "text" },
+                { name = "quest_id", type = "integer", nullable = false,
+                    references = { table = "quest", column = "quest_id" } },
             },
             primaryKey = { "char_key", "freq", "quest_id" } },
         dashboard_instance = { scope = "global", columns = {

@@ -45,12 +45,16 @@ function Questing:_CurrentQuestID()
     return GetQuestID and GetQuestID() or nil
 end
 
--- Known-timed quests live account-wide in the shared DB's quest_timed table (quest_id PK, optional
--- seconds). Learned over time (see _OnQuestAccepted), shared across characters.
-function Questing:_TimedRow(questID)
+-- Known-timed quests live account-wide in the shared `quest` table (quest_id PK, `time` = the limit
+-- in seconds; see Core/DB/CoreTables.lua). A quest counts as timed ONLY when its `time` is set -- the
+-- row may also exist merely because Dashboard recorded its title, which does NOT make it timed.
+-- Learned over time (see _OnQuestAccepted), shared across characters.
+function Questing:_TimedSecondsStored(questID)
     local db = self:DB()
     if not (db and questID) then return nil end
-    return db:Select("seconds"):From("quest_timed"):Where("quest_id", "=", questID):Limit(1):Run()[1]
+    local row = db:Select("time"):From("quest"):Where("quest_id", "=", questID):Limit(1):Run()[1]
+    local v = row and row.time
+    return (v ~= nil and not ns.DB.isNull(v)) and v or nil
 end
 
 -- A quest's live time limit, in seconds, is only readable once it's in your log (offered
@@ -69,29 +73,24 @@ end
 -- on the very first encounter -- they're caught post-accept and remembered for next time.
 function Questing:_IsTimedQuest(questID)
     if not questID then return false end
-    if self:_TimedRow(questID) then return true end
+    if self:_TimedSecondsStored(questID) then return true end
     return self:_LiveSeconds(questID) ~= nil
 end
 
 -- The known time limit (seconds) for a timed quest, or nil. Prefers a live in-log timer,
--- falls back to the learned table value (nil when the row stored no seconds).
+-- falls back to the learned `time` stored on the shared quest row.
 function Questing:_TimedSeconds(questID)
-    local live = self:_LiveSeconds(questID)
-    if live then return live end
-    local row = self:_TimedRow(questID)
-    local v = row and row.seconds
-    return (v ~= nil and not ns.DB.isNull(v)) and v or nil
+    return self:_LiveSeconds(questID) or self:_TimedSecondsStored(questID)
 end
 
--- Record a questID as timed account-wide, storing its time limit (seconds) when known.
+-- Record a questID as timed account-wide: upsert its `time` (seconds) onto the shared quest row,
+-- preserving any title Dashboard may already have stored. Only writes when the limit is known.
 function Questing:_RememberTimed(questID, seconds)
     local db = self:DB()
-    if not (db and questID) then return end
-    if self:_TimedRow(questID) then
-        if seconds then db:Update("quest_timed", { seconds = seconds }, function(r) return r.quest_id == questID end) end
-    else
-        db:Insert("quest_timed", { quest_id = questID, seconds = seconds })
-    end
+    if not (db and questID and seconds) then return end
+    local exists = db:Select("quest_id"):From("quest"):Where("quest_id", "=", questID):Limit(1):Run()[1]
+    if exists then db:Update("quest", { time = seconds }, function(r) return r.quest_id == questID end)
+    else db:Insert("quest", { quest_id = questID, time = seconds }) end
 end
 
 function Questing:_QuestTitle(questID)
@@ -475,15 +474,13 @@ end
 
 -- ---- registration ---------------------------------------------------------
 ns.ModuleManager:Register(Questing:New("Questing", {
-    -- Account-wide registry of known-timed quests (learned as they're encountered).
-    tables = { quest_timed = { scope = "global", columns = {
-        { name = "quest_id", type = "integer", primaryKey = true },
-        { name = "seconds",  type = "number" },
-    } } },
     title = "Questing",
     description = "XP-per-hour tracking, plus auto-accepting and turning in quests.",
     defaultEnabled = false,
     color = ns.Theme.hex.gold,
+    -- Known-timed quests are learned into the shared `quest` table (Core/DB/CoreTables.lua). The
+    -- shared Database is built before any DAO runs, so -- like Misc/LocalTables -- using self:DB()
+    -- without owning a table needs no DatabaseManager dep.
     deps = { "SlashCommand" },  -- for its declarative /hag xp sub-command
     commands = { xp = { handler = "_PrintSession", help = "session XP / hour" } },
     events = {

@@ -32,6 +32,21 @@ ns.DB.CoreTables = {
         },
     },
 
+    -- Quests, account-wide reference data shared by every feature that knows something about a quest.
+    -- Keyed by quest_id; each writer fills only what it knows and upserts (omitted columns are kept):
+    --   * Questing records a quest's time limit  -> `time`  (a quest is "timed" IFF time is non-null)
+    --   * Dashboard records a turn-in's title     -> `title`
+    -- so dashboard_quest can reference quest_id and never duplicate the title, and the timed-quest
+    -- registry is simply "the quest rows whose time is set".
+    quest = {
+        scope = "global",
+        columns = {
+            { name = "quest_id", type = "integer", primaryKey = true },
+            { name = "title",    type = "text" },      -- display title (Dashboard); nil until seen
+            { name = "time",     type = "number" },     -- time limit in seconds (Questing); nil = not timed
+        },
+    },
+
     -- Alliance / Horde / Neutral, fixed by id. In memory only (rebuilt each session from this seed).
     faction = {
         scope = "local",

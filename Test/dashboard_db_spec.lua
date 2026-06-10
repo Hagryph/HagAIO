@@ -1,9 +1,12 @@
 local S = dofile("Test/support.lua")
 
--- Locks the relational model the Dashboard module's DAO relies on (Modules/Dashboard.lua): the five
--- flat tables that replaced the old nested chars/instances saved-var blob. We exercise the SCHEMA +
--- engine guarantees the reconstruct/upsert/replace helpers depend on -- composite PKs, cascading
--- child deletes, and NULL-as-sentinel projection -- without loading the WoW-coupled module itself.
+-- Locks the relational model the Dashboard module's DAO relies on (Modules/Dashboard.lua). The
+-- snapshot is normalised across flat tables: dashboard_char + cascading vault/lockout/quest children,
+-- with reference data factored OUT -- a lockout references the dashboard_instance registry (name/diff),
+-- a quest references the shared `quest` table (title), a keystone map id references the local keystone
+-- name table. We exercise the schema guarantees the reconstruct/upsert/replace helpers depend on
+-- (composite PKs, cascading deletes from both parents, NULL-as-sentinel projection) at the engine
+-- level, without loading the WoW-coupled module.
 local DB_FILES = { "Types", "Schema", "RowStore", "IndexManager", "Constraints", "TriggerManager",
                    "Database", "Aggregate", "WhereClause", "ColumnResolver", "QueryPlan",
                    "QueryBuilder", "QueryExecutor" }
@@ -13,18 +16,29 @@ local function newDbNs()
     return ns
 end
 
--- The Dashboard tables, mirroring the `tables` opt in Modules/Dashboard.lua (scope is irrelevant
--- here -- the engine routes by the backing slots passed to the Database).
+-- The Dashboard tables + the shared/reference tables they point at, mirroring the schemas in
+-- Modules/Dashboard.lua and Core/DB/CoreTables.lua (scope is irrelevant here -- the engine routes by
+-- the backing slots, and none are passed, so everything is in-memory).
 local function spec()
     local charFk = { table = "dashboard_char", column = "char_key", onDelete = "cascade" }
     return { tables = {
+        keystone = { columns = {
+            { name = "mapid", type = "integer", primaryKey = true }, { name = "name", type = "text" },
+        } },
+        quest = { columns = {
+            { name = "quest_id", type = "integer", primaryKey = true },
+            { name = "title",    type = "text" }, { name = "time", type = "number" },
+        } },
         dashboard_char = { columns = {
-            { name = "char_key",  type = "text", primaryKey = true },
-            { name = "name",      type = "text" }, { name = "class", type = "text" },
-            { name = "level",     type = "integer" }, { name = "ilvl", type = "integer" },
-            { name = "last_seen", type = "integer" }, { name = "rating", type = "number" },
-            { name = "ks_mapid",  type = "integer" }, { name = "ks_level", type = "integer" },
-            { name = "ks_name",   type = "text" },
+            { name = "char_key", type = "text", primaryKey = true },
+            { name = "name", type = "text" }, { name = "class", type = "text" }, { name = "level", type = "integer" },
+            { name = "ks_mapid", type = "integer", references = { table = "keystone", column = "mapid" } },
+            { name = "ks_level", type = "integer" },
+        } },
+        dashboard_instance = { columns = {
+            { name = "key", type = "text", primaryKey = true }, { name = "name", type = "text" },
+            { name = "diff", type = "text" }, { name = "is_raid", type = "boolean" }, { name = "diff_id", type = "integer" },
+            { name = "expansion", type = "text" },
         } },
         dashboard_vault = {
             columns = {
@@ -35,60 +49,75 @@ local function spec()
             primaryKey = { "char_key", "ordinal" } },
         dashboard_lockout = {
             columns = {
-                { name = "char_key", type = "text", nullable = false, references = charFk },
-                { name = "ordinal",  type = "integer", nullable = false },
-                { name = "name",     type = "text" }, { name = "diff", type = "text" },
-                { name = "is_raid",  type = "boolean" },
+                { name = "char_key",     type = "text", nullable = false, references = charFk },
+                { name = "instance_key", type = "text", nullable = false,
+                    references = { table = "dashboard_instance", column = "key", onDelete = "cascade" } },
+                { name = "progress", type = "integer" }, { name = "total", type = "integer" }, { name = "reset", type = "integer" },
             },
-            primaryKey = { "char_key", "ordinal" } },
+            primaryKey = { "char_key", "instance_key" } },
         dashboard_quest = {
             columns = {
                 { name = "char_key", type = "text", nullable = false, references = charFk },
                 { name = "freq",     type = "text", nullable = false },
-                { name = "quest_id", type = "integer", nullable = false },
-                { name = "title",    type = "text" },
+                { name = "quest_id", type = "integer", nullable = false,
+                    references = { table = "quest", column = "quest_id" } },
             },
             primaryKey = { "char_key", "freq", "quest_id" } },
-        dashboard_instance = { columns = {
-            { name = "key",     type = "text", primaryKey = true },
-            { name = "name",    type = "text" }, { name = "is_raid", type = "boolean" },
-            { name = "diff_id", type = "integer" }, { name = "expansion", type = "text" },
-        } },
     } }
 end
 
-local function newDb(ns)
-    return ns.DB.Database:New("Dash", ns.DB.Schema.new("Dash", spec()), {})
-end
+local function newDb(ns) return ns.DB.Database:New("Dash", ns.DB.Schema.new("Dash", spec()), {}) end
 
-local KEY = "Alt-Realm"
-local function seedChar(db)
-    db:Insert("dashboard_char", { char_key = KEY, name = "Alt", class = "MAGE", level = 80 })
+local KEY, IKEY = "Alt-Realm", "Raid|Heroic"
+local function seed(db)   -- reference rows first, then the character + its children
+    db:Insert("keystone", { mapid = 501, name = "The Dawnbreaker" })
+    db:Insert("quest", { quest_id = 42, title = "Weekly Quest" })
+    db:Insert("dashboard_instance", { key = IKEY, name = "Raid", diff = "Heroic", is_raid = true, diff_id = 16 })
+    db:Insert("dashboard_char", { char_key = KEY, name = "Alt", class = "MAGE", level = 80, ks_mapid = 501, ks_level = 12 })
+    db:InsertAll("dashboard_vault", {
+        { char_key = KEY, ordinal = 1, progress = 1, threshold = 4 },
+        { char_key = KEY, ordinal = 2, progress = 3, threshold = 4 },
+    })
+    db:Insert("dashboard_lockout", { char_key = KEY, instance_key = IKEY, progress = 2, total = 8, reset = 999 })
+    db:Insert("dashboard_quest", { char_key = KEY, freq = "weekly", quest_id = 42 })
 end
 
 describe("Dashboard DB schema", function()
     it("cascade-deletes a character's vault/lockout/quest rows with the character", function()
-        local ns = newDb(newDbNs())
-        local db = ns
-        seedChar(db)
-        db:InsertAll("dashboard_vault", {
-            { char_key = KEY, ordinal = 1, progress = 1, threshold = 4 },
-            { char_key = KEY, ordinal = 2, progress = 3, threshold = 4 },
-        })
-        db:Insert("dashboard_lockout", { char_key = KEY, ordinal = 1, name = "Raid", diff = "Heroic", is_raid = true })
-        db:Insert("dashboard_quest",   { char_key = KEY, freq = "weekly", quest_id = 42, title = "Q" })
-
+        local db = newDb(newDbNs())
+        seed(db)
         assert.are.equal(2, #db:Select("*"):From("dashboard_vault"):Run())
         db:Delete("dashboard_char", function(x) return x.char_key == KEY end)
         assert.are.equal(0, #db:Select("*"):From("dashboard_vault"):Run())
         assert.are.equal(0, #db:Select("*"):From("dashboard_lockout"):Run())
         assert.are.equal(0, #db:Select("*"):From("dashboard_quest"):Run())
+        -- reference rows are untouched (they outlive any one character)
+        assert.are.equal(1, #db:Select("*"):From("quest"):Run())
+        assert.are.equal(1, #db:Select("*"):From("keystone"):Run())
+    end)
+
+    it("cascade-deletes a character's lock when its instance is pruned", function()
+        local db = newDb(newDbNs())
+        seed(db)
+        db:Delete("dashboard_instance", function(x) return x.key == IKEY end)
+        assert.are.equal(0, #db:Select("*"):From("dashboard_lockout"):Run())   -- lock followed the instance
+        assert.are.equal(1, #db:Select("*"):From("dashboard_char"):Run())      -- the character stays
+    end)
+
+    it("rejects a lock / quest whose referenced instance / quest id does not exist", function()
+        local db = newDb(newDbNs())
+        seed(db)
+        assert.is_false(pcall(function()
+            db:Insert("dashboard_lockout", { char_key = KEY, instance_key = "Ghost|Mythic", progress = 1 })
+        end))
+        assert.is_false(pcall(function()
+            db:Insert("dashboard_quest", { char_key = KEY, freq = "daily", quest_id = 999 })
+        end))
     end)
 
     it("rejects a duplicate composite PK (same char_key + ordinal)", function()
         local db = newDb(newDbNs())
-        seedChar(db)
-        db:Insert("dashboard_vault", { char_key = KEY, ordinal = 1, progress = 1, threshold = 4 })
+        seed(db)
         assert.is_false(pcall(function()
             db:Insert("dashboard_vault", { char_key = KEY, ordinal = 1, progress = 9, threshold = 9 })
         end))
@@ -97,36 +126,30 @@ describe("Dashboard DB schema", function()
     it("projects an absent nullable column as the NULL sentinel (denull -> nil)", function()
         local ns = newDbNs()
         local db = newDb(ns)
-        seedChar(db)
-        db:Insert("dashboard_vault", { char_key = KEY, ordinal = 1, progress = ns.DB.NULL, threshold = 4 })
-        local row = db:Select("*"):From("dashboard_vault"):Run()[1]
+        seed(db)
+        db:Insert("dashboard_vault", { char_key = KEY, ordinal = 3, progress = ns.DB.NULL, threshold = 4 })
+        local row = db:Select("*"):From("dashboard_vault"):Where("ordinal", "=", 3):Run()[1]
         assert.is_true(ns.DB.isNull(row.progress))   -- sentinel, not Lua nil -- so the DAO must denull
         assert.are.equal(4, row.threshold)
     end)
 
-    it("upsert keeps a prior instance field when a later sighting omits it", function()
+    it("resolves the normalised references back (keystone name, instance, quest title)", function()
         local db = newDb(newDbNs())
-        local key = "Dungeon|Mythic"
-        db:Insert("dashboard_instance", { key = key, name = "Dungeon", is_raid = false, diff_id = 23 })
-        -- a later sighting without diff_id updates only what it provides
-        db:Update("dashboard_instance", { expansion = "Midnight" }, function(x) return x.key == key end)
-        local r = db:Select("*"):From("dashboard_instance"):Run()[1]
-        assert.are.equal(23, r.diff_id)          -- preserved
-        assert.are.equal("Midnight", r.expansion)
-        assert.is_false(r.is_raid)               -- boolean false survives round-trip
+        seed(db)
+        local ks = db:Select("name"):From("keystone"):Where("mapid", "=", 501):Run()[1]
+        assert.are.equal("The Dawnbreaker", ks.name)
+        local inst = db:Select("name", "diff"):From("dashboard_instance"):Where("key", "=", IKEY):Run()[1]
+        assert.are.equal("Raid", inst.name)
+        local q = db:Select("title"):From("quest"):Where("quest_id", "=", 42):Run()[1]
+        assert.are.equal("Weekly Quest", q.title)
     end)
 
-    it("delete-then-insert replaces a character's children (the snapshot refresh)", function()
+    it("a Questing time-upsert and a Dashboard title-upsert share one quest row", function()
         local db = newDb(newDbNs())
-        seedChar(db)
-        db:InsertAll("dashboard_lockout", {
-            { char_key = KEY, ordinal = 1, name = "A", diff = "Normal", is_raid = true },
-            { char_key = KEY, ordinal = 2, name = "B", diff = "Heroic", is_raid = true },
-        })
-        db:Delete("dashboard_lockout", function(x) return x.char_key == KEY end)
-        db:Insert("dashboard_lockout", { char_key = KEY, ordinal = 1, name = "C", diff = "Mythic", is_raid = true })
-        local rows = db:Select("*"):From("dashboard_lockout"):Run()
-        assert.are.equal(1, #rows)
-        assert.are.equal("C", rows[1].name)
+        db:Insert("quest", { quest_id = 7, time = 600 })                                  -- Questing learns the limit
+        db:Update("quest", { title = "Heroic Cache" }, function(x) return x.quest_id == 7 end)  -- Dashboard adds a title
+        local r = db:Select("*"):From("quest"):Run()[1]
+        assert.are.equal(600, r.time)            -- preserved
+        assert.are.equal("Heroic Cache", r.title)
     end)
 end)

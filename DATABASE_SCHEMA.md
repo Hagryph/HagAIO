@@ -15,18 +15,19 @@ The addon uses **one shared database**. Every service or module contributes the 
 | [`compartment`](#compartment) | `global` | 2 | id | `Services/Compartment.lua` |
 | [`cvar_custom`](#cvar_custom) | `global` | 2 | name | `Modules/CVars.lua` |
 | [`cvar_managed`](#cvar_managed) | `global` | 2 | name | `Modules/CVars.lua` |
-| [`dashboard_char`](#dashboard_char) | `global` | 11 | char_key | `Modules/Dashboard.lua` |
+| [`dashboard_char`](#dashboard_char) | `global` | 10 | char_key | `Modules/Dashboard.lua` |
 | [`dashboard_instance`](#dashboard_instance) | `global` | 7 | key | `Modules/Dashboard.lua` |
-| [`dashboard_lockout`](#dashboard_lockout) | `global` | 8 | char_key, ordinal | `Modules/Dashboard.lua` |
-| [`dashboard_quest`](#dashboard_quest) | `global` | 4 | char_key, freq, quest_id | `Modules/Dashboard.lua` |
+| [`dashboard_lockout`](#dashboard_lockout) | `global` | 5 | char_key, instance_key | `Modules/Dashboard.lua` |
+| [`dashboard_quest`](#dashboard_quest) | `global` | 3 | char_key, freq, quest_id | `Modules/Dashboard.lua` |
 | [`dashboard_vault`](#dashboard_vault) | `global` | 6 | char_key, ordinal | `Modules/Dashboard.lua` |
 | [`faction`](#faction) | `local` | 2 | tag | `Core/DB/CoreTables.lua` |
 | [`flight_hop`](#flight_hop) | `global` | 3 | route_id, ordinal | `Modules/Misc.lua` |
 | [`flight_master`](#flight_master) | `global` | 6 | node_id | `Core/DB/CoreTables.lua` |
 | [`flight_route`](#flight_route) | `global` | 5 | id | `Modules/Misc.lua` |
+| [`keystone`](#keystone) | `local` | 2 | mapid | `Modules/Dashboard.lua` |
 | [`logger`](#logger) | `global` | 4 | id | `Core/DB/CoreTables.lua` |
 | [`minimap`](#minimap) | `global` | 3 | id | `Services/MinimapIcon.lua` |
-| [`quest_timed`](#quest_timed) | `global` | 2 | quest_id | `Modules/Questing.lua` |
+| [`quest`](#quest) | `global` | 3 | quest_id | `Core/DB/CoreTables.lua` |
 | [`zone`](#zone) | `local` | 1 | name | `Core/DB/CoreTables.lua` |
 
 ---
@@ -78,9 +79,8 @@ The addon uses **one shared database**. Every service or module contributes the 
 | `ilvl` | integer | yes |  |  |  |
 | `last_seen` | integer | yes |  |  |  |
 | `rating` | number | yes |  |  |  |
-| `ks_mapid` | integer | yes |  |  |  |
+| `ks_mapid` | integer | yes |  |  | → `keystone.mapid` |
 | `ks_level` | integer | yes |  |  |  |
-| `ks_name` | text | yes |  |  |  |
 
 ---
 
@@ -107,15 +107,12 @@ The addon uses **one shared database**. Every service or module contributes the 
 | Column | Type | Null | Key | Default | References |
 |---|---|---|---|---|---|
 | `char_key` | text | no | PK |  | → `dashboard_char.char_key` on delete cascade |
-| `ordinal` | integer | no | PK |  |  |
-| `name` | text | yes |  |  |  |
-| `diff` | text | yes |  |  |  |
-| `total` | integer | yes |  |  |  |
+| `instance_key` | text | no | PK |  | → `dashboard_instance.key` on delete cascade |
 | `progress` | integer | yes |  |  |  |
-| `is_raid` | boolean | yes |  |  |  |
+| `total` | integer | yes |  |  |  |
 | `reset` | integer | yes |  |  |  |
 
-**Primary key:** (char_key, ordinal)
+**Primary key:** (char_key, instance_key)
 
 ---
 
@@ -127,8 +124,7 @@ The addon uses **one shared database**. Every service or module contributes the 
 |---|---|---|---|---|---|
 | `char_key` | text | no | PK |  | → `dashboard_char.char_key` on delete cascade |
 | `freq` | text | no | PK |  |  |
-| `quest_id` | integer | no | PK |  |  |
-| `title` | text | yes |  |  |  |
+| `quest_id` | integer | no | PK |  | → `quest.quest_id` |
 
 **Primary key:** (char_key, freq, quest_id)
 
@@ -211,6 +207,17 @@ The addon uses **one shared database**. Every service or module contributes the 
 
 ---
 
+### `keystone`  ·  scope `local`
+
+*Defined in `Modules/Dashboard.lua`.*
+
+| Column | Type | Null | Key | Default | References |
+|---|---|---|---|---|---|
+| `mapid` | integer | no | PK |  |  |
+| `name` | text | yes |  |  |  |
+
+---
+
 ### `logger`  ·  scope `global`
 
 *Defined in `Core/DB/CoreTables.lua`.*
@@ -236,14 +243,15 @@ The addon uses **one shared database**. Every service or module contributes the 
 
 ---
 
-### `quest_timed`  ·  scope `global`
+### `quest`  ·  scope `global`
 
-*Defined in `Modules/Questing.lua`.*
+*Defined in `Core/DB/CoreTables.lua`.*
 
 | Column | Type | Null | Key | Default | References |
 |---|---|---|---|---|---|
 | `quest_id` | integer | no | PK |  |  |
-| `seconds` | number | yes |  |  |  |
+| `title` | text | yes |  |  |  |
+| `time` | number | yes |  |  |  |
 
 ---
 
