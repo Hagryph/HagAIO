@@ -1285,7 +1285,7 @@ ns.ModuleManager:Register(Dashboard:New("Dashboard", {
             { name = "last_seen", type = "integer" },                      -- server epoch seconds
             { name = "rating",    type = "number" },                       -- current-season M+ score
             { name = "ks_mapid",  type = "integer",                        -- owned keystone map (name via keystone)
-                references = { table = "keystone", column = "mapid" } },
+                references = { table = "keystone", column = "mapid", onDelete = "cascade" } },
             { name = "ks_level",  type = "integer" },                      -- this character's keystone level
         } },
         dashboard_vault = { scope = "global",
@@ -1320,7 +1320,7 @@ ns.ModuleManager:Register(Dashboard:New("Dashboard", {
                     references = { table = "dashboard_char", column = "char_key", onDelete = "cascade" } },
                 { name = "freq",     type = "text",    nullable = false },    -- "daily" | "weekly"
                 { name = "quest_id", type = "integer", nullable = false,
-                    references = { table = "quest", column = "quest_id" } },
+                    references = { table = "quest", column = "quest_id", onDelete = "cascade" } },
             },
             primaryKey = { "char_key", "freq", "quest_id" } },
         dashboard_instance = { scope = "global", columns = {

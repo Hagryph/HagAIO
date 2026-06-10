@@ -79,7 +79,7 @@ The addon uses **one shared database**. Every service or module contributes the 
 | `ilvl` | integer | yes |  |  |  |
 | `last_seen` | integer | yes |  |  |  |
 | `rating` | number | yes |  |  |  |
-| `ks_mapid` | integer | yes |  |  | → `keystone.mapid` |
+| `ks_mapid` | integer | yes |  |  | → `keystone.mapid` on delete cascade |
 | `ks_level` | integer | yes |  |  |  |
 
 ---
@@ -124,7 +124,7 @@ The addon uses **one shared database**. Every service or module contributes the 
 |---|---|---|---|---|---|
 | `char_key` | text | no | PK |  | → `dashboard_char.char_key` on delete cascade |
 | `freq` | text | no | PK |  |  |
-| `quest_id` | integer | no | PK |  | → `quest.quest_id` |
+| `quest_id` | integer | no | PK |  | → `quest.quest_id` on delete cascade |
 
 **Primary key:** (char_key, freq, quest_id)
 

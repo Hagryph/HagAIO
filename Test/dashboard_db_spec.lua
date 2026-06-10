@@ -32,7 +32,8 @@ local function spec()
         dashboard_char = { columns = {
             { name = "char_key", type = "text", primaryKey = true },
             { name = "name", type = "text" }, { name = "class", type = "text" }, { name = "level", type = "integer" },
-            { name = "ks_mapid", type = "integer", references = { table = "keystone", column = "mapid" } },
+            { name = "ks_mapid", type = "integer",
+                references = { table = "keystone", column = "mapid", onDelete = "cascade" } },
             { name = "ks_level", type = "integer" },
         } },
         dashboard_instance = { columns = {
@@ -60,7 +61,7 @@ local function spec()
                 { name = "char_key", type = "text", nullable = false, references = charFk },
                 { name = "freq",     type = "text", nullable = false },
                 { name = "quest_id", type = "integer", nullable = false,
-                    references = { table = "quest", column = "quest_id" } },
+                    references = { table = "quest", column = "quest_id", onDelete = "cascade" } },
             },
             primaryKey = { "char_key", "freq", "quest_id" } },
     } }
@@ -94,6 +95,19 @@ describe("Dashboard DB schema", function()
         -- reference rows are untouched (they outlive any one character)
         assert.are.equal(1, #db:Select("*"):From("quest"):Run())
         assert.are.equal(1, #db:Select("*"):From("keystone"):Run())
+    end)
+
+    it("cascades the reference deletes: a quest removes its per-char rows; a keystone removes the char", function()
+        local db = newDb(newDbNs())
+        seed(db)
+        db:Delete("quest", function(x) return x.quest_id == 42 end)
+        assert.are.equal(0, #db:Select("*"):From("dashboard_quest"):Run())   -- the per-char quest row followed it
+        assert.are.equal(1, #db:Select("*"):From("dashboard_char"):Run())    -- the character itself stays
+        -- a keystone delete cascades to the whole character (ks_mapid is its FK) -- inert in practice,
+        -- since the local keystone table is upsert-only and never deletes rows at runtime
+        db:Delete("keystone", function(x) return x.mapid == 501 end)
+        assert.are.equal(0, #db:Select("*"):From("dashboard_char"):Run())
+        assert.are.equal(0, #db:Select("*"):From("dashboard_vault"):Run())   -- and its children, transitively
     end)
 
     it("cascade-deletes a character's lock when its instance is pruned", function()
