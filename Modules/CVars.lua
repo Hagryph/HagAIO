@@ -143,8 +143,22 @@ function CVars:_ClearCustom(name)
 end
 
 function CVars:OnEnable()
-    self:On("PLAYER_ENTERING_WORLD", function() self:_ApplyAll() end)  -- auto-released on disable
-    self:_ApplyAll()
+    self:On("PLAYER_ENTERING_WORLD", function() self:_ScheduleApply() end)  -- auto-released on disable
+    self:_ScheduleApply()
+end
+
+-- Re-apply DEFERRED past the loading screen: a SetCVar over every managed CVar is not free, and a
+-- C_Timer callback does not fire while a loading screen is up, so this lands on the first frame once
+-- the world is shown -- never stretching the load bar. Coalesced so each zone/instance change applies
+-- once rather than stacking a fresh pass per loading screen.
+function CVars:_ScheduleApply()
+    local p = self:_p()
+    if p.applyPending then return end
+    p.applyPending = true
+    C_Timer.After(0, function()
+        p.applyPending = false
+        if self:IsEnabled() then self:_ApplyAll() end   -- skip if disabled before the frame ran
+    end)
 end
 
 -- Re-apply every globalised CVar (only while enabled; disabling stops forcing).
