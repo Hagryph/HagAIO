@@ -91,12 +91,20 @@ local CURATED = {
     }},
 }
 
--- name -> { type, options } for the curated entries, so custom-CVar type
--- detection can prefer a KNOWN typing before falling back to value inference.
-local KNOWN = {}
-for _, cat in ipairs(CURATED) do
-    for _, c in ipairs(cat.cvars) do
-        KNOWN[c.name] = { type = c.type, options = c.options }
+-- Derived from CURATED, the single source of the code catalog:
+--   CATALOG[name]   -> the full curated def (label/type/desc/options); also "is this CVar code-managed?"
+--   ORDER[name]     -> its position in code order (sorts a category's rows the way the code lists them)
+--   CAT_ORDER[name] -> a category's position in code order (sorts the category list; non-code last)
+local CATALOG, ORDER, CAT_ORDER = {}, {}, {}
+do
+    local i = 0
+    for ci, cat in ipairs(CURATED) do
+        CAT_ORDER[cat.name] = ci
+        for _, c in ipairs(cat.cvars) do
+            i = i + 1
+            CATALOG[c.name] = c
+            ORDER[c.name] = i
+        end
     end
 end
 
@@ -132,38 +140,73 @@ end
 function CVars:_ClearManaged(name)
     local db = self:DB(); if db then db:Delete("cvar_managed", function(x) return x.name == name end) end
 end
-function CVars:_TrackedAll()    -- array of { name, type } -- every tracked CVar (curated + custom)
-    local db = self:DB(); return db and db:Select("name", "type"):From("cvar_tracked"):Run() or {}
+function CVars:_TrackedAll()    -- array of { name, type, category_id } -- every tracked CVar
+    local db = self:DB(); return db and db:Select("name", "type", "category_id"):From("cvar_tracked"):Run() or {}
 end
 function CVars:_IsTracked(name)
     local db = self:DB(); if not db then return false end
     return #db:Select("name"):From("cvar_tracked"):Where("name", "=", name):Limit(1):Run() > 0
 end
-function CVars:_SetTracked(name, t)
+function CVars:_SetTracked(name, t, categoryId)
     local db = self:DB(); if not db then return end
-    if self:_IsTracked(name) then db:Update("cvar_tracked", { type = t }, function(x) return x.name == name end)
-    else db:Insert("cvar_tracked", { name = name, type = t }) end
+    if self:_IsTracked(name) then
+        db:Update("cvar_tracked", { type = t, category_id = categoryId }, function(x) return x.name == name end)
+    else db:Insert("cvar_tracked", { name = name, type = t, category_id = categoryId }) end
 end
 function CVars:_ClearTracked(name)
     local db = self:DB(); if db then db:Delete("cvar_tracked", function(x) return x.name == name end) end
 end
 
--- Backfill the code catalog into cvar_tracked (add any curated CVar not yet tracked) and PRUNE rows
--- whose CVar the client no longer has -- the CVar equivalent of the dashboard instance seed/prune.
--- Tracking every curated CVar means one later REMOVED from the code stays tracked and resurfaces under
--- "Custom" (see _BuildCustomSection), so a value the player configured is never silently dropped.
+-- Get (or create) a category row by name, returning its id -- the FK target for cvar_tracked.
+function CVars:_CategoryId(name)
+    local db = self:DB(); if not db then return nil end
+    local r = db:Select("id"):From("cvar_category"):Where("name", "=", name):Limit(1):Run()[1]
+    if r then return r.id end
+    local row = db:Insert("cvar_category", { name = name })
+    return row and row.id or nil
+end
+
+-- All categories, as { id, name }, ordered by code order (CAT_ORDER); non-code categories (Custom and
+-- any left over from a removed code category) sort last, alphabetically. This IS the UI category list.
+function CVars:_Categories()
+    local db = self:DB(); if not db then return {} end
+    local cats = db:Select("id", "name"):From("cvar_category"):Run()
+    table.sort(cats, function(a, b)
+        local oa, ob = CAT_ORDER[a.name], CAT_ORDER[b.name]
+        if oa and ob then return oa < ob end
+        if oa ~= ob then return oa ~= nil end   -- a code category sorts before a non-code one
+        return a.name < b.name
+    end)
+    return cats
+end
+
+-- Backfill the code catalog into the DB: ensure every curated category exists and every curated CVar
+-- is tracked UNDER its code category (re-set each sync, so a CVar always reflects the current code).
+-- The Custom category is ensured up front so it always renders (with its add field).
 function CVars:_BackfillTracked()
-    if not (C_CVar and C_CVar.GetCVarInfo) then return end   -- never seed/prune blind
-    for name in pairs(KNOWN) do
-        if self:_Exists(name) and not self:_IsTracked(name) then
-            self:_SetTracked(name, KNOWN[name].type)
+    if not (C_CVar and C_CVar.GetCVarInfo) then return end   -- never seed blind
+    self:_CategoryId("Custom")
+    for _, cat in ipairs(CURATED) do
+        local cid = self:_CategoryId(cat.name)
+        for _, c in ipairs(cat.cvars) do
+            if self:_Exists(c.name) then self:_SetTracked(c.name, c.type, cid) end
         end
     end
 end
+
+-- Prune rows whose CVar the client no longer has, then MOVE any tracked CVar the code no longer
+-- manages (not in CATALOG) into Custom -- so a configured value is never lost, just regrouped. The
+-- two passes + the backfill leave every tracked CVar correctly categorised in the database.
 function CVars:_PruneTracked()
     if not (C_CVar and C_CVar.GetCVarInfo) then return end   -- API down -> don't wipe against nothing
     local db = self:DB(); if not db then return end
     db:Delete("cvar_tracked", function(r) return not self:_Exists(r.name) end)
+    local customId = self:_CategoryId("Custom")
+    for _, row in ipairs(self:_TrackedAll()) do
+        if not CATALOG[row.name] and row.category_id ~= customId then
+            db:Update("cvar_tracked", { category_id = customId }, function(x) return x.name == row.name end)
+        end
+    end
 end
 
 -- Sync the tracked catalog once per session, off the loading screen (C_Timer doesn't fire while a
@@ -259,7 +302,7 @@ end
 -- from the current value ("0"/"1" -> boolean, numeric -> number, else text).
 function CVars:_DetectType(name)
     local v = C_CVar and C_CVar.GetCVar and C_CVar.GetCVar(name)
-    return ns.CVarHelper:DetectType(KNOWN[name], v)   -- curated override else value inference
+    return ns.CVarHelper:DetectType(CATALOG[name], v)   -- curated override else value inference
 end
 
 -- ---- settings page (custom builder, called by SettingsWindow) -------------
@@ -281,22 +324,35 @@ function CVars:BuildSettingsPage(sf)
     intro:SetJustifyH("LEFT")
     p.introH = intro:GetStringHeight() + 12
 
-    -- keep the tracked catalog current before drawing it (idempotent with the login sync)
+    -- keep the catalog current before drawing it (idempotent with the login sync): seed the code
+    -- CVars under their categories, prune ones the client lost, move code-dropped ones into Custom.
     self:_BackfillTracked()
     self:_PruneTracked()
 
-    -- curated categories, in code order, under their code-defined category name
-    for _, cat in ipairs(CURATED) do
-        local defs = {}
-        for _, c in ipairs(cat.cvars) do
-            if self:_Exists(c.name) then defs[#defs + 1] = c end
+    -- Bucket every tracked CVar under its DB category; a CVar in the code catalog uses the rich code
+    -- def, anything else (user-added or code-dropped) renders as a removable Custom row.
+    local db = self:DB()
+    local catName = {}   -- id -> name (the category list comes straight from the DB)
+    for _, c in ipairs(db and db:Select("id", "name"):From("cvar_category"):Run() or {}) do catName[c.id] = c.name end
+    local buckets = {}
+    for _, row in ipairs(self:_TrackedAll()) do
+        if self:_Exists(row.name) then
+            local cname = catName[row.category_id] or "Custom"
+            local def = CATALOG[row.name] or { name = row.name, label = row.name, type = row.type, custom = true }
+            buckets[cname] = buckets[cname] or {}
+            buckets[cname][#buckets[cname] + 1] = def
         end
-        if #defs > 0 then self:_BuildSection(cat.name, defs, false) end
     end
 
-    -- "Custom": every tracked CVar NOT in the code catalog -- user-added ones AND any the code dropped
-    -- (so a configured value never disappears just because its curated entry was removed); plus the add field.
-    self:_BuildCustomSection()
+    -- one section per category (derived from the DB), code categories first then Custom; Custom always
+    -- shows so the add field is reachable even when empty.
+    for _, cat in ipairs(self:_Categories()) do
+        local isCustom = cat.name == "Custom"
+        local defs = buckets[cat.name] or {}
+        if isCustom then table.sort(defs, function(a, b) return a.name:lower() < b.name:lower() end)
+        else table.sort(defs, function(a, b) return (ORDER[a.name] or math.huge) < (ORDER[b.name] or math.huge) end) end
+        if isCustom or #defs > 0 then self:_BuildSection(cat.name, defs, isCustom) end
+    end
 
     self:_Relayout()
 end
@@ -317,18 +373,6 @@ function CVars:_BuildSection(titleText, defs, prependAdd)
     sec:SetOnToggle(function() self:_Relayout() end)
     p.sections[#p.sections + 1] = sec
     return sec
-end
-
-function CVars:_BuildCustomSection()
-    local defs = {}
-    for _, row in ipairs(self:_TrackedAll()) do
-        local name, t = row.name, row.type
-        if not KNOWN[name] and self:_Exists(name) then   -- only CVars not in the code catalog
-            defs[#defs + 1] = { name = name, label = name, type = t, custom = true }
-        end
-    end
-    table.sort(defs, function(a, b) return a.name:lower() < b.name:lower() end)
-    self:_BuildSection("Custom", defs, true)
 end
 
 -- Stack every section top-to-bottom (their heights vary as they collapse/expand)
@@ -362,7 +406,7 @@ function CVars:_PlaceAddRow(box, y, width)
             return
         end
         local t = self:_DetectType(name)
-        self:_SetTracked(name, t)
+        self:_SetTracked(name, t, self:_CategoryId("Custom"))
         self:LogSuccess(("added custom CVar %s (%s)"):format(name, t))
         input:SetValue("")
         if ns.UI.SettingsWindow then ns.UI.SettingsWindow:InvalidateModule(self:GetName()) end
@@ -563,11 +607,22 @@ ns.ModuleManager:Register(CVars:New("CVars", {
             { name = "name",  type = "text", primaryKey = true },
             { name = "value", type = "text" },
         } },
-        -- Every CVar we TRACK -- curated (backfilled from the code catalog) AND user-added. Whether a
-        -- row renders under its code category or under "Custom" is decided at render time, not stored.
+        -- The categories CVars are grouped under (Camera, Nameplates, ..., and Custom). Seeded from the
+        -- code catalog; the UI category list is derived from this table. Keyed by an auto id that
+        -- cvar_tracked references, so category membership is resolved in the database, not at render.
+        cvar_category = { scope = "global",
+            columns = {
+                { name = "id",   type = "integer", primaryKey = true, autoIncrement = true },
+                { name = "name", type = "text", nullable = false },
+            },
+            unique = { { "name" } } },
+        -- Every CVar we TRACK -- curated (backfilled from the code catalog) AND user-added -- with the
+        -- category it belongs to. When the code stops managing a CVar it is reassigned to Custom in the
+        -- DB (see _PruneTracked), so a value the player configured is never lost.
         cvar_tracked = { scope = "global", columns = {
-            { name = "name", type = "text", primaryKey = true },
-            { name = "type", type = "text" },   -- control type (used when the CVar isn't in the code catalog)
+            { name = "name",        type = "text", primaryKey = true },
+            { name = "type",        type = "text" },   -- control type (used when not in the code catalog)
+            { name = "category_id", type = "integer", references = { table = "cvar_category", column = "id" } },
         } },
     },
 }))
