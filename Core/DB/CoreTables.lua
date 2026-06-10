@@ -63,17 +63,19 @@ ns.DB.CoreTables = {
         end,
     },
 
-    -- Map zones, rebuilt at runtime from the world map (the LocalTables service inserts each zone
-    -- name as flight masters are discovered). LOCAL: cheap to regenerate, never worth persisting.
+    -- Map zones, discovered from the world map (the LocalTables service inserts each zone name as
+    -- flight masters are discovered). GLOBAL/account-wide: a zone is only learned when a character
+    -- with that flight point opens its taxi map, so we can't cheaply rediscover every zone each
+    -- session -- persist what we've seen instead of rebuilding from nothing.
     zone = {
-        scope = "local",
+        scope = "global",
         columns = {
             { name = "name", type = "text", primaryKey = true },   -- zone name (the PK), e.g. "Elwynn Forest"
         },
     },
 
     -- Flight masters, discovered (with their zone + map coords) by the LocalTables service whenever a
-    -- taxi map opens. JOINS to the (local) faction and zone tables. Keyed by node_id -- the canonical
+    -- taxi map opens. JOINS to the faction (local) and zone (global) tables. Keyed by node_id -- the canonical
     -- C_TaxiMap nodeID, GLOBALLY UNIQUE per physical flight point -- so there is exactly one row per
     -- node. A neutral flight point has ONE nodeID seen by BOTH factions, so when the rival faction
     -- discovers an existing node its faction is flipped to "Neutral" (see LocalTables._DiscoverMaster).
@@ -83,7 +85,7 @@ ns.DB.CoreTables = {
         columns = {
             { name = "node_id", type = "integer", primaryKey = true },  -- canonical C_TaxiMap nodeID (the PK; unique per point)
             { name = "faction", type = "text", nullable = false, references = { table = "faction", column = "tag" } },
-            { name = "zone",    type = "text", nullable = false, references = { table = "zone", column = "name" } },
+            { name = "zone",    type = "text", nullable = false, references = { table = "zone", column = "name", onDelete = "cascade" } },
             { name = "name",    type = "text", nullable = false },       -- flight master name only (e.g. "Stormwind")
             { name = "x",       type = "number" },                       -- node position on the continent map
             { name = "y",       type = "number" },

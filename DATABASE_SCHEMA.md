@@ -28,7 +28,7 @@ The addon uses **one shared database**. Every service or module contributes the 
 | [`logger`](#logger) | `global` | 4 | id | `Core/DB/CoreTables.lua` |
 | [`minimap`](#minimap) | `global` | 3 | id | `Services/MinimapIcon.lua` |
 | [`quest`](#quest) | `global` | 3 | quest_id | `Core/DB/CoreTables.lua` |
-| [`zone`](#zone) | `local` | 1 | name | `Core/DB/CoreTables.lua` |
+| [`zone`](#zone) | `global` | 1 | name | `Core/DB/CoreTables.lua` |
 
 ---
 
@@ -180,7 +180,7 @@ The addon uses **one shared database**. Every service or module contributes the 
 |---|---|---|---|---|---|
 | `node_id` | integer | no | PK |  |  |
 | `faction` | text | no |  |  | → `faction.tag` |
-| `zone` | text | no |  |  | → `zone.name` |
+| `zone` | text | no |  |  | → `zone.name` on delete cascade |
 | `name` | text | no |  |  |  |
 | `x` | number | yes |  |  |  |
 | `y` | number | yes |  |  |  |
@@ -255,7 +255,7 @@ The addon uses **one shared database**. Every service or module contributes the 
 
 ---
 
-### `zone`  ·  scope `local`
+### `zone`  ·  scope `global`
 
 *Defined in `Core/DB/CoreTables.lua`.*
 
