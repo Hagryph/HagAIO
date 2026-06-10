@@ -86,6 +86,16 @@ local HOME_LABEL = "Overview"
 -- the rest of this module's journal labels.)
 local SEASON_LABEL = "Current Season"
 
+-- The raid list's world-boss meta entry is normally named after the EXPANSION (caught by the
+-- name==tier check in _ExpansionMap). A few expansions name it after the CONTINENT instead, so that
+-- check misses them and they leak in as a phantom "raid". Map each such continent label to its tier
+-- so it's dropped too. (enUS, like the other journal labels.)
+local WORLD_RAID_ALIASES = {
+    ["Dragon Isles"] = "Dragonflight",
+    ["Khaz Algar"]   = "The War Within",
+    ["Broken Isles"] = "Legion",
+}
+
 -- The Encounter Journal crops its instance buttonImage1 art to this region (the rest is padding);
 -- see Blizzard_EncounterJournal.xml "EncounterInstanceButtonTemplate" bgImage TexCoords. We reuse
 -- it so our instance tiles fill the same way the journal's do (only used for the low-def banner
@@ -510,9 +520,11 @@ function Dashboard:_ExpansionMap()
             -- The RAID list carries a world-boss "meta" entry named after the expansion itself
             -- (e.g. "Pandaria", "Draenor", "Midnight") rather than after a real raid -- it has no
             -- weekly lockout, so drop it. The label matches the tier (exactly, or as its trailing
-            -- word for long tier names like "Mists of Pandaria" -> "Pandaria").
+            -- word for long tier names like "Mists of Pandaria" -> "Pandaria"), or is the expansion's
+            -- continent name for the few tiers that label it that way (WORLD_RAID_ALIASES).
             if isRaid and name and tierName
-               and (name == tierName or tierName:match("(%S+)%s*$") == name) then
+               and (name == tierName or tierName:match("(%S+)%s*$") == name
+                    or WORLD_RAID_ALIASES[name] == tierName) then
                 name = nil
             end
             if name and tierName then
