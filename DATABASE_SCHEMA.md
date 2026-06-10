@@ -10,6 +10,8 @@ The addon uses **one shared database**. Every service or module contributes the 
 
 ## Entity-relationship diagram
 
+Open **[diagram/DB/index.html](diagram/DB/index.html)** in a browser for an interactive (zoom/pan) view. Inline:
+
 ```mermaid
 erDiagram
     cvar_category ||--o{ cvar_tracked : "category_id"
