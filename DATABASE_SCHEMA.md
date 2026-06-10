@@ -27,6 +27,8 @@ erDiagram
     zone ||--o{ flight_master : "zone"
     flight_master ||--o{ flight_route : "src"
     flight_master ||--o{ flight_route : "dst"
+    profile ||--o{ p_module_Class_MONK_1 : "profile"
+    profile ||--o{ p_module_Class_MONK_none : "profile"
     profile ||--o{ p_module_Dashboard : "profile"
     profile ||--o{ p_module_Dev : "profile"
     profile ||--o{ p_module_Misc : "profile"
@@ -145,6 +147,31 @@ erDiagram
         text name PK
         boolean enabled
     }
+    o_module_Class_MONK_1 {
+        integer id PK
+        boolean expelHarm
+        number expelColor_r
+        number expelColor_g
+        number expelColor_b
+        number expelInactiveColor_r
+        number expelInactiveColor_g
+        number expelInactiveColor_b
+        boolean tiger
+        number tigerColor_r
+        number tigerColor_g
+        number tigerColor_b
+        boolean aoeHelper
+    }
+    o_module_Class_MONK_none {
+        integer id PK
+        boolean expelHarm
+        number expelColor_r
+        number expelColor_g
+        number expelColor_b
+        number expelInactiveColor_r
+        number expelInactiveColor_g
+        number expelInactiveColor_b
+    }
     o_module_Dashboard {
         integer id PK
         boolean show_mplus
@@ -188,6 +215,31 @@ erDiagram
         number startColor_r
         number startColor_g
         number startColor_b
+    }
+    p_module_Class_MONK_1 {
+        text profile PK
+        boolean expelHarm
+        number expelColor_r
+        number expelColor_g
+        number expelColor_b
+        number expelInactiveColor_r
+        number expelInactiveColor_g
+        number expelInactiveColor_b
+        boolean tiger
+        number tigerColor_r
+        number tigerColor_g
+        number tigerColor_b
+        boolean aoeHelper
+    }
+    p_module_Class_MONK_none {
+        text profile PK
+        boolean expelHarm
+        number expelColor_r
+        number expelColor_g
+        number expelColor_b
+        number expelInactiveColor_r
+        number expelInactiveColor_g
+        number expelInactiveColor_b
     }
     p_module_Dashboard {
         text profile PK
@@ -282,11 +334,15 @@ erDiagram
 | [`logger`](#logger) | `global` | 4 | id | `Core/DB/CoreTables.lua` |
 | [`minimap`](#minimap) | `global` | 3 | id | `Services/MinimapIcon.lua` |
 | [`module_enable`](#module_enable) | `char` | 2 | name | `Core/DB/CoreTables.lua` |
+| [`o_module_Class_MONK_1`](#o_module_Class_MONK_1) | `char` | 13 | id | `Modules/Class.lua` |
+| [`o_module_Class_MONK_none`](#o_module_Class_MONK_none) | `char` | 8 | id | `Modules/Class.lua` |
 | [`o_module_Dashboard`](#o_module_Dashboard) | `char` | 6 | id | `Modules/Dashboard.lua` |
 | [`o_module_Dev`](#o_module_Dev) | `char` | 2 | id | `Modules/Dev.lua` |
 | [`o_module_Misc`](#o_module_Misc) | `char` | 4 | id | `Modules/Misc.lua` |
 | [`o_module_Questing`](#o_module_Questing) | `char` | 10 | id | `Modules/Questing.lua` |
 | [`o_module_UnitFrames`](#o_module_UnitFrames) | `char` | 12 | id | `Modules/UnitFrames.lua` |
+| [`p_module_Class_MONK_1`](#p_module_Class_MONK_1) | `global` | 13 | profile | `Modules/Class.lua` |
+| [`p_module_Class_MONK_none`](#p_module_Class_MONK_none) | `global` | 8 | profile | `Modules/Class.lua` |
 | [`p_module_Dashboard`](#p_module_Dashboard) | `global` | 6 | profile | `Modules/Dashboard.lua` |
 | [`p_module_Dev`](#p_module_Dev) | `global` | 2 | profile | `Modules/Dev.lua` |
 | [`p_module_Misc`](#p_module_Misc) | `global` | 4 | profile | `Modules/Misc.lua` |
@@ -558,6 +614,45 @@ erDiagram
 
 ---
 
+### `o_module_Class_MONK_1`  ·  scope `char`
+
+*Defined in `Modules/Class.lua`.*
+
+| Column | Type | Null | Key | Default | References |
+|---|---|---|---|---|---|
+| `id` | integer | no | PK |  |  |
+| `expelHarm` | boolean | yes |  |  |  |
+| `expelColor_r` | number | yes |  |  |  |
+| `expelColor_g` | number | yes |  |  |  |
+| `expelColor_b` | number | yes |  |  |  |
+| `expelInactiveColor_r` | number | yes |  |  |  |
+| `expelInactiveColor_g` | number | yes |  |  |  |
+| `expelInactiveColor_b` | number | yes |  |  |  |
+| `tiger` | boolean | yes |  |  |  |
+| `tigerColor_r` | number | yes |  |  |  |
+| `tigerColor_g` | number | yes |  |  |  |
+| `tigerColor_b` | number | yes |  |  |  |
+| `aoeHelper` | boolean | yes |  |  |  |
+
+---
+
+### `o_module_Class_MONK_none`  ·  scope `char`
+
+*Defined in `Modules/Class.lua`.*
+
+| Column | Type | Null | Key | Default | References |
+|---|---|---|---|---|---|
+| `id` | integer | no | PK |  |  |
+| `expelHarm` | boolean | yes |  |  |  |
+| `expelColor_r` | number | yes |  |  |  |
+| `expelColor_g` | number | yes |  |  |  |
+| `expelColor_b` | number | yes |  |  |  |
+| `expelInactiveColor_r` | number | yes |  |  |  |
+| `expelInactiveColor_g` | number | yes |  |  |  |
+| `expelInactiveColor_b` | number | yes |  |  |  |
+
+---
+
 ### `o_module_Dashboard`  ·  scope `char`
 
 *Defined in `Modules/Dashboard.lua`.*
@@ -634,6 +729,45 @@ erDiagram
 | `startColor_r` | number | yes |  |  |  |
 | `startColor_g` | number | yes |  |  |  |
 | `startColor_b` | number | yes |  |  |  |
+
+---
+
+### `p_module_Class_MONK_1`  ·  scope `global`
+
+*Defined in `Modules/Class.lua`.*
+
+| Column | Type | Null | Key | Default | References |
+|---|---|---|---|---|---|
+| `profile` | text | no | PK |  | → `profile.name` on delete cascade |
+| `expelHarm` | boolean | yes |  |  |  |
+| `expelColor_r` | number | yes |  |  |  |
+| `expelColor_g` | number | yes |  |  |  |
+| `expelColor_b` | number | yes |  |  |  |
+| `expelInactiveColor_r` | number | yes |  |  |  |
+| `expelInactiveColor_g` | number | yes |  |  |  |
+| `expelInactiveColor_b` | number | yes |  |  |  |
+| `tiger` | boolean | yes |  |  |  |
+| `tigerColor_r` | number | yes |  |  |  |
+| `tigerColor_g` | number | yes |  |  |  |
+| `tigerColor_b` | number | yes |  |  |  |
+| `aoeHelper` | boolean | yes |  |  |  |
+
+---
+
+### `p_module_Class_MONK_none`  ·  scope `global`
+
+*Defined in `Modules/Class.lua`.*
+
+| Column | Type | Null | Key | Default | References |
+|---|---|---|---|---|---|
+| `profile` | text | no | PK |  | → `profile.name` on delete cascade |
+| `expelHarm` | boolean | yes |  |  |  |
+| `expelColor_r` | number | yes |  |  |  |
+| `expelColor_g` | number | yes |  |  |  |
+| `expelColor_b` | number | yes |  |  |  |
+| `expelInactiveColor_r` | number | yes |  |  |  |
+| `expelInactiveColor_g` | number | yes |  |  |  |
+| `expelInactiveColor_b` | number | yes |  |  |  |
 
 ---
 

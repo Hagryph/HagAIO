@@ -24,7 +24,21 @@ local function listLua(dir)
     local cmd = WIN and ('dir /b /s "' .. dir .. '\\*.lua" 2>nul') or ('find "' .. dir .. '" -name "*.lua" 2>/dev/null')
     local out, p = {}, io.popen(cmd)
     if p then for line in p:lines() do out[#out + 1] = line end p:close() end
-    table.sort(out)
+    -- Match the in-game .toc load order (tools/autogen/Common.ps1): sort by folder, and within a folder
+    -- the ENTRY file (Foo/Foo.lua) loads FIRST -- so a split feature like Class/Monk loads Monk.lua (which
+    -- defines ns.Monk.registerSpec) before its Base/Brewmaster siblings call it. Plain alpha order would
+    -- load Base/Brewmaster first, when registerSpec is still an inert sandbox stub -> specs never register.
+    local function norm(s) return (s:gsub("\\", "/")) end
+    local function parent(s) return (norm(s):gsub("/[^/]*$", "")) end
+    local function leaf(s) return norm(s):match("[^/]+$") end
+    local function isEntry(s) local d = parent(s); return leaf(s) == ((d:match("[^/]+$") or "") .. ".lua") end
+    table.sort(out, function(a, b)
+        local pa, pb = parent(a), parent(b)
+        if pa ~= pb then return pa < pb end
+        local ea, eb = isEntry(a), isEntry(b)
+        if ea ~= eb then return ea end          -- entry file first within its folder
+        return leaf(a) < leaf(b)
+    end)
     return out
 end
 
@@ -39,10 +53,15 @@ ns.Logger = { Core = function() return { Debug = noop, Info = noop, Success = no
               Register = function() return {} end }
 
 local currentSource = "framework"
+-- Contributions are DEFERRED to a single sweep after every file has loaded (mirrors Init.lua's
+-- ADDON_LOADED sweep), so a contributor that depends on later-loaded files -- e.g. the Class module
+-- deriving a settings table per spec registered by Modules/Class/<Class>/* -- sees them. Each item
+-- records the source file it registered under, for table attribution.
+local deferred = {}
 local function reg(_, item)
     if item then
         if item._Publish then pcall(function() item:_Publish() end) end
-        if item._ContributeTables then pcall(function() item:_ContributeTables() end) end
+        if item._ContributeTables then deferred[#deferred + 1] = { item = item, source = currentSource } end
     end
     return item
 end
@@ -98,6 +117,13 @@ stub = setmetatable({}, { __index = function() return stub end, __call = functio
 setmetatable(ns, { __index = function() return stub end })
 setmetatable(_G, { __index = function() return stub end })
 
+-- The Class module derives a settings-table pair per registered spec, but a spec registers only for
+-- the player's class (Monk's gate is UnitClass=="MONK"). Headless there is no character, so pin a
+-- representative class so those per-spec tables are introspected + documented. Extend this as more
+-- classes gain spec modules (only the player's class registers specs at runtime, so this can show one
+-- class's spec tables at a time).
+_G.UnitClass = function() return "Monk", "MONK" end
+
 for _, path in ipairs(listLua("Lib")) do currentSource = rel(path); loadInto(path, ns) end
 
 local scanned, skipped = {}, {}
@@ -107,6 +133,13 @@ for _, dir in ipairs({ "Services", "Modules" }) do
         local ok, err = loadInto(path, ns)
         if ok then scanned[#scanned + 1] = currentSource else skipped[#skipped + 1] = { currentSource, err } end
     end
+end
+
+-- Now that every file has loaded, contribute each owner's tables (under its own source), so
+-- contributors that depend on later-loaded files (the Class module's per-spec settings tables) are seen.
+for _, d in ipairs(deferred) do
+    currentSource = d.source
+    pcall(function() d.item:_ContributeTables() end)
 end
 
 -- ===========================================================================
