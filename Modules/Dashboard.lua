@@ -32,6 +32,20 @@ local DIFF = {
     Normal = { abbr = "N", rank = 2 }, Heroic = { abbr = "H", rank = 3 }, Mythic = { abbr = "M", rank = 4 },
 }
 
+-- Raid difficulty ids CHECKED PER RAID against the journal (EJ_IsValidInstanceDifficulty), so a raid
+-- is seeded ONLY the difficulties it actually offers -- not every raid has LFR or Mythic, and legacy
+-- raids use 10/25/40-player ids. DIFF_META (abbr + sort rank for the inline columns) is keyed by ID,
+-- so it's locale-proof; an unlisted id falls back to its GetDifficultyInfo name and sorts last.
+local RAID_DIFF_CANDIDATES = { 7, 17, 3, 4, 9, 148, 14, 5, 6, 15, 16 }
+local DIFF_META = {
+    [7]  = { abbr = "LFR", rank = 1 }, [17] = { abbr = "LFR", rank = 1 },
+    [3]  = { abbr = "10",  rank = 2 }, [4]  = { abbr = "25",  rank = 2 }, [9] = { abbr = "40", rank = 2 },
+    [148] = { abbr = "20", rank = 2 }, [14] = { abbr = "N",   rank = 2 },
+    [5]  = { abbr = "10H", rank = 3 }, [6]  = { abbr = "25H", rank = 3 }, [15] = { abbr = "H", rank = 3 },
+    [16] = { abbr = "M",   rank = 4 },
+    [23] = { abbr = "M0",  rank = 5 },   -- dungeon Mythic 0
+}
+
 -- Mythic 0 dungeon difficulty (id 23). M0 is the localized NAME (matches a saved M0 lock's difficulty
 -- name); M0_ID is the locale-proof difficulty id (stamped on seeded season-dungeon entries).
 local M0_ID = 23
@@ -86,14 +100,15 @@ local HOME_LABEL = "Overview"
 -- the rest of this module's journal labels.)
 local SEASON_LABEL = "Current Season"
 
--- The raid list's world-boss meta entry is normally named after the EXPANSION (caught by the
--- name==tier check in _ExpansionMap). A few expansions name it after the CONTINENT instead, so that
--- check misses them and they leak in as a phantom "raid". Map each such continent label to its tier
--- so it's dropped too. (enUS, like the other journal labels.)
+-- The raid list's world-boss / world-event meta entries aren't real raids but carry no lockout. The
+-- name==tier check in _ExpansionMap catches the ones named after the expansion; these are named after
+-- the CONTINENT (Dragon Isles / Khaz Algar / Broken Isles) or a world EVENT (Legion's "Invasion
+-- Points"), so map each to its tier to drop it too. (enUS, like the other journal labels.)
 local WORLD_RAID_ALIASES = {
-    ["Dragon Isles"] = "Dragonflight",
-    ["Khaz Algar"]   = "The War Within",
-    ["Broken Isles"] = "Legion",
+    ["Dragon Isles"]    = "Dragonflight",
+    ["Khaz Algar"]      = "The War Within",
+    ["Broken Isles"]    = "Legion",
+    ["Invasion Points"] = "Legion",
 }
 
 -- The Encounter Journal crops its instance buttonImage1 art to this region (the rest is padding);
@@ -511,6 +526,8 @@ function Dashboard:_ExpansionMap()
     local tierLevel = {}   -- tier name -> expansionLevel (EJ tier index 1 = Classic = expansion 0)
     local image = {}       -- instance name -> EJ buttonImage1 (compact tile art; banner fallback)
     local lore = {}        -- instance name -> EJ loreImage (the big right-side splash; preferred art)
+    local raidInst = {}    -- raid name -> EJ instanceID (to query its real difficulties below)
+    local raidDiffs = {}   -- raid name -> { valid raid difficulty ids } (only the ones it offers)
     local prev = EJ_GetCurrentTier and EJ_GetCurrentTier()
     local function walk(tier, tierName, isRaid, sink, isSeason)
         EJ_SelectTier(tier)
@@ -538,6 +555,7 @@ function Dashboard:_ExpansionMap()
                 -- current-season instance gets its current-version art before its home tier is reached).
                 if buttonImage and not image[name] then image[name] = buttonImage end
                 if loreImage  and not lore[name]  then lore[name]  = loreImage  end
+                if isRaid and instID and not raidInst[name] then raidInst[name] = instID end
                 if isSeason then
                     if sink then sink[#sink + 1] = name end          -- season membership only; home stays the real tier
                 elseif tierName then
@@ -573,6 +591,18 @@ function Dashboard:_ExpansionMap()
             if #dungeons > 0 then dungeonsByTier[tierName] = dungeons end
         end
     end
+    -- Which difficulties each raid ACTUALLY offers (the journal's truth) -- so seeding skips an LFR or
+    -- Mythic a raid never had, and legacy raids get their 10/25/40-player ids instead of the modern 4.
+    if EJ_SelectInstance and EJ_IsValidInstanceDifficulty then
+        for name, instID in pairs(raidInst) do
+            pcall(EJ_SelectInstance, instID)
+            local ids = {}
+            for _, id in ipairs(RAID_DIFF_CANDIDATES) do
+                if EJ_IsValidInstanceDifficulty(id) then ids[#ids + 1] = id end
+            end
+            if #ids > 0 then raidDiffs[name] = ids end
+        end
+    end
     if prev then pcall(EJ_SelectTier, prev) end   -- restore the journal's selected tier
     if found then
         p.ejMap = map
@@ -586,6 +616,7 @@ function Dashboard:_ExpansionMap()
         local seasonSet = {}
         for _, n in ipairs(seasonRaidList) do seasonSet[n] = true end
         p.ejSeasonRaids = seasonSet           -- name -> true for the live season's raids
+        p.ejRaidDiffs = raidDiffs             -- raid name -> { difficulty ids it actually offers }
         self:_SeedExpansions()                -- materialise the expansion FK targets now the tier levels are known
         -- The CURRENT raid tier is the expansion that actually OWNS the newest raids, derived from the
         -- raids themselves -- not merely the newest journal tier that lists some. A new tier can
@@ -876,7 +907,10 @@ function Dashboard:_InstanceTilesFor(names, logoTier, expandedName, artKind)
             onClick = function()
                 p.expandedInstance = p.expandedInstance or {}
                 local cat = p.category
-                p.expandedInstance[cat] = (p.expandedInstance[cat] == instName) and nil or instName
+                -- toggle: reselecting the open tile clears it (an explicit if -- `x and nil or y`
+                -- would never yield nil and so could never collapse).
+                if p.expandedInstance[cat] == instName then p.expandedInstance[cat] = nil
+                else p.expandedInstance[cat] = instName end
                 self:_Render()
             end,
         }
@@ -893,9 +927,9 @@ function Dashboard:_InstanceDifficultyColumns(name, isRaid)
     local cols = {}
     for _, r in pairs(self:_Instances()) do
         if (r.isRaid and true or false) == isRaid and r.name == name then
-            local diff, total = r.diff, r.total
-            cols[#cols + 1] = { label = (DIFF[diff] and DIFF[diff].abbr) or diff or "?",
-                _rank = (DIFF[diff] and DIFF[diff].rank) or 0, width = 92,
+            local diff, total, meta = r.diff, r.total, DIFF_META[r.diffID]
+            cols[#cols + 1] = { label = (meta and meta.abbr) or diff or "?",
+                _rank = (meta and meta.rank) or 99, _id = r.diffID or 0, width = 92,
                 cell = function(e)
                     for _, l in ipairs(e.lockouts or {}) do
                         if l.name == name and l.diff == diff then return (l.progress or 0) .. "/" .. (l.total or total or "?") end
@@ -904,7 +938,7 @@ function Dashboard:_InstanceDifficultyColumns(name, isRaid)
                 end }
         end
     end
-    table.sort(cols, function(a, b) return a._rank < b._rank end)
+    table.sort(cols, function(a, b) if a._rank ~= b._rank then return a._rank < b._rank end return a._id < b._id end)
     return cols
 end
 
@@ -1032,10 +1066,11 @@ function Dashboard:_SeedInstances()
     if not (GetDifficultyInfo and self:_p().ejMap) then return end
     self:_SeedExpansions()                                   -- the FK target rows, before any instance
     local season = self:_p().ejSeasonRaids or {}
+    local raidDiffs = self:_p().ejRaidDiffs or {}
     for tier, names in pairs(self:_p().ejRaidsByTier or {}) do
         for _, name in ipairs(names) do
             local cs = season[name] and true or false
-            for _, id in ipairs(RAID_DIFF_IDS) do
+            for _, id in ipairs(raidDiffs[name] or RAID_DIFF_IDS) do   -- only the difficulties this raid offers
                 local diffName = GetDifficultyInfo(id)
                 if diffName then
                     self:_SeedInstance(name .. "|" .. diffName,
@@ -1090,11 +1125,18 @@ function Dashboard:_PruneInstances()
     for _, names in pairs(self:_p().ejRaidsByTier or {})    do for _, n in ipairs(names) do exists[n] = true end end
     for _, names in pairs(self:_p().ejDungeonsByTier or {}) do for _, n in ipairs(names) do exists[n] = true end end
     if not next(exists) then return end   -- journal somehow empty -- never prune against nothing
+    -- which difficulty ids each raid offers (clears rows over-seeded before per-raid difficulties existed)
+    local validDiff = {}
+    for name, ids in pairs(self:_p().ejRaidDiffs or {}) do
+        local s = {}; for _, id in ipairs(ids) do s[id] = true end; validDiff[name] = s
+    end
     local db = self:DB(); if not db then return end
     -- predicate runs on the RAW stored row (absent field = nil, not the NULL sentinel)
     db:Delete("dashboard_instance", function(r)
         if r.diff_id and not GetDifficultyInfo(r.diff_id) then return true end   -- difficulty retired
-        return not exists[r.name]                                               -- instance gone from the catalog
+        if not exists[r.name] then return true end                              -- instance gone from the catalog
+        local vd = r.is_raid and validDiff[r.name]
+        return (vd and r.diff_id and not vd[r.diff_id]) and true or false        -- a difficulty this raid never had
     end)
 end
 
