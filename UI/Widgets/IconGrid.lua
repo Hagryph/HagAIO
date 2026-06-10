@@ -36,6 +36,7 @@ function IconGridW:Initialize(parent, opts)
     local content = unwrap(sa:Content())
     local p = self:_p()
     p.scrollArea = sa
+    p.scrollContent = content   -- the inline detail frame parents here (scrolls with the tiles)
 
     local tiles = {}
     local function getTile(i)
@@ -87,12 +88,20 @@ function IconGridW:Initialize(parent, opts)
         local ih = math.floor(tw * ASPECT)                     -- image height
         local th = ih + TITLE_H                                 -- full tile height
         local data = p._tiles or {}
+        -- expand-in-place: the first tile flagged `expanded` opens a full-width detail frame right
+        -- after its ROW; every row below shifts down by the detail's height so nothing overlaps.
+        local exRow
+        for i, d in ipairs(data) do if d.expanded then exRow = math.floor((i - 1) / cols); break end end
+        local dh = (exRow ~= nil and p._detailFrame and p._detailHeight and p._detailHeight > 0)
+            and p._detailHeight or 0
+        if dh == 0 then exRow = nil end
         for i, d in ipairs(data) do
             local t = getTile(i)
             local col, rowi = (i - 1) % cols, math.floor((i - 1) / cols)
+            local yoff = (exRow ~= nil and rowi > exRow) and (dh + GAP) or 0   -- rows below the detail
             t:SetSize(tw, th)
             t:ClearAllPoints()
-            t:SetPoint("TOPLEFT", content, "TOPLEFT", col * (tw + GAP), -(rowi * (th + GAP)))
+            t:SetPoint("TOPLEFT", content, "TOPLEFT", col * (tw + GAP), -(rowi * (th + GAP) + yoff))
             -- Describe WHAT this tile's image should look like; the Texture widget owns the crop/fit/
             -- anchor maths. Box size (tw x ih) is passed in because the holder's anchored size isn't
             -- resolved yet at refresh time.
@@ -116,8 +125,20 @@ function IconGridW:Initialize(parent, opts)
         -- surplus tiles (the list shrank, e.g. an entry was removed): hide them. Hiding the tile hides
         -- its texture too, so WoW frees that VRAM; the tile + image widget are kept for reuse.
         for i = #data + 1, #tiles do tiles[i]:Hide() end
+        -- the inline detail frame, anchored full-width directly under the expanded tile's row
+        if p._detailFrame then
+            if exRow ~= nil then
+                p._detailFrame:ClearAllPoints()
+                p._detailFrame:SetPoint("TOPLEFT", content, "TOPLEFT", 0, -((exRow + 1) * (th + GAP)))
+                p._detailFrame:SetWidth(w)
+                p._detailFrame:SetHeight(dh)
+                p._detailFrame:Show()
+            else
+                p._detailFrame:Hide()
+            end
+        end
         local rows = math.max(1, math.ceil(#data / cols))
-        content:SetHeight(rows * th + (rows - 1) * GAP)
+        content:SetHeight(rows * th + (rows - 1) * GAP + (exRow ~= nil and (dh + GAP) or 0))
         sa:Update()
     end
 
@@ -126,6 +147,19 @@ function IconGridW:Initialize(parent, opts)
 end
 function IconGridW:SetTiles(list) local p = self:_p(); p._tiles = list or {}; p.refresh(); return self end
 function IconGridW:ScrollTop()    self:_p().scrollArea:ScrollTop(); return self end
+-- The scroll content -- parent the inline detail frame here so it scrolls with the tiles.
+function IconGridW:DetailParent()  return self:_p().scrollContent end
+-- Register the inline detail frame + its height (px). It opens after the tile flagged `expanded`
+-- (see SetTiles); pass height 0 / no expanded tile to keep it closed. Re-lays out on the next refresh.
+function IconGridW:SetDetail(frame, height)
+    local p = self:_p()
+    local f = frame and unwrap(frame) or nil
+    if p._detailFrame and p._detailFrame ~= f then p._detailFrame:Hide() end   -- a replaced/cleared panel stays hidden
+    p._detailFrame = f
+    p._detailHeight = height or 0
+    if f then f:SetParent(p.scrollContent) end
+    return self
+end
 -- Override how many tiles per row (re-lays out on the next Refresh; nil restores the default).
 function IconGridW:SetPerRow(n)   self:_p()._perRow = (n and n >= 1) and math.floor(n) or nil; return self end
 function IconGridW:Refresh()      self:_p().refresh(); return self end

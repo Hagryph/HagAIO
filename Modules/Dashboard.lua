@@ -848,18 +848,25 @@ function Dashboard:_SeasonRaidNames()
 end
 function Dashboard:_HasSeasonRaids() return self:_SeasonRaidNames()[1] ~= nil end
 
--- One icon tile per raid name: its own journal art (splash, else banner), labelled with its name;
--- clicking drills into that raid's per-difficulty lockout grid under `groupKey` ("current" or an
--- expansion name). Falls back to `logoTier`'s banner until the raid art has loaded.
-function Dashboard:_RaidTilesFor(groupKey, names, logoTier)
+-- One icon tile per raid name: its own journal art (splash, else banner), labelled with its name.
+-- Clicking a tile EXPANDS it in place (no navigation): the lockout table for that raid opens inline
+-- under its row, and the tile highlights; clicking it again (or another) toggles. Falls back to
+-- `logoTier`'s banner until the raid art has loaded.
+function Dashboard:_RaidTilesFor(groupKey, names, logoTier, expandedName)
     local p = self:_p()
     local tiles = {}
     for _, name in ipairs(names) do
         local raidName = name
+        local on = (raidName == expandedName)
         local tile = {
             texture = logoTier and self:_ExpansionLogo(logoTier) or nil,
-            label = raidName,
-            onClick = function() p.nav:Select("raid:" .. groupKey .. "|" .. raidName) end,
+            label = raidName, selected = on, expanded = on,
+            onClick = function()
+                p.expandedRaid = p.expandedRaid or {}
+                local cat = p.category
+                p.expandedRaid[cat] = (p.expandedRaid[cat] == raidName) and nil or raidName
+                self:_Render()
+            end,
         }
         local art = self:_InstanceArt(raidName, "raid")
         if art then applyArt(tile, art) end
@@ -867,9 +874,65 @@ function Dashboard:_RaidTilesFor(groupKey, names, logoTier)
     end
     return tiles
 end
-function Dashboard:_RaidTiles(exp) return self:_RaidTilesFor(exp, self:_RaidsInExpansion(exp), exp) end
-function Dashboard:_SeasonRaidTiles()
-    return self:_RaidTilesFor("current", self:_SeasonRaidNames(), self:_p().currentExpansion)
+
+-- Difficulty columns for ONE raid: a column per difficulty present (LFR/Normal/Heroic/Mythic),
+-- ordered by rank, each cell the viewing-context character's lock progress ("6/8") or "-".
+function Dashboard:_RaidDifficultyColumns(name)
+    local cols = {}
+    for _, r in pairs(self:_Instances()) do
+        if r.isRaid and r.name == name then
+            local diff, total = r.diff, r.total
+            cols[#cols + 1] = { label = (DIFF[diff] and DIFF[diff].abbr) or diff or "?",
+                _rank = (DIFF[diff] and DIFF[diff].rank) or 0, width = 92,
+                cell = function(e)
+                    for _, l in ipairs(e.lockouts or {}) do
+                        if l.name == name and l.diff == diff then return (l.progress or 0) .. "/" .. (l.total or total or "?") end
+                    end
+                    return "-"
+                end }
+        end
+    end
+    table.sort(cols, function(a, b) return a._rank < b._rank end)
+    return cols
+end
+
+-- The per-page inline detail Grid (rows = characters, cols = a raid's difficulties), created lazily
+-- inside the icon page's scroll content. Cached per page; reused as the expanded raid changes.
+function Dashboard:_RaidDetailGrid(page)
+    local p = self:_p()
+    p.detailGrids = p.detailGrids or {}
+    if p.detailGrids[page] then return p.detailGrids[page] end
+    local g = W.Grid:New(page:DetailParent(), { header = true, scroll = false, striped = true, rowHeight = 20 })
+    p.detailGrids[page] = g
+    return g
+end
+
+-- Fill the page's detail Grid with `name`'s per-character lockouts; returns the px height it needs.
+function Dashboard:_FillRaidDetail(page, name)
+    local g = self:_RaidDetailGrid(page)
+    local columns, rows = self:_BuildLockoutGrid(self:_RaidDifficultyColumns(name))
+    g:SetColumns(columns)
+    g:SetRows(rows)
+    return 22 + #rows * 20 + 8          -- header + one row per character + padding
+end
+
+-- Render an expandable raid icon page (season or one expansion): the tiles, plus the clicked raid's
+-- lockout table opening inline. Keeps "Raids -> Expansion" the deepest the nav ever goes.
+function Dashboard:_ShowRaidPage(page, groupKey, names, logoTier)
+    local p = self:_p()
+    p.expandedRaid = p.expandedRaid or {}
+    local want, expanded = p.expandedRaid[p.category]
+    for _, n in ipairs(names) do if n == want then expanded = n; break end end
+    p.expandedRaid[p.category] = expanded                       -- drop a stale name (raid no longer listed)
+    if expanded then page:SetDetail(self:_RaidDetailGrid(page), self:_FillRaidDetail(page, expanded))
+    else page:SetDetail(nil, 0) end
+    page:SetTiles(self:_RaidTilesFor(groupKey, names, logoTier, expanded))
+end
+
+-- The newest season raid's splash, for the Current Season overview tile (else nil).
+function Dashboard:_LatestSeasonRaidArt()
+    local names = self:_SeasonRaidNames()
+    if names[1] then return self:_InstanceArt(names[1], "raid") end
 end
 
 -- The newest season raid's splash, for the Current Season overview tile (else nil).
@@ -1188,24 +1251,13 @@ function Dashboard:_NavItems()
             items[#items + 1] = { key = c.key, label = c.label, indent = c.indent and 1 or 0 }
             -- a deeper sub-node per expansion, only while this category is open (collapsible tree)
             if c.key == "raids" and raidsOpen then
-                local activeExp = cat:match("^raid:([^|]+)")          -- the group drilled into ("current" or an exp)
-                -- Current Season first (the live season's raids), then one node per expansion. Each
-                -- lists its raids a level deeper while open (matches that group's tile grid).
+                -- Current Season first (the live season's raids), then one node per expansion. The nav
+                -- stops here: a raid's lockouts open INLINE on its tile, not as a deeper nav level.
                 if self:_HasSeasonRaids() then
                     items[#items + 1] = { key = "raid:current", label = SEASON_LABEL, indent = 2 }
-                    if activeExp == "current" then
-                        for _, rn in ipairs(self:_SeasonRaidNames()) do
-                            items[#items + 1] = { key = "raid:current|" .. rn, label = rn, indent = 3 }
-                        end
-                    end
                 end
                 for _, exp in ipairs(self:_RaidExpansions()) do      -- all raid tiers (full catalog)
                     items[#items + 1] = { key = "raid:" .. exp, label = exp, indent = 2 }
-                    if exp == activeExp then
-                        for _, rn in ipairs(self:_RaidsInExpansion(exp)) do
-                            items[#items + 1] = { key = "raid:" .. exp .. "|" .. rn, label = rn, indent = 3 }
-                        end
-                    end
                 end
             elseif c.key == "dungeons" and dungeonsOpen then
                 if self:_SeasonDungeons() then
@@ -1245,19 +1297,9 @@ function Dashboard:_ResolveCategory(key)
         return "Dungeons", function() return self:_CatalogColumns(nil, false) end    -- current expansion
     end
     -- a single raid drilled into from its expansion's tile grid: every difficulty of just that raid
-    local dexp_raid, draid = key and key:match("^raid:([^|]+)|(.+)$")
-    if dexp_raid and draid then
-        return draid, function()
-            return self:_LockoutColumns(function(r)
-                if not (r.isRaid and r.name == draid) then return false end
-                if dexp_raid == "current" then return true end          -- season drill: match by raid name
-                return (r.expansion or "Other") == dexp_raid
-            end)
-        end
-    end
-    if key == "raid:current" then
-        return SEASON_LABEL, function() return self:_LockoutColumns(function(r) return self:_IsSeasonRaid(r) end) end
-    end
+    -- "raid:current" / "raid:<exp>" are icon pages (resolved in _Render); the label here is only a
+    -- fallback. Lockouts open inline on a raid tile, so there's no per-raid columns key any more.
+    if key == "raid:current" then return SEASON_LABEL, function() return {} end end
     local rexp = key and key:match("^raid:(.+)$")
     if rexp then
         return rexp .. " Raids", function() return self:_CatalogColumns(rexp, true) end
@@ -1448,29 +1490,36 @@ function Dashboard:_Render()
             page:SetTiles(self:_CategoryTiles())
         elseif raidExp == "current" then
             p.catTitle:SetText(SEASON_LABEL)
-            page:SetTiles(self:_SeasonRaidTiles())
+            self:_ShowRaidPage(page, "current", self:_SeasonRaidNames(), p.currentExpansion)
         elseif raidExp then
             p.catTitle:SetText(raidExp .. " Raids")
-            page:SetTiles(self:_RaidTiles(raidExp))
+            self:_ShowRaidPage(page, raidExp, self:_RaidsInExpansion(raidExp), raidExp)
         else
             p.catTitle:SetText(label)
             page:SetTiles(self:_OverviewTiles(p.category))
         end
-        page:ScrollTop()
+        if p.lastIconCategory ~= p.category then page:ScrollTop() end   -- keep scroll on an in-page expand toggle
+        p.lastIconCategory = p.category
         return
     end
+    p.lastIconCategory = nil
     p.catTitle:SetText(label)
     for _, g in pairs(p.iconPages) do g:Hide() end   -- data grid view: hide every icon page
     p.grid:Show()
 
     local cols = (columnsFn and columnsFn(chars)) or {}
+    local columns, rows = self:_BuildLockoutGrid(cols)
+    p.grid:SetColumns(columns)
+    p.grid:SetRows(rows)
+end
 
-    -- one sticky Character column + one column per category item; the grid aligns header+cells
+-- Build (columns, rows) for a character-lockout grid: a sticky Character column + one per `cols`
+-- entry; one row per character (class-coloured name, then each column's cell, "-" tinted faint).
+-- Shared by the main data grid and the inline raid-detail panel so they read identically.
+function Dashboard:_BuildLockoutGrid(cols)
     local columns = { { width = NAME_COL, label = "Character" } }
     for _, c in ipairs(cols) do columns[#columns + 1] = { width = c.width, label = c.label } end
-    p.grid:SetColumns(columns)
-
-    -- one row per character: cell 1 = class-coloured name, then a value per item column
+    local keys, chars = self:_SortedChars()
     local rows = {}
     for _, key in ipairs(keys) do
         local e = chars[key]
@@ -1483,7 +1532,7 @@ function Dashboard:_Render()
             return cells[ci] == "-" and "textFaint" or "text"
         end }
     end
-    p.grid:SetRows(rows)
+    return columns, rows
 end
 
 function Dashboard:_UpdateHeader()
