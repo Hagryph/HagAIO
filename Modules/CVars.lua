@@ -108,6 +108,11 @@ do
     end
 end
 
+-- Broadly-known, hand-set CVars (none in the curated list) offered as the add-field placeholder. The
+-- example shown is the first of these that ACTUALLY EXISTS on the current client -- CVar availability
+-- shifts between builds, so we never advertise a dead name.
+local EXAMPLE_CVARS = { "removeChatDelay", "nameplateMotionSpeed", "chatStyle", "WorldTextScale" }
+
 -- ---- lifecycle ------------------------------------------------------------
 function CVars:OnInitialize()
     local p = self:_p()
@@ -255,6 +260,14 @@ function CVars:_Exists(name)
     return C_CVar and C_CVar.GetCVarInfo and C_CVar.GetCVarInfo(name) ~= nil
 end
 
+-- The first EXAMPLE_CVARS entry that exists on this client (nil if none), for the add-field placeholder.
+function CVars:_HintExample()
+    for _, name in ipairs(EXAMPLE_CVARS) do
+        if self:_Exists(name) then return name end
+    end
+    return nil
+end
+
 -- Set a CVar in the game (no globalising). If the CVar is already globalised its
 -- saved value is kept in sync. Returns true on success; warns + returns false.
 function CVars:_SetCVar(name, value)
@@ -394,7 +407,8 @@ end
 function CVars:_PlaceAddRow(box, y, width)
     local input = W.Input:New(box, width - 120)
     input:SetPoint("TOPLEFT", 6, y)
-    input:SetHint("e.g. WorldTextScale")   -- a popular hand-set CVar, shown faint while empty
+    local eg = self:_HintExample()                       -- a popular hand-set CVar that exists here
+    input:SetHint(eg and ("e.g. " .. eg) or "e.g. a CVar name")
 
     local add = W.TextButton:New(box, "Add")
     add:SetPoint("LEFT", input, "RIGHT", 10, 0)
