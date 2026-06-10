@@ -19,8 +19,22 @@ local LocalTables = Class.new("LocalTables", ns.Service)
 local function playerFaction() return UnitFactionGroup("player") or "?" end
 
 function LocalTables:OnInitialize()
-    -- Discover all flight masters (+ their zones) whenever a taxi map opens.
-    ns.EventBus:On("TAXIMAP_OPENED", function() self:_DiscoverNodes() end)
+    -- Discover all flight masters (+ their zones) whenever a taxi map opens (deferred -- see below).
+    ns.EventBus:On("TAXIMAP_OPENED", function() self:_ScheduleDiscover() end)
+end
+
+-- Discovery scans every node on the open map and writes the flight_master/zone tables -- enough work
+-- to hitch the frame the taxi map opens. Defer it (C_Timer.After) so the map opens instantly and the
+-- nodes are read on the next frame; the map stays open, so GetTaxiMapID is still valid. Coalesced so
+-- one pass runs per open, not one per stacked fire.
+function LocalTables:_ScheduleDiscover()
+    local p = self:_p()
+    if p.discoverPending then return end
+    p.discoverPending = true
+    C_Timer.After(0, function()
+        p.discoverPending = false
+        self:_DiscoverNodes()
+    end)
 end
 
 -- The zone NAME (and map x,y) at a position, seeding the local `zone` table from the world map.
