@@ -111,7 +111,7 @@ end
 -- Broadly-known, hand-set CVars (none in the curated list) offered as the add-field placeholder. The
 -- example shown is the first of these that ACTUALLY EXISTS on the current client -- CVar availability
 -- shifts between builds, so we never advertise a dead name.
-local EXAMPLE_CVARS = { "removeChatDelay", "nameplateMotionSpeed", "chatStyle", "WorldTextScale" }
+local EXAMPLE_CVARS = { "WorldTextScale_v2", "WorldTextScale", "removeChatDelay", "nameplateMotionSpeed", "chatStyle" }
 
 -- ---- lifecycle ------------------------------------------------------------
 function CVars:OnInitialize()
