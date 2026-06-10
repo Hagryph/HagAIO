@@ -65,20 +65,41 @@ local function conformKey(row, cols)
     return table.concat(parts, "\31")
 end
 
+-- Reconcile a persisted row to the CURRENT schema (an automatic column-level migration), in place:
+--   * DROP any key whose column no longer exists (e.g. a removed PK column left behind in old saves,
+--     like flight_master.id once node_id became the PK), so it stops lingering in the saved data; and
+--   * ADD any newly-introduced column from its default.
+-- A column still missing afterwards (added NOT NULL with no default) is left to _RowConforms, which
+-- drops the row. `valid` is the set of current column names for the table.
+function Database:_Reconcile(tbl, row, valid)
+    for k in pairs(row) do
+        if not valid[k] then row[k] = nil end                              -- column dropped from the schema
+    end
+    for _, col in ipairs(tbl:Columns()) do
+        local n = col:Name()
+        if row[n] == nil and col:HasDefault() then row[n] = col:Default() end   -- column added with a default
+    end
+end
+
 -- On load, persisted data may predate a schema change (a column became NOT NULL, a type changed, a
--- column became the primary key, ...). Drop every row that no longer conforms -- bad NULL/type, OR a
--- DUPLICATE primary-key / unique key (keeping the first) -- and WARN how many per table, so stale or
--- invalid rows never silently poison queries or constraint checks. Runs before the index is built.
+-- column was added or removed, became the primary key, ...). First RECONCILE each row's columns to the
+-- current schema (_Reconcile: drop removed columns, fill new defaulted ones), then drop every row that
+-- still doesn't conform -- bad NULL/type, OR a DUPLICATE primary-key / unique key (keeping the first)
+-- -- and WARN how many per table, so stale or invalid rows never silently poison queries or constraint
+-- checks. Runs before the index is built.
 function Database:_Conform()
     local p = self:_p()
     for _, tname in ipairs(p.schema:TableNames()) do
         local tbl, rows = p.schema:Table(tname), p.store:Rows(tname)
         if rows and #rows > 0 then
             local pkCols, uniques = tbl:PrimaryKey(), tbl:Uniques()
+            local valid = {}
+            for _, col in ipairs(tbl:Columns()) do valid[col:Name()] = true end
             local seenPK, seenU = {}, {}
             for i = 1, #uniques do seenU[i] = {} end
             local kept, removed = {}, 0
             for _, row in ipairs(rows) do
+                self:_Reconcile(tbl, row, valid)         -- column-level auto-migration before the row checks
                 local ok = self:_RowConforms(tbl, row)
                 if ok and #pkCols > 0 then
                     local k = conformKey(row, pkCols)
