@@ -315,7 +315,8 @@ function Dashboard:_Instances()
     local out = {}
     for _, r in ipairs(db:Select("*"):From("dashboard_instance"):Run()) do
         out[r.key] = { name = denull(r.name), diff = denull(r.diff), isRaid = denull(r.is_raid),
-            diffID = denull(r.diff_id), total = denull(r.total), expansion = denull(r.expansion) }
+            diffID = denull(r.diff_id), total = denull(r.total), expansion = denull(r.expansion),
+            season = denull(r.current_season) and true or false }
     end
     return out
 end
@@ -471,6 +472,7 @@ function Dashboard:_BuildCatalog()
         p.seededCatalog = true
     end
     self:_SeedSeasonDungeons()           -- current M+ season pool (cheap + idempotent)
+    self:_MarkSeasonFlags()              -- refresh current_season after the prune has cleared orphans
 end
 
 -- Fill the expansion on any dashboard_instance row recorded (by a lockout sighting) before the
@@ -510,41 +512,55 @@ function Dashboard:_ExpansionMap()
     local image = {}       -- instance name -> EJ buttonImage1 (compact tile art; banner fallback)
     local lore = {}        -- instance name -> EJ loreImage (the big right-side splash; preferred art)
     local prev = EJ_GetCurrentTier and EJ_GetCurrentTier()
-    local function walk(tier, tierName, isRaid, sink)
+    local function walk(tier, tierName, isRaid, sink, isSeason)
         EJ_SelectTier(tier)
         local i = 1
         while true do
             local instID, name, _, _, buttonImage, loreImage = EJ_GetInstanceByIndex(i, isRaid)
             if not instID then break end
             if name == "Keystone Dungeons" then name = nil end   -- dungeon meta-entry, never a real instance
-            -- The RAID list carries a world-boss "meta" entry named after the expansion itself
-            -- (e.g. "Pandaria", "Draenor", "Midnight") rather than after a real raid -- it has no
-            -- weekly lockout, so drop it. The label matches the tier (exactly, or as its trailing
-            -- word for long tier names like "Mists of Pandaria" -> "Pandaria"), or is the expansion's
-            -- continent name for the few tiers that label it that way (WORLD_RAID_ALIASES).
-            if isRaid and name and tierName
-               and (name == tierName or tierName:match("(%S+)%s*$") == name
-                    or WORLD_RAID_ALIASES[name] == tierName) then
-                name = nil
+            -- Drop the RAID list's world-boss "meta" entry (no weekly lockout). On a normal tier it's
+            -- named after the expansion (e.g. "Pandaria", "Draenor", "Midnight") -- matched exactly,
+            -- by trailing word for long names ("Mists of Pandaria" -> "Pandaria"), or by continent
+            -- alias (WORLD_RAID_ALIASES). On the "Current Season" tier it's named after the LIVE
+            -- expansion instead, so match that there.
+            if isRaid and name then
+                if isSeason then
+                    local cur = self:_CurrentExpansionName()
+                    if cur and (name == cur or WORLD_RAID_ALIASES[name] == cur) then name = nil end
+                elseif tierName and (name == tierName or tierName:match("(%S+)%s*$") == name
+                                     or WORLD_RAID_ALIASES[name] == tierName) then
+                    name = nil
+                end
             end
-            if name and tierName then
-                -- map keeps the OLDEST tier (the home expansion); art keeps the NEWEST tier. Two
-                -- instances can share a name (a legacy dungeon AND a reworked current-season version,
-                -- e.g. Magister's Terrace) -- tiers are walked newest-first, so the first art we see is
-                -- the current version's, which is the one the M+ season uses.
-                map[name] = tierName; found = true
+            if name then
+                -- art keeps the NEWEST tier (first write wins; the season tier is walked first, so a
+                -- current-season instance gets its current-version art before its home tier is reached).
                 if buttonImage and not image[name] then image[name] = buttonImage end
                 if loreImage  and not lore[name]  then lore[name]  = loreImage  end
-                if sink then sink[#sink + 1] = name end
+                if isSeason then
+                    if sink then sink[#sink + 1] = name end          -- season membership only; home stays the real tier
+                elseif tierName then
+                    map[name] = tierName; found = true               -- map keeps the OLDEST tier (the home expansion)
+                    if sink then sink[#sink + 1] = name end
+                end
             end
             i = i + 1
         end
     end
+    local seasonRaidList = {}                 -- raids on the journal's "Current Season" page, newest tier first
     for tier = EJ_GetNumTiers(), 1, -1 do   -- newest tier first
         local tierName = EJ_GetTierInfo(tier)
         -- "World Raids" is a cross-expansion world-boss bucket, not a real expansion -- drop it so it
         -- doesn't sit among the expansion tiles (Midnight, Pandaria, ...). (enUS, like the other labels.)
         if tierName == "World Raids" then tierName = nil end
+        if tierName == SEASON_LABEL then
+            -- The "Current Season" tier is a journal PAGE, not an expansion: record which raids are in
+            -- the live season (its world-boss entry dropped) but skip the tier/expansion bookkeeping --
+            -- those raids keep their real home expansion (set when their own tier is walked) plus a flag.
+            walk(tier, tierName, true, seasonRaidList, true)
+            tierName = nil
+        end
         if tierName then
             tierLevel[tierName] = tier - 1   -- EJ tier 1 == Classic == expansion level 0
             local raids, dungeons = {}, {}
@@ -566,6 +582,11 @@ function Dashboard:_ExpansionMap()
         p.ejTierLevel = tierLevel             -- tier name -> expansionLevel (for native logos)
         p.ejImage = image                     -- instance name -> EJ tile art (buttonImage1; banner fallback)
         p.ejLore = lore                       -- instance name -> EJ splash (loreImage; preferred art)
+        p.ejSeasonRaidList = seasonRaidList   -- raids in the live season, newest tier first (tile + nav order)
+        local seasonSet = {}
+        for _, n in ipairs(seasonRaidList) do seasonSet[n] = true end
+        p.ejSeasonRaids = seasonSet           -- name -> true for the live season's raids
+        self:_SeedExpansions()                -- materialise the expansion FK targets now the tier levels are known
         -- The CURRENT raid tier is the expansion that actually OWNS the newest raids, derived from the
         -- raids themselves -- not merely the newest journal tier that lists some. A new tier can
         -- re-list the prior expansion's raids before its own ship (a "Midnight" tier showing TWW
@@ -590,9 +611,31 @@ function Dashboard:_InstanceExpansion(name)
     return (m and m[name]) or "Other"
 end
 
--- The native expansion logo texture for a tier (the icon WoW ships per expansion), or nil. Used
--- for the overview's icon tiles. GetExpansionDisplayInfo(expansionLevel) -> { logo, banner }.
+-- Seed the expansion registry from the journal tier levels: one row per tier with the banner logo
+-- (a fileID from GetExpansionDisplayInfo) the tiles display. Insert-if-missing; runs the moment the
+-- map is built so the dashboard_instance.expansion FK target always exists before any instance seeds.
+function Dashboard:_SeedExpansions()
+    local db = self:DB(); if not db then return end
+    for name, level in pairs(self:_p().ejTierLevel or {}) do
+        if not db:Select("name"):From("expansion"):Where("name", "=", name):Limit(1):Run()[1] then
+            local info = GetExpansionDisplayInfo and GetExpansionDisplayInfo(level)
+            local logo = info and info.logo
+            db:Insert("expansion", { name = name, level = level,
+                logo = (type(logo) == "number") and logo or ns.DB.NULL })
+        end
+    end
+end
+
+-- The native expansion banner texture for a tier (the icon WoW ships per expansion), or nil. Reads
+-- the stored fileID from the expansion table (the registry the tiles are driven from); falls back to
+-- the live GetExpansionDisplayInfo(expansionLevel) before the registry is seeded.
 function Dashboard:_ExpansionLogo(tierName)
+    local db = self:DB()
+    if db then
+        local r = db:Select("logo"):From("expansion"):Where("name", "=", tierName):Limit(1):Run()[1]
+        local logo = r and denull(r.logo)
+        if logo then return logo end
+    end
     local lvl = self:_p().ejTierLevel and self:_p().ejTierLevel[tierName]
     if not (lvl and GetExpansionDisplayInfo) then return nil end
     local info = GetExpansionDisplayInfo(lvl)
@@ -764,21 +807,18 @@ function Dashboard:_RaidExpansions()
     return self:_KnownExpansions(true)
 end
 
--- Distinct raids in one expansion, NEWEST FIRST -- the order the journal lists them (oldest->newest),
--- reversed. Sourced from the seeded catalog (one row per raid per difficulty), so it reflects exactly
--- what's stored; the journal order positions them, any catalog-only leftover (a retired tier) sorts in
--- alphabetically after. Drives both the per-expansion raid tiles and their nav sub-nodes (same order).
-function Dashboard:_RaidsInExpansion(exp)
-    local p = self:_p()
+-- Distinct raid names in a catalog group, NEWEST FIRST. `pred(entry)` selects the rows; `orderList`
+-- (journal order, oldest->newest) positions them reversed, any leftover (e.g. a retired tier) sorted
+-- in after. Sourced from the seeded catalog, so it reflects exactly what's stored.
+function Dashboard:_RaidNames(pred, orderList)
     local present = {}
     for _, r in pairs(self:_Instances()) do
-        if r.isRaid and (r.expansion or "Other") == exp then present[r.name] = true end
+        if r.isRaid and pred(r) then present[r.name] = true end
     end
     local out = {}
-    local ordered = p.ejRaidsByTier and p.ejRaidsByTier[exp]
-    if ordered then
-        for i = #ordered, 1, -1 do
-            local n = ordered[i]
+    if orderList then
+        for i = #orderList, 1, -1 do
+            local n = orderList[i]
             if present[n] then out[#out + 1] = n; present[n] = nil end
         end
     end
@@ -789,24 +829,53 @@ function Dashboard:_RaidsInExpansion(exp)
     return out
 end
 
--- One icon tile per raid in an expansion: the raid's own journal art (splash, else banner), labelled
--- with its name; clicking drills into that single raid's per-difficulty lockout grid. Falls back to the
--- expansion logo until a raid's art has loaded (same as the overview tiles).
-function Dashboard:_RaidTiles(exp)
+-- Raids in one expansion (by FK) / in the live season (by flag), newest first -- each drives its tile
+-- grid and the matching nav sub-nodes. A season raid keeps its home expansion, so it lists under both.
+function Dashboard:_RaidsInExpansion(exp)
+    return self:_RaidNames(function(r) return (r.expansion or "Other") == exp end,
+        self:_p().ejRaidsByTier and self:_p().ejRaidsByTier[exp])
+end
+-- Whether a catalog raid is in the live season. Prefers the journal set built this session (available
+-- the moment the map is walked, before the persisted flag pass runs); falls back to the stored flag.
+function Dashboard:_IsSeasonRaid(r)
+    if not r.isRaid then return false end
+    local season = self:_p().ejSeasonRaids
+    if season and next(season) then return season[r.name] and true or false end
+    return r.season and true or false
+end
+function Dashboard:_SeasonRaidNames()
+    return self:_RaidNames(function(r) return self:_IsSeasonRaid(r) end, self:_p().ejSeasonRaidList)
+end
+function Dashboard:_HasSeasonRaids() return self:_SeasonRaidNames()[1] ~= nil end
+
+-- One icon tile per raid name: its own journal art (splash, else banner), labelled with its name;
+-- clicking drills into that raid's per-difficulty lockout grid under `groupKey` ("current" or an
+-- expansion name). Falls back to `logoTier`'s banner until the raid art has loaded.
+function Dashboard:_RaidTilesFor(groupKey, names, logoTier)
     local p = self:_p()
     local tiles = {}
-    for _, name in ipairs(self:_RaidsInExpansion(exp)) do
+    for _, name in ipairs(names) do
         local raidName = name
         local tile = {
-            texture = self:_ExpansionLogo(exp),
+            texture = logoTier and self:_ExpansionLogo(logoTier) or nil,
             label = raidName,
-            onClick = function() p.nav:Select("raid:" .. exp .. "|" .. raidName) end,
+            onClick = function() p.nav:Select("raid:" .. groupKey .. "|" .. raidName) end,
         }
         local art = self:_InstanceArt(raidName, "raid")
         if art then applyArt(tile, art) end
         tiles[#tiles + 1] = tile
     end
     return tiles
+end
+function Dashboard:_RaidTiles(exp) return self:_RaidTilesFor(exp, self:_RaidsInExpansion(exp), exp) end
+function Dashboard:_SeasonRaidTiles()
+    return self:_RaidTilesFor("current", self:_SeasonRaidNames(), self:_p().currentExpansion)
+end
+
+-- The newest season raid's splash, for the Current Season overview tile (else nil).
+function Dashboard:_LatestSeasonRaidArt()
+    local names = self:_SeasonRaidNames()
+    if names[1] then return self:_InstanceArt(names[1], "raid") end
 end
 
 -- Columns for one expansion's catalog (raids if isRaid, else dungeons; defaults to the current
@@ -892,13 +961,17 @@ end
 -- seeded separately (_SeedSeasonDungeons). Insert-if-missing; needs the journal map (caller guards).
 function Dashboard:_SeedInstances()
     if not (GetDifficultyInfo and self:_p().ejMap) then return end
+    self:_SeedExpansions()                                   -- the FK target rows, before any instance
+    local season = self:_p().ejSeasonRaids or {}
     for tier, names in pairs(self:_p().ejRaidsByTier or {}) do
         for _, name in ipairs(names) do
+            local cs = season[name] and true or false
             for _, id in ipairs(RAID_DIFF_IDS) do
                 local diffName = GetDifficultyInfo(id)
                 if diffName then
                     self:_SeedInstance(name .. "|" .. diffName,
-                        { name = name, diff = diffName, diff_id = id, is_raid = true, expansion = tier })
+                        { name = name, diff = diffName, diff_id = id, is_raid = true, expansion = tier,
+                          current_season = cs })
                 end
             end
         end
@@ -906,8 +979,36 @@ function Dashboard:_SeedInstances()
     local cur = self:_CurrentExpansionTier()
     for _, name in ipairs((self:_p().ejDungeonsByTier or {})[cur] or {}) do
         self:_SeedInstance(name .. "|" .. M0,
-            { name = name, diff = M0, diff_id = M0_ID, is_raid = false, expansion = cur })
+            { name = name, diff = M0, diff_id = M0_ID, is_raid = false, expansion = cur,
+              current_season = self:_IsSeasonDungeon(name) })
     end
+end
+
+-- True if a dungeon is in the live Mythic+ season rotation (the addon's "Current Season" set).
+function Dashboard:_IsSeasonDungeon(name)
+    local s = self:_SeasonDungeons()
+    return (s and s.set[name]) and true or false
+end
+
+-- Refresh the current_season flag on the catalog each pass (the season set can finalise after login,
+-- and pre-existing rows seeded before the flag existed default to false). Updates ONLY rows whose
+-- expansion is null or a known registry entry, so a stray orphan (e.g. a not-yet-pruned legacy row)
+-- can't trip the FK recheck Update runs; the `~=` guards skip rows already in the right state.
+function Dashboard:_MarkSeasonFlags()
+    local db = self:DB(); if not db then return end
+    local valid = {}
+    for _, e in ipairs(db:Select("name"):From("expansion"):Run()) do valid[denull(e.name)] = true end
+    local function safe(r) local e = denull(r.expansion); return e == nil or valid[e] end
+    local sr = self:_p().ejSeasonRaids or {}
+    local sd = self:_SeasonDungeons(); local sdset = (sd and sd.set) or {}
+    db:Update("dashboard_instance", { current_season = true },
+        function(r) return safe(r) and r.is_raid == true and sr[denull(r.name)] and r.current_season ~= true end)
+    db:Update("dashboard_instance", { current_season = false },
+        function(r) return safe(r) and r.is_raid == true and not sr[denull(r.name)] and r.current_season ~= false end)
+    db:Update("dashboard_instance", { current_season = true },
+        function(r) return safe(r) and r.is_raid ~= true and sdset[denull(r.name)] and r.current_season ~= true end)
+    db:Update("dashboard_instance", { current_season = false },
+        function(r) return safe(r) and r.is_raid ~= true and not sdset[denull(r.name)] and r.current_season ~= false end)
 end
 
 -- Drop catalog rows whose INSTANCE or DIFFICULTY no longer exists: the difficulty id no longer
@@ -940,7 +1041,8 @@ function Dashboard:_SeedSeasonDungeons()
         local exp = self:_InstanceExpansion(name)
         if exp ~= "Other" then
             self:_SetInstance(name .. "|" .. M0,
-                { name = name, diff = M0, diff_id = M0_ID, is_raid = false, expansion = exp })
+                { name = name, diff = M0, diff_id = M0_ID, is_raid = false, expansion = exp,
+                  current_season = true })   -- in the season pool by definition
         end
     end
 end
@@ -1086,10 +1188,19 @@ function Dashboard:_NavItems()
             items[#items + 1] = { key = c.key, label = c.label, indent = c.indent and 1 or 0 }
             -- a deeper sub-node per expansion, only while this category is open (collapsible tree)
             if c.key == "raids" and raidsOpen then
-                local activeExp = cat:match("^raid:([^|]+)")          -- the expansion drilled into, if any
+                local activeExp = cat:match("^raid:([^|]+)")          -- the group drilled into ("current" or an exp)
+                -- Current Season first (the live season's raids), then one node per expansion. Each
+                -- lists its raids a level deeper while open (matches that group's tile grid).
+                if self:_HasSeasonRaids() then
+                    items[#items + 1] = { key = "raid:current", label = SEASON_LABEL, indent = 2 }
+                    if activeExp == "current" then
+                        for _, rn in ipairs(self:_SeasonRaidNames()) do
+                            items[#items + 1] = { key = "raid:current|" .. rn, label = rn, indent = 3 }
+                        end
+                    end
+                end
                 for _, exp in ipairs(self:_RaidExpansions()) do      -- all raid tiers (full catalog)
                     items[#items + 1] = { key = "raid:" .. exp, label = exp, indent = 2 }
-                    -- while an expansion is open, list ITS raids a level deeper (matches the tile grid)
                     if exp == activeExp then
                         for _, rn in ipairs(self:_RaidsInExpansion(exp)) do
                             items[#items + 1] = { key = "raid:" .. exp .. "|" .. rn, label = rn, indent = 3 }
@@ -1138,9 +1249,14 @@ function Dashboard:_ResolveCategory(key)
     if dexp_raid and draid then
         return draid, function()
             return self:_LockoutColumns(function(r)
-                return (r.isRaid and true or false) and (r.expansion or "Other") == dexp_raid and r.name == draid
+                if not (r.isRaid and r.name == draid) then return false end
+                if dexp_raid == "current" then return true end          -- season drill: match by raid name
+                return (r.expansion or "Other") == dexp_raid
             end)
         end
+    end
+    if key == "raid:current" then
+        return SEASON_LABEL, function() return self:_LockoutColumns(function(r) return self:_IsSeasonRaid(r) end) end
     end
     local rexp = key and key:match("^raid:(.+)$")
     if rexp then
@@ -1226,6 +1342,17 @@ function Dashboard:_OverviewTiles(key)
         }
     end
     if key == "raids" then
+        -- Current Season first (the live season's raids, by flag -- distinct from any one expansion),
+        -- pictured with the newest season raid's scene; then one tile per expansion.
+        if self:_HasSeasonRaids() then
+            tiles[#tiles + 1] = {
+                texture = self:_ExpansionLogo(p.currentExpansion),
+                label = SEASON_LABEL,
+                onClick = function() p.nav:Select("raid:current") end,
+            }
+            local art = self:_LatestSeasonRaidArt()
+            if art then applyArt(tiles[#tiles], art) end
+        end
         for _, exp in ipairs(self:_RaidExpansions()) do
             tile(exp, exp, "raid:" .. exp)
             -- the current tier's tile shows the latest raid's picture, not the expansion logo
@@ -1323,6 +1450,9 @@ function Dashboard:_Render()
         if p.category == "home" then
             p.catTitle:SetText("Overview")
             page:SetTiles(self:_CategoryTiles())
+        elseif raidExp == "current" then
+            p.catTitle:SetText(SEASON_LABEL)
+            page:SetTiles(self:_SeasonRaidTiles())
         elseif raidExp then
             p.catTitle:SetText(raidExp .. " Raids")
             page:SetTiles(self:_RaidTiles(raidExp))
@@ -1473,6 +1603,16 @@ ns.ModuleManager:Register(Dashboard:New("Dashboard", {
                     references = { table = "quest", column = "quest_id", onDelete = "cascade" } },
             },
             primaryKey = { "char_key", "freq", "quest_id" } },
+        -- Account-wide expansion registry (one row per Encounter Journal tier, e.g. "Midnight",
+        -- "The War Within"). The "Current Season" tier is NOT an expansion -- it's a flag on the
+        -- instances (current_season), not a row here. Each row carries the banner logo (a fileID
+        -- from GetExpansionDisplayInfo) the tiles display. dashboard_instance.expansion references it
+        -- and cascade-deletes with it, so retiring an expansion drops its raids/dungeons.
+        expansion = { scope = "global", columns = {
+            { name = "name",  type = "text", primaryKey = true },             -- journal tier name
+            { name = "level", type = "integer" },                            -- expansion level (logo lookup + ordering)
+            { name = "logo",  type = "integer" },                            -- banner fileID (GetExpansionDisplayInfo)
+        } },
         dashboard_instance = { scope = "global", columns = {
             { name = "key",       type = "text", primaryKey = true },         -- "name|difficulty"
             { name = "name",      type = "text" },
@@ -1480,7 +1620,9 @@ ns.ModuleManager:Register(Dashboard:New("Dashboard", {
             { name = "is_raid",   type = "boolean" },
             { name = "diff_id",   type = "integer" },                         -- locale-proof difficulty id (drives the prune)
             { name = "total",     type = "integer" },
-            { name = "expansion", type = "text" },                           -- journal tier name once known
+            { name = "expansion", type = "text",                              -- home expansion (FK; null until the journal map is known)
+                references = { table = "expansion", column = "name", onDelete = "cascade" } },
+            { name = "current_season", type = "boolean", default = false },   -- in the live raid / M+ season
         } },
     },
     commands = {

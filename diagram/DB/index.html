@@ -35,6 +35,7 @@
 <div id="viewport"><div id="stage"><pre class="mermaid">erDiagram
     cvar_category ||--o{ cvar_tracked : "category_id"
     keystone ||--o{ dashboard_char : "ks_mapid"
+    expansion ||--o{ dashboard_instance : "expansion"
     dashboard_char ||--o{ dashboard_lockout : "char_key"
     dashboard_instance ||--o{ dashboard_lockout : "instance_key"
     dashboard_char ||--o{ dashboard_quest : "char_key"
@@ -95,7 +96,8 @@
         boolean is_raid
         integer diff_id
         integer total
-        text expansion
+        text expansion FK
+        boolean current_season
     }
     dashboard_lockout {
         text char_key PK
@@ -122,6 +124,11 @@
         text point
         number x
         number y
+    }
+    expansion {
+        text name PK
+        integer level
+        integer logo
     }
     faction {
         text tag PK

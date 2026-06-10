@@ -36,10 +36,16 @@ local function spec()
                 references = { table = "keystone", column = "mapid", onDelete = "cascade" } },
             { name = "ks_level", type = "integer" },
         } },
+        expansion = { columns = {
+            { name = "name", type = "text", primaryKey = true },
+            { name = "level", type = "integer" }, { name = "logo", type = "integer" },
+        } },
         dashboard_instance = { columns = {
             { name = "key", type = "text", primaryKey = true }, { name = "name", type = "text" },
             { name = "diff", type = "text" }, { name = "is_raid", type = "boolean" }, { name = "diff_id", type = "integer" },
-            { name = "expansion", type = "text" },
+            { name = "expansion", type = "text",
+                references = { table = "expansion", column = "name", onDelete = "cascade" } },
+            { name = "current_season", type = "boolean", default = false },
         } },
         dashboard_vault = {
             columns = {
@@ -73,7 +79,9 @@ local KEY, IKEY = "Alt-Realm", "Raid|Heroic"
 local function seed(db)   -- reference rows first, then the character + its children
     db:Insert("keystone", { mapid = 501, name = "The Dawnbreaker" })
     db:Insert("quest", { quest_id = 42, title = "Weekly Quest" })
-    db:Insert("dashboard_instance", { key = IKEY, name = "Raid", diff = "Heroic", is_raid = true, diff_id = 16 })
+    db:Insert("expansion", { name = "Midnight", level = 11, logo = 12345 })
+    db:Insert("dashboard_instance", { key = IKEY, name = "Raid", diff = "Heroic", is_raid = true, diff_id = 16,
+        expansion = "Midnight", current_season = true })
     db:Insert("dashboard_char", { char_key = KEY, name = "Alt", class = "MAGE", level = 80, ks_mapid = 501, ks_level = 12 })
     db:InsertAll("dashboard_vault", {
         { char_key = KEY, ordinal = 1, progress = 1, threshold = 4 },
@@ -156,6 +164,34 @@ describe("Dashboard DB schema", function()
         assert.are.equal("Raid", inst.name)
         local q = db:Select("title"):From("quest"):Where("quest_id", "=", 42):Run()[1]
         assert.are.equal("Weekly Quest", q.title)
+    end)
+
+    it("cascade-deletes an expansion's instances (and their locks) when the expansion is removed", function()
+        local db = newDb(newDbNs())
+        seed(db)
+        db:Delete("expansion", function(x) return x.name == "Midnight" end)
+        assert.are.equal(0, #db:Select("*"):From("dashboard_instance"):Run())   -- the raid followed its expansion
+        assert.are.equal(0, #db:Select("*"):From("dashboard_lockout"):Run())    -- and the lock followed the raid
+        assert.are.equal(1, #db:Select("*"):From("dashboard_char"):Run())       -- the character stays
+    end)
+
+    it("rejects an instance whose expansion is not registered, but allows a null expansion", function()
+        local db = newDb(newDbNs())
+        seed(db)
+        assert.is_false(pcall(function()
+            db:Insert("dashboard_instance", { key = "Ghost|Mythic", name = "Ghost", is_raid = true, expansion = "Nowhere" })
+        end))
+        assert.is_true(pcall(function()   -- an unmapped instance (expansion absent) is fine -- the FK is optional
+            db:Insert("dashboard_instance", { key = "Unmapped|Mythic", name = "Unmapped", is_raid = true })
+        end))
+    end)
+
+    it("defaults current_season to false when omitted", function()
+        local db = newDb(newDbNs())
+        seed(db)
+        db:Insert("dashboard_instance", { key = "Old|Heroic", name = "Old", is_raid = true, expansion = "Midnight" })
+        local row = db:Select("current_season"):From("dashboard_instance"):Where("key", "=", "Old|Heroic"):Run()[1]
+        assert.is_false(row.current_season)
     end)
 
     it("a Questing time-upsert and a Dashboard title-upsert share one quest row", function()

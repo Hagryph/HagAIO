@@ -22,11 +22,12 @@ Open **[diagram/DB/index.html](diagram/DB/index.html)** in a browser for an inte
 | [`cvar_managed`](#cvar_managed) | `global` | 2 | name | `Modules/CVars.lua` |
 | [`cvar_tracked`](#cvar_tracked) | `global` | 3 | name | `Modules/CVars.lua` |
 | [`dashboard_char`](#dashboard_char) | `global` | 10 | char_key | `Modules/Dashboard.lua` |
-| [`dashboard_instance`](#dashboard_instance) | `global` | 7 | key | `Modules/Dashboard.lua` |
+| [`dashboard_instance`](#dashboard_instance) | `global` | 8 | key | `Modules/Dashboard.lua` |
 | [`dashboard_lockout`](#dashboard_lockout) | `global` | 5 | char_key, instance_key | `Modules/Dashboard.lua` |
 | [`dashboard_quest`](#dashboard_quest) | `global` | 3 | char_key, freq, quest_id | `Modules/Dashboard.lua` |
 | [`dashboard_vault`](#dashboard_vault) | `global` | 6 | char_key, ordinal | `Modules/Dashboard.lua` |
 | [`editmode`](#editmode) | `char` | 4 | key | `Core/DB/CoreTables.lua` |
+| [`expansion`](#expansion) | `global` | 3 | name | `Modules/Dashboard.lua` |
 | [`faction`](#faction) | `local` | 2 | tag | `Core/DB/CoreTables.lua` |
 | [`flight_hop`](#flight_hop) | `global` | 3 | route_id, ordinal | `Modules/Misc.lua` |
 | [`flight_master`](#flight_master) | `global` | 6 | node_id | `Core/DB/CoreTables.lua` |
@@ -144,7 +145,8 @@ Open **[diagram/DB/index.html](diagram/DB/index.html)** in a browser for an inte
 | `is_raid` | boolean | yes |  |  |  |
 | `diff_id` | integer | yes |  |  |  |
 | `total` | integer | yes |  |  |  |
-| `expansion` | text | yes |  |  |  |
+| `expansion` | text | yes |  |  | → `expansion.name` on delete cascade |
+| `current_season` | boolean | yes |  | `false` |  |
 
 ---
 
@@ -205,6 +207,18 @@ Open **[diagram/DB/index.html](diagram/DB/index.html)** in a browser for an inte
 | `point` | text | yes |  |  |  |
 | `x` | number | yes |  |  |  |
 | `y` | number | yes |  |  |  |
+
+---
+
+### `expansion`  ·  scope `global`
+
+*Defined in `Modules/Dashboard.lua`.*
+
+| Column | Type | Null | Key | Default | References |
+|---|---|---|---|---|---|
+| `name` | text | no | PK |  |  |
+| `level` | integer | yes |  |  |  |
+| `logo` | integer | yes |  |  |  |
 
 ---
 
