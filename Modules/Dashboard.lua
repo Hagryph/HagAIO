@@ -1353,13 +1353,9 @@ function Dashboard:_OverviewTiles(key)
             local art = self:_LatestSeasonRaidArt()
             if art then applyArt(tiles[#tiles], art) end
         end
+        -- every expansion shows its BANNER (the latest-raid picture is the Current Season tile's job now)
         for _, exp in ipairs(self:_RaidExpansions()) do
             tile(exp, exp, "raid:" .. exp)
-            -- the current tier's tile shows the latest raid's picture, not the expansion logo
-            if exp == p.currentExpansion then
-                local art = self:_LatestRaidArt()
-                if art then applyArt(tiles[#tiles], art) end
-            end
         end
     elseif key == "dungeons" then
         local curTier = self:_CurrentExpansionTier()
