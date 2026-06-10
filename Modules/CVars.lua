@@ -394,6 +394,7 @@ end
 function CVars:_PlaceAddRow(box, y, width)
     local input = W.Input:New(box, width - 120)
     input:SetPoint("TOPLEFT", 6, y)
+    input:SetHint("e.g. WorldTextScale")   -- a popular hand-set CVar, shown faint while empty
 
     local add = W.TextButton:New(box, "Add")
     add:SetPoint("LEFT", input, "RIGHT", 10, 0)
@@ -414,8 +415,7 @@ function CVars:_PlaceAddRow(box, y, width)
     add:SetScript("OnClick", submit)
     input:SetScript("OnEnterPressed", function(s) s:ClearFocus(); submit() end)
 
-    local hint = W.Text:New(box, "Type any CVar name -- e.g. WorldTextScale (size of damage numbers) -- "
-        .. "then Add. The field type is detected automatically.",
+    local hint = W.Text:New(box, "Type any CVar name, then Add. The field type is detected automatically.",
         "textFaint", "GameFontHighlightSmall")
     hint:SetPoint("TOPLEFT", 6, y - 26)
     hint:SetWidth(width - 24)
