@@ -1,5 +1,9 @@
 local S = dofile("Test/support.lua")
 
+local DB_FILES = { "Types", "Schema", "RowStore", "IndexManager", "Constraints", "TriggerManager",
+                   "Database", "Aggregate", "WhereClause", "ColumnResolver", "QueryPlan",
+                   "QueryBuilder", "QueryExecutor", "CoreTables", "DatabaseManager" }
+
 -- A minimal movable-frame stub: fixed centre/size, tracks shown state + SetPoint calls.
 local function makeFrame(spec)
     spec = spec or {}
@@ -22,6 +26,8 @@ local function makeFrame(spec)
 end
 
 -- opts: ux/uy (UIParent centre), uLeft/uTop (for TOPLEFT save), grid (EditModeManagerFrame.Grid).
+-- EditMode now reads/writes positions through the database (the `editmode` table); build one so the
+-- spec can inspect what was stored.
 local function newEM(opts)
     opts = opts or {}
     _G.UIParent = {
@@ -31,14 +37,22 @@ local function newEM(opts)
     }
     _G.EditModeManagerFrame = opts.grid and { Grid = opts.grid } or nil
     _G.EventRegistry = nil   -- skip the edit-mode hook wiring
+    _G.HagAIODB = nil
+    _G.HagAIOCharDB = nil
     local ns = S.newNs()
-    -- EditMode now reads/writes positions through a SavedVars settings view (a key -> {point,x,y}
-    -- proxy); stub it as a plain table so the spec can inspect what was stored.
-    local positions = {}
-    ns.SavedVars = { SettingsView = function() return positions end }
+    for _, f in ipairs(DB_FILES) do S.load(ns, "Core/DB/" .. f .. ".lua") end
+    S.load(ns, "Lib/SettingsTables.lua")
+    local slots = {}
+    ns.SavedVars = { IsLoaded = function() return true end,
+                     DataSlot = function(_, name) slots[name] = slots[name] or {}; return slots[name] end }
+    local mgr = ns._captured["DatabaseManager"]; mgr:OnInitialize(); mgr:Build()
     S.load(ns, "Services/EditMode.lua")
     local em = ns._captured["EditMode"]; em:OnInitialize()
-    return em, positions
+    return em, mgr:Shared()
+end
+
+local function pos(db, key)
+    return db:Select("point", "x", "y"):From("editmode"):Where("key", "=", key):Run()[1]
 end
 
 describe("EditMode:_GridSnap", function()
@@ -81,24 +95,26 @@ end)
 
 describe("EditMode:_SnapAndSave", function()
     it("stores a CENTER offset by default", function()
-        local em, positions = newEM({ ux = 0, uy = 0 })
+        local em, db = newEM({ ux = 0, uy = 0 })
         local reg = { frame = makeFrame({ cx = 30, cy = 40, w = 100, h = 20 }),
                       key = "k", default = { point = "CENTER", x = 0, y = 0 } }
         em:_SnapAndSave(reg)
-        assert.are.equal("CENTER", positions.k.point)
-        assert.are.equal(30, positions.k.x)   -- cx - ux
-        assert.are.equal(40, positions.k.y)   -- cy - uy
+        local p = pos(db, "k")
+        assert.are.equal("CENTER", p.point)
+        assert.are.equal(30, p.x)   -- cx - ux
+        assert.are.equal(40, p.y)   -- cy - uy
     end)
 
     it("stores a TOPLEFT offset when reg.anchor is TOPLEFT", function()
-        local em, positions = newEM({ ux = 0, uy = 0, uLeft = 0, uTop = 500 })
+        local em, db = newEM({ ux = 0, uy = 0, uLeft = 0, uTop = 500 })
         -- frame centre (30,40), size 100x20 -> half-width 50, half-height 10
         local reg = { frame = makeFrame({ cx = 30, cy = 40, w = 100, h = 20 }),
                       key = "t", anchor = "TOPLEFT", default = {} }
         em:_SnapAndSave(reg)
-        assert.are.equal("TOPLEFT", positions.t.point)
-        assert.are.equal(-20, positions.t.x)    -- (cx-hw) - UIParent:GetLeft() = (30-50)-0
-        assert.are.equal(-450, positions.t.y)   -- (cy+hh) - UIParent:GetTop()  = (40+10)-500
+        local p = pos(db, "t")
+        assert.are.equal("TOPLEFT", p.point)
+        assert.are.equal(-20, p.x)    -- (cx-hw) - UIParent:GetLeft() = (30-50)-0
+        assert.are.equal(-450, p.y)   -- (cy+hh) - UIParent:GetTop()  = (40+10)-500
     end)
 
     it("calls reg.onMoved after saving", function()

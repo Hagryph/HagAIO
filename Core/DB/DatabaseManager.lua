@@ -45,6 +45,13 @@ function DatabaseManager:Contribute(tables)
     for name, spec in pairs(tables or {}) do self:_Add(name, spec) end
 end
 
+-- Bind the saved-variable globals (the SavedVars slot library) so Build can carve its backing slots.
+-- The Database engine is the sole user of ns.SavedVars; everyone else persists through the database.
+-- Call on ADDON_LOADED, before Build. Idempotent.
+function DatabaseManager:LoadSaved()
+    ns.SavedVars:Load()
+end
+
 -- Build the single database from every contributed table. Idempotent (returns the existing one if
 -- already built). Saved variables must be loaded.
 function DatabaseManager:Build()
@@ -69,4 +76,4 @@ function DatabaseManager:TableNames()
     local out = {}; for n in pairs(self:_p().contrib) do out[#out + 1] = n end; table.sort(out); return out
 end
 
-ns.ServiceManager:Register(DatabaseManager:New("DatabaseManager", { deps = { "SavedVars" } }))
+ns.ServiceManager:Register(DatabaseManager:New("DatabaseManager"))

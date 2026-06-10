@@ -13,7 +13,7 @@ local Class = ns.Class
 -- and the Log* convenience methods, exactly like a Module. Both come from ns.Loggable,
 -- the shared logging mixin (Core/Loggable.lua), which Service inherits. A Service does
 -- NOT inherit ns.Component: it has no on/off + settings surface, so Component's
--- resource registry / abstract _SettingsDB would be wrong here.
+-- resource registry / abstract _SettingsNamespace would be wrong here.
 --
 --   local Foo = ns.Class.new("Foo", ns.Service)
 --   function Foo:OnInitialize() ... end       -- setup; every dep is guaranteed up

@@ -129,6 +129,8 @@ Lib/
   Helpers.lua              Small pure-logic helpers shared across the addon -- no WoW API, no state
   MonkMath.lua             Pure combat arithmetic for the Monk module -- no WoW API, no state
   ResetLedger.lua          Pure data-shaping for the Dashboard module -- no WoW API
+  SavedVars.lua            A pure-storage LIBRARY (see Core/Lib.lua): it binds the addon's two saved-variable globals
+  SettingsTables.lua       Expresses the addon's SETTINGS as ordinary Database tables and resolves the
   SlashParse.lua           Pure parsing for slash sub-command strings -- no WoW API
   SpellTooltipParser.lua   Pure parsers for the numbers embedded in a spell's description text
   Vector2D.lua             A pure 2D vector value-TYPE (ns.Type) -- no WoW API
@@ -175,9 +177,8 @@ Services/
   LocalTables.lua          Populates the shared database's general REFERENCE tables from the game world -- the data that is
   Memoize.lua              Memoization service: wrap a PURE function so repeat calls with the same arguments
   MinimapIcon.lua          A standalone minimap button (NOT LibDBIcon — no external libraries)
-  Profiles.lua             Named config profiles + copy-paste sharing, built on the SavedVars cascade
+  Profiles.lua             Named config profiles + copy-paste sharing, built ON THE DATABASE
   Range.lua                Range service: "is this enemy within N yards?" and "how many enemies within N
-  SavedVars.lua            Singleton over the account (HagAIODB) + per-character (HagAIOCharDB) saved tables
   Scaling.lua              Models WoW "up to X% more" health-based scaling (damage OR healing) as a clamped linear
   Scheduler.lua            Thin, cancellable wrapper over C_Timer
   Secrets.lua              Thin, allocation-free helpers around 12.0 Secret Values, so modules don't each

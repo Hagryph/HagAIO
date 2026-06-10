@@ -2,27 +2,26 @@ local S = dofile("Test/support.lua")
 
 local function withComponent()
     local ns = S.newNs()
+    S.load(ns, "Lib/SettingsTables.lua")
     S.load(ns, "Core/Component.lua")
     return ns
 end
 
-describe("Component abstract _SettingsDB", function()
-    it("errors when a subclass uses settings without overriding _SettingsDB", function()
+describe("Component settings (no database yet)", function()
+    it("_SettingsNamespace is abstract -- a subclass that reads settings must name its namespace", function()
         local ns = withComponent()
         local Bad = ns.Class.new("Bad", ns.Component)
-        local inst = Bad:New()
-        local ok, err = pcall(function() return inst:GetSetting("k") end)
+        local ok, err = pcall(function() return Bad:New():_SettingsNamespace() end)
         assert.is_false(ok)
-        assert.is_true(tostring(err):find("_SettingsDB") ~= nil)  -- message names the method
+        assert.is_true(tostring(err):find("_SettingsNamespace") ~= nil)  -- message names the method
     end)
 
-    it("works once a subclass provides _SettingsDB", function()
+    it("GetSetting returns the schema default before the database is built", function()
         local ns = withComponent()
-        local Good = ns.Class.new("Good", ns.Component)
-        function Good:_SettingsDB() return self.store end
-        local inst = Good:New()
-        inst.store = { k = 5 }
-        assert.are.equal(5, inst:GetSetting("k"))
+        local C = ns.Class.new("C", ns.Component)
+        function C:GetSettings() return { { type = "toggle", key = "k", default = true } } end
+        -- self:DB() is nil (no DatabaseManager) -> the code default, no namespace needed
+        assert.are.equal(true, C:New():GetSetting("k"))
     end)
 end)
 
@@ -110,9 +109,9 @@ end)
 describe("Component settings dispatch + broadcast", function()
     local function comp(ns)
         local C = ns.Class.new("C", ns.Component)
-        function C:_SettingsDB() return self.store end
-        local c = C:New("Feature"); c.store = {}
-        return c
+        function C:GetSettings() return {} end
+        function C:_SettingsNamespace() return "test" end
+        return C:New("Feature")
     end
 
     it("OnSettingChanged runs a string-named handler for its key", function()
@@ -141,13 +140,12 @@ describe("Component settings dispatch + broadcast", function()
         c:OnSettingChanged("other", 1); assert.are.equal(2, n)  -- no keyed -> star runs
     end)
 
-    it("SetSetting writes the value and broadcasts HagAIO_SettingChanged", function()
+    it("SetSetting broadcasts HagAIO_SettingChanged (the DB write is covered by settings_tables_spec)", function()
         local ns = withComponent()
         local emitted
         ns.EventBus = { Emit = function(_, msg, owner, k, v) emitted = { msg, owner, k, v } end }
         local c = comp(ns)
-        c:SetSetting("x", 9)
-        assert.are.equal(9, c.store.x)
+        c:SetSetting("x", 9)                        -- self:DB() is nil here -> no write, still broadcasts
         assert.are.equal("HagAIO_SettingChanged", emitted[1])
         assert.are.equal("Feature", emitted[2])   -- _SettingsOwnerId default = name
         assert.are.equal("x", emitted[3]); assert.are.equal(9, emitted[4])

@@ -49,7 +49,7 @@ end
 ns.ServiceManager   = { Register = reg, IsLoaded = function() return true end }
 ns.ModuleManager    = { Register = reg, GetModule = function() return nil end }
 ns.SubmoduleManager = { Register = reg }
-ns.LibManager       = { Register = function(_, item) return item end }
+ns.LibManager       = { Register = function(_, item) if item and item._Publish then pcall(function() item:_Publish() end) end; return item end }
 
 local FRAMEWORK = {
     "Core/Class.lua", "Core/Type.lua", "Core/Enum.lua", "Core/Mixin.lua", "Core/Interface.lua",

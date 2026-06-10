@@ -20,6 +20,70 @@ ns.DB = ns.DB or {}
 -- ns.DB.Scope at build time. Using strings (not the enum) keeps this plain data file free of any
 -- load-order dependency on Types.lua (the .toc loads Core/DB/* alphabetically).
 ns.DB.CoreTables = {
+    -- ---- settings / profiles (plain tables; the cascade lives in Lib/SettingsTables.lua) ----------
+    -- The profile REGISTRY: one row per named config profile, account-wide. `is_global` marks the
+    -- single exclusive profile auto-applied to a character that has loaded none. Every per-namespace
+    -- profile table (p_*, profile_module_enable, profile_editmode) FKs back to `name` with cascade
+    -- delete, so removing a profile row removes all of its values.
+    profile = {
+        scope = "global",
+        columns = {
+            { name = "name",      type = "text",    primaryKey = true },
+            { name = "is_global", type = "boolean" },
+        },
+    },
+
+    -- This character's loaded-profile pointer (the cascade's middle layer), a single row (id = 1).
+    config = {
+        scope = "char",
+        columns = {
+            { name = "id",             type = "integer", primaryKey = true },
+            { name = "loaded_profile", type = "text" },     -- nil = no profile loaded
+        },
+    },
+
+    -- Module enable-state. `module_enable` is THIS character's overrides (absent = inherit profile/
+    -- default); `profile_module_enable` is the enable-state captured inside each profile.
+    module_enable = {
+        scope = "char",
+        columns = {
+            { name = "name",    type = "text", primaryKey = true },   -- module name
+            { name = "enabled", type = "boolean" },
+        },
+    },
+    profile_module_enable = {
+        scope = "global",
+        columns = {
+            { name = "profile", type = "text", references = { table = "profile", column = "name", onDelete = "cascade" } },
+            { name = "name",    type = "text" },                       -- module name
+            { name = "enabled", type = "boolean" },
+        },
+        primaryKey = { "profile", "name" },
+    },
+
+    -- EditMode frame layout (per-frame { point, x, y }), cascaded like settings: `editmode` is this
+    -- character's overrides; `profile_editmode` is the layout captured inside each profile.
+    editmode = {
+        scope = "char",
+        columns = {
+            { name = "key",   type = "text", primaryKey = true },      -- frame registration key
+            { name = "point", type = "text" },
+            { name = "x",     type = "number" },
+            { name = "y",     type = "number" },
+        },
+    },
+    profile_editmode = {
+        scope = "global",
+        columns = {
+            { name = "profile", type = "text", references = { table = "profile", column = "name", onDelete = "cascade" } },
+            { name = "key",     type = "text" },
+            { name = "point",   type = "text" },
+            { name = "x",       type = "number" },
+            { name = "y",       type = "number" },
+        },
+        primaryKey = { "profile", "key" },
+    },
+
     -- Logger preferences (account-wide), a single row (id = 1). Logger is a core singleton, not a
     -- DatabaseOwner, so it reaches this through ns.DatabaseManager:Shared().
     logger = {

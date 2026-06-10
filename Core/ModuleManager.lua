@@ -84,8 +84,11 @@ function ModuleManager:_Start(module)
     if module:IsAlwaysOn() then
         shouldEnable = true   -- mandatory module: always enabled, persisted state ignored
     else
-        -- Cascade: this char's override ?? loaded profile ?? the registered defaultEnabled.
-        shouldEnable = ns.SavedVars:GetModuleState(module:GetName())
+        -- Cascade: this char's override ?? loaded profile ?? the registered defaultEnabled
+        -- (the module_enable tables; see Lib/SettingsTables.lua).
+        local db = module:DB()
+        if db then shouldEnable = ns.SettingsTables:GetModuleEnabled(db, module:GetName(), module:IsDefaultEnabled())
+        else shouldEnable = module:IsDefaultEnabled() end
     end
     if shouldEnable then
         module:Enable()

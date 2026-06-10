@@ -9,7 +9,7 @@ local Class = ns.Class
 --     NAMED SCOPES -- so a sub-lifecycle (e.g. a class spec swap) can be torn down on
 --     its own (ReleaseScope) without disturbing everything else; and
 --   * the SETTINGS accessors + the HagAIO_SettingChanged broadcast.
--- Subclasses say where the values live via _SettingsDB(), and may override
+-- Subclasses say their settings namespace via _SettingsNamespace(), and may override
 -- _SettingsOwnerId() (broadcast id) and OnSettingChanged().
 --
 --   self:On(event, fn[, scope])           self:Subscribe(msg, fn[, scope])
@@ -143,37 +143,14 @@ function Component:_ReleaseAll()
 end
 
 -- ---- settings -------------------------------------------------------------
--- Build the saved-var default map from a settings schema: each keyed setting's `default`,
--- plus any extra default maps (dbSchema / dbDefaults) merged on top in order. Every value
--- is DEEP-COPIED (via ns.Helpers) so a table default -- a {r,g,b} colour, a nested schema
--- table -- is never shared by reference across instances or characters. A static (no self),
--- shared by Module / Submodule / the Class module's per-spec seeding.
-function Component.SeedDefaults(settings, ...)
-    local defaults = {}
-    for _, s in ipairs(settings or {}) do
-        if s.key ~= nil and s.default ~= nil then
-            defaults[s.key] = ns.Helpers.DeepCopy(s.default)
-        end
-    end
-    for i = 1, select("#", ...) do
-        local extra = (select(i, ...))
-        if extra then
-            for k, v in pairs(extra) do defaults[k] = ns.Helpers.DeepCopy(v) end
-        end
-    end
-    return defaults
-end
-
-
--- Saved-var accessor naming (one convention across the codebase):
---   GetDB()       -- PUBLIC handle to a Module's bound saved-var namespace (read by others)
---   _SettingsDB() -- the CONTRACT below: where THIS component's settings values live
---   _Store()      -- a service's PRIVATE lazy saved-var handle (Compartment/MinimapIcon)
+-- Settings live in the shared Database, as the override -> loaded-profile -> code-default cascade
+-- over a pair of auto-derived tables per namespace (see Lib/SettingsTables.lua). A Component just has
+-- to say its NAMESPACE; the schema is its GetSettings().
 --
--- ABSTRACT: every Component subclass must say WHERE its settings live (Module -> its
--- bound db; Submodule -> its own namespace). A subclass that uses settings but forgot
--- to override this hits a clear error rather than silently storing nothing.
-Component._SettingsDB = ns.Class.abstract("_SettingsDB")
+-- ABSTRACT: every Component subclass names its settings namespace (Module -> "module_<name>",
+-- Submodule -> "submodule_<name>", the Class module -> a per-spec bucket). A subclass that uses
+-- settings but forgot to override this hits a clear error rather than silently storing nothing.
+Component._SettingsNamespace = ns.Class.abstract("_SettingsNamespace")
 -- These have sensible defaults and are optional overrides (NOT abstract).
 function Component:_SettingsOwnerId() return self:_p().name end
 
@@ -197,14 +174,18 @@ function Component:OnSettingChanged(key, value)
     if star ~= nil and star ~= keyed then run(star) end
 end
 
+-- Effective value: this char's override ?? loaded profile ?? schema default, resolved live against
+-- the database (Lib/SettingsTables.lua). Before the database is built, fall back to the code default.
 function Component:GetSetting(key)
-    local db = self:_SettingsDB()
-    return db and db[key]
+    local schema = self:GetSettings()
+    local db = self:DB()
+    if not db then return ns.SettingsTables.SchemaDefault(schema, key) end
+    return ns.SettingsTables:Get(db, self:_SettingsNamespace(), schema, key)
 end
 
 function Component:SetSetting(key, value)
-    local db = self:_SettingsDB()
-    if db then db[key] = value end
+    local db = self:DB()
+    if db then ns.SettingsTables:Set(db, self:_SettingsNamespace(), self:GetSettings(), key, value) end
     self:OnSettingChanged(key, value)
     -- Broadcast so anything else (other components, the UI) can react without the
     -- changer needing to know about them.

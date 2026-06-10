@@ -16,7 +16,7 @@ local function rig()
     S.load(ns, "Services/Scheduler.lua"); ns._captured["Scheduler"]:OnInitialize()
     S.load(ns, "Services/Hooks.lua");     ns._captured["Hooks"]:OnInitialize()
     local C = ns.Class.new("C", ns.Component)
-    function C:_SettingsDB() return {} end
+    function C:_SettingsNamespace() return "test" end
     return C:New(), ns, frames, clock
 end
 

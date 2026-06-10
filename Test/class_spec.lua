@@ -76,7 +76,7 @@ describe("Loggable identity via the constructor chain", function()
         local Svc = ns.Class.new("Svc", ns.Service):New("MySvc")
         assert.are.equal("MySvc", Svc:GetName())   -- inherited from ns.Loggable
         local Mod = ns.Class.new("Mod", ns.Component)
-        function Mod:_SettingsDB() return {} end
+        function Mod:_SettingsNamespace() return "MyMod" end
         assert.are.equal("MyMod", Mod:New("MyMod"):GetName())
     end)
 end)

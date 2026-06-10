@@ -11,8 +11,8 @@ local Class = ns.Class
 --
 -- Startup sequence (registered here, fired later by the game):
 --   <load>               -> ServiceManager:StartAll() boots every service
---   ADDON_LOADED(HagAIO) -> load saved vars, apply one-time defaults,
---                           load logger prefs, activate slash commands
+--   ADDON_LOADED(HagAIO) -> bind saved vars + build the database, apply the global
+--                           profile, load logger prefs, activate slash commands
 --   PLAYER_LOGIN         -> start all registered modules + submodules
 --                           (services that need login, e.g. Compartment/MinimapIcon,
 --                            subscribe it themselves)
@@ -50,23 +50,21 @@ function Initializer:Run()
 
     bus:On("ADDON_LOADED", function(_, loaded)
         if loaded ~= addonName then return end
-        local sv = ns.SavedVars
-        sv:Load()
-        sv:Migrate()                 -- bring stored data up to the current schema
-        -- Build the ONE shared database now, before anything reads it (Logger prefs just below;
-        -- Compartment/MinimapIcon on their own PLAYER_LOGIN handlers). Every owner contributes its
-        -- tables first -- services already did at StartAll, modules/submodules contribute here -- so
-        -- the build sees the full schema. _ContributeTables is idempotent (the later _Init is a no-op).
+        -- Bind the saved-variable globals (the SavedVars slot library), then build the ONE shared
+        -- database, before anything reads it (Logger prefs just below; Compartment/MinimapIcon on their
+        -- own PLAYER_LOGIN handlers). Every owner contributes its tables first -- services already did at
+        -- StartAll, modules/submodules contribute here -- so the build sees the full schema.
+        -- _ContributeTables is idempotent (the later _Init is a no-op).
         if ns.DatabaseManager then
+            ns.DatabaseManager:LoadSaved()   -- bind the saved-variable globals (via the SavedVars library)
             for _, reg in ipairs({ ns.ServiceManager, ns.ModuleManager, ns.SubmoduleManager }) do
                 for it in reg:Iterate() do if it._ContributeTables then it:_ContributeTables() end end
             end
             ns.DatabaseManager:Build()
         end
-        -- Per-module defaults are declarative now: each module's `defaultEnabled` gates its
-        -- initial enable, and setting defaults (autoAccept/autoTurnIn = false, ...) come from
-        -- the module's settings schema via SavedVars' deep-merge -- no seeding needed here.
-        -- A character that has never loaded a profile picks up the account's global
+        -- Settings, enable-state and profiles are ordinary database tables now (see Lib/SettingsTables.lua):
+        -- each module's `defaultEnabled` and its schema `default`s are the cascade's bottom layer -- no
+        -- seeding needed here. A character that has never loaded a profile picks up the account's global
         -- profile here -- before modules bind, so no /reload is needed.
         if ns.Profiles then ns.Profiles:ApplyGlobalForFreshChar() end
         ns.Logger:LoadSettings()
@@ -85,11 +83,10 @@ function Initializer:Run()
         -- PLAYER_LOGIN (they subscribe it themselves) -- Init doesn't manage them.
     end)
 
-    -- PLAYER_LOGOUT fires on /reload and full exit. Write the session's live settings back to
-    -- this character (as diffs) FIRST, while everything is still up, then shut modules down (they
-    -- depend on services) and the service layer in reverse dependency order.
+    -- PLAYER_LOGOUT fires on /reload and full exit. Settings now persist immediately to the database
+    -- as they change, so there's nothing to flush -- just shut modules down (they depend on services)
+    -- then the service layer in reverse dependency order.
     bus:On("PLAYER_LOGOUT", function()
-        ns.SavedVars:Flush()
         ns.ModuleManager:Shutdown()
         ns.ServiceManager:ShutdownAll()
     end)

@@ -46,11 +46,12 @@ end
 
 -- NOTE on lifecycle: a few core singletons self-instantiate at file load
 -- (Logger, ServiceManager, ModuleManager) so they're available immediately. Every
--- SERVICE slot (EventBus, SavedVars, SlashCommand, Hooks, ActionBars, Range,
+-- SERVICE slot (EventBus, SlashCommand, Hooks, ActionBars, Range,
 -- Cooldowns, Secrets, Scaling, Dev, EditMode, Compartment, MinimapIcon, and the
 -- UI.* windows) is filled with its sole INSTANCE by the ServiceManager during
--- StartAll(), in dependency order. There is no `.Get()` accessor — call sites use
--- e.g. `ns.EventBus` directly. DependencyGraph stays a CLASS (instantiated per use).
+-- StartAll(), in dependency order. LIB slots (e.g. SavedVars, SettingsTables, CVarHelper)
+-- are published the instant their file loads (no StartAll). There is no `.Get()` accessor —
+-- call sites use e.g. `ns.EventBus` directly. DependencyGraph stays a CLASS (per use).
 
 -- Logger: a small static table so prints stay consistent and namespaced. Colours come
 -- from the shared Theme (one palette), built at CALL time -- Theme.lua loads AFTER this

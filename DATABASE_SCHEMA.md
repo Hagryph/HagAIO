@@ -13,6 +13,7 @@ The addon uses **one shared database**. Every service or module contributes the 
 | Table | Scope | Columns | Primary key | Defined in |
 |---|---|---|---|---|
 | [`compartment`](#compartment) | `global` | 2 | id | `Services/Compartment.lua` |
+| [`config`](#config) | `char` | 2 | id | `Core/DB/CoreTables.lua` |
 | [`cvar_category`](#cvar_category) | `global` | 2 | id | `Modules/CVars.lua` |
 | [`cvar_managed`](#cvar_managed) | `global` | 2 | name | `Modules/CVars.lua` |
 | [`cvar_tracked`](#cvar_tracked) | `global` | 3 | name | `Modules/CVars.lua` |
@@ -21,6 +22,7 @@ The addon uses **one shared database**. Every service or module contributes the 
 | [`dashboard_lockout`](#dashboard_lockout) | `global` | 5 | char_key, instance_key | `Modules/Dashboard.lua` |
 | [`dashboard_quest`](#dashboard_quest) | `global` | 3 | char_key, freq, quest_id | `Modules/Dashboard.lua` |
 | [`dashboard_vault`](#dashboard_vault) | `global` | 6 | char_key, ordinal | `Modules/Dashboard.lua` |
+| [`editmode`](#editmode) | `char` | 4 | key | `Core/DB/CoreTables.lua` |
 | [`faction`](#faction) | `local` | 2 | tag | `Core/DB/CoreTables.lua` |
 | [`flight_hop`](#flight_hop) | `global` | 3 | route_id, ordinal | `Modules/Misc.lua` |
 | [`flight_master`](#flight_master) | `global` | 6 | node_id | `Core/DB/CoreTables.lua` |
@@ -28,6 +30,20 @@ The addon uses **one shared database**. Every service or module contributes the 
 | [`keystone`](#keystone) | `local` | 2 | mapid | `Modules/Dashboard.lua` |
 | [`logger`](#logger) | `global` | 4 | id | `Core/DB/CoreTables.lua` |
 | [`minimap`](#minimap) | `global` | 3 | id | `Services/MinimapIcon.lua` |
+| [`module_enable`](#module_enable) | `char` | 2 | name | `Core/DB/CoreTables.lua` |
+| [`o_module_Dashboard`](#o_module_Dashboard) | `char` | 6 | id | `Modules/Dashboard.lua` |
+| [`o_module_Dev`](#o_module_Dev) | `char` | 2 | id | `Modules/Dev.lua` |
+| [`o_module_Misc`](#o_module_Misc) | `char` | 4 | id | `Modules/Misc.lua` |
+| [`o_module_Questing`](#o_module_Questing) | `char` | 10 | id | `Modules/Questing.lua` |
+| [`o_module_UnitFrames`](#o_module_UnitFrames) | `char` | 12 | id | `Modules/UnitFrames.lua` |
+| [`p_module_Dashboard`](#p_module_Dashboard) | `global` | 6 | profile | `Modules/Dashboard.lua` |
+| [`p_module_Dev`](#p_module_Dev) | `global` | 2 | profile | `Modules/Dev.lua` |
+| [`p_module_Misc`](#p_module_Misc) | `global` | 4 | profile | `Modules/Misc.lua` |
+| [`p_module_Questing`](#p_module_Questing) | `global` | 10 | profile | `Modules/Questing.lua` |
+| [`p_module_UnitFrames`](#p_module_UnitFrames) | `global` | 12 | profile | `Modules/UnitFrames.lua` |
+| [`profile`](#profile) | `global` | 2 | name | `Core/DB/CoreTables.lua` |
+| [`profile_editmode`](#profile_editmode) | `global` | 5 | profile, key | `Core/DB/CoreTables.lua` |
+| [`profile_module_enable`](#profile_module_enable) | `global` | 3 | profile, name | `Core/DB/CoreTables.lua` |
 | [`quest`](#quest) | `global` | 3 | quest_id | `Core/DB/CoreTables.lua` |
 | [`zone`](#zone) | `global` | 1 | name | `Core/DB/CoreTables.lua` |
 
@@ -41,6 +57,17 @@ The addon uses **one shared database**. Every service or module contributes the 
 |---|---|---|---|---|---|
 | `id` | integer | no | PK |  |  |
 | `shown` | boolean | yes |  |  |  |
+
+---
+
+### `config`  ·  scope `char`
+
+*Defined in `Core/DB/CoreTables.lua`.*
+
+| Column | Type | Null | Key | Default | References |
+|---|---|---|---|---|---|
+| `id` | integer | no | PK |  |  |
+| `loaded_profile` | text | yes |  |  |  |
 
 ---
 
@@ -160,6 +187,19 @@ The addon uses **one shared database**. Every service or module contributes the 
 
 ---
 
+### `editmode`  ·  scope `char`
+
+*Defined in `Core/DB/CoreTables.lua`.*
+
+| Column | Type | Null | Key | Default | References |
+|---|---|---|---|---|---|
+| `key` | text | no | PK |  |  |
+| `point` | text | yes |  |  |  |
+| `x` | number | yes |  |  |  |
+| `y` | number | yes |  |  |  |
+
+---
+
 ### `faction`  ·  scope `local`
 
 *Defined in `Core/DB/CoreTables.lua`.*
@@ -253,6 +293,216 @@ The addon uses **one shared database**. Every service or module contributes the 
 | `id` | integer | no | PK |  |  |
 | `shown` | boolean | yes |  |  |  |
 | `angle` | number | yes |  |  |  |
+
+---
+
+### `module_enable`  ·  scope `char`
+
+*Defined in `Core/DB/CoreTables.lua`.*
+
+| Column | Type | Null | Key | Default | References |
+|---|---|---|---|---|---|
+| `name` | text | no | PK |  |  |
+| `enabled` | boolean | yes |  |  |  |
+
+---
+
+### `o_module_Dashboard`  ·  scope `char`
+
+*Defined in `Modules/Dashboard.lua`.*
+
+| Column | Type | Null | Key | Default | References |
+|---|---|---|---|---|---|
+| `id` | integer | no | PK |  |  |
+| `show_mplus` | boolean | yes |  |  |  |
+| `show_raids` | boolean | yes |  |  |  |
+| `show_dungeons` | boolean | yes |  |  |  |
+| `show_weekly` | boolean | yes |  |  |  |
+| `show_daily` | boolean | yes |  |  |  |
+
+---
+
+### `o_module_Dev`  ·  scope `char`
+
+*Defined in `Modules/Dev.lua`.*
+
+| Column | Type | Null | Key | Default | References |
+|---|---|---|---|---|---|
+| `id` | integer | no | PK |  |  |
+| `debug` | boolean | yes |  |  |  |
+
+---
+
+### `o_module_Misc`  ·  scope `char`
+
+*Defined in `Modules/Misc.lua`.*
+
+| Column | Type | Null | Key | Default | References |
+|---|---|---|---|---|---|
+| `id` | integer | no | PK |  |  |
+| `showInFlight` | boolean | yes |  |  |  |
+| `showHover` | boolean | yes |  |  |  |
+| `sellJunk` | text | yes |  |  |  |
+
+---
+
+### `o_module_Questing`  ·  scope `char`
+
+*Defined in `Modules/Questing.lua`.*
+
+| Column | Type | Null | Key | Default | References |
+|---|---|---|---|---|---|
+| `id` | integer | no | PK |  |  |
+| `showTooltip` | boolean | yes |  |  |  |
+| `echoLevelUp` | boolean | yes |  |  |  |
+| `advancedInfo` | boolean | yes |  |  |  |
+| `autoAccept` | boolean | yes |  |  |  |
+| `acceptGrey` | boolean | yes |  |  |  |
+| `autoTurnIn` | boolean | yes |  |  |  |
+| `autoDialogue` | boolean | yes |  |  |  |
+| `shiftPause` | boolean | yes |  |  |  |
+| `pauseInstance` | boolean | yes |  |  |  |
+
+---
+
+### `o_module_UnitFrames`  ·  scope `char`
+
+*Defined in `Modules/UnitFrames.lua`.*
+
+| Column | Type | Null | Key | Default | References |
+|---|---|---|---|---|---|
+| `id` | integer | no | PK |  |  |
+| `player` | boolean | yes |  |  |  |
+| `target` | boolean | yes |  |  |  |
+| `endColor_r` | number | yes |  |  |  |
+| `endColor_g` | number | yes |  |  |  |
+| `endColor_b` | number | yes |  |  |  |
+| `midColor_r` | number | yes |  |  |  |
+| `midColor_g` | number | yes |  |  |  |
+| `midColor_b` | number | yes |  |  |  |
+| `startColor_r` | number | yes |  |  |  |
+| `startColor_g` | number | yes |  |  |  |
+| `startColor_b` | number | yes |  |  |  |
+
+---
+
+### `p_module_Dashboard`  ·  scope `global`
+
+*Defined in `Modules/Dashboard.lua`.*
+
+| Column | Type | Null | Key | Default | References |
+|---|---|---|---|---|---|
+| `profile` | text | no | PK |  | → `profile.name` on delete cascade |
+| `show_mplus` | boolean | yes |  |  |  |
+| `show_raids` | boolean | yes |  |  |  |
+| `show_dungeons` | boolean | yes |  |  |  |
+| `show_weekly` | boolean | yes |  |  |  |
+| `show_daily` | boolean | yes |  |  |  |
+
+---
+
+### `p_module_Dev`  ·  scope `global`
+
+*Defined in `Modules/Dev.lua`.*
+
+| Column | Type | Null | Key | Default | References |
+|---|---|---|---|---|---|
+| `profile` | text | no | PK |  | → `profile.name` on delete cascade |
+| `debug` | boolean | yes |  |  |  |
+
+---
+
+### `p_module_Misc`  ·  scope `global`
+
+*Defined in `Modules/Misc.lua`.*
+
+| Column | Type | Null | Key | Default | References |
+|---|---|---|---|---|---|
+| `profile` | text | no | PK |  | → `profile.name` on delete cascade |
+| `showInFlight` | boolean | yes |  |  |  |
+| `showHover` | boolean | yes |  |  |  |
+| `sellJunk` | text | yes |  |  |  |
+
+---
+
+### `p_module_Questing`  ·  scope `global`
+
+*Defined in `Modules/Questing.lua`.*
+
+| Column | Type | Null | Key | Default | References |
+|---|---|---|---|---|---|
+| `profile` | text | no | PK |  | → `profile.name` on delete cascade |
+| `showTooltip` | boolean | yes |  |  |  |
+| `echoLevelUp` | boolean | yes |  |  |  |
+| `advancedInfo` | boolean | yes |  |  |  |
+| `autoAccept` | boolean | yes |  |  |  |
+| `acceptGrey` | boolean | yes |  |  |  |
+| `autoTurnIn` | boolean | yes |  |  |  |
+| `autoDialogue` | boolean | yes |  |  |  |
+| `shiftPause` | boolean | yes |  |  |  |
+| `pauseInstance` | boolean | yes |  |  |  |
+
+---
+
+### `p_module_UnitFrames`  ·  scope `global`
+
+*Defined in `Modules/UnitFrames.lua`.*
+
+| Column | Type | Null | Key | Default | References |
+|---|---|---|---|---|---|
+| `profile` | text | no | PK |  | → `profile.name` on delete cascade |
+| `player` | boolean | yes |  |  |  |
+| `target` | boolean | yes |  |  |  |
+| `endColor_r` | number | yes |  |  |  |
+| `endColor_g` | number | yes |  |  |  |
+| `endColor_b` | number | yes |  |  |  |
+| `midColor_r` | number | yes |  |  |  |
+| `midColor_g` | number | yes |  |  |  |
+| `midColor_b` | number | yes |  |  |  |
+| `startColor_r` | number | yes |  |  |  |
+| `startColor_g` | number | yes |  |  |  |
+| `startColor_b` | number | yes |  |  |  |
+
+---
+
+### `profile`  ·  scope `global`
+
+*Defined in `Core/DB/CoreTables.lua`.*
+
+| Column | Type | Null | Key | Default | References |
+|---|---|---|---|---|---|
+| `name` | text | no | PK |  |  |
+| `is_global` | boolean | yes |  |  |  |
+
+---
+
+### `profile_editmode`  ·  scope `global`
+
+*Defined in `Core/DB/CoreTables.lua`.*
+
+| Column | Type | Null | Key | Default | References |
+|---|---|---|---|---|---|
+| `profile` | text | no | PK |  | → `profile.name` on delete cascade |
+| `key` | text | no | PK |  |  |
+| `point` | text | yes |  |  |  |
+| `x` | number | yes |  |  |  |
+| `y` | number | yes |  |  |  |
+
+**Primary key:** (profile, key)
+
+---
+
+### `profile_module_enable`  ·  scope `global`
+
+*Defined in `Core/DB/CoreTables.lua`.*
+
+| Column | Type | Null | Key | Default | References |
+|---|---|---|---|---|---|
+| `profile` | text | no | PK |  | → `profile.name` on delete cascade |
+| `name` | text | no | PK |  |  |
+| `enabled` | boolean | yes |  |  |  |
+
+**Primary key:** (profile, name)
 
 ---
 

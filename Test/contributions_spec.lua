@@ -18,7 +18,7 @@ local function rig()
     ns.UI.SettingsWindow = sw
 
     local C = ns.Class.new("C", ns.Component)
-    function C:_SettingsDB() return {} end
+    function C:_SettingsNamespace() return "test" end
     function C:_RunFoo(rest) self.lastRest = rest end
     function C:IsOn() return self.on end
     function C:SetOn(v) self.on = v; return false end

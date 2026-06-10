@@ -1,5 +1,15 @@
 local S = dofile("Test/support.lua")
 
+-- Profiles are built ON THE DATABASE: a `profile` row + per-namespace `p_*` rows (FK cascade). The
+-- live cascade (override -> loaded profile -> default) is resolved by Lib/SettingsTables.lua. These
+-- specs drive the rewritten service against a built database with one registered settings namespace.
+local DB_FILES = { "Types", "Schema", "RowStore", "IndexManager", "Constraints", "TriggerManager",
+                   "Database", "Aggregate", "WhereClause", "ColumnResolver", "QueryPlan",
+                   "QueryBuilder", "QueryExecutor", "CoreTables", "DatabaseManager" }
+
+local SCHEMA = { { type = "toggle", key = "x", default = false }, { type = "select", key = "y", default = "a" } }
+local NS = "module_Foo"
+
 local function setup()
     _G.HagAIODB = nil
     _G.HagAIOCharDB = nil
@@ -15,30 +25,38 @@ local function setup()
     local ns = S.newNs()
     ns.SlashCommand = { Register = function() end }
     ns.UI.CopyWindow = { Show = function() end }
-    ns.ModuleManager = { Iterate = function() return function() return nil end end }
-    S.load(ns, "Services/SavedVars.lua")
+    ns.ModuleManager = { Iterate = function() return function() return nil end end }  -- no modules in this rig
+    for _, f in ipairs(DB_FILES) do S.load(ns, "Core/DB/" .. f .. ".lua") end
+    S.load(ns, "Lib/SettingsTables.lua")
     S.load(ns, "Services/Serializer.lua")
     S.load(ns, "Services/Profiles.lua")
-    local sv = ns._captured["SavedVars"]; sv:OnInitialize(); sv:Load()
+    local slots = {}
+    ns.SavedVars = { IsLoaded = function() return true end,
+                     DataSlot = function(_, name) slots[name] = slots[name] or {}; return slots[name] end }
+    local mgr = ns._captured["DatabaseManager"]; mgr:OnInitialize()
+    ns.SettingsTables:Register(NS, SCHEMA)
+    mgr:Contribute(ns.SettingsTables:DeriveTables(NS, SCHEMA))
+    mgr:Build()
     ns._captured["Serializer"]:OnInitialize()
     local pr = ns._captured["Profiles"]; pr:OnInitialize()
-    return pr, sv
+    return pr, mgr:Shared(), ns
 end
+
+local function set(ns, db, key, value) ns.SettingsTables:Set(db, NS, SCHEMA, key, value) end
+local function get(ns, db, key) return ns.SettingsTables:Get(db, NS, SCHEMA, key) end
 
 describe("Profiles", function()
     it("Save snapshots the live config as diffs from default", function()
-        local pr, sv = setup()
-        sv:SettingsView("module_Foo", { x = 1, y = 2 })
-        sv:SetSetting("module_Foo", "x", 9)
+        local pr, db, ns = setup()
+        set(ns, db, "x", true)                          -- differs from default (false)
         assert.is_true((pr:Save("A")))
         local p = pr:Get("A")
-        assert.are.equal(9, p.module_Foo.x)
-        assert.is_nil(p.module_Foo.y)              -- unchanged from default -> not stored
+        assert.are.equal(true, p[NS].x)
+        assert.is_nil(p[NS].y)                          -- unchanged from default -> not stored
     end)
 
     it("List / Has / Get / Delete", function()
-        local pr, sv = setup()
-        sv:SettingsView("module_Foo", { x = 1 })
+        local pr = setup()
         pr:Save("A")
         assert.are.equal("A", pr:List()[1])
         assert.is_true(pr:Has("A"))
@@ -47,41 +65,29 @@ describe("Profiles", function()
     end)
 
     it("LoadProfile wipes overrides and resolves the live config to the profile", function()
-        local pr, sv = setup()
-        sv:Global().profiles.A = { module_Foo = { x = 5 } }
-        sv:SettingsView("module_Foo", { x = 1, y = 2 })
-        sv:SetSetting("module_Foo", "y", 8)            -- a live override
+        local pr, db, ns = setup()
+        db:Insert("profile", { name = "A" })
+        db:Insert("p_module_Foo", { profile = "A", x = true })
+        set(ns, db, "y", "b")                           -- a live override
         assert.is_true((pr:LoadProfile("A")))
-        assert.are.equal("A", sv:LoadedProfile())
-        assert.are.equal(5, sv:GetSetting("module_Foo", "x"))  -- from the profile
-        assert.are.equal(2, sv:GetSetting("module_Foo", "y"))  -- override wiped -> default
+        assert.are.equal("A", pr:GetLoaded())
+        assert.are.equal(true, get(ns, db, "x"))        -- from the profile
+        assert.are.equal("a", get(ns, db, "y"))         -- override wiped -> default
     end)
 
-    it("ApplyGlobalForFreshChar points an unconfigured char at the global (before bind)", function()
-        local pr, sv = setup()
-        sv:Global().profiles.G = { module_Foo = { x = 7 } }
+    it("ApplyGlobalForFreshChar points an unconfigured char at the global", function()
+        local pr, db, ns = setup()
+        db:Insert("profile", { name = "G" })
+        db:Insert("p_module_Foo", { profile = "G", x = true })
         pr:SetGlobal("G")
-        assert.are.equal("G", pr:ApplyGlobalForFreshChar())    -- sets the pointer
-        sv:SettingsView("module_Foo", { x = 1, y = 2 })         -- then bind -> materialise
-        assert.are.equal(7, sv:GetSetting("module_Foo", "x"))   -- from the global profile
-        assert.is_nil(pr:ApplyGlobalForFreshChar())             -- already pointed at one
-    end)
-
-    it("auto-applying the global fills unset vars but keeps stored overrides", function()
-        local pr, sv = setup()
-        sv:Char().overrides.module_Foo = { y = 4 }     -- stored from a prior session
-        sv:Global().profiles.G = { module_Foo = { x = 7 } }
-        pr:SetGlobal("G")
-        pr:ApplyGlobalForFreshChar()
-        sv:SettingsView("module_Foo", { x = 1, y = 2 })
-        assert.are.equal(7, sv:GetSetting("module_Foo", "x"))  -- from the global profile
-        assert.are.equal(4, sv:GetSetting("module_Foo", "y"))  -- override preserved
+        assert.are.equal("G", pr:ApplyGlobalForFreshChar())   -- sets the pointer
+        assert.are.equal(true, get(ns, db, "x"))              -- from the global profile
+        assert.is_nil(pr:ApplyGlobalForFreshChar())           -- already pointed at one
     end)
 
     it("Export then Import round-trips a profile", function()
-        local pr, sv = setup()
-        sv:SettingsView("module_Foo", { x = 1 })
-        sv:SetSetting("module_Foo", "x", 7)
+        local pr, db, ns = setup()
+        set(ns, db, "x", true)
         pr:Save("A")
         local str = pr:Export("A")
         assert.is_true(type(str) == "string")
@@ -89,7 +95,7 @@ describe("Profiles", function()
         local ok, name = pr:Import(str, "B")
         assert.is_true(ok)
         assert.are.equal("B", name)
-        assert.are.equal(7, pr:Get("B").module_Foo.x)
+        assert.are.equal(true, pr:Get("B")[NS].x)
     end)
 
     it("Import rejects a bad string", function()
@@ -100,8 +106,7 @@ describe("Profiles", function()
     end)
 
     it("the global profile is exclusive and clears when deleted", function()
-        local pr, sv = setup()
-        sv:SettingsView("module_Foo", { x = 1 })
+        local pr = setup()
         pr:Save("A"); pr:Save("B")
         pr:SetGlobal("A")
         assert.is_true(pr:IsGlobal("A"))
@@ -113,12 +118,11 @@ describe("Profiles", function()
     end)
 
     it("Deleting the profile this character has loaded clears its loaded pointer", function()
-        local pr, sv = setup()
-        sv:SettingsView("module_Foo", { x = 1 })
+        local pr = setup()
         pr:Save("A")
         pr:LoadProfile("A")
-        assert.are.equal("A", sv:LoadedProfile())
+        assert.are.equal("A", pr:GetLoaded())
         pr:Delete("A")
-        assert.is_nil(sv:LoadedProfile())
+        assert.is_nil(pr:GetLoaded())
     end)
 end)

@@ -83,7 +83,7 @@ function M.newNs()
     assert(loadfile("Core/Loggable.lua"))("HagAIO", ns)
     assert(loadfile("Core/DatabaseOwner.lua"))("HagAIO", ns)  -- DB-ownership mixin (Module/Service use it)
     assert(loadfile("Core/Lib.lua"))("HagAIO", ns)
-    assert(loadfile("Lib/Helpers.lua"))("HagAIO", ns)   -- pure helpers (DeepCopy) used by Component.SeedDefaults
+    assert(loadfile("Lib/Helpers.lua"))("HagAIO", ns)   -- pure helpers (DeepCopy) used across the framework
     assert(loadfile("Core/Component.lua"))("HagAIO", ns)
     assert(loadfile("Core/Service.lua"))("HagAIO", ns)
     ns._captured = {}
@@ -95,6 +95,9 @@ function M.newNs()
     end
     ns.ServiceManager = { Register = captureRegister, IsLoaded = function() return true end }
     ns.LibManager = { Register = captureRegister }
+    -- SettingsTables is a framework dependency now: Module/Submodule derive their settings tables from
+    -- it at construction. Load it here (after LibManager exists) so every rig has ns.SettingsTables.
+    assert(loadfile("Lib/SettingsTables.lua"))("HagAIO", ns)
     return ns
 end
 

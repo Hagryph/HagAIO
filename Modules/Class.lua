@@ -42,7 +42,7 @@ end
 function ClassModule:OnInitialize()
     local p = self:_p()
     local _, classToken = UnitClass("player")
-    p.class = classToken
+    p.class = p.class or classToken   -- keep the token _ContributeTables used, so namespaces match the tables
     p.description = "Helpers tailored to your class and specialisation."
     self:_BuildSettings()
 end
@@ -65,7 +65,7 @@ function ClassModule:_ActiveSpec()
 end
 
 -- (Re)build the settings schema from the active spec. Defaults come from the per-spec settings
--- view (see _SettingsDB) via the cascade -- no manual seeding.
+-- view (see _SettingsNamespace) via the cascade -- no manual seeding.
 function ClassModule:_BuildSettings()
     local p = self:_p()
     local spec = self:_ActiveSpec()
@@ -86,13 +86,29 @@ end
 -- buckets ride along in this character's profile. The active bucket (the current spec) is what
 -- GetSetting/SetSetting (ns.Component) read and write; the namespace's code defaults are the
 -- active spec's own settings defaults, so the cascade resolves them without manual seeding.
-function ClassModule:_SettingsDB()
-    if not (ns.SavedVars and ns.SavedVars:IsLoaded()) then return nil end
-    local spec = self:_ActiveSpec()
-    if not spec then return nil end
+function ClassModule:_SettingsNamespace()
     local p = self:_p()
-    local key = (p.class or "?") .. ":" .. tostring(self:CurrentSpecKey())
-    return ns.SavedVars:SettingsView("module_Class#" .. key, ns.Component.SeedDefaults(spec:GetSettings()))
+    return "module_Class#" .. (p.class or "?") .. ":" .. tostring(self:CurrentSpecKey())
+end
+
+-- Contribute a settings-table pair (override + per-profile layers) for EVERY registered spec bucket,
+-- so the active spec's namespace always has its tables. Schemas are known at file load (the spec
+-- classes' `settings`); only the current character's class specs register, so a profile's per-spec
+-- columns never collide across classes. Runs in the ADDON_LOADED build sweep, before OnInitialize, so
+-- the class token is read here directly rather than from p.class.
+function ClassModule:_ContributeTables()
+    local p = self:_p()
+    if p._dbContributed then return end
+    p._dbContributed = true
+    p.class = p.class or (select(2, UnitClass("player")))   -- fix the class token now; OnInitialize reuses it
+    local class = p.class or "?"
+    local tables = {}
+    for specKey, spec in pairs(p.specs or {}) do
+        local nsKey = "module_Class#" .. class .. ":" .. tostring(specKey)
+        ns.SettingsTables:Register(nsKey, spec:GetSettings())
+        for tn, tspec in pairs(ns.SettingsTables:DeriveTables(nsKey, spec:GetSettings())) do tables[tn] = tspec end
+    end
+    if next(tables) and ns.DatabaseManager then ns.DatabaseManager:Contribute(tables) end
 end
 
 -- Run the inherited declarative settingsWatch, then forward the change to the active spec
@@ -112,10 +128,10 @@ ns.ModuleManager:Register(ClassModule:New("Class", {
     title = "Class",
     description = "Helpers for your current class.",
     defaultEnabled = false,
-    -- Per character: settings are bucketed by class+spec (see _SettingsDB) into their own
+    -- Per character: settings are bucketed by class+spec (see _SettingsNamespace) into their own
     -- cascade namespaces, so each spec keeps its own config and they're captured by profiles.
     color = ns.Theme.hex.purple,
-    deps = { "SavedVars" },  -- _SettingsDB builds a per-spec settings view directly off ns.SavedVars
+    deps = { "DatabaseManager" },  -- per-spec settings tables live in the shared database
     -- Event subscriptions go through self:On (ns.Component); each spec submodule declares the
     -- services ITS features use.
     settings = {},   -- built per spec from the active spec submodule

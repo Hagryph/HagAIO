@@ -25,9 +25,9 @@ local Class = ns.Class
 --   }))
 
 -- Inherits ns.Component for the auto-released resource registry (self:On/Every/... with named
--- scopes) and the shared settings accessors + broadcast. Settings are a per-character override
--- layer over the loaded profile + code defaults (the ns.SavedVars cascade), via a lazily-bound
--- settings view in _SettingsDB.
+-- scopes) and the shared settings accessors + broadcast. Settings are this character's override
+-- layer over the loaded profile + code defaults, resolved live against the database (see
+-- Lib/SettingsTables.lua), keyed by the "submodule_<name>" namespace.
 local Submodule = Class.new("Submodule", ns.Component)
 
 function Submodule:Initialize(name, opts)
@@ -51,24 +51,25 @@ function Submodule:Initialize(name, opts)
     p.settingsWatch = opts.settingsWatch -- declarative setting-key -> handler (see ns.Component)
     p.dbSchema  = opts.dbSchema          -- structural nested tables to seed in the namespace
     p.loaded = false
+
+    -- A submodule's settings are ordinary database rows like a module's: contribute the two settings
+    -- tables auto-derived from its schema (override + per-profile layers; see Lib/SettingsTables.lua).
+    local nsKey = "submodule_" .. name
+    local derived = ns.SettingsTables:DeriveTables(nsKey, p.settings)
+    ns.SettingsTables:Register(nsKey, p.settings)
+    self:_DeclareTables(derived)
+    if next(derived) then p.serviceDeps = ns.AddDep(p.serviceDeps, "DatabaseManager") end
 end
 
 -- GetName is inherited from ns.Loggable (shared identity).
 function Submodule:GetTitle() local p = self:_p(); return p.title or p.name end
 function Submodule:GetSettings() return self:_p().settings end
 
--- Settings hooks for ns.Component: a submodule's settings are a per-character override layer
--- (cascade in ns.SavedVars) over the loaded profile + code defaults, same as a module's. The
--- view is created lazily on first access (after SavedVariables load) and cached. The broadcast
--- id is "sub:<name>", and a change forwards to the opts onSettingChanged.
-function Submodule:_SettingsDB()
-    local p = self:_p()
-    if not p._view and ns.SavedVars and ns.SavedVars:IsLoaded() then
-        p._view = ns.SavedVars:SettingsView("submodule_" .. p.name,
-            ns.Component.SeedDefaults(p.settings, p.dbSchema))
-    end
-    return p._view
-end
+-- Settings hooks for ns.Component: a submodule's settings are this character's override layer over
+-- the loaded profile + code defaults, resolved live against the database (same as a module's). Its
+-- namespace is "submodule_<name>"; the broadcast id is "sub:<name>", and a change forwards to the
+-- opts onSettingChanged.
+function Submodule:_SettingsNamespace() return "submodule_" .. self:_p().name end
 function Submodule:_SettingsOwnerId() return "sub:" .. self:_p().name end
 function Submodule:OnSettingChanged(key, value)
     Submodule.super.OnSettingChanged(self, key, value)  -- inherited declarative settingsWatch

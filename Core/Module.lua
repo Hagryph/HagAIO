@@ -75,19 +75,20 @@ function Module:Initialize(name, opts)
     p.settingsWatch = opts.settingsWatch          -- declarative setting-key -> handler (see ns.Component)
     p.publishAs = opts.publishAs                   -- optional: publish this instance at ns.<alias> (see _Publish)
 
-    -- Settings defaults: the schema's keyed `default`s, stored PER CHARACTER (the config the
-    -- profile captures). Deep-copied so table defaults aren't shared by reference; SavedVars
-    -- deep-merges them on bind. A module's ACCOUNT-WIDE persistent data lives in the shared
-    -- Database now (declarative `tables` + self:DB()), not a private saved-var namespace.
-    p.settingsDefaults = ns.Component.SeedDefaults(p.settings)
-
-    -- Tables contributed to the shared database (see ns.DatabaseOwner): self:DB() + the module's
-    -- own DAOs. A module that contributes tables depends on the DatabaseManager.
-    self:_DeclareTables(opts.tables)
-    if opts.tables and next(opts.tables) then p.serviceDeps = ns.AddDep(p.serviceDeps, "DatabaseManager") end
+    -- Tables contributed to the shared database (see ns.DatabaseOwner): the module's own `tables`
+    -- (self:DB() + DAOs) PLUS the two settings tables auto-derived from its settings schema -- the
+    -- per-character override layer and the per-profile layer of the cascade (see Lib/SettingsTables.lua).
+    -- A module's settings are therefore ordinary database rows; its enable-state lives in the central
+    -- module_enable tables. A module that contributes any table depends on the DatabaseManager.
+    local nsKey = "module_" .. name
+    local tables = {}
+    for tn, spec in pairs(opts.tables or {}) do tables[tn] = spec end
+    for tn, spec in pairs(ns.SettingsTables:DeriveTables(nsKey, p.settings)) do tables[tn] = spec end
+    ns.SettingsTables:Register(nsKey, p.settings)
+    self:_DeclareTables(tables)
+    if next(tables) then p.serviceDeps = ns.AddDep(p.serviceDeps, "DatabaseManager") end
 
     p.enabled = false
-    p.settingsDB = nil   -- per-character settings namespace (GetSetting/_SettingsDB)
     p.log = nil
 end
 
@@ -119,10 +120,10 @@ function Module:IsAlwaysOn() return self:_p().alwaysOn end
 -- reached via self:DB(); see ns.DatabaseOwner). Settings are per-character (GetSetting).
 -- GetLog + the Log* helpers are inherited from ns.Component (shared logging surface).
 
--- Settings are a per-character override layer over the loaded profile + code defaults (the
--- cascade in ns.SavedVars; see ns.Component for the shared GetSetting/SetSetting + the
--- HagAIO_SettingChanged broadcast). The settings DB is the proxy view bound in _BindDB.
-function Module:_SettingsDB() return self:_p().settingsDB end
+-- Settings are this character's override layer over the loaded profile + code defaults, resolved live
+-- against the database (see ns.Component for the shared GetSetting/SetSetting + the HagAIO_SettingChanged
+-- broadcast). A module's settings namespace is "module_<name>".
+function Module:_SettingsNamespace() return "module_" .. self:_p().name end
 
 -- Turn a declarative spec (a method name or a function) into a handler invoked as
 -- handler(name, ...) -> spec(self, name, ...).
@@ -153,16 +154,14 @@ function Module:_WireDeclared()
 end
 
 -- Internal: the fixed one-time init sequence the ModuleManager runs for this module
--- (on PLAYER_LOGIN, or immediately for a late registration). Logger first, then the
--- saved-var binding, then OnInitialize -- so a subclass's OnInitialize can always
--- rely on GetLog() and self:DB() being ready. Keeping the order here, next to the
--- pieces it sequences, means the manager just calls one method and no module author
--- has to know the order. (It can't move to the constructor: SavedVars aren't loaded
--- until ADDON_LOADED, long after modules are constructed at file load.)
+-- (on PLAYER_LOGIN, or immediately for a late registration). Logger first, then
+-- OnInitialize -- so a subclass's OnInitialize can always rely on GetLog() and self:DB()
+-- being ready (the shared database was built on ADDON_LOADED). Keeping the order here,
+-- next to the pieces it sequences, means the manager just calls one method and no module
+-- author has to know the order.
 function Module:_Init()
     self:_Publish()      -- ns.<alias> first (opts.publishAs), so OnInitialize can rely on it
     self:_AttachLogger()
-    self:_BindDB()
     self:_ContributeTables()    -- contribute owned tables to the shared database (built later)
     self:OnInitialize()
 end
@@ -174,16 +173,6 @@ end
 function Module:_Publish()
     local alias = self:_p().publishAs
     if alias then ns[alias] = self end
-end
-
--- Internal: bind the per-character settings view. Called by Module:_Init at startup. Settings
--- are a per-character override layer over the loaded profile + code defaults (the cascade in
--- ns.SavedVars); enable state cascades the same way, so register its baseline here too. A
--- module's persistent DATA is not bound here -- it lives in the shared Database (self:DB()).
-function Module:_BindDB()
-    local p = self:_p()
-    p.settingsDB = ns.SavedVars:SettingsView("module_" .. p.name, p.settingsDefaults)
-    ns.SavedVars:RegisterModuleDefault(p.name, p.defaultEnabled)
 end
 
 function Module:Enable()
@@ -200,7 +189,8 @@ function Module:Enable()
     local ok, err = pcall(self.OnEnable, self)  -- base no-op unless the subclass overrides
     if not ok then ns.Logger:Core():Warn(("%s OnEnable error: %s"):format(p.name, tostring(err))) end
     self:_WireDeclared()  -- declarative events/messages (auto-released on disable)
-    ns.SavedVars:SetModuleState(p.name, true)  -- per-character enable override (diffed vs profile/default)
+    local db = self:DB()
+    if db then ns.SettingsTables:SetModuleEnabled(db, p.name, true, p.defaultEnabled) end  -- enable override (diffed vs profile/default)
     if p.log then p.log:Success("enabled") end
     if ns.EventBus and ns.EventBus.Emit then ns.EventBus:Emit("HagAIO_ModuleState", p.name, true) end
 end
@@ -213,7 +203,8 @@ function Module:Disable()
     local ok, err = pcall(self.OnDisable, self)  -- base no-op unless the subclass overrides
     if not ok then ns.Logger:Core():Warn(("%s OnDisable error: %s"):format(p.name, tostring(err))) end
     self:_ReleaseAll()  -- undo every self:On / self:Subscribe / self:Hook + declared wiring
-    ns.SavedVars:SetModuleState(p.name, false)  -- per-character enable override (diffed vs profile/default)
+    local db = self:DB()
+    if db then ns.SettingsTables:SetModuleEnabled(db, p.name, false, p.defaultEnabled) end  -- enable override (diffed vs profile/default)
     if p.log then p.log:Info("disabled") end
     ns.ModuleManager:DisableDependents(p.name)  -- cascade: modules that needed this one
     if ns.EventBus and ns.EventBus.Emit then ns.EventBus:Emit("HagAIO_ModuleState", p.name, false) end

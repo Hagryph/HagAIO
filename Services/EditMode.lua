@@ -31,16 +31,39 @@ end
 
 function EditMode:IsEditing() return self:_p().editing end
 
--- Frame layout is per-character config (a cascade namespace, keyed by frame key -> {point,x,y}):
--- this char's override ?? the loaded profile ?? nil (then the frame's coded default). So layouts
--- differ per character and travel in that character's profile, storing only what was moved.
-function EditMode:_Positions()
-    return ns.SavedVars:SettingsView("editmode", {})
+-- Frame layout is per-character config in the database (the central `editmode` table, keyed by frame
+-- key -> {point,x,y}): this char's override ?? the loaded profile (`profile_editmode`) ?? nil (then
+-- the frame's coded default). So layouts differ per character and travel in that character's profile.
+local function isSet(v) return v ~= nil and not ns.DB.isNull(v) end
+
+function EditMode:_GetPosition(key)
+    local db = self:DB()
+    if not db then return nil end
+    local r = db:Select("point", "x", "y"):From("editmode"):Where("key", "=", key):Limit(1):Run()[1]
+    if r and isSet(r.point) then return { point = r.point, x = r.x, y = r.y } end
+    local loaded = ns.SettingsTables:LoadedProfile(db)
+    if loaded then
+        local pr = db:Select("point", "x", "y"):From("profile_editmode")
+            :Where("profile", "=", loaded):AndWhere("key", "=", key):Limit(1):Run()[1]
+        if pr and isSet(pr.point) then return { point = pr.point, x = pr.x, y = pr.y } end
+    end
+end
+
+-- Store this character's override position for `key` (upsert into the `editmode` table).
+function EditMode:_SetPosition(key, pos)
+    local db = self:DB()
+    if not db then return end
+    local cols = { point = pos.point, x = pos.x, y = pos.y }
+    if db:Select("key"):From("editmode"):Where("key", "=", key):Limit(1):Run()[1] then
+        db:Update("editmode", cols, function(r) return r.key == key end)
+    else
+        cols.key = key; db:Insert("editmode", cols)
+    end
 end
 
 -- Anchor a registered frame from its saved (or default) CENTER offset.
 function EditMode:Apply(reg)
-    local pos = self:_Positions()[reg.key] or reg.default
+    local pos = self:_GetPosition(reg.key) or reg.default
     local point = pos.point or "CENTER"
     reg.frame:ClearAllPoints()
     reg.frame:SetPoint(point, UIParent, point, pos.x or 0, pos.y or 0)
@@ -151,14 +174,14 @@ function EditMode:_SnapAndSave(reg)
     -- into a TOPLEFT anchor (reg.anchor) so its top-left stays put and it grows
     -- downward/rightward on resize (for list-like frames that extend as they fill).
     if reg.anchor == "TOPLEFT" then
-        self:_Positions()[reg.key] = {
+        self:_SetPosition(reg.key, {
             point = "TOPLEFT",
             x = (cx - hw) - UIParent:GetLeft(),
             y = (cy + hh) - UIParent:GetTop(),
-        }
+        })
     else
         local ux, uy = UIParent:GetCenter()
-        self:_Positions()[reg.key] = { point = "CENTER", x = cx - ux, y = cy - uy }
+        self:_SetPosition(reg.key, { point = "CENTER", x = cx - ux, y = cy - uy })
     end
     self:Apply(reg)
     if reg.onMoved then reg.onMoved() end
@@ -196,4 +219,6 @@ function EditMode:_OnExit()
     end
 end
 
-ns.ServiceManager:Register(EditMode:New("EditMode", { deps = { "SavedVars" } }))
+-- Positions live in the shared database (self:DB()); the DatabaseManager is reached through that
+-- mixin, not declared as a dep. Edit Mode is published at StartAll, before any module registers a frame.
+ns.ServiceManager:Register(EditMode:New("EditMode"))
