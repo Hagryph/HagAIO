@@ -142,8 +142,12 @@ end
 function Dashboard:OnEnable()
     -- Targeted collectors keep each fire cheap (the never-debounce rule): a bag update only
     -- re-reads the keystone, a quest turn-in only records that quest.
-    self:On("PLAYER_ENTERING_WORLD",      function() self:_Snapshot() end)
-    self:On("PLAYER_LOGOUT",              function() self:_Snapshot() end)
+    -- The full snapshot scans several APIs and writes many DB rows, so it is DEFERRED past the loading
+    -- screen (see _ScheduleSnapshot): running it inline on PLAYER_ENTERING_WORLD / at enable stretched
+    -- the load bar. The targeted collectors below stay inline -- each fire is cheap (the never-debounce
+    -- rule): a bag update only re-reads the keystone, a quest turn-in only records that quest.
+    self:On("PLAYER_ENTERING_WORLD",      function() self:_ScheduleSnapshot() end)
+    self:On("PLAYER_LOGOUT",              function() self:_Snapshot() end)   -- inline: must finish before logout
     self:On("WEEKLY_REWARDS_UPDATE",      function() self:_CollectVault();    self:_RenderIfShown() end)
     self:On("CHALLENGE_MODE_COMPLETED",   function() self:_CollectKeystone(); self:_RenderIfShown() end)
     self:On("CHALLENGE_MODE_MAPS_UPDATE", function() self:_CollectKeystone(); self:_RenderIfShown() end)
@@ -151,7 +155,7 @@ function Dashboard:OnEnable()
     self:On("UPDATE_INSTANCE_INFO",       function() self:_CollectLockouts(); self:_RenderIfShown() end)
     self:On("BOSS_KILL",                  function() self:_CollectLockouts() end)
     self:On("QUEST_TURNED_IN",            function(_, questID) self:_RecordQuest(questID) end)
-    self:_Snapshot()
+    self:_ScheduleSnapshot()                        -- deferred; immediate when enabled mid-session
     if RequestRaidInfo then RequestRaidInfo() end   -- async -> UPDATE_INSTANCE_INFO fills lockouts
 end
 
@@ -419,6 +423,21 @@ function Dashboard:_RecordQuest(questID)
         if not exists then db:Insert("dashboard_quest", { char_key = key, freq = freq, quest_id = questID }) end
     end
     self:_RenderIfShown()
+end
+
+-- Run the full snapshot AFTER the world is on screen, never during the loading screen. C_Timer
+-- callbacks don't fire while a loading screen is up, so a pass scheduled on PLAYER_LOGIN / at enable
+-- runs on the first real frame once the world has loaded -- exactly where the user asked the data to
+-- load. Coalesced: rapid re-fires (every PLAYER_ENTERING_WORLD on a zone/instance change) collapse
+-- into ONE pending pass rather than stacking a fresh scan per loading screen.
+function Dashboard:_ScheduleSnapshot()
+    local p = self:_p()
+    if p.snapshotPending then return end
+    p.snapshotPending = true
+    C_Timer.After(0, function()
+        p.snapshotPending = false
+        if self:IsEnabled() then self:_Snapshot() end   -- skip if disabled before the frame ran
+    end)
 end
 
 function Dashboard:_Snapshot()
