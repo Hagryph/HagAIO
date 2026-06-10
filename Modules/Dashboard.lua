@@ -752,6 +752,51 @@ function Dashboard:_RaidExpansions()
     return self:_KnownExpansions(true)
 end
 
+-- Distinct raids in one expansion, NEWEST FIRST -- the order the journal lists them (oldest->newest),
+-- reversed. Sourced from the seeded catalog (one row per raid per difficulty), so it reflects exactly
+-- what's stored; the journal order positions them, any catalog-only leftover (a retired tier) sorts in
+-- alphabetically after. Drives both the per-expansion raid tiles and their nav sub-nodes (same order).
+function Dashboard:_RaidsInExpansion(exp)
+    local p = self:_p()
+    local present = {}
+    for _, r in pairs(self:_Instances()) do
+        if r.isRaid and (r.expansion or "Other") == exp then present[r.name] = true end
+    end
+    local out = {}
+    local ordered = p.ejRaidsByTier and p.ejRaidsByTier[exp]
+    if ordered then
+        for i = #ordered, 1, -1 do
+            local n = ordered[i]
+            if present[n] then out[#out + 1] = n; present[n] = nil end
+        end
+    end
+    local rest = {}
+    for n in pairs(present) do rest[#rest + 1] = n end
+    table.sort(rest)
+    for _, n in ipairs(rest) do out[#out + 1] = n end
+    return out
+end
+
+-- One icon tile per raid in an expansion: the raid's own journal art (splash, else banner), labelled
+-- with its name; clicking drills into that single raid's per-difficulty lockout grid. Falls back to the
+-- expansion logo until a raid's art has loaded (same as the overview tiles).
+function Dashboard:_RaidTiles(exp)
+    local p = self:_p()
+    local tiles = {}
+    for _, name in ipairs(self:_RaidsInExpansion(exp)) do
+        local raidName = name
+        local tile = {
+            texture = self:_ExpansionLogo(exp),
+            label = raidName,
+            onClick = function() p.nav:Select("raid:" .. exp .. "|" .. raidName) end,
+        }
+        local art = self:_InstanceArt(raidName, "raid")
+        if art then applyArt(tile, art) end
+        tiles[#tiles + 1] = tile
+    end
+    return tiles
+end
+
 -- Columns for one expansion's catalog (raids if isRaid, else dungeons; defaults to the current
 -- expansion) -- sourced from the seeded dashboard_instance table. With raids seeded one row per
 -- difficulty, this yields a column per (instance, difficulty); the cell is that character's lock.
@@ -1029,8 +1074,15 @@ function Dashboard:_NavItems()
             items[#items + 1] = { key = c.key, label = c.label, indent = c.indent and 1 or 0 }
             -- a deeper sub-node per expansion, only while this category is open (collapsible tree)
             if c.key == "raids" and raidsOpen then
+                local activeExp = cat:match("^raid:([^|]+)")          -- the expansion drilled into, if any
                 for _, exp in ipairs(self:_RaidExpansions()) do      -- all raid tiers (full catalog)
                     items[#items + 1] = { key = "raid:" .. exp, label = exp, indent = 2 }
+                    -- while an expansion is open, list ITS raids a level deeper (matches the tile grid)
+                    if exp == activeExp then
+                        for _, rn in ipairs(self:_RaidsInExpansion(exp)) do
+                            items[#items + 1] = { key = "raid:" .. exp .. "|" .. rn, label = rn, indent = 3 }
+                        end
+                    end
                 end
             elseif c.key == "dungeons" and dungeonsOpen then
                 if self:_SeasonDungeons() then
@@ -1068,6 +1120,15 @@ function Dashboard:_ResolveCategory(key)
         return "Raids", function() return self:_CatalogColumns(nil, true) end       -- current tier
     elseif key == "dungeons" then
         return "Dungeons", function() return self:_CatalogColumns(nil, false) end    -- current expansion
+    end
+    -- a single raid drilled into from its expansion's tile grid: every difficulty of just that raid
+    local dexp_raid, draid = key and key:match("^raid:([^|]+)|(.+)$")
+    if dexp_raid and draid then
+        return draid, function()
+            return self:_LockoutColumns(function(r)
+                return (r.isRaid and true or false) and (r.expansion or "Other") == dexp_raid and r.name == draid
+            end)
+        end
     end
     local rexp = key and key:match("^raid:(.+)$")
     if rexp then
@@ -1240,13 +1301,19 @@ function Dashboard:_Render()
     -- the Home/Raids/Dungeons overviews are journal-style icon grids, not the data grid. Each is its
     -- OWN cached page: switching between them just shows one and hides the rest -- the tiles and their
     -- textures stay loaded and aren't re-edited (each tile's Texture widget memoises unchanged art).
-    if p.category == "home" or p.category == "raids" or p.category == "dungeons" then
+    -- a "raid:<expansion>" key (no raid drill suffix) is itself an icon grid -- the raids OF that
+    -- expansion as tiles, each with its own art -- one level below the expansion overview.
+    local raidExp = p.category:match("^raid:([^|]+)$")
+    if p.category == "home" or p.category == "raids" or p.category == "dungeons" or raidExp then
         p.grid:Hide()
         local page = self:_IconPage(p.category)
         for _, g in pairs(p.iconPages) do g:SetShown(g == page) end
         if p.category == "home" then
             p.catTitle:SetText("Overview")
             page:SetTiles(self:_CategoryTiles())
+        elseif raidExp then
+            p.catTitle:SetText(raidExp .. " Raids")
+            page:SetTiles(self:_RaidTiles(raidExp))
         else
             p.catTitle:SetText(label)
             page:SetTiles(self:_OverviewTiles(p.category))

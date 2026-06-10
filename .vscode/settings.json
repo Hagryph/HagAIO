@@ -33,6 +33,8 @@
         "PetJournal_InitPetButton",
         "ToySpellButton_OnClick",
         "RAID_CLASS_COLORS",
-        "LE_EXPANSION_LEVEL_CURRENT"
+        "LE_EXPANSION_LEVEL_CURRENT",
+        "QuestNpcNameFrame",
+        "QuestFrame"
     ]
 }
