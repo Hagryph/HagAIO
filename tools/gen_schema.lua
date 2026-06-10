@@ -189,8 +189,7 @@ end
 local mermaid = table.concat(mer)
 
 w("\n## Entity-relationship diagram\n\n")
-w("Open **[diagram/DB/index.html](diagram/DB/index.html)** in a browser for an interactive (zoom/pan) view. Inline:\n\n")
-w("```mermaid\n"); w(mermaid); w("```\n")
+w("Open **[diagram/DB/index.html](diagram/DB/index.html)** in a browser for an interactive (zoom/pan) view.\n")
 
 w("\n## Tables\n\n")
 w("| Table | Scope | Columns | Primary key | Defined in |\n|---|---|---|---|---|\n")
