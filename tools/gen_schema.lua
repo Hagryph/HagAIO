@@ -46,8 +46,15 @@ local function reg(_, item)
     end
     return item
 end
+-- ModuleManager keeps a real name map so GetModule resolves a registered module. Module entry files
+-- assert on it (e.g. a class submodule requires its parent Class module) and would otherwise error +
+-- be skipped headless, hiding their tables. Services/Submodules just publish + contribute.
+local registeredModules = {}
 ns.ServiceManager   = { Register = reg, IsLoaded = function() return true end }
-ns.ModuleManager    = { Register = reg, GetModule = function() return nil end }
+ns.ModuleManager    = {
+    Register  = function(self, item) if item then registeredModules[item:GetName()] = item end; return reg(self, item) end,
+    GetModule = function(_, name) return registeredModules[name] end,
+}
 ns.SubmoduleManager = { Register = reg }
 ns.LibManager       = { Register = function(_, item) if item and item._Publish then pcall(function() item:_Publish() end) end; return item end }
 

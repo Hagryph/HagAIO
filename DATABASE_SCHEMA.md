@@ -278,7 +278,7 @@ erDiagram
 | [`flight_hop`](#flight_hop) | `global` | 3 | route_id, ordinal | `Modules/Misc.lua` |
 | [`flight_master`](#flight_master) | `global` | 6 | node_id | `Core/DB/CoreTables.lua` |
 | [`flight_route`](#flight_route) | `global` | 5 | id | `Modules/Misc.lua` |
-| [`keystone`](#keystone) | `local` | 2 | mapid | `Modules/Dashboard.lua` |
+| [`keystone`](#keystone) | `local` | 2 | mapid | `Core/DB/CoreTables.lua` |
 | [`logger`](#logger) | `global` | 4 | id | `Core/DB/CoreTables.lua` |
 | [`minimap`](#minimap) | `global` | 3 | id | `Services/MinimapIcon.lua` |
 | [`module_enable`](#module_enable) | `char` | 2 | name | `Core/DB/CoreTables.lua` |
@@ -513,7 +513,7 @@ erDiagram
 
 ### `keystone`  ·  scope `local`
 
-*Defined in `Modules/Dashboard.lua`.*
+*Defined in `Core/DB/CoreTables.lua`.*
 
 | Column | Type | Null | Key | Default | References |
 |---|---|---|---|---|---|
@@ -776,9 +776,3 @@ erDiagram
 | Column | Type | Null | Key | Default | References |
 |---|---|---|---|---|---|
 | `name` | text | no | PK |  |  |
-
----
-
-_These files could not be introspected headless and were skipped (their tables, if any, are not shown):_
-
-- `Modules/Class/Monk/Monk.lua`

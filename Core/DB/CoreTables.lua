@@ -111,6 +111,18 @@ ns.DB.CoreTables = {
         },
     },
 
+    -- Mythic+ keystone reference: map id -> display name. LOCAL (rebuilt each session from
+    -- C_ChallengeMode.GetMapUIInfo). The Dashboard module fills it (_SetKeystone / _SeedKeystones) and
+    -- dashboard_char.ks_mapid references it. Defined here, not in Dashboard, so the reference table
+    -- isn't tied to one module's load -- any feature can join to it.
+    keystone = {
+        scope = "local",
+        columns = {
+            { name = "mapid", type = "integer", primaryKey = true },
+            { name = "name",  type = "text" },
+        },
+    },
+
     -- Alliance / Horde / Neutral, fixed by id. In memory only (rebuilt each session from this seed).
     faction = {
         scope = "local",

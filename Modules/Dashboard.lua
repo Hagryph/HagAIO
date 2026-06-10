@@ -1342,12 +1342,10 @@ ns.ModuleManager:Register(Dashboard:New("Dashboard", {
     -- the account-wide dashboard_instance registry (its name/difficulty), a quest references the
     -- shared `quest` table (its title), and a keystone references the local keystone name table.
     tables = {
-        -- keystone map id -> display name. LOCAL: pure reference data, rebuilt each session from
-        -- C_ChallengeMode.GetMapUIInfo (see _SetKeystone / _SeedKeystones); dashboard_char points at it.
-        keystone = { scope = "local", columns = {
-            { name = "mapid", type = "integer", primaryKey = true },
-            { name = "name",  type = "text" },
-        } },
+        -- The `keystone` reference table (map id -> display name) that dashboard_char.ks_mapid points
+        -- at is defined CENTRALLY in Core/DB/CoreTables.lua, alongside faction/quest -- it's plain
+        -- account-agnostic reference data, not owned by this module. Dashboard still fills it
+        -- (_SetKeystone / _SeedKeystones via self:DB()).
         dashboard_char = { scope = "global", columns = {
             { name = "char_key",  type = "text",    primaryKey = true },   -- "Name-Realm"
             { name = "name",      type = "text" },
