@@ -807,13 +807,13 @@ function Dashboard:_RaidExpansions()
     return self:_KnownExpansions(true)
 end
 
--- Distinct raid names in a catalog group, NEWEST FIRST. `pred(entry)` selects the rows; `orderList`
+-- Distinct instance names in a catalog group, NEWEST FIRST. `pred(entry)` selects the rows; `orderList`
 -- (journal order, oldest->newest) positions them reversed, any leftover (e.g. a retired tier) sorted
 -- in after. Sourced from the seeded catalog, so it reflects exactly what's stored.
-function Dashboard:_RaidNames(pred, orderList)
+function Dashboard:_InstanceNames(pred, orderList)
     local present = {}
     for _, r in pairs(self:_Instances()) do
-        if r.isRaid and pred(r) then present[r.name] = true end
+        if pred(r) then present[r.name] = true end
     end
     local out = {}
     if orderList then
@@ -829,11 +829,15 @@ function Dashboard:_RaidNames(pred, orderList)
     return out
 end
 
--- Raids in one expansion (by FK) / in the live season (by flag), newest first -- each drives its tile
--- grid and the matching nav sub-nodes. A season raid keeps its home expansion, so it lists under both.
+-- Raids / dungeons in one expansion (by FK), newest first -- each drives its tile grid. A season
+-- instance keeps its home expansion, so it lists under both its expansion AND Current Season.
 function Dashboard:_RaidsInExpansion(exp)
-    return self:_RaidNames(function(r) return (r.expansion or "Other") == exp end,
+    return self:_InstanceNames(function(r) return r.isRaid and (r.expansion or "Other") == exp end,
         self:_p().ejRaidsByTier and self:_p().ejRaidsByTier[exp])
+end
+function Dashboard:_DungeonsInExpansion(exp)
+    return self:_InstanceNames(function(r) return (not r.isRaid) and (r.expansion or "Other") == exp end,
+        self:_p().ejDungeonsByTier and self:_p().ejDungeonsByTier[exp])
 end
 -- Whether a catalog raid is in the live season. Prefers the journal set built this session (available
 -- the moment the map is walked, before the persisted flag pass runs); falls back to the stored flag.
@@ -844,43 +848,51 @@ function Dashboard:_IsSeasonRaid(r)
     return r.season and true or false
 end
 function Dashboard:_SeasonRaidNames()
-    return self:_RaidNames(function(r) return self:_IsSeasonRaid(r) end, self:_p().ejSeasonRaidList)
+    return self:_InstanceNames(function(r) return self:_IsSeasonRaid(r) end, self:_p().ejSeasonRaidList)
 end
 function Dashboard:_HasSeasonRaids() return self:_SeasonRaidNames()[1] ~= nil end
+-- The live Mythic+ season's dungeons (the rotation from C_ChallengeMode), in season order.
+function Dashboard:_SeasonDungeonNames()
+    local s = self:_SeasonDungeons()
+    if not s then return {} end
+    local out = {}
+    for _, n in ipairs(s.list) do out[#out + 1] = n end
+    return out
+end
 
--- One icon tile per raid name: its own journal art (splash, else banner), labelled with its name.
--- Clicking a tile EXPANDS it in place (no navigation): the lockout table for that raid opens inline
--- under its row, and the tile highlights; clicking it again (or another) toggles. Falls back to
--- `logoTier`'s banner until the raid art has loaded.
-function Dashboard:_RaidTilesFor(groupKey, names, logoTier, expandedName)
+-- One icon tile per instance name: its own journal art (splash, else banner), labelled with its name.
+-- Clicking a tile EXPANDS it in place (no navigation): the lockout table for that instance opens
+-- inline under its row, and the tile highlights; clicking it again (or another) toggles. Falls back to
+-- `logoTier`'s banner until the art has loaded. `artKind` is "raid" | "dungeon".
+function Dashboard:_InstanceTilesFor(names, logoTier, expandedName, artKind)
     local p = self:_p()
     local tiles = {}
     for _, name in ipairs(names) do
-        local raidName = name
-        local on = (raidName == expandedName)
+        local instName = name
+        local on = (instName == expandedName)
         local tile = {
             texture = logoTier and self:_ExpansionLogo(logoTier) or nil,
-            label = raidName, selected = on, expanded = on,
+            label = instName, selected = on, expanded = on,
             onClick = function()
-                p.expandedRaid = p.expandedRaid or {}
+                p.expandedInstance = p.expandedInstance or {}
                 local cat = p.category
-                p.expandedRaid[cat] = (p.expandedRaid[cat] == raidName) and nil or raidName
+                p.expandedInstance[cat] = (p.expandedInstance[cat] == instName) and nil or instName
                 self:_Render()
             end,
         }
-        local art = self:_InstanceArt(raidName, "raid")
+        local art = self:_InstanceArt(instName, artKind)
         if art then applyArt(tile, art) end
         tiles[#tiles + 1] = tile
     end
     return tiles
 end
 
--- Difficulty columns for ONE raid: a column per difficulty present (LFR/Normal/Heroic/Mythic),
--- ordered by rank, each cell the viewing-context character's lock progress ("6/8") or "-".
-function Dashboard:_RaidDifficultyColumns(name)
+-- Difficulty columns for ONE instance: a column per difficulty present, ordered by rank, each cell the
+-- character's lock progress ("6/8") or "-". Raids span LFR/N/H/M; dungeons usually just Mythic 0.
+function Dashboard:_InstanceDifficultyColumns(name, isRaid)
     local cols = {}
     for _, r in pairs(self:_Instances()) do
-        if r.isRaid and r.name == name then
+        if (r.isRaid and true or false) == isRaid and r.name == name then
             local diff, total = r.diff, r.total
             cols[#cols + 1] = { label = (DIFF[diff] and DIFF[diff].abbr) or diff or "?",
                 _rank = (DIFF[diff] and DIFF[diff].rank) or 0, width = 92,
@@ -896,9 +908,9 @@ function Dashboard:_RaidDifficultyColumns(name)
     return cols
 end
 
--- The per-page inline detail Grid (rows = characters, cols = a raid's difficulties), created lazily
--- inside the icon page's scroll content. Cached per page; reused as the expanded raid changes.
-function Dashboard:_RaidDetailGrid(page)
+-- The per-page inline detail Grid (rows = characters, cols = an instance's difficulties), created
+-- lazily inside the icon page's scroll content. Cached per page; reused as the expanded item changes.
+function Dashboard:_InstanceDetailGrid(page)
     local p = self:_p()
     p.detailGrids = p.detailGrids or {}
     if p.detailGrids[page] then return p.detailGrids[page] end
@@ -908,31 +920,25 @@ function Dashboard:_RaidDetailGrid(page)
 end
 
 -- Fill the page's detail Grid with `name`'s per-character lockouts; returns the px height it needs.
-function Dashboard:_FillRaidDetail(page, name)
-    local g = self:_RaidDetailGrid(page)
-    local columns, rows = self:_BuildLockoutGrid(self:_RaidDifficultyColumns(name))
+function Dashboard:_FillInstanceDetail(page, name, isRaid)
+    local g = self:_InstanceDetailGrid(page)
+    local columns, rows = self:_BuildLockoutGrid(self:_InstanceDifficultyColumns(name, isRaid))
     g:SetColumns(columns)
     g:SetRows(rows)
     return 22 + #rows * 20 + 8          -- header + one row per character + padding
 end
 
--- Render an expandable raid icon page (season or one expansion): the tiles, plus the clicked raid's
--- lockout table opening inline. Keeps "Raids -> Expansion" the deepest the nav ever goes.
-function Dashboard:_ShowRaidPage(page, groupKey, names, logoTier)
+-- Render an expandable instance icon page (a raid or dungeon group): the tiles, plus the clicked
+-- item's lockout table opening inline. Keeps "<kind> -> Expansion" the deepest the nav ever goes.
+function Dashboard:_ShowInstancePage(page, names, logoTier, isRaid)
     local p = self:_p()
-    p.expandedRaid = p.expandedRaid or {}
-    local want, expanded = p.expandedRaid[p.category]
+    p.expandedInstance = p.expandedInstance or {}
+    local want, expanded = p.expandedInstance[p.category]
     for _, n in ipairs(names) do if n == want then expanded = n; break end end
-    p.expandedRaid[p.category] = expanded                       -- drop a stale name (raid no longer listed)
-    if expanded then page:SetDetail(self:_RaidDetailGrid(page), self:_FillRaidDetail(page, expanded))
+    p.expandedInstance[p.category] = expanded                   -- drop a stale name (no longer listed)
+    if expanded then page:SetDetail(self:_InstanceDetailGrid(page), self:_FillInstanceDetail(page, expanded, isRaid))
     else page:SetDetail(nil, 0) end
-    page:SetTiles(self:_RaidTilesFor(groupKey, names, logoTier, expanded))
-end
-
--- The newest season raid's splash, for the Current Season overview tile (else nil).
-function Dashboard:_LatestSeasonRaidArt()
-    local names = self:_SeasonRaidNames()
-    if names[1] then return self:_InstanceArt(names[1], "raid") end
+    page:SetTiles(self:_InstanceTilesFor(names, logoTier, expanded, isRaid and "raid" or "dungeon"))
 end
 
 -- The newest season raid's splash, for the Current Season overview tile (else nil).
@@ -1478,10 +1484,11 @@ function Dashboard:_Render()
     -- the Home/Raids/Dungeons overviews are journal-style icon grids, not the data grid. Each is its
     -- OWN cached page: switching between them just shows one and hides the rest -- the tiles and their
     -- textures stay loaded and aren't re-edited (each tile's Texture widget memoises unchanged art).
-    -- a "raid:<expansion>" key (no raid drill suffix) is itself an icon grid -- the raids OF that
-    -- expansion as tiles, each with its own art -- one level below the expansion overview.
+    -- a "raid:<group>" / "dungeon:<group>" key is itself an icon grid -- the raids / dungeons of that
+    -- group as tiles, each with its own art, the lockouts opening inline -- one level below the overview.
     local raidExp = p.category:match("^raid:([^|]+)$")
-    if p.category == "home" or p.category == "raids" or p.category == "dungeons" or raidExp then
+    local dunGrp  = p.category:match("^dungeon:([^|]+)$")
+    if p.category == "home" or p.category == "raids" or p.category == "dungeons" or raidExp or dunGrp then
         p.grid:Hide()
         local page = self:_IconPage(p.category)
         for _, g in pairs(p.iconPages) do g:SetShown(g == page) end
@@ -1490,10 +1497,17 @@ function Dashboard:_Render()
             page:SetTiles(self:_CategoryTiles())
         elseif raidExp == "current" then
             p.catTitle:SetText(SEASON_LABEL)
-            self:_ShowRaidPage(page, "current", self:_SeasonRaidNames(), p.currentExpansion)
+            self:_ShowInstancePage(page, self:_SeasonRaidNames(), p.currentExpansion, true)
         elseif raidExp then
             p.catTitle:SetText(raidExp .. " Raids")
-            self:_ShowRaidPage(page, raidExp, self:_RaidsInExpansion(raidExp), raidExp)
+            self:_ShowInstancePage(page, self:_RaidsInExpansion(raidExp), raidExp, true)
+        elseif dunGrp == "current" then
+            p.catTitle:SetText(SEASON_LABEL)
+            self:_ShowInstancePage(page, self:_SeasonDungeonNames(), self:_SeasonExpansionTier() or p.currentExpansion, false)
+        elseif dunGrp then
+            local cur = self:_CurrentExpansionTier()
+            p.catTitle:SetText(((dunGrp == cur and (self:_CurrentExpansionName() or dunGrp)) or dunGrp) .. " Dungeons")
+            self:_ShowInstancePage(page, self:_DungeonsInExpansion(dunGrp), dunGrp, false)
         else
             p.catTitle:SetText(label)
             page:SetTiles(self:_OverviewTiles(p.category))
