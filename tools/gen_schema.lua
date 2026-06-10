@@ -124,6 +124,30 @@ w("- **local** — in-memory, rebuilt from code each session (reference data; ne
 w("- **global** — account-wide saved variables (shared across characters)\n")
 w("- **char** — this character's saved variables\n")
 
+-- Entity-relationship diagram (Mermaid): every table as an entity, plus one edge per foreign key.
+-- Renders inline on GitHub; regenerated on every deploy like the rest of this doc.
+w("\n## Entity-relationship diagram\n\n")
+w("```mermaid\nerDiagram\n")
+for _, tname in ipairs(schema:TableNames()) do
+    for _, fk in ipairs(schema:Table(tname):ForeignKeys()) do
+        w(("    %s ||--o{ %s : \"%s\"\n"):format(fk.table, tname, fk.column))   -- parent has-many child
+    end
+end
+for _, tname in ipairs(schema:TableNames()) do
+    local t = schema:Table(tname)
+    local pkset, fkset = {}, {}
+    for _, c in ipairs(t:PrimaryKey()) do pkset[c] = true end
+    for _, fk in ipairs(t:ForeignKeys()) do fkset[fk.column] = true end
+    w(("    %s {\n"):format(tname))
+    for _, col in ipairs(t:Columns()) do
+        local n = col:Name()
+        local key = pkset[n] and "PK" or (fkset[n] and "FK" or "")
+        w(("        %s %s%s\n"):format(col:Type(), n, key ~= "" and (" " .. key) or ""))
+    end
+    w("    }\n")
+end
+w("```\n")
+
 w("\n## Tables\n\n")
 w("| Table | Scope | Columns | Primary key | Defined in |\n|---|---|---|---|---|\n")
 for _, tname in ipairs(schema:TableNames()) do

@@ -8,6 +8,255 @@ The addon uses **one shared database**. Every service or module contributes the 
 - **global** — account-wide saved variables (shared across characters)
 - **char** — this character's saved variables
 
+## Entity-relationship diagram
+
+```mermaid
+erDiagram
+    cvar_category ||--o{ cvar_tracked : "category_id"
+    keystone ||--o{ dashboard_char : "ks_mapid"
+    dashboard_char ||--o{ dashboard_lockout : "char_key"
+    dashboard_instance ||--o{ dashboard_lockout : "instance_key"
+    dashboard_char ||--o{ dashboard_quest : "char_key"
+    quest ||--o{ dashboard_quest : "quest_id"
+    dashboard_char ||--o{ dashboard_vault : "char_key"
+    flight_route ||--o{ flight_hop : "route_id"
+    flight_master ||--o{ flight_hop : "master"
+    faction ||--o{ flight_master : "faction"
+    zone ||--o{ flight_master : "zone"
+    flight_master ||--o{ flight_route : "src"
+    flight_master ||--o{ flight_route : "dst"
+    profile ||--o{ p_module_Dashboard : "profile"
+    profile ||--o{ p_module_Dev : "profile"
+    profile ||--o{ p_module_Misc : "profile"
+    profile ||--o{ p_module_Questing : "profile"
+    profile ||--o{ p_module_UnitFrames : "profile"
+    profile ||--o{ profile_editmode : "profile"
+    profile ||--o{ profile_module_enable : "profile"
+    compartment {
+        integer id PK
+        boolean shown
+    }
+    config {
+        integer id PK
+        text loaded_profile
+    }
+    cvar_category {
+        integer id PK
+        text name
+    }
+    cvar_managed {
+        text name PK
+        text value
+    }
+    cvar_tracked {
+        text name PK
+        text type
+        integer category_id FK
+    }
+    dashboard_char {
+        text char_key PK
+        text name
+        text realm
+        text class
+        integer level
+        integer ilvl
+        integer last_seen
+        number rating
+        integer ks_mapid FK
+        integer ks_level
+    }
+    dashboard_instance {
+        text key PK
+        text name
+        text diff
+        boolean is_raid
+        integer diff_id
+        integer total
+        text expansion
+    }
+    dashboard_lockout {
+        text char_key PK
+        text instance_key PK
+        integer progress
+        integer total
+        integer reset
+    }
+    dashboard_quest {
+        text char_key PK
+        text freq PK
+        integer quest_id PK
+    }
+    dashboard_vault {
+        text char_key PK
+        integer ordinal PK
+        integer type
+        integer level
+        integer progress
+        integer threshold
+    }
+    editmode {
+        text key PK
+        text point
+        number x
+        number y
+    }
+    faction {
+        text tag PK
+        text name
+    }
+    flight_hop {
+        integer route_id PK
+        integer ordinal PK
+        integer master FK
+    }
+    flight_master {
+        integer node_id PK
+        text faction FK
+        text zone FK
+        text name
+        number x
+        number y
+    }
+    flight_route {
+        integer id PK
+        integer src FK
+        integer dst FK
+        number t
+        integer quality
+    }
+    keystone {
+        integer mapid PK
+        text name
+    }
+    logger {
+        integer id PK
+        integer min_level
+        boolean echo
+        integer keep
+    }
+    minimap {
+        integer id PK
+        boolean shown
+        number angle
+    }
+    module_enable {
+        text name PK
+        boolean enabled
+    }
+    o_module_Dashboard {
+        integer id PK
+        boolean show_mplus
+        boolean show_raids
+        boolean show_dungeons
+        boolean show_weekly
+        boolean show_daily
+    }
+    o_module_Dev {
+        integer id PK
+        boolean debug
+    }
+    o_module_Misc {
+        integer id PK
+        boolean showInFlight
+        boolean showHover
+        text sellJunk
+    }
+    o_module_Questing {
+        integer id PK
+        boolean showTooltip
+        boolean echoLevelUp
+        boolean advancedInfo
+        boolean autoAccept
+        boolean acceptGrey
+        boolean autoTurnIn
+        boolean autoDialogue
+        boolean shiftPause
+        boolean pauseInstance
+    }
+    o_module_UnitFrames {
+        integer id PK
+        boolean player
+        boolean target
+        number endColor_r
+        number endColor_g
+        number endColor_b
+        number midColor_r
+        number midColor_g
+        number midColor_b
+        number startColor_r
+        number startColor_g
+        number startColor_b
+    }
+    p_module_Dashboard {
+        text profile PK
+        boolean show_mplus
+        boolean show_raids
+        boolean show_dungeons
+        boolean show_weekly
+        boolean show_daily
+    }
+    p_module_Dev {
+        text profile PK
+        boolean debug
+    }
+    p_module_Misc {
+        text profile PK
+        boolean showInFlight
+        boolean showHover
+        text sellJunk
+    }
+    p_module_Questing {
+        text profile PK
+        boolean showTooltip
+        boolean echoLevelUp
+        boolean advancedInfo
+        boolean autoAccept
+        boolean acceptGrey
+        boolean autoTurnIn
+        boolean autoDialogue
+        boolean shiftPause
+        boolean pauseInstance
+    }
+    p_module_UnitFrames {
+        text profile PK
+        boolean player
+        boolean target
+        number endColor_r
+        number endColor_g
+        number endColor_b
+        number midColor_r
+        number midColor_g
+        number midColor_b
+        number startColor_r
+        number startColor_g
+        number startColor_b
+    }
+    profile {
+        text name PK
+        boolean is_global
+    }
+    profile_editmode {
+        text profile PK
+        text key PK
+        text point
+        number x
+        number y
+    }
+    profile_module_enable {
+        text profile PK
+        text name PK
+        boolean enabled
+    }
+    quest {
+        integer quest_id PK
+        text title
+        number time
+    }
+    zone {
+        text name PK
+    }
+```
+
 ## Tables
 
 | Table | Scope | Columns | Primary key | Defined in |
