@@ -73,10 +73,12 @@ function ScrollAreaW:Initialize(parent, name)
     thumb:SetScript("OnDragStop", function() thumb:SetScript("OnUpdate", nil) end)
 
     local p = self:_p()
-    p.sf, p.content, p.contentW, p.update = sf, content, adopt(content), update
+    p.sf, p.content, p.contentW, p.update, p.set = sf, content, adopt(content), update, set
     self:_attach(sa)
 end
 function ScrollAreaW:Update()    self:_p().update(); return self end
 function ScrollAreaW:ScrollTop() local p = self:_p(); p.sf:SetVerticalScroll(0); p.update(); return self end
+function ScrollAreaW:GetScroll() return self:_p().sf:GetVerticalScroll() end           -- current vertical offset
+function ScrollAreaW:SetScroll(v) self:_p().set(v); return self end                    -- clamped to the scrollable range
 function ScrollAreaW:Content()   return self:_p().contentW end   -- the scroll child, as a widget
 Widgets.ScrollArea = ScrollAreaW

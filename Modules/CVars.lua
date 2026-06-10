@@ -326,7 +326,9 @@ function CVars:BuildSettingsPage(sf)
     if not width or width < 1 then width = 420 end
     p.pageContent = content
     p.pageWidth = width
+    p.scrollArea = sf            -- kept so a rebuild can restore the scroll offset
     p.sections = {}
+    p.sectionByTitle = {}        -- title -> section, so a rebuild can restore which were expanded
 
     local intro = W.Text:New(content, "Grouped useful CVars -- expand a category to change values. "
         .. "Changes apply right away. Tick Global on a per-character CVar to save it and "
@@ -368,6 +370,35 @@ function CVars:BuildSettingsPage(sf)
     end
 
     self:_Relayout()
+    self:_RestorePageState()   -- re-expand + re-scroll to where the player was before a rebuild
+end
+
+-- Capture which sections are expanded and the scroll offset, so the rebuild a custom add/remove
+-- triggers (SettingsWindow:InvalidateModule tears the whole page down) doesn't snap the player back to
+-- all-collapsed at the top. Called just before that rebuild, while the OLD widgets are still alive.
+function CVars:_RememberPageState()
+    local p = self:_p()
+    local exp = {}
+    for title, sec in pairs(p.sectionByTitle or {}) do exp[title] = sec:IsExpanded() end
+    p.pendingExpanded = exp
+    p.pendingScroll = p.scrollArea and p.scrollArea:GetScroll() or nil
+end
+
+-- Reapply the remembered state onto the freshly built page (no-op when nothing was remembered).
+function CVars:_RestorePageState()
+    local p = self:_p()
+    if p.pendingExpanded then
+        for title, sec in pairs(p.sectionByTitle or {}) do
+            if p.pendingExpanded[title] then sec:SetExpanded(true) end
+        end
+        p.pendingExpanded = nil
+        self:_Relayout()   -- re-stack: the restored expands changed section heights
+    end
+    if p.pendingScroll and p.scrollArea then
+        p.scrollArea:Update()
+        p.scrollArea:SetScroll(p.pendingScroll)   -- clamped to the new content height
+        p.pendingScroll = nil
+    end
 end
 
 -- Build one collapsible category section with the given CVar defs.
@@ -385,6 +416,7 @@ function CVars:_BuildSection(titleText, defs, prependAdd)
     sec:SetContentHeight(-y + 6)
     sec:SetOnToggle(function() self:_Relayout() end)
     p.sections[#p.sections + 1] = sec
+    p.sectionByTitle[titleText] = sec
     return sec
 end
 
@@ -424,6 +456,7 @@ function CVars:_PlaceAddRow(box, y, width)
         self:_SetTracked(name, t, self:_CategoryId("Custom"))
         self:LogSuccess(("added custom CVar %s (%s)"):format(name, t))
         input:SetValue("")
+        self:_RememberPageState()   -- keep the Custom section open + the scroll position on rebuild
         if ns.UI.SettingsWindow then ns.UI.SettingsWindow:InvalidateModule(self:GetName()) end
     end
     add:SetScript("OnClick", submit)
@@ -457,6 +490,7 @@ function CVars:_PlaceRow(box, def, y, width)
         rm:SetScript("OnClick", function()
             self:_ClearTracked(def.name)
             self:LogInfo("removed custom CVar " .. def.name)
+            self:_RememberPageState()   -- keep the Custom section open + the scroll position on rebuild
             if ns.UI.SettingsWindow then ns.UI.SettingsWindow:InvalidateModule(self:GetName()) end
         end)
         cursor = cursor + rm:GetWidth() + 12
