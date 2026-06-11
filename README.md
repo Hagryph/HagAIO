@@ -157,6 +157,7 @@ UI/
   Widgets\ScrollArea.lua   A vertically scrollable area with a CUSTOM themed scrollbar (no Blizzard template, so no grey
   Widgets\SectionLabel.lua Uppercase, dim, lightly spaced section label (LoL's letter-spaced caps)
   Widgets\Segmented.lua    Segmented selector (LoL "view-switch"): a row of option buttons, active one
+  Widgets\SelectableText.lua A read-only block of text the user can DRAG-SELECT and Ctrl+C, but never edit
   Widgets\SettingsGroup.lua A titled settings GROUP: a bordered panel with a clickable header strip (chevron + `title`) and a
   Widgets\Slider.lua       Themed horizontal slider with a track, an accent fill, a draggable thumb, and a live numeric
   Widgets\StatusBar.lua    A bare StatusBar widget for HUD fills

@@ -673,7 +673,9 @@ function SettingsWindow:_BuildLogPage(parent)
     sf:SetPoint("TOPLEFT", div, "BOTTOMLEFT", 0, -8)
     sf:SetPoint("BOTTOMRIGHT", page, "BOTTOMRIGHT", -16, 14)
 
-    local fs = W.Text:New(sf:Content(), "", "text", "GameFontHighlightSmall")
+    -- A read-only, drag-selectable surface (not a plain FontString) so the user
+    -- can highlight any part of the log and Ctrl+C it without being able to edit.
+    local fs = W.SelectableText:New(sf:Content(), "text", "GameFontHighlightSmall")
     fs:SetPoint("TOPLEFT")
     fs:SetJustifyH("LEFT")
     fs:SetJustifyV("TOP")
@@ -699,7 +701,13 @@ function SettingsWindow:_RefreshLog()
     local width = p.logSF:Content():GetWidth()
     if not width or width < 1 then width = 380 end
     p.logFS:SetWidth(width)
-    p.logSF:Content():SetHeight(p.logFS:GetStringHeight() + 8)
+    -- A multi-line EditBox settles its auto-height a frame after the text/width
+    -- change, so size the scroll child now and again next frame to catch it.
+    local function sizeToText()
+        p.logSF:Content():SetHeight(p.logFS:GetContentHeight() + 8)
+    end
+    sizeToText()
+    C_Timer.After(0, sizeToText)
 end
 
 function SettingsWindow:_BuildAboutPage(parent)
