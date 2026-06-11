@@ -167,11 +167,14 @@ end
 function Dashboard:OnEnable()
     -- Targeted collectors keep each fire cheap (the never-debounce rule): a bag update only
     -- re-reads the keystone, a quest turn-in only records that quest.
-    -- The full snapshot scans several APIs and writes many DB rows, so it is DEFERRED past the loading
-    -- screen (see _ScheduleRefresh): running it inline on PLAYER_ENTERING_WORLD / at enable stretched
-    -- the load bar. The targeted collectors below stay inline -- each fire is cheap (the never-debounce
-    -- rule): a bag update only re-reads the keystone, a quest turn-in only records that quest.
-    self:On("PLAYER_ENTERING_WORLD",      function() self:_ScheduleRefresh() end)
+    -- The full catalog build + snapshot scans hundreds of APIs and writes many DB rows, so it runs
+    -- through the frame-budgeted Worker (see _RefreshNow below). The targeted collectors below stay
+    -- inline -- each fire is cheap (the never-debounce rule): a bag update only re-reads the keystone,
+    -- a quest turn-in only records that quest.
+    -- Catalog build + snapshot is the heavy, deferrable work -> it runs THROUGH the frame-budgeted
+    -- Worker (Services/Worker.lua): once at enable, then re-run on each zone change (coalesced by the
+    -- Worker, so rapid PLAYER_ENTERING_WORLD fires don't pile up). The Worker spreads it across frames.
+    self:WorkOn("PLAYER_ENTERING_WORLD",  function() self:_RefreshNow() end, { label = "Dashboard refresh" })
     self:On("PLAYER_LOGOUT",              function() self:_Snapshot() end)   -- inline: must finish before logout
     self:On("WEEKLY_REWARDS_UPDATE",      function() self:_CollectVault();    self:_RenderIfShown() end)
     self:On("CHALLENGE_MODE_COMPLETED",   function() self:_CollectKeystone(); self:_RenderIfShown() end)
@@ -180,7 +183,7 @@ function Dashboard:OnEnable()
     self:On("UPDATE_INSTANCE_INFO",       function() self:_CollectLockouts(); self:_RenderIfShown() end)
     self:On("BOSS_KILL",                  function() self:_CollectLockouts() end)
     self:On("QUEST_TURNED_IN",            function(_, questID) self:_RecordQuest(questID) end)
-    self:_ScheduleRefresh()                         -- deferred; builds the catalog + snapshots
+    self:Queue(function() self:_RefreshNow() end, { label = "Dashboard initial build" })  -- deferred via Worker
     if RequestRaidInfo then RequestRaidInfo() end   -- async -> UPDATE_INSTANCE_INFO fills lockouts
 end
 
@@ -472,57 +475,14 @@ function Dashboard:_RecordQuest(questID)
     self:_RenderIfShown()
 end
 
--- Cooperative chunking: the one-time journal walk + catalog seed is hundreds of Encounter Journal API
--- calls + DB inserts -- enough to hitch a frame at login. The build runs inside a COROUTINE; its hot
--- loops call maybeYield(), which hands the frame back once this frame's time budget is spent and
--- resumes next frame, so the cost spreads across a handful of frames instead of stalling one.
-local BUILD_BUDGET_MS = 6              -- max time the build may spend per frame
-local buildDeadline                   -- set by the pump around each resume; nil outside the build
-local function maybeYield()
-    if buildDeadline and debugprofilestop() > buildDeadline then coroutine.yield() end
-end
-
--- Refresh AFTER the world is on screen, never during the loading screen. C_Timer callbacks don't fire
--- while a loading screen is up, so a pass scheduled on PLAYER_LOGIN / at enable runs on the first real
--- frame once the world has loaded -- exactly where the data should load. Coalesced: rapid re-fires
--- (every PLAYER_ENTERING_WORLD on a zone/instance change) collapse into ONE pending pass. Each pass
--- (re)builds the instance catalog (once the journal is available) and snapshots this character.
-function Dashboard:_ScheduleRefresh()
-    local p = self:_p()
-    if p.refreshPending then return end
-    p.refreshPending = true
-    C_Timer.After(0, function()
-        p.refreshPending = false
-        if not self:IsEnabled() then return end   -- skip if disabled before the frame ran
-        self:_RunBuild()
-    end)
-end
-
--- Drive the build coroutine a slice at a time: give it BUILD_BUDGET_MS each frame, then reschedule
--- until it finishes. Guarded so overlapping refreshes (zone changes) don't start a second build.
-function Dashboard:_RunBuild()
-    local p = self:_p()
-    if p.buildCo then return end                  -- a build is already in flight
-    p.buildCo = coroutine.create(function()
-        self:_BuildCatalog()
-        self:_Snapshot()
-    end)
-    local function pump()
-        if not (p.buildCo and self:IsEnabled()) then p.buildCo = nil; return end
-        buildDeadline = debugprofilestop() + BUILD_BUDGET_MS
-        local ok, err = coroutine.resume(p.buildCo)
-        buildDeadline = nil
-        if not ok then
-            if ns.Logger then ns.Logger:Core():Warn("Dashboard build error: " .. tostring(err)) end
-            p.buildCo = nil
-        elseif coroutine.status(p.buildCo) == "dead" then
-            p.buildCo = nil
-            self:_RenderIfShown()                 -- final paint once the catalog is complete
-        else
-            C_Timer.After(0, pump)                -- more work -- continue next frame
-        end
-    end
-    pump()
+-- The heavy, deferrable pass: (re)build the instance catalog (once the journal is available) and
+-- snapshot this character. Runs THROUGH the Worker (see OnEnable: self:Queue / self:WorkOn), which
+-- drives it inside a frame-budgeted coroutine -- the hot loops in _ExpansionMap / _SeedInstances call
+-- ns.Worker:Yield() so the cost spreads across frames and never stalls a render. Renders when done.
+function Dashboard:_RefreshNow()
+    self:_BuildCatalog()
+    self:_Snapshot()
+    self:_RenderIfShown()
 end
 
 -- Populate dashboard_instance with the full catalog the dashboard shows -- every raid (one row per
@@ -608,7 +568,7 @@ function Dashboard:_ExpansionMap()
                 if sink then sink[#sink + 1] = instID end
             end
             i = i + 1
-            maybeYield()                          -- spread the walk across frames (cooperative build)
+            ns.Worker:Yield()                     -- spread the walk across frames (Worker-budgeted build)
         end
     end
     local seasonRaidList = {}                 -- ids of raids on the journal's "Current Season" page
@@ -645,7 +605,7 @@ function Dashboard:_ExpansionMap()
                 local ids = {}
                 for _, d in ipairs(RAID_DIFF_CANDIDATES) do if EJ_IsValidInstanceDifficulty(d) then ids[#ids + 1] = d end end
                 if #ids > 0 then raidDiffs[id] = ids end
-                maybeYield()                      -- the per-raid EJ_SelectInstance probe is the heaviest step
+                ns.Worker:Yield()                 -- the per-raid EJ_SelectInstance probe is the heaviest step
             end
         end
     end
@@ -1133,7 +1093,7 @@ function Dashboard:_SeedInstances()
                           is_raid = true, expansion = rec.tier, current_season = cs })
                 end
             end
-            maybeYield()                                         -- spread the inserts across frames
+            ns.Worker:Yield()                                    -- spread the inserts across frames
         end
     end
     -- every dungeon of the current expansion (Mythic 0), keyed by journal id
@@ -1724,7 +1684,7 @@ ns.ModuleManager:Register(Dashboard:New("Dashboard", {
     description = "A cross-character view of weekly/daily resets: Great Vault, M+ keystone, lockouts and recurring quests.",
     defaultEnabled = false,
     color = ns.Theme.hex.accent,
-    deps = { "SlashCommand", "Secrets" },   -- DatabaseManager is added automatically (see `tables`)
+    deps = { "SlashCommand", "Secrets", "Worker" },   -- DatabaseManager is added automatically (see `tables`)
     -- Account-wide cross-character snapshots, stored relationally (no nested blobs, no duplicated
     -- reference data). Vault/lockout/quest cascade-delete with their character; a lockout references
     -- the account-wide dashboard_instance registry (its name/difficulty), a quest references the

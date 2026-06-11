@@ -109,6 +109,23 @@ function Component:Debounced(delay, fn, scope)
     return wrapped
 end
 
+-- Queue ONE-TIME deferrable work through the frame-budgeted Worker (see Services/Worker.lua);
+-- cancelled on scope release if it hasn't run yet. For long jobs, call ns.Worker:Yield() (or the
+-- `yield` passed to fn) at chunk points. Returns the job id.
+function Component:Queue(fn, opts, scope)
+    local id = ns.Worker:Queue(fn, opts)
+    self:OnTeardown(function() ns.Worker:Cancel(id) end, scope)
+    return id
+end
+
+-- Run `fn` through the Worker whenever `event` fires (a game event, or a custom message with
+-- opts.message=true); auto-unregistered on scope release. Fires are coalesced (see Worker:Register).
+function Component:WorkOn(event, fn, opts, scope)
+    local handle = ns.Worker:Register(event, fn, opts)
+    self:OnTeardown(handle.Unregister, scope)
+    return handle
+end
+
 -- Run + clear one scope's teardown thunks (LIFO). No-op on an unknown/empty scope.
 function Component:ReleaseScope(scope)
     local p = self:_p()

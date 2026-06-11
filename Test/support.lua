@@ -109,9 +109,12 @@ end
 function M.stubFrames()
     local frames = {}
     _G.CreateFrame = function()
-        local f = { scripts = {}, registered = {} }
+        local f = { scripts = {}, registered = {}, shown = true }
         function f:SetScript(name, fn) self.scripts[name] = fn end
         function f:GetScript(name) return self.scripts[name] end
+        function f:Show() self.shown = true end
+        function f:Hide() self.shown = false end
+        function f:IsShown() return self.shown end
         function f:RegisterEvent(e)
             if e == "BOGUS_EVENT" then error("unknown event") end
             self.registered[e] = true
