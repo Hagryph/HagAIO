@@ -545,9 +545,9 @@ end
 
 -- Rebuild the runtime journal maps (p.ejInst / ejByName / ejImage / ejLore / ejRaidsByTier / ... ) from
 -- the PERSISTED catalog instead of walking the Encounter Journal -- no LoadAddOn, no EJ_* calls. Used on
--- a normal login: the catalog is static within a patch, so once it's saved we just read it back. Returns
--- true only if the cache is COMPLETE (rows exist AND carry art) -- otherwise the caller falls back to a
--- live walk (which re-saves everything, art included).
+-- a normal login: the catalog is static within a patch, so once it's saved we just read it back. On an
+-- empty or pre-art catalog it bails WITHOUT setting p.ejInst (returns false) -- the caller commits to the
+-- cache with no re-walk, so an incomplete cache renders nothing (a visible failure, not a silent re-walk).
 function Dashboard:_ReconstructFromDB()
     local p = self:_p()
     local db = self:DB(); if not db then return false end
@@ -605,9 +605,14 @@ end
 function Dashboard:_ExpansionMap()
     local p = self:_p()
     if p.ejInst then return p.ejInst end
-    -- CACHE PATH: same patch + a complete saved catalog -> rebuild the maps from the DB. No LoadAddOn,
-    -- no Encounter Journal walk (the whole catalog is static within a patch).
-    if self:_Meta("catalog_build") == clientBuild() and self:_ReconstructFromDB() then return p.ejInst end
+    -- CACHE PATH: this patch's catalog is already saved -> rebuild the maps from the DB and COMMIT to it.
+    -- No fallback to a re-walk: if the saved catalog is empty/incomplete the dashboard renders nothing,
+    -- which surfaces a broken cache instead of silently masking it with an expensive re-walk. The walk
+    -- below runs only on the FIRST build ever / after a NEW patch (catalog_build unset or mismatched).
+    if self:_Meta("catalog_build") == clientBuild() then
+        self:_ReconstructFromDB()
+        return p.ejInst
+    end
     p.ejReconstructed = false
     if not (EJ_GetNumTiers and EJ_SelectTier and EJ_GetInstanceByIndex and EJ_GetTierInfo) then return nil end
     if C_AddOns and C_AddOns.LoadAddOn then pcall(C_AddOns.LoadAddOn, "Blizzard_EncounterJournal") end
