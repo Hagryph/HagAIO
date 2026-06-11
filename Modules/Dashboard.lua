@@ -169,7 +169,15 @@ function Dashboard:OnInitialize()
     self:SetVersionDomain(CATALOG_DOMAIN)   -- bind versioning (ns.VersioningOwner) to our catalog domain
 end
 
+-- How long after enable a STALE-version catalog rebuild (the journal WALK) must wait. The walk
+-- loads Blizzard_EncounterJournal synchronously and selects EJ tiers -- single C calls no pump
+-- budget can split -- so during the login storm it stacks hitches onto already-slow frames. Held
+-- until the client has settled, those same calls land in calm frames. Same-build reconstruction
+-- and snapshots are NOT delayed.
+local WALK_DELAY = 8   -- seconds after enable
+
 function Dashboard:OnEnable()
+    self:_p().enabledAt = GetTime and GetTime() or 0
     -- Targeted collectors keep each fire cheap (the never-debounce rule): a bag update only
     -- re-reads the keystone, a quest turn-in only records that quest.
     -- The full catalog build + snapshot scans hundreds of APIs and writes many DB rows, so it runs
@@ -503,6 +511,22 @@ end
 function Dashboard:_BuildCatalog()
     local p = self:_p()
     if p.catalogBuilt then return end    -- built once per session
+    -- STALE version (first run / new patch) -> the journal WALK is needed, and it's the one hitchy
+    -- path. Inside the login window, don't walk: schedule ONE deferred refresh for the calm period
+    -- and skip the catalog for now (there is no valid cache to reconstruct on a stale version, so
+    -- nothing is lost; the snapshot still runs). The deferred job re-enters here past the window.
+    if not p.ejInst and not self:IsVersionCurrent() then
+        local wait = WALK_DELAY - ((GetTime and GetTime() or 0) - (p.enabledAt or 0))
+        if wait > 0 then
+            if not p.walkTimer then
+                p.walkTimer = self:After(wait, function()
+                    p.walkTimer = nil
+                    self:Queue(function() self:_RefreshNow() end, { label = "Dashboard catalog walk" })
+                end)
+            end
+            return
+        end
+    end
     self:_ExpansionMap()                 -- reconstruct from the DB cache, OR walk the journal (new patch)
     if not p.ejInst then return end      -- journal not ready yet -- retry on the next trigger
     -- The heavy raid/dungeon seed + prune only run on the WALK path (a new patch / first run). A
@@ -613,6 +637,7 @@ function Dashboard:_ExpansionMap()
     if not (EJ_GetNumTiers and EJ_SelectTier and EJ_GetInstanceByIndex and EJ_GetTierInfo) then return nil end
     ns.Worker:Mark("load Blizzard_EncounterJournal")   -- synchronous addon load: the one unavoidable big step
     if C_AddOns and C_AddOns.LoadAddOn then pcall(C_AddOns.LoadAddOn, "Blizzard_EncounterJournal") end
+    ns.Worker:MaybeYield()                             -- the load likely spent the budget: fresh pump for the walk
     ns.Worker:Mark("journal walk")
     -- Instances are tracked by their EJ journal INSTANCE ID, not their name -- two distinct journal
     -- instances can share a name (e.g. a Burning Crusade dungeon and a reworked current-season one),
@@ -624,7 +649,8 @@ function Dashboard:_ExpansionMap()
     local image, lore = {}, {}             -- instance NAME -> EJ buttonImage1 / loreImage
     local prev = EJ_GetCurrentTier and EJ_GetCurrentTier()
     local function walk(tier, tierName, isRaid, sink, isSeason)
-        EJ_SelectTier(tier)
+        EJ_SelectTier(tier)                   -- can load tier data (a hitchy C call) ...
+        ns.Worker:MaybeYield()                -- ... so offer the frame back before iterating it
         local i = 1
         while true do
             local instID, name, _, _, buttonImage, loreImage = EJ_GetInstanceByIndex(i, isRaid)
