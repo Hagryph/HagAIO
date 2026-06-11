@@ -20,7 +20,7 @@ local clock = ns.Format.Clock   -- "3h 04m" duration formatter (Lib/Format.lua)
 -- instance the character is locked to, incl. legacy raids), and weekly/daily quests are RECORDED
 -- as they're turned in (QUEST_TURNED_IN) and classified by frequency -- no curated ID tables.
 
-local Dashboard = Class.new("Dashboard", ns.Module)
+local Dashboard = Class.new("Dashboard", ns.Module, { mixins = { ns.VersioningOwner } })
 
 local RAIL_W = 178            -- left category-tree / character-header rail
 local AVATAR = 46            -- character portrait size
@@ -166,6 +166,7 @@ function Dashboard:OnInitialize()
     p.built = false
     p.shown = false
     p.category = "home"   -- open on the overview (an icon grid of every category)
+    self:SetVersionDomain(CATALOG_DOMAIN)   -- bind versioning (ns.VersioningOwner) to our catalog domain
 end
 
 function Dashboard:OnEnable()
@@ -513,7 +514,7 @@ function Dashboard:_BuildCatalog()
     self:_SeedKeystones()                -- fill local keystone names for every alt's stored map id
     if self:_SeasonDungeons() then
         p.catalogBuilt = true                                  -- done once the M+ season pool is available
-        ns.Versioning:Stamp(CATALOG_DOMAIN)                    -- next same-build login reconstructs, no re-walk
+        self:StampVersion()                                    -- next same-build login reconstructs, no re-walk
     end
 end
 
@@ -599,7 +600,7 @@ function Dashboard:_ExpansionMap()
     -- No fallback to a re-walk: if the saved catalog is empty/incomplete the dashboard renders nothing,
     -- which surfaces a broken cache instead of silently masking it with an expensive re-walk. The walk
     -- below runs only on the FIRST build ever / after a NEW patch (no stamp, or stamp.build mismatched).
-    if ns.Versioning:IsCurrent(CATALOG_DOMAIN) then
+    if self:IsVersionCurrent() then
         self:_ReconstructFromDB()
         return p.ejInst
     end

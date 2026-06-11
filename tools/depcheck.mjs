@@ -122,6 +122,15 @@ function accesses(code) {
     const i = code.search(new RegExp(`\\b${field}\\s*=\\s*\\{`));
     if (i >= 0 && SERVICES.has(dep)) out.push([dep, i]);
   }
+  // Mix-in implied deps: a mixin whose methods call a service at runtime makes its host REQUIRE that
+  // service (for load order), even though the calls go through `self` (self:IsVersionCurrent()), not an
+  // ns.<Service> access. ns.VersioningOwner -> Versioning. Treat the mix-in as the access so the dep is
+  // enforced and not reported "unused".
+  const mixinImplied = [["VersioningOwner", "Versioning"]];
+  for (const [mixin, dep] of mixinImplied) {
+    const i = code.search(new RegExp(`\\bns\\.${mixin}\\b`));
+    if (i >= 0 && SERVICES.has(dep)) out.push([dep, i]);
+  }
   return out;
 }
 

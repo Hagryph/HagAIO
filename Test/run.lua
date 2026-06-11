@@ -58,6 +58,7 @@ local A = {
 function A.is_true(v)  if v ~= true  then fail("expected true, got "  .. tostring(v)) end end
 function A.is_false(v) if v ~= false then fail("expected false, got " .. tostring(v)) end end
 function A.is_nil(v)   if v ~= nil   then fail("expected nil, got "   .. tostring(v)) end end
+function A.has_error(fn) if pcall(fn) then fail("expected function to raise an error, but it returned") end end
 function A.near(e, a, tol)
     tol = tol or 1e-9
     if type(a) ~= "number" or math.abs(e - a) > tol then

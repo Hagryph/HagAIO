@@ -82,6 +82,7 @@ function M.newNs()
     -- both inherit ns.Loggable for the shared logging surface. Lib is the pure-helper base.
     assert(loadfile("Core/Loggable.lua"))("HagAIO", ns)
     assert(loadfile("Core/DatabaseOwner.lua"))("HagAIO", ns)  -- DB-ownership mixin (Module/Service use it)
+    assert(loadfile("Core/VersioningOwner.lua"))("HagAIO", ns) -- data-version domain mixin (opt-in per owner)
     assert(loadfile("Core/Lib.lua"))("HagAIO", ns)
     assert(loadfile("Lib/Helpers.lua"))("HagAIO", ns)   -- pure helpers (DeepCopy) used across the framework
     assert(loadfile("Core/Component.lua"))("HagAIO", ns)

@@ -104,6 +104,7 @@ Core/
   SubmoduleManager.lua     Registry that owns the lifecycle of every Submodule
   Lib.lua                  Base for a LIB: a pure-logic helper (no WoW API, no state, no dependencies) published
   LibManager.lua           Registry for the LIB tier (pure-logic helpers; see Core/Lib.lua)
+  VersioningOwner.lua      Mixin: bind a Module / Service to ONE data-version DOMAIN so it never has to repeat the domain
   DB\Aggregate.lua         Immutable aggregate-function specs used in a SELECT projection and in HAVING
   DB\ColumnResolver.lua    Resolves column references against the set of row-sources active in a query (the FROM table plus
   DB\Constraints.lua       ConstraintEnforcer: turns a caller's { col = value } map into a validated, normalised row, and
