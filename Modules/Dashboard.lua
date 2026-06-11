@@ -1745,10 +1745,23 @@ function Dashboard:_BuildLockoutGrid(cols)
         local nameColor = cc and { cc.r, cc.g, cc.b } or "text"
         rows[#rows + 1] = { cells = cells, cellColor = function(ci)
             if ci == 1 then return nameColor end
-            return cells[ci] == "-" and "textFaint" or "text"
+            return self:_ProgressColor(cells[ci])
         end }
     end
     return columns, rows
+end
+
+-- Colour a lockout cell by what it MEANS, so state reads before words: "-" recedes (no lock),
+-- a full clear ("8/8") is green, a partial lock amber, an untouched lock ("0/8") dim.
+-- Non-progress values (keystone names, ratings) stay plain text.
+function Dashboard:_ProgressColor(s)
+    if s == "-" or s == nil or s == "" then return "textFaint" end
+    local cur, tot = tostring(s):match("^(%d+)%s*/%s*(%d+)$")
+    if not cur then return "text" end
+    cur, tot = tonumber(cur), tonumber(tot)
+    if tot and tot > 0 and cur >= tot then return "green" end
+    if cur and cur > 0 then return "amber" end
+    return "textDim"
 end
 
 function Dashboard:_UpdateHeader()

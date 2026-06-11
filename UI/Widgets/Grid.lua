@@ -21,13 +21,23 @@ local unwrap, style, claimLevel, adopt = _wb.unwrap, _wb.style, _wb.claimLevel, 
 -- separators, a hover wash on every row, and auto-fainted empty ("-") cells. A grid WITHOUT a
 -- header (the sidebar/nav form) keeps the bare look -- only clickable rows paint.
 -- A row passed to :SetRows is one of:
---   { cells = { "..", .. }, color=paletteKey, cellColor=function(colIndex)->key|{r,g,b},
+--   { cells = { <cell>, .. }, color=paletteKey, cellColor=function(colIndex)->key|{r,g,b},
 --     onClick=fn, active=bool, indent=number,
 --     controls=function(rowFrame, columnXs) ... end }  -- a data / nav row; controls lets the
 --       caller place persistent widgets (checkboxes/buttons) at columnXs[i] (cache them on
 --       rowFrame, re-bind each call) so an interactive table still aligns through the grid
 --   { section = "Label" }                          -- a full-width section header row
+-- A <cell> is one of (WoW gives no rich text -- each form is hand-composed from regions):
+--   "text"                                  plain string (number ok)
+--   true / false                            a green check glyph / a faint dash (done-state cells)
+--   { text=, sub=, color=, icon=fileID or atlas="name" }   main text + faint inline suffix
+--       (one fontstring, so truncation stays graceful) + an optional leading 16px icon
 -- Methods: :SetColumns(cols)  :SetRows(rows)  :Refresh()  (.header is the header frame).
+-- The done-state glyph: Blizzard's green check atlas, probed once (a missing atlas on some client
+-- falls back to a coloured "+" glyph -- never an error).
+local CHECK_ATLAS = (C_Texture and C_Texture.GetAtlasInfo and C_Texture.GetAtlasInfo("common-icon-checkmark"))
+    and "common-icon-checkmark" or nil
+
 local GridW = ns.Class.new("Grid", FrameWidget)
 function GridW:Initialize(parent, opts)
     opts = opts or {}
@@ -38,12 +48,31 @@ function GridW:Initialize(parent, opts)
     local p = self:_p()
     p.columns = opts.columns or {}
     local dataMode   = opts.header and true or false       -- header => the full data-table dressing
-    local rowH       = opts.rowHeight or (dataMode and 24 or 22)
+    local rowH       = opts.rowHeight or (dataMode and 26 or 22)
     local indentStep = opts.indentStep or 12
-    local pad        = opts.cellPad or (dataMode and 8 or 4)   -- text padding (clears the active bar)
+    local pad        = opts.cellPad or (dataMode and 10 or 4)  -- text padding (clears the active bar)
     local striped    = opts.striped
     if striped == nil then striped = dataMode end           -- data tables stripe by default
+    local inset      = dataMode and 8 or 0                  -- breathing room inside the card surface
     local rows = {}
+
+    -- CARD SURFACE (data mode): WoW frames are bare -- the panel fill and each hairline edge is its
+    -- own texture. This is what lifts the table off the page background.
+    if dataMode then
+        local bg = g:CreateTexture(nil, "BACKGROUND", nil, -2)
+        bg:SetAllPoints(); bg:SetColorTexture(Theme.Unpack("panel"))
+        local function edge(p1, x1, y1, p2, x2, y2, w, h)
+            local t = g:CreateTexture(nil, "BACKGROUND", nil, -1)
+            t:SetColorTexture(Theme.Unpack("border"))
+            t:SetPoint(p1, x1, y1); t:SetPoint(p2, x2, y2)
+            if w then t:SetWidth(w) end
+            if h then t:SetHeight(h) end
+        end
+        edge("TOPLEFT", 0, 0, "TOPRIGHT", 0, 0, nil, 1)
+        edge("BOTTOMLEFT", 0, 0, "BOTTOMRIGHT", 0, 0, nil, 1)
+        edge("TOPLEFT", 0, 0, "BOTTOMLEFT", 0, 0, 1, nil)
+        edge("TOPRIGHT", 0, 0, "BOTTOMRIGHT", 0, 0, 1, nil)
+    end
 
     -- x offset of each column from the grid's left; a width=nil column flexes to fill `width`.
     local function colX(width)
@@ -60,8 +89,8 @@ function GridW:Initialize(parent, opts)
     local header, headerDiv
     if opts.header then
         header = CreateFrame("Frame", nil, g)
-        header:SetPoint("TOPLEFT"); header:SetPoint("TOPRIGHT")
-        header:SetHeight(opts.headerHeight or 24)
+        header:SetPoint("TOPLEFT", inset, -inset); header:SetPoint("TOPRIGHT", -inset, -inset)
+        header:SetHeight(opts.headerHeight or 26)
         header.cells = {}
         -- the band: a filled strip so the column labels sit ON something, not in the void
         header.bg = header:CreateTexture(nil, "BACKGROUND")
@@ -80,12 +109,12 @@ function GridW:Initialize(parent, opts)
     if opts.scroll ~= false then
         local sa = Widgets.ScrollArea:New(g, opts.name)   -- custom themed scrollbar
         sa:SetPoint("TOPLEFT", header and headerDiv or g, header and "BOTTOMLEFT" or "TOPLEFT", 0, header and -6 or 0)
-        sa:SetPoint("BOTTOMRIGHT", g, "BOTTOMRIGHT", 0, 0)
+        sa:SetPoint("BOTTOMRIGHT", g, "BOTTOMRIGHT", -inset, inset)
         p.scrollArea, content = sa, unwrap(sa:Content())
     else
         content = CreateFrame("Frame", nil, g)
         content:SetPoint("TOPLEFT", header and unwrap(headerDiv) or g, header and "BOTTOMLEFT" or "TOPLEFT", 0, header and -6 or 0)
-        content:SetPoint("TOPRIGHT")
+        content:SetPoint("TOPRIGHT", -inset, 0)
     end
     p.content = content
 
@@ -108,6 +137,7 @@ function GridW:Initialize(parent, opts)
         r.bar:SetPoint("TOPLEFT"); r.bar:SetPoint("BOTTOMLEFT"); r.bar:SetWidth(3)  -- flush to the row bg
         r.bar:SetColorTexture(Theme.Unpack("accent")); r.bar:Hide()
         r.cells = {}
+        r.icons = {}                                                          -- per-column 16px cell icons (lazy)
         r.sectionTick = r:CreateTexture(nil, "ARTWORK")                       -- accent tick before a section label
         r.sectionTick:SetSize(3, 10); r.sectionTick:SetPoint("LEFT", pad - 4, 0)
         r.sectionTick:SetColorTexture(Theme.Unpack("accent", 0.8)); r.sectionTick:Hide()
@@ -120,6 +150,12 @@ function GridW:Initialize(parent, opts)
         if type(key) == "table" then fs:SetTextColor(key[1], key[2], key[3]) else fs:SetTextColor(Theme.Unpack(key)) end
     end
 
+    local function getCellIcon(r, ci)
+        local t = r.icons[ci]
+        if not t then t = r:CreateTexture(nil, "ARTWORK"); r.icons[ci] = t end
+        return t
+    end
+
     local function refresh()
         local width = bodyWidth()   -- the ScrollArea keeps content width = viewport (no manual set)
         local xs = colX(width)
@@ -127,7 +163,11 @@ function GridW:Initialize(parent, opts)
         if header then
             for ci, c in ipairs(p.columns) do
                 local fs = header.cells[ci]
-                if not fs then fs = Widgets.SectionLabel:New(header, ""); header.cells[ci] = fs end
+                if not fs then
+                    fs = Widgets.SectionLabel:New(header, "")
+                    fs:SetTextColor(Theme.Unpack("textDim"))   -- a notch brighter than body labels: it's the legend
+                    header.cells[ci] = fs
+                end
                 fs:ClearAllPoints(); fs:SetPoint("LEFT", xs[ci] + pad, 0)
                 fs:SetWidth(math.max(10, (c.width or (width - xs[ci])) - pad - 2))
                 fs:SetJustifyH(c.justify or "LEFT"); fs:SetText(c.label or ""); fs:SetWordWrap(false); fs:Show()
@@ -145,6 +185,7 @@ function GridW:Initialize(parent, opts)
             r:SetScript("OnClick", nil); r:SetScript("OnEnter", nil); r:SetScript("OnLeave", nil); r:EnableMouse(false)
             r.bar:Hide(); r.sectionFS:Hide(); r.sectionTick:Hide(); r.sep:Hide(); r.bg:SetColorTexture(0, 0, 0, 0)
             for _, fs in ipairs(r.cells) do fs:Hide() end
+            for _, t in pairs(r.icons) do t:Hide() end
 
             if rd.section then
                 r.sectionFS:SetText(rd.section); r.sectionFS:Show()
@@ -153,12 +194,43 @@ function GridW:Initialize(parent, opts)
                 local indent = (rd.indent or 0) * indentStep
                 for ci, c in ipairs(p.columns) do
                     local fs, extra = r.cells[ci], (ci == 1) and (rd.indent or 0) * indentStep or 0
-                    fs:ClearAllPoints(); fs:SetPoint("LEFT", xs[ci] + pad + extra, 0)
-                    fs:SetWidth(math.max(10, (c.width or (width - xs[ci])) - pad - 2 - extra))
+                    local cw = c.width or (width - xs[ci])
+                    local v = rd.cells and rd.cells[ci]
+                    local text, vColor, icon, atlas
+                    if type(v) == "boolean" then               -- done-state cell: glyph, not words
+                        if v and CHECK_ATLAS then
+                            local tex = getCellIcon(r, ci)
+                            tex:SetAtlas(CHECK_ATLAS); tex:SetSize(14, 14)
+                            tex:ClearAllPoints(); tex:SetPoint("CENTER", r, "LEFT", xs[ci] + extra + cw / 2, 0)
+                            tex:Show()
+                            text = ""
+                        else
+                            text, vColor = v and "+" or "-", v and "green" or "textFaint"
+                        end
+                    elseif type(v) == "table" then             -- main text + faint inline suffix (+ icon)
+                        text = tostring(v.text or "")
+                        if v.sub and v.sub ~= "" then
+                            text = text .. "  |cff" .. Theme.hex.textFaint .. tostring(v.sub) .. "|r"
+                        end
+                        vColor, icon, atlas = v.color, v.icon, v.atlas
+                    else
+                        text = (v == nil) and "" or tostring(v)
+                    end
+                    local iconPad = 0
+                    if icon or atlas then
+                        local tex = getCellIcon(r, ci)
+                        tex:SetSize(16, 16)
+                        if atlas then tex:SetAtlas(atlas)
+                        else tex:SetTexture(icon); tex:SetTexCoord(0.07, 0.93, 0.07, 0.93) end   -- crop icon bleed
+                        tex:ClearAllPoints(); tex:SetPoint("LEFT", xs[ci] + pad + extra, 0)
+                        tex:Show()
+                        iconPad = 20
+                    end
+                    fs:ClearAllPoints(); fs:SetPoint("LEFT", xs[ci] + pad + extra + iconPad, 0)
+                    fs:SetWidth(math.max(10, cw - pad - 2 - extra - iconPad))
                     fs:SetJustifyH(c.justify or "LEFT"); fs:SetWordWrap(false)
-                    local text = (rd.cells and rd.cells[ci]) or ""
                     fs:SetText(text)
-                    local color = (rd.cellColor and rd.cellColor(ci)) or rd.color
+                    local color = (rd.cellColor and rd.cellColor(ci)) or vColor or rd.color
                     if not color and (text == "-" or text == "") then color = "textFaint" end   -- empty reads as absence
                     setColor(fs, color or "text")
                     fs:Show()
