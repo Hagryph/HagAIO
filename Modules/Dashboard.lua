@@ -1433,12 +1433,12 @@ function Dashboard:_CategoryTiles()
           texture = "Interface\\Icons\\Achievement_ChallengeMode_Gold" },
         { key = "raids",    label = "Raids",         art = raidArt, fallback = logo },
         { key = "dungeons", label = "Dungeons",      art = dunArt,  fallback = logo },
+        -- custom high-res transparent art (tools/gen_quest_icons.py): a "!" with revolving arrows for
+        -- the recurring weekly reset, a plain "!" for daily -- crisp at any tile size, unlike the atlases.
         { key = "weekly",   label = "Weekly Quests", contain = true,
-          atlas = atlas("quest-recurring-available", "questlog-questtypeicon-Weekly"),
-          texture = "Interface\\Icons\\Achievement_Quests_Completed_06" },
+          texture = "Interface\\AddOns\\HagAIO\\Media\\quest-weekly" },
         { key = "daily",    label = "Daily Quests",  contain = true,
-          atlas = atlas("QuestDaily", "questlog-questtypeicon-Daily"),
-          texture = "Interface\\Icons\\INV_Misc_PocketWatch_01" },
+          texture = "Interface\\AddOns\\HagAIO\\Media\\quest-daily" },
     }
     local tiles = {}
     for _, d in ipairs(defs) do
