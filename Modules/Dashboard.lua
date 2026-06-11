@@ -1075,7 +1075,7 @@ function Dashboard:_FillInstanceDetail(page, id)
     local columns, rows = self:_BuildLockoutGrid(self:_InstanceDifficultyColumns(id))
     g:SetColumns(columns)
     g:SetRows(rows)
-    return 22 + #rows * 20 + 8          -- header + one row per character + padding
+    return g:NaturalHeight() + 4        -- the grid knows its own chrome; just add a little air
 end
 
 -- Render an expandable instance icon page (a raid or dungeon group): the tiles, plus the clicked

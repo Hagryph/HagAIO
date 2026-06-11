@@ -267,6 +267,10 @@ function GridW:Initialize(parent, opts)
         end
         for i = #data + 1, #rows do rows[i]:Hide() end
         content:SetHeight(math.max(1, -y))
+        -- the height this grid NEEDS to show every row: card insets + header band + underline +
+        -- gap + rows. Callers sizing a non-scrolling grid ask NaturalHeight() instead of
+        -- re-deriving these metrics (which silently breaks when the dressing changes).
+        p.naturalHeight = inset * 2 + (header and ((opts.headerHeight or 26) + 7) or 0) + math.max(1, -y)
         if p.scrollArea then p.scrollArea:Update() end   -- resize/position the custom scrollbar
     end
     p.refresh = refresh
@@ -276,4 +280,6 @@ function GridW:SetColumns(cols) local p = self:_p(); p.columns = cols or {}; p.r
 function GridW:SetRows(data)    local p = self:_p(); p._data = data; p.refresh(); return self end
 function GridW:Refresh()        self:_p().refresh(); return self end
 function GridW:ScrollTop()      local p = self:_p(); if p.scrollArea then p.scrollArea:ScrollTop() end; return self end
+-- Pixels needed to show every current row (card chrome included). Valid after SetRows/SetColumns.
+function GridW:NaturalHeight()  return self:_p().naturalHeight or 0 end
 Widgets.Grid = GridW
