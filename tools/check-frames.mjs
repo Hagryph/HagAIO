@@ -50,7 +50,7 @@ const WIDGETS = [
   "Panel", "Divider", "Avatar", "Text", "SectionLabel", "TextButton", "Button", "Toggle",
   "NavItem", "Segmented", "ColorSwatch", "CollapsibleSection", "Input", "Slider", "SettingsGroup",
   "Window", "ScrollArea", "Grid", "Nav", "Texture", "IconGrid", "Container",
-  "Fill", "StatusBar", "ProgressBar", "MultilineEdit", "Tooltip",
+  "Fill", "StatusBar", "ProgressBar", "MultilineEdit", "Tooltip", "MapArt", "Typography",
 ];
 
 const allow = (rel, list) => list.some((a) => (a.endsWith("/") ? rel.startsWith(a) : rel === a));

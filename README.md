@@ -167,6 +167,7 @@ UI/
   Widgets\Texture.lua      ---- crop / fit / zoom maths (the single home, owned by the Texture widget) ------------------------
   Widgets\Toggle.lua       Themed checkbox
   Widgets\Tooltip.lua      The shared HagAIO icon tooltip (addon-compartment + minimap buttons)
+  Widgets\Typography.lua   TYPOGRAPHY PLATE -- text-as-art for a tile face, the third face kind beside an image
   Widgets\Window.lua       Themed window CHROME factory: a movable, ESC-closable frame with a draggable title bar
 Services/
   ActionBars.lua           Service for locating action buttons by what they cast and annotating them
