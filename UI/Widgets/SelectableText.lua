@@ -28,12 +28,12 @@ function SelectableTextW:Initialize(parent, styleKey, fontObject)
     eb:SetTextColor(Theme.Unpack(styleKey or "text"))
     eb:SetJustifyH("LEFT")
     eb:SetJustifyV("TOP")
-    eb:SetSpacing(3)                  -- match the line spacing the old log FontString used
     eb:EnableMouse(true)              -- clicks select text (default, but be explicit)
 
     local p = self:_p()
     p.eb = eb
     p.canon = ""                      -- the only text allowed to stick; user edits revert to it
+    p.spacing = 3                     -- desired line spacing; pixel-snapped onto the screen grid
 
     -- Read-only: reject user edits, keep our programmatic content. Esc releases focus.
     eb:SetScript("OnTextChanged", function(s, userInput)
@@ -44,17 +44,39 @@ function SelectableTextW:Initialize(parent, styleKey, fontObject)
     eb:SetScript("OnEscapePressed", function(s) s:ClearFocus() end)
 
     self:_attach(eb)
+    self:_Snap()
+end
+
+-- Land the glyph height AND the line pitch on whole PHYSICAL pixels. A multi-line
+-- EditBox draws its selection highlight rounded to the pixel grid, but the text
+-- baseline isn't rounded the same way, so when the line pitch isn't an integer
+-- number of physical pixels the highlight drifts a little further off the text with
+-- every line down (a long-standing Blizzard scaling regression). Snapping the font
+-- height and the spacing to the grid makes both round identically, so the selection
+-- sits exactly on the text -- without flattening the line spacing to fix it. Re-run
+-- whenever the effective scale could have changed (we do it on every SetText).
+function SelectableTextW:_Snap()
+    local p = self:_p()
+    local eb = p.eb
+    local scale = eb:GetEffectiveScale()
+    if not scale or scale <= 0 then return end
+    local path, h, flags = eb:GetFont()
+    if not path or not h then return end
+    local function snap(v) return math.floor(v * scale + 0.5) / scale end   -- to nearest physical pixel
+    eb:SetFont(path, math.max(1 / scale, snap(h)), flags)
+    eb:SetSpacing(snap(p.spacing or 0))
 end
 
 -- Set the (read-only) contents. This is the ONLY path that changes what's shown.
 function SelectableTextW:SetText(s)
     local p = self:_p()
     p.canon = s or ""
+    self:_Snap()                      -- re-snap in case the UI scale changed while hidden
     p.eb:SetText(p.canon)
     return self
 end
 function SelectableTextW:GetText()           return self:_p().eb:GetText() end
-function SelectableTextW:SetSpacing(n)        self:_p().eb:SetSpacing(n);        return self end
+function SelectableTextW:SetSpacing(n)        self:_p().spacing = n or 0; self:_Snap(); return self end
 function SelectableTextW:SetJustifyH(j)       self:_p().eb:SetJustifyH(j);       return self end
 function SelectableTextW:SetJustifyV(j)       self:_p().eb:SetJustifyV(j);       return self end
 function SelectableTextW:SetFontObject(f)     self:_p().eb:SetFontObject(f);     return self end
