@@ -10,6 +10,18 @@
 // published alias) but never quotes "<Dep>", that dependency is undeclared.
 // A "-- depcheck-allow: A, B" comment waives intentional/cyclic references.
 //
+// SCOPE: only files that REGISTER a service / module / submodule are checked for undeclared
+// deps — those are the things with a dependency surface and a place in the init-order graph.
+// A plain data / helper file (predefined tables, a static lookup) registers nothing, can't
+// declare a dep, and isn't ordered, so an ns.<X> reference there (usually a doc comment) is
+// not a violation and is ignored.
+//
+// optionalDeps: a service/module may USE another service that isn't guaranteed to exist (e.g.
+// a dev-only service registered behind ns.IsDevChar), reached through a `ns.X and ns.X:...`
+// guard. Declaring it in `optionalDeps = { "X" }` documents the soft link and satisfies this
+// lint WITHOUT making it a hard dependency — the runtime ignores optionalDeps (only deps /
+// moduleDeps gate load order), so the owner still loads when X is absent.
+//
 // The registry (which names ARE services / modules / aliases) is DISCOVERED by scanning
 // Core, UI and Modules recursively — never hardcoded — so a new service or module is
 // covered automatically the moment it registers itself:
@@ -152,11 +164,21 @@ for (const path of ALL_FILES) {
   const acc = accesses(code);
   const accessed = new Set(acc.map((a) => a[0]));
 
+  // Only an owner of a service / module / submodule has a dependency surface to declare into
+  // and a slot in the init-order graph; a registration-less data/helper file does not, so its
+  // ns.<X> references (almost always doc comments) are not dependency violations. The
+  // unregistered / lib-dep checks below still cover every file.
+  const ownsDeps = /(?:Service|Module|Submodule)Manager:Register\(/.test(code);
+  // Soft, runtime-guarded dependencies: declared but intentionally NOT a hard dep (see header).
+  const optional = new Set(declaredIn(code, "optionalDeps"));
+
   const seen = new Set();
-  for (const [dep, pos] of acc) {
-    if (quoted.has(dep) || allow.has(dep) || seen.has(dep)) continue;
-    seen.add(dep);
-    findings.push([rel, lineNo(code, pos), dep, path]);
+  if (ownsDeps) {
+    for (const [dep, pos] of acc) {
+      if (quoted.has(dep) || allow.has(dep) || optional.has(dep) || seen.has(dep)) continue;
+      seen.add(dep);
+      findings.push([rel, lineNo(code, pos), dep, path]);
+    }
   }
 
   // Declared but never used. Only SERVICE deps (deps / serviceDeps) are flaggable:
