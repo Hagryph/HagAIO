@@ -89,7 +89,7 @@ function Questing:_RememberTimed(questID, seconds)
     local db = self:DB()
     if not (db and questID and seconds) then return end
     local exists = db:Select("quest_id"):From("quest"):Where("quest_id", "=", questID):Limit(1):Run()[1]
-    if exists then db:Update("quest", { time = seconds }, function(r) return r.quest_id == questID end)
+    if exists then db:Update("quest", { time = seconds }, { quest_id = questID })   -- PK map: index lookup, no scan
     else db:Insert("quest", { quest_id = questID, time = seconds }) end
 end
 

@@ -114,6 +114,28 @@ end
 
 function WhereClause:IsEmpty() return #self:_p().seq == 0 end
 
+-- The TOP-LEVEL AND'ed equality leaves, as { col, value } pairs -- the surface the executor uses to
+-- pick an index that narrows the base-table scan (every match of the whole clause necessarily
+-- satisfies each top-level AND'ed leaf). Returns nil when ANY top-level connector is OR: a
+-- disjunction's matches need not satisfy any single leaf, so no one index bounds them. Sub-groups
+-- are skipped, not descended -- they still filter via Matches, they just don't nominate an index.
+-- Column-vs-column comparisons and NULL literals are skipped too (NULL never equals anything).
+function WhereClause:IndexableEqs()
+    local seq = self:_p().seq
+    local out = {}
+    for i = 1, #seq do
+        local t = seq[i]
+        if t == "or" then return nil end
+        if type(t) == "table" and t.kind == "leaf" and t.op == "=" then
+            local right = t.right
+            if not DB.isNull(right) and not (type(right) == "table" and right.__dbcol) then
+                out[#out + 1] = { col = t.col, value = right }
+            end
+        end
+    end
+    return out
+end
+
 -- Evaluate against a composite row using `resolver:Value(compRow, colRef) -> value|DB.NULL`.
 -- Empty clause matches everything. AND binds tighter than OR.
 function WhereClause:Matches(compRow, resolver)

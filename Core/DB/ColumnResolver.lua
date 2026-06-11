@@ -21,6 +21,8 @@ function ColumnResolver:Initialize(sources)
     p.byAlias = {}            -- alias -> DBTable
     p.aliasOrder = {}
     p.colToAliases = {}       -- bare col -> { alias, ... }
+    p.memo = {}               -- ref -> { alias, col }: Resolve runs per row per predicate leaf, and a
+                              -- resolver lives for ONE query, so successes can never go stale
     for _, s in ipairs(sources) do
         if p.byAlias[s.alias] then error(("DB: duplicate source alias '%s'"):format(s.alias), 0) end
         p.byAlias[s.alias] = s.table
@@ -40,20 +42,24 @@ local function split(ref)
     return nil, ref
 end
 
--- Resolve a reference to (alias, column). Raises on unknown/ambiguous.
+-- Resolve a reference to (alias, column). Raises on unknown/ambiguous. Memoized (see Initialize).
 function ColumnResolver:Resolve(ref)
     local p = self:_p()
+    local hit = p.memo[ref]
+    if hit then return hit[1], hit[2] end
     local alias, col = split(ref)
     if alias then
         local tbl = p.byAlias[alias]
         if not tbl then error(("DB: unknown source '%s' in '%s'"):format(alias, ref), 0) end
         if not tbl:HasColumn(col) then error(("DB: '%s' has no column '%s'"):format(alias, col), 0) end
-        return alias, col
+    else
+        local list = p.colToAliases[col]
+        if not list then error(("DB: unknown column '%s'"):format(col), 0) end
+        if #list > 1 then error(("DB: ambiguous column '%s' (in %s)"):format(col, table.concat(list, ", ")), 0) end
+        alias = list[1]
     end
-    local list = p.colToAliases[col]
-    if not list then error(("DB: unknown column '%s'"):format(col), 0) end
-    if #list > 1 then error(("DB: ambiguous column '%s' (in %s)"):format(col, table.concat(list, ", ")), 0) end
-    return list[1], col
+    p.memo[ref] = { alias, col }
+    return alias, col
 end
 
 -- The value of `ref` in a composite row (DB.NULL if the source is unmatched or the field absent).

@@ -123,8 +123,16 @@ function QueryBuilder:OrderBy(ref, dir)
     return self
 end
 
-function QueryBuilder:Limit(n)  self:_p().limit = n;  return self end
-function QueryBuilder:Offset(n)  self:_p().offset = n; return self end
+function QueryBuilder:Limit(n)
+    assert(type(n) == "number" and n >= 0, "DB: Limit needs a number >= 0")
+    self:_p().limit = n
+    return self
+end
+function QueryBuilder:Offset(n)
+    assert(type(n) == "number" and n >= 0, "DB: Offset needs a number >= 0")
+    self:_p().offset = n
+    return self
+end
 
 -- Freeze the plan and execute it. Returns an array of result rows (maps of name -> value, with
 -- DB.NULL for SQL NULLs).

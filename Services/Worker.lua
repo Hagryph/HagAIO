@@ -27,12 +27,13 @@ local Class = ns.Class
 --   ns.Worker:Queue(fn, { owner=, message=, onDone=, label= })       -> id      one-time work
 --   ns.Worker:Register(event, fn, { owner=, message=, ... })         -> handle  run on each event
 --   ns.Worker:Every(interval, fn, { owner=, ... })                   -> handle  timer-reminded
---   ns.Worker:Yield() / :Cancel(id)
+--   ns.Worker:Yield() / :MaybeYield() / :Cancel(id)
 -- INSIDE a Component prefer self:Queue / self:WorkOn / self:WorkEvery (owner=self, auto-released).
 
 local Worker = Class.new("Worker", ns.Service)
 
-local BUDGET_MS = 10          -- hard cap on the time the Worker may spend in one pump
+local BUDGET_MS = 2           -- hard cap on the time the Worker may spend in one pump (a small slice
+                              -- of a 60 FPS frame's ~16.7ms, so a drain is never felt as a hitch)
 local TICK = 1 / 60          -- pump at a FIXED 60 Hz, never per-frame (so 240 FPS isn't hammered)
 local DEBUG = true           -- pump profiler: log per-interval pump times each time the queue drains
 local DONE_MSG = "HagAIO_WorkerDone"
@@ -42,10 +43,11 @@ function Worker:OnInitialize()
     local p = self:_p()
     p.queue = {}             -- live jobs (ITERATORS): { co, id, message, onDone, owner, label, _after }
     p.deadline = nil         -- this pump's time budget end (ms); set only while pumping
+    p.currentCo = nil        -- the job coroutine being stepped right now (MaybeYield's identity check)
     p.rr = 1                 -- round-robin cursor: which job to step next (fairness across iterators)
     p.ticker = nil           -- the 60 Hz pump ticker, alive ONLY while there is queued work
     p.nextId = 1
-    p.pumpMs = {}            -- DEBUG: wall time (ms) of each interval pump, since the queue last drained
+    p.pumpMs = {}            -- DEBUG: per interval pump { ms, worst, label } since the queue last drained
 end
 
 local function freshId(p)
@@ -59,6 +61,18 @@ end
 -- each unit of work; a no-op outside a job coroutine (so callers can call it unconditionally).
 function Worker:Yield()
     if coroutine.running() then coroutine.yield() end
+end
+
+-- Inside a job: yield ONLY when this pump's budget is already spent. The cheap chunk point for
+-- SHARED code (the DB executor, module row loops) that may or may not be running through the
+-- Worker: outside a pump -- on the main thread, in a stepper, or in a coroutine that isn't the job
+-- being stepped -- it is a no-op, and while budget remains it costs one clock read instead of a
+-- full coroutine switch per unit (so tight loops can call it every iteration).
+function Worker:MaybeYield()
+    local p = self:_p()
+    local co = coroutine.running()
+    if not co or co ~= p.currentCo then return end
+    if debugprofilestop() >= p.deadline then coroutine.yield() end
 end
 
 -- Start the 60 Hz pump ticker if there's work and it isn't already running. The Worker is otherwise
@@ -77,20 +91,22 @@ function Worker:_Stop()
 end
 
 -- DEBUG: log how long each interval pump took since the queue last drained, then reset. One entry =
--- one _Pump call (one 60 Hz interval tick), timed end to end across all the steps it ran. A pump near
--- (or over) the 10ms budget means a single step inside it overshot -- that job ISN'T chunking (too much
--- work between Yields), so the Worker can't keep the pump under budget no matter how often it ticks.
+-- one _Pump call (one 60 Hz interval tick), timed end to end across all the steps it ran. A pump over
+-- the budget means a single step inside it overshot -- that job ISN'T chunking (too much work between
+-- Yield/MaybeYield points), so each slow pump also NAMES the job whose step was the worst offender.
 function Worker:_DebugReport()
     local p = self:_p()
-    local times = p.pumpMs
-    if not times or #times == 0 then return end
+    local pumps = p.pumpMs
+    if not pumps or #pumps == 0 then return end
     local total = 0
-    for _, ms in ipairs(times) do total = total + ms end
-    table.sort(times, function(a, b) return a > b end)
+    for _, e in ipairs(pumps) do total = total + e.ms end
+    table.sort(pumps, function(a, b) return a.ms > b.ms end)
     self:LogWarn(("Worker drained: %d interval pumps, %.1f ms total, %.2f ms avg. 10 slowest pumps:")
-        :format(#times, total, total / #times))
-    for i = 1, math.min(10, #times) do
-        self:LogWarn(("  %2d. %8.2f ms"):format(i, times[i]))
+        :format(#pumps, total, total / #pumps))
+    for i = 1, math.min(10, #pumps) do
+        local e = pumps[i]
+        self:LogWarn(("  %2d. %8.2f ms (worst step %.2f ms: '%s')")
+            :format(i, e.ms, e.worst or 0, tostring(e.label)))
     end
     p.pumpMs = {}
 end
@@ -107,7 +123,8 @@ function Worker:_Pump()
     local pumpStart = debugprofilestop()
     p.deadline = pumpStart + BUDGET_MS
     local i = p.rr
-    while #q > 0 and debugprofilestop() < p.deadline do
+    local t0, worst, worstLabel = pumpStart, 0, nil   -- DEBUG: time each step, remember the fattest
+    while #q > 0 and t0 < p.deadline do
         if i > #q then i = 1 end
         local job = q[i]
         if job.owner and not self:_OwnerEnabled(job.owner) then   -- owner disabled since enqueue -> drop
@@ -120,7 +137,9 @@ function Worker:_Pump()
                 ok, result = pcall(job.step)                      -- stepper: result here is "more?" not the value
                 done = ok and not result; result = nil
             else
+                p.currentCo = job.co                              -- MaybeYield only fires for THIS coroutine
                 ok, result = coroutine.resume(job.co)             -- coroutine: one yield = one step
+                p.currentCo = nil
                 done = ok and coroutine.status(job.co) == "dead"
             end
             if not ok then
@@ -134,10 +153,13 @@ function Worker:_Pump()
                 i = i + 1                                         -- still running: round-robin to the next job
             end
         end
+        local t1 = debugprofilestop()                             -- doubles as the budget re-check time
+        if DEBUG and t1 - t0 > worst then worst, worstLabel = t1 - t0, job.label end
+        t0 = t1
     end
     p.rr = i
     p.deadline = nil
-    if DEBUG then p.pumpMs[#p.pumpMs + 1] = debugprofilestop() - pumpStart end   -- time this whole interval
+    if DEBUG then p.pumpMs[#p.pumpMs + 1] = { ms = t0 - pumpStart, worst = worst, label = worstLabel } end
     if #q == 0 then self:_Stop() end                              -- drained -> kill the ticker (no idle work)
 end
 

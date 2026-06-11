@@ -139,11 +139,11 @@ function CVars:_ManagedAll()   -- array of { name, value }
 end
 function CVars:_SetManaged(name, value)
     local db = self:DB(); if not db then return end
-    if self:_IsManaged(name) then db:Update("cvar_managed", { value = value }, function(x) return x.name == name end)
+    if self:_IsManaged(name) then db:Update("cvar_managed", { value = value }, { name = name })
     else db:Insert("cvar_managed", { name = name, value = value }) end
 end
 function CVars:_ClearManaged(name)
-    local db = self:DB(); if db then db:Delete("cvar_managed", function(x) return x.name == name end) end
+    local db = self:DB(); if db then db:Delete("cvar_managed", { name = name }) end
 end
 function CVars:_TrackedAll()    -- array of { name, type, category_id } -- every tracked CVar
     local db = self:DB(); return db and db:Select("name", "type", "category_id"):From("cvar_tracked"):Run() or {}
@@ -155,11 +155,11 @@ end
 function CVars:_SetTracked(name, t, categoryId)
     local db = self:DB(); if not db then return end
     if self:_IsTracked(name) then
-        db:Update("cvar_tracked", { type = t, category_id = categoryId }, function(x) return x.name == name end)
+        db:Update("cvar_tracked", { type = t, category_id = categoryId }, { name = name })
     else db:Insert("cvar_tracked", { name = name, type = t, category_id = categoryId }) end
 end
 function CVars:_ClearTracked(name)
-    local db = self:DB(); if db then db:Delete("cvar_tracked", function(x) return x.name == name end) end
+    local db = self:DB(); if db then db:Delete("cvar_tracked", { name = name }) end
 end
 
 -- Get (or create) a category row by name, returning its id -- the FK target for cvar_tracked.
@@ -209,7 +209,7 @@ function CVars:_PruneTracked()
     local customId = self:_CategoryId("Custom")
     for _, row in ipairs(self:_TrackedAll()) do
         if not CATALOG[row.name] and row.category_id ~= customId then
-            db:Update("cvar_tracked", { category_id = customId }, function(x) return x.name == row.name end)
+            db:Update("cvar_tracked", { category_id = customId }, { name = row.name })
         end
     end
 end

@@ -183,21 +183,48 @@ function Database:InsertAll(tname, list)
     return out
 end
 
+-- Resolve an Update/Delete `predicate` to its matching rows (always a FRESH array, safe to mutate
+-- against). The predicate is nil (all rows), a function(row) -> boolean (full scan), or a
+-- { col = value } map matched by equality -- the MAP form is index-accelerated: any indexed column
+-- in it (PK / unique / declared index / FK) narrows the scan to that index bucket, so a PK-keyed
+-- upsert never walks the table. Map values must be non-NULL scalars (NULL never equals anything).
+function Database:_Targets(tname, predicate)
+    local p = self:_p()
+    local out = {}
+    if type(predicate) == "table" then
+        local src
+        for col, value in pairs(predicate) do
+            local hits = p.index:FindByColumn(tname, col, value)
+            if hits then src = hits; break end             -- indexed column -> its bucket is a superset
+        end
+        for _, row in ipairs(src or p.store:Rows(tname)) do
+            local match = true
+            for col, value in pairs(predicate) do
+                if row[col] ~= value then match = false; break end
+            end
+            if match then out[#out + 1] = row end
+        end
+    else
+        for _, row in ipairs(p.store:Rows(tname)) do
+            if predicate == nil or predicate(row) then out[#out + 1] = row end
+        end
+    end
+    return out
+end
+
 -- ---- UPDATE ---------------------------------------------------------------
--- Apply `changes` ({ col = value | DB.NULL }) to every row matching `predicate(row)` (nil = all).
--- Returns the number of rows changed. Note: referential ON UPDATE actions are out of scope -- a
--- PK edit that children reference is the caller's responsibility (rare; flagged if it breaks FKs).
+-- Apply `changes` ({ col = value | DB.NULL }) to every row matching `predicate` (nil = all rows; a
+-- function(row), or an index-accelerated { col = value } map -- see _Targets). Returns the number
+-- of rows changed. Note: referential ON UPDATE actions are out of scope -- a PK edit that children
+-- reference is the caller's responsibility (rare; flagged if it breaks FKs).
 function Database:Update(tname, changes, predicate)
     local p = self:_p()
     local tbl = p.schema:Table(tname)
     assert(tbl, ("unknown table '%s'"):format(tostring(tname)))
     local count = 0
     self:_FireStmt(DB.TriggerTime.BEFORE, DB.TriggerEvent.UPDATE, tname)
-    -- snapshot the matching rows first (we mutate the array's contents, not its membership)
-    local targets = {}
-    for _, row in ipairs(p.store:Rows(tname)) do
-        if predicate == nil or predicate(row) then targets[#targets + 1] = row end
-    end
+    -- resolve the matching rows first (we mutate the array's contents, not its membership)
+    local targets = self:_Targets(tname, predicate)
     for _, row in ipairs(targets) do
         -- merged candidate values: existing fields overlaid with the requested changes
         local merged = {}
@@ -218,18 +245,17 @@ function Database:Update(tname, changes, predicate)
             self:_FireRow(DB.TriggerTime.AFTER, DB.TriggerEvent.UPDATE, tname, row, old)
         end
     end
+    if count > 0 then p.store:Touch(tname) end   -- rows mutated in place: bump the generation guard
     self:_FireStmt(DB.TriggerTime.AFTER, DB.TriggerEvent.UPDATE, tname)
     return count
 end
 
 -- ---- DELETE (with cascading) ----------------------------------------------
+-- `predicate`: nil (all rows), a function(row), or an index-accelerated { col = value } map.
 function Database:Delete(tname, predicate)
     local p = self:_p()
     assert(p.schema:Table(tname), ("unknown table '%s'"):format(tostring(tname)))
-    local targets = {}
-    for _, row in ipairs(p.store:Rows(tname)) do
-        if predicate == nil or predicate(row) then targets[#targets + 1] = row end
-    end
+    local targets = self:_Targets(tname, predicate)
     self:_FireStmt(DB.TriggerTime.BEFORE, DB.TriggerEvent.DELETE, tname)
     local count = 0
     for _, row in ipairs(targets) do

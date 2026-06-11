@@ -63,11 +63,11 @@ describe("Worker", function()
         worker:Queue(function()
             for _ = 1, 5 do
                 steps = steps + 1
-                profile.ms = profile.ms + 4    -- each step "costs" 4ms of this frame
-                ns.Worker:Yield()              -- yields once the 10ms budget is exceeded
+                profile.ms = profile.ms + 1    -- each step "costs" 1ms of this frame
+                ns.Worker:Yield()              -- yields once the 2ms budget is exceeded
             end
         end)
-        worker:_Pump()                         -- frame 1: 4,8,12 -> yields after the 3rd step
+        worker:_Pump()                         -- frame 1: 1,2 -> budget spent after the 2nd step
         assert.is_false(done)
         assert.is_true(steps >= 1 and steps < 5)
         profile.ms = 0; worker:_Pump()

@@ -34,7 +34,17 @@ function RowStore:Initialize(schema, slots)
         [DB.Scope.GLOBAL] = slots[DB.Scope.GLOBAL] or {},
         [DB.Scope.CHAR]   = slots[DB.Scope.CHAR]   or {},
     }
+    p.gen = {}        -- table -> mutation counter (in-memory only; see Generation below)
     self:_EnsureShape()
+end
+
+-- Monotonic per-table MUTATION counter (never persisted). A chunked query that yielded mid-scan
+-- compares generations across the yield and restarts if the table changed underneath it (see
+-- QueryExecutor); Database:Update touches it too, since an update mutates rows in place.
+function RowStore:Generation(tableName) return self:_p().gen[tableName] or 0 end
+function RowStore:Touch(tableName)
+    local g = self:_p().gen
+    g[tableName] = (g[tableName] or 0) + 1
 end
 
 -- The backing table for `tableName`, chosen by the table's scope.
@@ -89,6 +99,7 @@ end
 function RowStore:Append(tableName, row)
     local rows = self:Rows(tableName)
     rows[#rows + 1] = row
+    self:Touch(tableName)
     return row
 end
 
@@ -96,7 +107,7 @@ end
 function RowStore:RemoveRow(tableName, row)
     local rows = self:Rows(tableName)
     for i = 1, #rows do
-        if rows[i] == row then table.remove(rows, i); return true end
+        if rows[i] == row then table.remove(rows, i); self:Touch(tableName); return true end
     end
     return false
 end
@@ -104,6 +115,7 @@ end
 -- Empty a table's rows (keeps the table + its auto-id counter).
 function RowStore:Truncate(tableName)
     self:_Backing(tableName).tables[tableName] = {}
+    self:Touch(tableName)
 end
 
 -- Drop a table entirely from its backing (rows + auto-id counter).
@@ -111,6 +123,7 @@ function RowStore:DropTable(tableName)
     local b = self:_Backing(tableName)
     b.tables[tableName] = nil
     b._meta.autoIds[tableName] = nil
+    self:Touch(tableName)
 end
 
 DB.RowStore = RowStore

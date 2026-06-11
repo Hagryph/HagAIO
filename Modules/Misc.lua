@@ -281,7 +281,7 @@ end
 -- Replace a route's hops with `via` (node names -> intermediate master ids; nil clears them).
 function Misc:_FlightSetHops(routeId, via)
     local db = self:DB(); if not db then return end
-    db:Delete("flight_hop", function(h) return h.route_id == routeId end)
+    db:Delete("flight_hop", { route_id = routeId })   -- FK map: index lookup, no scan
     if via then
         for i, n in ipairs(via) do
             local mid = self:_MasterId(n)
@@ -303,11 +303,11 @@ function Misc:_FlightStore(faction, a, b, seconds, via)
         return true
     end
     if row.quality < Quality.DIRECT then
-        db:Update("flight_route", { t = seconds, quality = Quality.DIRECT }, function(x) return x.id == row.id end)
+        db:Update("flight_route", { t = seconds, quality = Quality.DIRECT }, { id = row.id })
         self:_FlightSetHops(row.id, via)
         return true
     elseif math.abs(seconds - row.t) >= 5 then
-        db:Update("flight_route", { t = seconds }, function(x) return x.id == row.id end)
+        db:Update("flight_route", { t = seconds }, { id = row.id })
         self:_FlightSetHops(row.id, via)
         return true
     end

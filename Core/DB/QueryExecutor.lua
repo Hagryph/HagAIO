@@ -8,10 +8,24 @@ local Class = ns.Class
 -- Each stage consumes the previous stage's relation and produces a new, usually NARROWER one, so
 -- work shrinks as the query progresses -- exactly how a SQL engine reduces the row set down a plan.
 --
--- ISOLATION: the FROM/JOIN stages SNAPSHOT each source table -- every row is shallow-copied into
--- the working set, so the pipeline never holds a reference into live storage and a query can never
--- mutate the database. A shallow copy is a COMPLETE clone here because a row is a flat map of native
--- scalars (there are no blob/table columns -- nesting is always relational), so nothing is shared.
+-- ISOLATION: the working set never references live storage -- a query can never mutate the database.
+-- A row's shallow copy is a COMPLETE clone here because a row is a flat map of native scalars (there
+-- are no blob/table columns -- nesting is always relational), so nothing is shared. JOIN queries
+-- still snapshot every source table up front; the far more common NO-JOIN query instead scans live
+-- rows with WHERE fused in and copies ONLY the survivors (see _ScanBase) -- a point lookup allocates
+-- one row copy, not one per stored row.
+--
+-- INDEXES: a top-level AND'ed equality on an indexed column (PK / unique / declared index / FK --
+-- see IndexManager) narrows the base scan to that index bucket, so Where("key","=",k):Limit(1) is
+-- O(bucket), not O(table). LIMIT is ENFORCED during the scan: when no later stage can reorder or
+-- merge rows (no aggregates / GROUP BY / DISTINCT / ORDER BY), scanning stops at offset+limit.
+--
+-- CHUNKING: inside a Worker job the row loops offer to yield every CHUNK rows via
+-- ns.Worker:MaybeYield() (a no-op everywhere else), so a big query self-partitions to the pump
+-- budget instead of stalling a frame. Yielding mid-scan means storage can change underneath the
+-- query, so the phases that read LIVE rows run under a per-table GENERATION guard (RowStore:
+-- Generation) and restart when the table mutated across a yield; after MAX_RESTARTS such a phase
+-- finishes unchunked (correctness over latency). Phases over already-copied rows need no guard.
 --
 -- The working set is a list of COMPOSITE rows: each is a map alias -> (copied) row, or nil for the
 -- unmatched side of an outer join, so a join never flattens away which table a column came from.
@@ -21,6 +35,13 @@ ns.DB = ns.DB or {}
 local DB = ns.DB
 
 local SEP = "\31"
+local CHUNK = 64            -- rows between yield offers (a clock read each; a switch only when due)
+local MAX_RESTARTS = 2      -- mutated-mid-scan restarts before a live-row phase finishes unchunked
+
+-- Offer to hand the frame back at a chunk boundary (no-op outside a Worker job's coroutine).
+local function offerYield(n)
+    if n % CHUNK == 0 and ns.Worker then ns.Worker:MaybeYield() end
+end
 
 -- type-tagged key for grouping / distinct (NULL -> "\0")
 local function vkey(v)
@@ -35,12 +56,26 @@ end
 local function shallow(t) local o = {}; if t then for k, v in pairs(t) do o[k] = v end end; return o end
 local function bareName(ref) return tostring(ref):match("([%w_]+)$") or ref end
 
--- Snapshot a source table into the pipeline: a fresh array of shallow row copies (a full clone,
--- since rows are flat scalar maps). The query then works on this copy and never touches storage.
+-- Snapshot a source table into the pipeline (JOIN path): a fresh array of shallow row copies (a
+-- full clone, since rows are flat scalar maps). The query then works on this copy and never touches
+-- storage. Chunk-yields under the generation guard (see header) -- the copy reads LIVE rows.
 local function snapshotRows(db, tableName)
-    local out = {}
-    for _, r in ipairs(db:Store():Rows(tableName) or {}) do out[#out + 1] = shallow(r) end
-    return out
+    local store = db:Store()
+    local restarts = 0
+    while true do
+        local gen = store:Generation(tableName)
+        local src = store:Rows(tableName) or {}
+        local out, dirty = {}, false
+        for i = 1, #src do
+            out[i] = shallow(src[i])
+            if restarts < MAX_RESTARTS and i % CHUNK == 0 and ns.Worker then
+                ns.Worker:MaybeYield()
+                if store:Generation(tableName) ~= gen then dirty = true; break end
+            end
+        end
+        if not dirty then return out end
+        restarts = restarts + 1
+    end
 end
 
 -- ---- aggregates -----------------------------------------------------------
@@ -80,8 +115,9 @@ local function applyJoin(left, join, rightRows, resolver)
     local alias, kind, out = join.alias, join.kind, {}
 
     if kind == DB.JoinKind.CROSS then
-        for _, lc in ipairs(left) do
+        for li, lc in ipairs(left) do
             for _, rr in ipairs(rightRows) do local n = shallow(lc); n[alias] = rr; out[#out + 1] = n end
+            offerYield(li)                       -- working copies: safe to chunk without a guard
         end
         return out
     end
@@ -94,19 +130,20 @@ local function applyJoin(left, join, rightRows, resolver)
     end
 
     if kind == DB.JoinKind.RIGHT then
-        for _, rr in ipairs(rightRows) do
+        for ri, rr in ipairs(rightRows) do
             local any = false
             for _, lc in ipairs(left) do
                 if matches(lc, rr) then local n = shallow(lc); n[alias] = rr; out[#out + 1] = n; any = true end
             end
             if not any then out[#out + 1] = { [alias] = rr } end
+            offerYield(ri)
         end
         return out
     end
 
     -- INNER / SELF / LEFT / FULL all iterate the left side; FULL also appends unmatched right rows.
     local matchedR = (kind == DB.JoinKind.FULL) and {} or nil
-    for _, lc in ipairs(left) do
+    for li, lc in ipairs(left) do
         local any = false
         for _, rr in ipairs(rightRows) do
             if matches(lc, rr) then
@@ -117,6 +154,7 @@ local function applyJoin(left, join, rightRows, resolver)
         if not any and (kind == DB.JoinKind.LEFT or kind == DB.JoinKind.FULL) then
             out[#out + 1] = shallow(lc)                          -- right alias absent -> NULL
         end
+        offerYield(li)
     end
     if matchedR then
         for _, rr in ipairs(rightRows) do
@@ -149,30 +187,40 @@ function QueryExecutor:Run(db, plan)
     end
     local resolver = DB.ColumnResolver:New(sources)
 
-    -- FROM: snapshot the base table into the working relation (one composite row per copied row)
-    local rows = {}
-    for _, r in ipairs(snapshotRows(db, plan.from.table)) do rows[#rows + 1] = { [plan.from.alias] = r } end
-    -- JOIN: each join snapshots its table, then narrows/extends the relation
-    for _, j in ipairs(plan.joins) do
-        rows = applyJoin(rows, j, snapshotRows(db, j.table), resolver)
-    end
-
-    -- WHERE
-    if plan.where and not plan.where:IsEmpty() then
-        local kept = {}
-        for _, comp in ipairs(rows) do if plan.where:Matches(comp, resolver) then kept[#kept + 1] = comp end end
-        rows = kept
-    end
-
-    -- decide grouped vs row-wise
+    -- decide grouped vs row-wise up front (it also gates the scan's LIMIT enforcement)
     local hasAgg = #plan.groupBy > 0
     if not hasAgg then for _, e in ipairs(plan.projection) do if e.kind == "agg" then hasAgg = true; break end end end
+
+    local rows
+    if #plan.joins == 0 then
+        -- FROM with no joins (the common case): index-narrowed live scan with WHERE fused in --
+        -- only surviving rows are copied, and the scan stops at offset+limit when nothing later
+        -- can reorder rows. WHERE is fully applied here.
+        rows = self:_ScanBase(db, plan, resolver, hasAgg)
+    else
+        -- JOIN path: snapshot every source up front (the relation is recombined, so per-row lazy
+        -- copies buy nothing), then narrow/extend per join, then WHERE over the working copies.
+        rows = {}
+        for _, r in ipairs(snapshotRows(db, plan.from.table)) do rows[#rows + 1] = { [plan.from.alias] = r } end
+        for _, j in ipairs(plan.joins) do
+            rows = applyJoin(rows, j, snapshotRows(db, j.table), resolver)
+        end
+        if plan.where and not plan.where:IsEmpty() then
+            local kept = {}
+            for i, comp in ipairs(rows) do
+                if plan.where:Matches(comp, resolver) then kept[#kept + 1] = comp end
+                offerYield(i)
+            end
+            rows = kept
+        end
+    end
 
     local outputs   -- list of { row = <map>, ctx = <compRow for ORDER BY of non-selected cols> }
     if not hasAgg then
         outputs = {}
-        for _, comp in ipairs(rows) do
+        for i, comp in ipairs(rows) do
             outputs[#outputs + 1] = { row = self:_ProjectRow(plan.projection, comp, resolver), ctx = comp }
+            offerYield(i)
         end
     else
         outputs = self:_Grouped(plan, rows, resolver)
@@ -190,6 +238,61 @@ function QueryExecutor:Run(db, plan)
     local result = {}
     for i, o in ipairs(outputs) do result[i] = o.row end
     return result
+end
+
+-- The no-join FROM/WHERE stage: build the working relation straight off live storage. A top-level
+-- AND'ed equality on an indexed column narrows the scan to that index bucket (the whole WHERE still
+-- runs on each candidate); only rows the query KEEPS are copied; and when no later stage can
+-- reorder or merge rows (no aggregates / GROUP BY / DISTINCT / ORDER BY), the scan ENFORCES LIMIT
+-- by stopping at offset+limit rows. Reads LIVE rows, so it chunk-yields under the generation guard
+-- (see header). This is the point-lookup fast path: Where("key","=",k):Limit(1) costs one bucket
+-- probe and one row copy.
+function QueryExecutor:_ScanBase(db, plan, resolver, hasAgg)
+    local alias, tname = plan.from.alias, plan.from.table
+    local store, index = db:Store(), db:Index()
+    local where = plan.where
+    if where and where:IsEmpty() then where = nil end
+
+    -- pick the narrowing index: the first top-level AND'ed equality leaf on THIS table's indexed column
+    local candCol, candVal
+    if where then
+        for _, eq in ipairs(where:IndexableEqs() or {}) do
+            local a, c = tostring(eq.col):match("^([%w_]+)%.([%w_]+)$")
+            if not a or a == alias then
+                c = c or eq.col
+                if index:HasColumnIndex(tname, c) then candCol, candVal = c, eq.value; break end
+            end
+        end
+    end
+
+    -- LIMIT enforcement: only when post-WHERE storage order survives to the slice stage
+    local cap
+    if not hasAgg and not plan.distinct and #plan.orderBy == 0 and plan.limit then
+        cap = plan.limit + (plan.offset or 0)
+    end
+
+    local probe = {}        -- reusable composite for the WHERE test (kept rows get a real copy)
+    local restarts = 0
+    while true do
+        local gen = store:Generation(tname)
+        local src = candCol and (index:FindByColumn(tname, candCol, candVal) or {}) or store:Rows(tname) or {}
+        local out, dirty = {}, false
+        for i = 1, #src do
+            local r = src[i]
+            local keep = true
+            if where then probe[alias] = r; keep = where:Matches(probe, resolver) end
+            if keep then
+                out[#out + 1] = { [alias] = shallow(r) }   -- copy ONLY the rows the query keeps
+                if cap and #out >= cap then break end
+            end
+            if restarts < MAX_RESTARTS and i % CHUNK == 0 and ns.Worker then
+                ns.Worker:MaybeYield()
+                if store:Generation(tname) ~= gen then dirty = true; break end
+            end
+        end
+        if not dirty then return out end
+        restarts = restarts + 1
+    end
 end
 
 -- project a single composite row (no aggregates)
@@ -214,13 +317,14 @@ function QueryExecutor:_Grouped(plan, rows, resolver)
     if #plan.groupBy == 0 then
         order[1] = "*"; groups["*"] = rows
     else
-        for _, comp in ipairs(rows) do
+        for ci, comp in ipairs(rows) do
             local parts = {}
             for i, ref in ipairs(plan.groupBy) do parts[i] = vkey(resolver:Value(comp, ref)) end
             local key = table.concat(parts, SEP)
             local g = groups[key]
             if not g then g = {}; groups[key] = g; order[#order + 1] = key end
             g[#g + 1] = comp
+            offerYield(ci)                       -- working copies: safe to chunk without a guard
         end
     end
 
@@ -262,7 +366,8 @@ end
 
 function QueryExecutor:_Distinct(outputs)
     local seen, kept = {}, {}
-    for _, o in ipairs(outputs) do
+    for oi, o in ipairs(outputs) do
+        offerYield(oi)
         local keys = {}
         for k in pairs(o.row) do keys[#keys + 1] = k end
         table.sort(keys)

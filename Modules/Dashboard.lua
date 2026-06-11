@@ -244,7 +244,7 @@ function Dashboard:_SetSelf(changes)
     local key = self:_SelfKey()
     changes = changes or {}
     changes.last_seen = (GetServerTime and GetServerTime()) or time()
-    if self:_CharRow(key) then db:Update("dashboard_char", changes, function(x) return x.char_key == key end)
+    if self:_CharRow(key) then db:Update("dashboard_char", changes, { char_key = key })   -- PK map: index lookup
     else changes.char_key = key; db:Insert("dashboard_char", changes) end
 end
 
@@ -254,7 +254,7 @@ end
 function Dashboard:_ReplaceSelfChildren(tname, rows)
     local db = self:DB(); if not db then return end
     local key = self:_SelfKey()
-    db:Delete(tname, function(x) return x.char_key == key end)
+    db:Delete(tname, { char_key = key })   -- PK-member map: index lookup, no scan
     if #rows == 0 then return end
     for _, r in ipairs(rows) do r.char_key = key end
     db:InsertAll(tname, rows)
@@ -313,7 +313,7 @@ end
 function Dashboard:_SetKeystone(mapid, name)
     local db = self:DB(); if not (db and mapid) then return end
     if db:Select("mapid"):From("keystone"):Where("mapid", "=", mapid):Limit(1):Run()[1] then
-        db:Update("keystone", { name = name }, function(x) return x.mapid == mapid end)
+        db:Update("keystone", { name = name }, { mapid = mapid })
     else db:Insert("keystone", { mapid = mapid, name = name }) end
 end
 
@@ -328,6 +328,7 @@ function Dashboard:_SeedKeystones()
         if mapid and not db:Select("mapid"):From("keystone"):Where("mapid", "=", mapid):Limit(1):Run()[1] then
             self:_SetKeystone(mapid, C_ChallengeMode.GetMapUIInfo(mapid))
         end
+        ns.Worker:MaybeYield()
     end
 end
 
@@ -349,7 +350,7 @@ end
 function Dashboard:_SetInstance(key, changes)
     local db = self:DB(); if not db then return end
     local exists = db:Select("key"):From("dashboard_instance"):Where("key", "=", key):Limit(1):Run()[1]
-    if exists then db:Update("dashboard_instance", changes, function(x) return x.key == key end)
+    if exists then db:Update("dashboard_instance", changes, { key = key })
     else changes.key = key; db:Insert("dashboard_instance", changes) end
 end
 
@@ -414,6 +415,7 @@ function Dashboard:_LockKeyMap()
     for _, r in ipairs(db:Select("key", "name", "diff_id"):From("dashboard_instance"):Run()) do
         local nm, did = denull(r.name), denull(r.diff_id)
         if nm and did then out[nm] = out[nm] or {}; out[nm][did] = r.key end
+        ns.Worker:MaybeYield()
     end
     return out
 end
@@ -448,6 +450,7 @@ function Dashboard:_CollectLockouts()
                     progress = plainNum(prog), reset = reset }
             end
         end
+        ns.Worker:MaybeYield()                             -- per saved instance: chunk to the pump budget
     end
     self:_ReplaceSelfChildren("dashboard_lockout", locks)
 end
@@ -470,7 +473,7 @@ function Dashboard:_RecordQuest(questID)
         -- record the title on the shared `quest` table (the FK target), preserving any `time` Questing
         -- learned; the per-character row then just references the quest id under its frequency
         if db:Select("quest_id"):From("quest"):Where("quest_id", "=", questID):Limit(1):Run()[1] then
-            db:Update("quest", { title = title }, function(x) return x.quest_id == questID end)
+            db:Update("quest", { title = title }, { quest_id = questID })
         else db:Insert("quest", { quest_id = questID, title = title }) end
         local key = self:_SelfKey()
         local exists = db:Select("quest_id"):From("dashboard_quest")
@@ -482,12 +485,11 @@ end
 
 -- The heavy, deferrable pass: (re)build the instance catalog (once the journal is available) and
 -- snapshot this character. Runs THROUGH the Worker (see OnEnable: self:Queue / self:WorkOn), which
--- drives it inside a frame-budgeted coroutine -- the hot loops in _ExpansionMap / _SeedInstances call
--- ns.Worker:Yield() so the cost spreads across frames and never stalls a render. Renders when done.
+-- drives it inside a frame-budgeted coroutine -- the row loops here call ns.Worker:MaybeYield() (and
+-- the DB executor chunks itself) so the cost spreads across frames and never stalls a render.
 function Dashboard:_RefreshNow()
     self:_BuildCatalog()
-    self:_Snapshot()
-    self:_RenderIfShown()
+    self:_Snapshot()                    -- ends with _RenderIfShown; no second render here
 end
 
 -- Populate dashboard_instance with the full catalog the dashboard shows -- every raid (one row per
@@ -560,6 +562,7 @@ function Dashboard:_ReconstructFromDB()
             local did = denull(r.diff_id)
             if isRaid and did then raidDiffs[id] = raidDiffs[id] or {}; raidDiffs[id][#raidDiffs[id] + 1] = did end
         end
+        ns.Worker:MaybeYield()                  -- whole-catalog walk: chunk to the pump budget
     end
     if not haveArt then return false end                       -- pre-art catalog -> re-walk to fill it in
     local byOrd = function(a, b) return (ordOf[a] or 0) < (ordOf[b] or 0) end
@@ -653,7 +656,7 @@ function Dashboard:_ExpansionMap()
                 if sink then sink[#sink + 1] = instID end
             end
             i = i + 1
-            ns.Worker:Yield()                     -- spread the walk across frames (Worker-budgeted build)
+            ns.Worker:MaybeYield()                -- spread the walk across frames (Worker-budgeted build)
         end
     end
     local seasonRaidList = {}                 -- ids of raids on the journal's "Current Season" page
@@ -694,7 +697,7 @@ function Dashboard:_ExpansionMap()
                 local ids = {}
                 for _, d in ipairs(RAID_DIFF_CANDIDATES) do if EJ_IsValidInstanceDifficulty(d) then ids[#ids + 1] = d end end
                 if #ids > 0 then raidDiffs[id] = ids end
-                ns.Worker:Yield()
+                ns.Worker:MaybeYield()
             end
         end
     end
@@ -1163,7 +1166,7 @@ local RAID_DIFF_IDS = { 17, 14, 15, 16 }   -- Raid Finder, Normal, Heroic, Mythi
 function Dashboard:_SeedInstance(key, fields)
     local db = self:DB(); if not db then return end
     if db:Select("key"):From("dashboard_instance"):Where("key", "=", key):Limit(1):Run()[1] then
-        db:Update("dashboard_instance", fields, function(x) return x.key == key end)
+        db:Update("dashboard_instance", fields, { key = key })
     else
         fields.key = key
         db:Insert("dashboard_instance", fields)
@@ -1193,7 +1196,7 @@ function Dashboard:_SeedInstances()
                           lore_id = lore[rec.name], button_id = image[rec.name], ord = ord[id] })
                 end
             end
-            ns.Worker:Yield()                                    -- spread the inserts across frames
+            ns.Worker:MaybeYield()                               -- spread the inserts across frames
         end
     end
     -- every dungeon of the current expansion (Mythic 0), keyed by journal id
@@ -1206,6 +1209,7 @@ function Dashboard:_SeedInstances()
                   expansion = cur, current_season = self:_IsSeasonDungeon(rec.name),
                   lore_id = lore[rec.name], button_id = image[rec.name], ord = ord[id] })
         end
+        ns.Worker:MaybeYield()
     end
 end
 
@@ -1228,10 +1232,13 @@ function Dashboard:_MarkSeasonFlags()
     local sd = self:_SeasonDungeons(); local sdset = (sd and sd.set) or {}   -- season DUNGEONS by name (M+ rotation)
     db:Update("dashboard_instance", { current_season = true },
         function(r) return safe(r) and r.is_raid == true and sr[denull(r.instance_id)] and r.current_season ~= true end)
+    ns.Worker:MaybeYield()                       -- each pass scans the catalog: chunk between them
     db:Update("dashboard_instance", { current_season = false },
         function(r) return safe(r) and r.is_raid == true and not sr[denull(r.instance_id)] and r.current_season ~= false end)
+    ns.Worker:MaybeYield()
     db:Update("dashboard_instance", { current_season = true },
         function(r) return safe(r) and r.is_raid ~= true and sdset[denull(r.name)] and r.current_season ~= true end)
+    ns.Worker:MaybeYield()
     db:Update("dashboard_instance", { current_season = false },
         function(r) return safe(r) and r.is_raid ~= true and not sdset[denull(r.name)] and r.current_season ~= false end)
 end
@@ -1273,6 +1280,7 @@ function Dashboard:_SeedSeasonDungeons()
     local p = self:_p()
     local lore, image, ord = p.ejLore or {}, p.ejImage or {}, p.ejOrd or {}
     for _, name in ipairs(s.list) do
+        ns.Worker:MaybeYield()
         local id = self:_IdForName(name)              -- the newest journal instance of this name (locks identity)
         local rec = id and p.ejInst and p.ejInst[id]
         if rec and rec.tier then
