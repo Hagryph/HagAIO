@@ -148,6 +148,16 @@ function Worker:Queue(fn, opts)
     return id
 end
 
+-- Run a loop-free STEPPER through the Worker -- the ATT-runner shape, where the WORKER owns the loop.
+-- `step()` does ONE unit of work and returns truthy while more remains; the Worker calls it again on
+-- its next budget slice (60 Hz, round-robin with other jobs). The whole point is that `step` contains
+-- NO for/while of its own (the loop here, inside the Worker, is the only one) -- so heavy work can't
+-- accumulate past the budget between checks. Prefer this over Queue for anything iterative.
+function Worker:Run(step, opts)
+    assert(type(step) == "function", "Worker:Run needs a step function")
+    return self:Queue(function() while step() do self:Yield() end end, opts)
+end
+
 -- Drop a job that hasn't finished yet (best-effort; a job mid-slice finishes its slice).
 function Worker:Cancel(id)
     if id == nil then return end

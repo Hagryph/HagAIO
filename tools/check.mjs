@@ -26,6 +26,7 @@ const LINT = [
   ["frames", ["tools/check-frames.mjs"]],
   ["widgets", ["tools/check-widgets.mjs"]],
   ["savedvars", ["tools/savedvarscheck.mjs"]],
+  ["worker", ["tools/check-worker.mjs"]],
 ];
 
 function run(label, cmd, cmdArgs) {

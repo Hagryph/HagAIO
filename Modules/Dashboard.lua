@@ -601,15 +601,29 @@ function Dashboard:_ExpansionMap()
     end
     -- Which difficulties each raid ACTUALLY offers (the journal's truth, keyed by instance id) -- so
     -- seeding skips an LFR / Mythic a raid never had, and legacy raids get their 10/25/40-player ids.
+    -- The per-raid EJ_SelectInstance probe is the heaviest step and its result is STATIC, so it's
+    -- effectively cached in the catalog: the rows seeded last session ARE the answer. Reuse them and
+    -- probe ONLY instances we've never catalogued -- on a normal login nothing is probed at all.
     local raidDiffs = {}
+    local known, db = {}, self:DB()
+    if db then
+        for _, r in ipairs(db:Select("instance_id", "diff_id"):From("dashboard_instance"):Where("is_raid", "=", true):Run()) do
+            local iid, did = denull(r.instance_id), denull(r.diff_id)
+            if iid and did then known[iid] = known[iid] or {}; known[iid][#known[iid] + 1] = did end
+        end
+    end
     if EJ_SelectInstance and EJ_IsValidInstanceDifficulty then
         for id, rec in pairs(inst) do
             if rec.isRaid then
-                pcall(EJ_SelectInstance, id)
-                local ids = {}
-                for _, d in ipairs(RAID_DIFF_CANDIDATES) do if EJ_IsValidInstanceDifficulty(d) then ids[#ids + 1] = d end end
-                if #ids > 0 then raidDiffs[id] = ids end
-                ns.Worker:Yield()                 -- the per-raid EJ_SelectInstance probe is the heaviest step
+                if known[id] then
+                    raidDiffs[id] = known[id]      -- persisted from a prior session -- skip the probe
+                else
+                    pcall(EJ_SelectInstance, id)
+                    local ids = {}
+                    for _, d in ipairs(RAID_DIFF_CANDIDATES) do if EJ_IsValidInstanceDifficulty(d) then ids[#ids + 1] = d end end
+                    if #ids > 0 then raidDiffs[id] = ids end
+                    ns.Worker:Yield()             -- only a brand-new instance reaches this heavy step
+                end
             end
         end
     end

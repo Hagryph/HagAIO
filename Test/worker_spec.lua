@@ -76,6 +76,14 @@ describe("Worker", function()
         assert.is_true(done)
     end)
 
+    it("Run drives a loop-free stepper until it returns falsy", function()
+        local worker = newWorker()
+        local n = 0
+        worker:Run(function() n = n + 1; return n < 3 end)   -- one unit per call; truthy = more
+        worker:_Pump()                                       -- budget unspent -> runs all steps
+        assert.are.equal(3, n)
+    end)
+
     it("steps multiple iterators round-robin so they progress together", function()
         local worker, _, ns = newWorker()
         local order = {}
