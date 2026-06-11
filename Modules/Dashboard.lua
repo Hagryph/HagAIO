@@ -505,6 +505,7 @@ function Dashboard:_BuildCatalog()
     end
     self:_SeedSeasonDungeons()           -- current M+ season pool (cheap + idempotent)
     self:_MarkSeasonFlags()              -- refresh current_season after the prune has cleared orphans
+    self:_SeedKeystones()                -- fill local keystone names for every alt's stored map id
 end
 
 function Dashboard:_Snapshot()
@@ -1541,9 +1542,10 @@ function Dashboard:_Render()
     if not p.built then return end
     self:_UpdateHeader()
     self:_UpdateCountdown()
-    self:_ExpansionMap()                 -- build the raid->expansion map (no-op once cached); for tile art
-    self:_SeedKeystones()                -- fill local keystone names for every alt's stored map id
-    -- (the instance catalog -- seed, expansion backfill, prune -- is built on the deferred refresh pass)
+    -- NOTHING heavy here: _Render runs on every open and every in-page expand toggle, so the Encounter
+    -- Journal walk (_ExpansionMap) + catalog seed + keystone fill all live on the DEFERRED refresh pass
+    -- (_BuildCatalog, queued by C_Timer after the loading screen). Render off whatever's cached; when the
+    -- deferred build finishes it snapshots and re-renders, so the tiles fill in a frame later.
 
     local items = self:_NavItems()
     -- keep the selection valid: if the active category was hidden, fall back to the first one
@@ -1658,7 +1660,9 @@ function Dashboard:Show()
     local p = self:_p()
     p.shown = true
     p.frame:Show()
-    self:_Render()
+    self:_Render()                                     -- cheap: renders off the cached catalog (may be empty)
+    self:_ScheduleRefresh()                            -- DEFER the heavy journal walk / catalog build off this
+                                                       -- frame; it snapshots + re-renders when done (coalesced)
     if p.ticker then p.ticker:Cancel() end
     p.ticker = C_Timer.NewTicker(1, function() if p.shown then self:_UpdateCountdown() end end)
     C_Timer.After(0, function() self:_Render() end)   -- re-measure once on screen
