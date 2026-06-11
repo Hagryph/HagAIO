@@ -412,14 +412,28 @@ end
 
 function Dashboard:_CollectLockouts()
     self:_SetSelf({})   -- ensure the char row (FK target) + last_seen, as the old _SelfEntry() did
+    local p = self:_p()
     local key2 = self:_LockKeyMap()
     local n = (GetNumSavedInstances and GetNumSavedInstances()) or 0
     local locks, seen = {}, {}
     for i = 1, n do
         local name, _, reset, diffID, locked, _, _, _, _, _, numEnc, prog = GetSavedInstanceInfo(i)
         if locked and reset and reset > 0 and name and diffID then
-            local byDiff = key2[name]
-            local instKey = byDiff and byDiff[diffID]      -- the catalog row for this instance+difficulty
+            local instKey = key2[name] and key2[name][diffID]   -- the catalog row for this instance+difficulty
+            if not instKey then
+                -- SELF-CURATE: a lock for an instance/difficulty the seeded catalog doesn't cover (e.g. a
+                -- dungeon at a non-M0 difficulty, or one outside the current expansion / season). Register
+                -- it under its journal id so the lock still has a row and is gathered as you play.
+                local id = self:_IdForName(name)
+                local rec = id and p.ejInst and p.ejInst[id]
+                local diffName = GetDifficultyInfo and GetDifficultyInfo(diffID)
+                if rec and diffName then
+                    instKey = id .. "|" .. diffID
+                    self:_SetInstance(instKey, { instance_id = id, name = rec.name, diff = diffName,
+                        diff_id = diffID, is_raid = rec.isRaid, expansion = rec.tier })
+                    key2[name] = key2[name] or {}; key2[name][diffID] = instKey
+                end
+            end
             if instKey and not seen[instKey] then          -- one lock row per instance (PK is char + instance_key)
                 seen[instKey] = true
                 locks[#locks + 1] = { instance_key = instKey, total = numEnc,
