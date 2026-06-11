@@ -118,6 +118,13 @@ function Dev:_GetDebug() return self:_DebugOn() end
 function Dev:_SetDebug(on)
     self:SetSetting("debug", on and true or false)
     ns.Logger:SetDebug(on)
+    if not on then   -- debugging turned off mid-watch -> stop measuring frames immediately
+        local p = self:_p()
+        if p.watch then
+            if p.watch.ticker and not p.watch.ticker:IsCancelled() then p.watch.ticker:Cancel() end
+            p.watch = nil
+        end
+    end
 end
 function Dev:OnInitialize()
     ns.Logger:SetDebug(self:_DebugOn())  -- apply the saved (default-on) choice for this character
@@ -134,7 +141,7 @@ local WATCH_TOP  = 10          -- worst frames to report
 local HITCH_MS   = 25          -- a frame slower than this (40 FPS) counts as a hitch
 
 function Dev:OnEnable()
-    self:_StartHitchWatch()
+    if self:_DebugOn() then self:_StartHitchWatch() end   -- measure startup only while debugging is on
 end
 
 -- ---- MemWatch: leak vs. GC churn ----------------------------------------------------------------

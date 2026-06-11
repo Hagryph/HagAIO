@@ -35,7 +35,10 @@ local Worker = Class.new("Worker", ns.Service)
 local BUDGET_MS = 2           -- hard cap on the time the Worker may spend in one pump (a small slice
                               -- of a 60 FPS frame's ~16.7ms, so a drain is never felt as a hitch)
 local TICK = 1 / 60          -- pump at a FIXED 60 Hz, never per-frame (so 240 FPS isn't hammered)
-local DEBUG = true           -- pump profiler: log per-interval pump times each time the queue drains
+-- Pump profiler (per-interval pump times + worst-step attribution, reported on each drain). Costs a
+-- few clock reads and a table per pump, so it runs ONLY while debugging is on (the Logger debug
+-- flag -- auto-on for dev characters, toggled from the Dev module). Off = zero profiling work.
+local function debugOn() return ns.Logger and ns.Logger.GetDebug and ns.Logger:GetDebug() or false end
 local DONE_MSG = "HagAIO_WorkerDone"
 local STATE_MSG = "HagAIO_OwnerState"   -- (owner, enabled) -- emitted by Component + Service
 
@@ -104,7 +107,7 @@ end
 function Worker:_Stop()
     local p = self:_p()
     if p.ticker then p.ticker:Cancel(); p.ticker = nil end
-    if DEBUG then self:_DebugReport() end
+    self:_DebugReport()   -- no-op when nothing was profiled (debug off)
 end
 
 -- DEBUG: log how long each interval pump took since the queue last drained, then reset. One entry =
@@ -140,7 +143,8 @@ function Worker:_Pump()
     local pumpStart = debugprofilestop()
     p.deadline = pumpStart + BUDGET_MS
     local i = p.rr
-    local t0, worst, worstLabel = pumpStart, 0, nil   -- DEBUG: time each step, remember the fattest
+    local dbg = debugOn()                             -- profile this pump? (latched once per pump)
+    local t0, worst, worstLabel = pumpStart, 0, nil   -- debug: time each step, remember the fattest
     while #q > 0 and t0 < p.deadline do
         if i > #q then i = 1 end
         local job = q[i]
@@ -173,7 +177,7 @@ function Worker:_Pump()
             end
         end
         local t1 = debugprofilestop()                             -- doubles as the budget re-check time
-        if DEBUG and t1 - t0 > worst then
+        if dbg and t1 - t0 > worst then
             worst = t1 - t0
             worstLabel = job.mark and (tostring(job.label) .. " @ " .. tostring(job.mark)) or job.label
         end
@@ -184,7 +188,7 @@ function Worker:_Pump()
     local frameT = GetTime and GetTime() or 0                     -- constant within a frame
     p.framePumpMs = (p.framePumpT == frameT and p.framePumpMs or 0) + (t0 - pumpStart)
     p.framePumpT = frameT
-    if DEBUG then p.pumpMs[#p.pumpMs + 1] = { ms = t0 - pumpStart, worst = worst, label = worstLabel } end
+    if dbg then p.pumpMs[#p.pumpMs + 1] = { ms = t0 - pumpStart, worst = worst, label = worstLabel } end
     if #q == 0 then self:_Stop() end                              -- drained -> kill the ticker (no idle work)
 end
 
