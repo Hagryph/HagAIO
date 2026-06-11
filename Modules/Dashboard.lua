@@ -1102,8 +1102,6 @@ local QUEST_OTHER = "Other"
 -- the instance catalog -- so this asks ns.Versioning directly.)
 local ZONE_DOMAIN = "zone_catalog"
 
--- The loading screens are 16:9 widescreen art (see tools/gen_loadingscreens.mjs).
-local LOADING_ASPECT = 16 / 9
 
 -- ---- zone typography styles -------------------------------------------------------------------
 -- A zone WITHOUT its own loading screen renders as a TYPOGRAPHY tile: a two-stop gradient plate +
@@ -1456,15 +1454,10 @@ function Dashboard:_ShowQuestZonePage(page, exp)
                 self:_Render()
             end,
         }
-        -- art: the zone's OWN loading screen (zone registry), else a pure TYPOGRAPHY plate in the
-        -- zone's style (curated / biome / expansion tint) -- never the map painting.
+        -- EVERY zone renders as a TYPOGRAPHY plate (curated / biome / expansion tint) -- one
+        -- visual language for the whole page, no image art at all.
         local zrow = z.mapID and self:_ZoneRow(z.mapID) or nil
-        local lsid = zrow and denull(zrow.loading_file_id)
-        if lsid then
-            tile.texture, tile.cover, tile.aspect = lsid, true, LOADING_ASPECT
-        else
-            tile.typo = { text = z.name, style = self:_ZoneStyle(z.name, zrow and denull(zrow.expansion_id)) }
-        end
+        tile.typo = { text = z.name, style = self:_ZoneStyle(z.name, zrow and denull(zrow.expansion_id)) }
         tiles[#tiles + 1] = tile
     end
     page:SetTiles(tiles)
