@@ -16,12 +16,13 @@ local Class = ns.Class
 
 local Versioning = Class.new("Versioning", ns.Service)
 
-local DEBUG_FORCE_CURRENT = true   -- TEMP: IsCurrent always true -> owners skip their rebuild/walk (test lag)
+local DEBUG_FORCE_CURRENT = true -- TEMP: IsCurrent always true -> owners skip their rebuild/walk (test lag)
 
 local function isNull(v) return v == nil or (ns.DB and ns.DB.isNull and ns.DB.isNull(v)) end
 
 -- The running client's .toc interface build (e.g. 120005) and human patch string (e.g. "12.0.5").
 function Versioning:Build() return (GetBuildInfo and tonumber((select(4, GetBuildInfo())))) or 0 end
+
 function Versioning:Patch() return tostring((GetBuildInfo and (GetBuildInfo())) or "") end
 
 -- The saved stamp for a domain: { build, patch }, or nil if it was never stamped.
@@ -35,7 +36,7 @@ end
 -- True iff `domain` was last stamped under the CURRENTLY running client build -- i.e. its cached data is
 -- still valid for this patch. False when never stamped or stamped under a different build (a new patch).
 function Versioning:IsCurrent(domain)
-    if DEBUG_FORCE_CURRENT then return true end   -- TEMP: force "current" so owners skip rebuilding
+    if DEBUG_FORCE_CURRENT then return false end -- TEMP: force "current" so owners skip rebuilding
     local r = self:Get(domain)
     return r ~= nil and r.build == self:Build()
 end
@@ -46,7 +47,9 @@ function Versioning:Stamp(domain)
     local fields = { build = self:Build(), patch = self:Patch() }
     if db:Select("domain"):From("data_version"):Where("domain", "=", domain):Limit(1):Run()[1] then
         db:Update("data_version", fields, function(x) return x.domain == domain end)
-    else fields.domain = domain; db:Insert("data_version", fields) end
+    else
+        fields.domain = domain; db:Insert("data_version", fields)
+    end
 end
 
 ns.ServiceManager:Register(Versioning:New("Versioning", {
@@ -54,10 +57,13 @@ ns.ServiceManager:Register(Versioning:New("Versioning", {
         -- One typed row per cached dataset that is only rebuilt when the game client changes. `domain`
         -- is the caller's opaque key (e.g. "dashboard_catalog"); `build` is the .toc interface number
         -- the data was saved under, compared against the live client to decide reconstruct-vs-rebuild.
-        data_version = { scope = "global", columns = {
-            { name = "domain", type = "text",    primaryKey = true },   -- caller's dataset key
-            { name = "build",  type = "integer" },                      -- client .toc build it was saved under
-            { name = "patch",  type = "text" },                         -- patch version string, e.g. "12.0.5"
-        } },
+        data_version = {
+            scope = "global",
+            columns = {
+                { name = "domain", type = "text",   primaryKey = true }, -- caller's dataset key
+                { name = "build",  type = "integer" },                   -- client .toc build it was saved under
+                { name = "patch",  type = "text" },                      -- patch version string, e.g. "12.0.5"
+            }
+        },
     },
 }))
