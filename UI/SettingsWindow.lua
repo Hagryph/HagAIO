@@ -673,41 +673,58 @@ function SettingsWindow:_BuildLogPage(parent)
     sf:SetPoint("TOPLEFT", div, "BOTTOMLEFT", 0, -8)
     sf:SetPoint("BOTTOMRIGHT", page, "BOTTOMRIGHT", -16, 14)
 
-    -- A read-only, drag-selectable surface (not a plain FontString) so the user
-    -- can highlight any part of the log and Ctrl+C it without being able to edit.
-    local fs = W.SelectableText:New(sf:Content(), "text", "GameFontHighlightSmall")
-    fs:SetPoint("TOPLEFT")
-    fs:SetJustifyH("LEFT")
-    fs:SetJustifyV("TOP")
-    fs:SetSpacing(3)
+    -- PLAIN text lines (one pooled FontString per entry) with a TextSelection overlay: drag
+    -- across lines to highlight them, release to get the plain text in the CopyWindow for Ctrl+C.
+    local sel = W.TextSelection:New(sf:Content(), { title = "Activity Log" })
 
     local p = self:_p()
-    p.logFS = fs
+    p.logSel = sel
     p.logSF = sf
+    p.logLines = {}
     sf:SetScript("OnSizeChanged", function() self:_RefreshLog() end)
     return page
 end
 
 function SettingsWindow:_RefreshLog()
     local p = self:_p()
-    if not p.logFS then return end
+    if not p.logSel then return end
     local h = ns.Logger:GetHistory()
-
-    local lines, startIdx = {}, math.max(1, #h - 200)
-    for i = startIdx, #h do lines[#lines + 1] = h[i].line end
-    p.logFS:SetText(#lines > 0 and table.concat(lines, "\n")
-        or ("|cff" .. Theme.hex.textFaint .. "No activity yet.|r"))
-
-    local width = p.logSF:Content():GetWidth()
+    local content = p.logSF:Content()
+    local width = content:GetWidth()
     if not width or width < 1 then width = 380 end
-    p.logFS:SetWidth(width)
-    -- A multi-line EditBox settles its auto-height a frame after the text/width
-    -- change, so size the scroll child now and again next frame to catch it.
-    local function sizeToText()
-        p.logSF:Content():SetHeight(p.logFS:GetContentHeight() + 8)
+
+    local startIdx = math.max(1, #h - 200)
+    local lines, n, y = {}, 0, 0
+    for i = startIdx, #h do
+        local e = h[i]
+        n = n + 1
+        local fs = p.logLines[n]
+        if not fs then
+            fs = W.Text:New(content, "", "text", "GameFontHighlightSmall")
+            p.logLines[n] = fs
+        end
+        fs:ClearAllPoints()
+        fs:SetPoint("TOPLEFT", content, "TOPLEFT", 0, y)
+        fs:SetWidth(width); fs:SetJustifyH("LEFT"); fs:SetWordWrap(true)
+        fs:SetText(e.line)
+        fs:Show()
+        y = y - (fs:GetStringHeight() or 12) - 3
+        -- the COPY text is the plain entry (no colour escapes), rebuilt from its fields
+        lines[n] = { region = fs, text = ("%s  [%s]  %s  %s"):format(e.time, e.module, e.level, e.text) }
     end
-    sizeToText()
-    C_Timer.After(0, sizeToText)
+    if n == 0 then
+        n = 1
+        local fs = p.logLines[1]
+        if not fs then fs = W.Text:New(content, "", "text", "GameFontHighlightSmall"); p.logLines[1] = fs end
+        fs:ClearAllPoints(); fs:SetPoint("TOPLEFT", content, "TOPLEFT", 0, 0)
+        fs:SetWidth(width); fs:SetJustifyH("LEFT")
+        fs:SetText("|cff" .. Theme.hex.textFaint .. "No activity yet.|r")
+        fs:Show()
+        y = -14
+    end
+    for i = n + 1, #p.logLines do p.logLines[i]:Hide() end
+    p.logSel:SetLines(lines)
+    content:SetHeight(math.max(1, -y + 8))
 end
 
 function SettingsWindow:_BuildAboutPage(parent)
