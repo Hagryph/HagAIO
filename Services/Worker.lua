@@ -34,7 +34,7 @@ local Worker = Class.new("Worker", ns.Service)
 
 local BUDGET_MS = 10          -- hard cap on the time the Worker may spend in one pump
 local TICK = 1 / 60          -- pump at a FIXED 60 Hz, never per-frame (so 240 FPS isn't hammered)
-local DEBUG = true           -- step profiler: log the 10 slowest steps each time the queue drains
+local DEBUG = true           -- pump profiler: log per-interval pump times each time the queue drains
 local DONE_MSG = "HagAIO_WorkerDone"
 local STATE_MSG = "HagAIO_OwnerState"   -- (owner, enabled) -- emitted by Component + Service
 
@@ -45,8 +45,7 @@ function Worker:OnInitialize()
     p.rr = 1                 -- round-robin cursor: which job to step next (fairness across iterators)
     p.ticker = nil           -- the 60 Hz pump ticker, alive ONLY while there is queued work
     p.nextId = 1
-    p.steps = {}             -- DEBUG: { label, ms } per step, since the queue last drained
-    p.pumps = 0              -- DEBUG: pump count since the queue last drained
+    p.pumpMs = {}            -- DEBUG: wall time (ms) of each interval pump, since the queue last drained
 end
 
 local function freshId(p)
@@ -77,24 +76,23 @@ function Worker:_Stop()
     if DEBUG then self:_DebugReport() end
 end
 
--- DEBUG: log the 10 slowest steps recorded since the queue last drained, then reset. A "step" is one
--- job.step() call or one coroutine resume (one Yield-to-Yield slice). If a single step is anywhere near
--- (or over) the 10ms budget, that job ISN'T chunking -- it does too much work between Yields, so the
--- Worker can't keep any pump under budget no matter how often it ticks.
+-- DEBUG: log how long each interval pump took since the queue last drained, then reset. One entry =
+-- one _Pump call (one 60 Hz interval tick), timed end to end across all the steps it ran. A pump near
+-- (or over) the 10ms budget means a single step inside it overshot -- that job ISN'T chunking (too much
+-- work between Yields), so the Worker can't keep the pump under budget no matter how often it ticks.
 function Worker:_DebugReport()
     local p = self:_p()
-    local steps = p.steps
-    if not steps or #steps == 0 then return end
-    table.sort(steps, function(a, b) return a.ms > b.ms end)
+    local times = p.pumpMs
+    if not times or #times == 0 then return end
     local total = 0
-    for _, e in ipairs(steps) do total = total + e.ms end
-    self:LogWarn(("Worker drained: %d steps over %d pumps, %.1f ms total. 10 slowest steps:")
-        :format(#steps, p.pumps, total))
-    for i = 1, math.min(10, #steps) do
-        self:LogWarn(("  %2d. %8.2f ms  %s"):format(i, steps[i].ms, tostring(steps[i].label)))
+    for _, ms in ipairs(times) do total = total + ms end
+    table.sort(times, function(a, b) return a > b end)
+    self:LogWarn(("Worker drained: %d interval pumps, %.1f ms total, %.2f ms avg. 10 slowest pumps:")
+        :format(#times, total, total / #times))
+    for i = 1, math.min(10, #times) do
+        self:LogWarn(("  %2d. %8.2f ms"):format(i, times[i]))
     end
-    p.steps = {}
-    p.pumps = 0
+    p.pumpMs = {}
 end
 
 -- One tick's work: advance the queued jobs round-robin -- ONE step each -- until the TIME budget is
@@ -106,8 +104,8 @@ function Worker:_Pump()
     local p = self:_p()
     local q = p.queue
     if #q == 0 then self:_Stop(); return end
-    p.deadline = debugprofilestop() + BUDGET_MS
-    if DEBUG then p.pumps = p.pumps + 1 end
+    local pumpStart = debugprofilestop()
+    p.deadline = pumpStart + BUDGET_MS
     local i = p.rr
     while #q > 0 and debugprofilestop() < p.deadline do
         if i > #q then i = 1 end
@@ -118,16 +116,12 @@ function Worker:_Pump()
             -- next job shifted into slot i; don't advance
         else
             local ok, done, result      -- ok = no error; done = job finished this step
-            local stepStart = DEBUG and debugprofilestop() or nil
             if job.step then
                 ok, result = pcall(job.step)                      -- stepper: result here is "more?" not the value
                 done = ok and not result; result = nil
             else
                 ok, result = coroutine.resume(job.co)             -- coroutine: one yield = one step
                 done = ok and coroutine.status(job.co) == "dead"
-            end
-            if DEBUG then
-                p.steps[#p.steps + 1] = { label = job.label, ms = debugprofilestop() - stepStart }
             end
             if not ok then
                 table.remove(q, i)
@@ -143,6 +137,7 @@ function Worker:_Pump()
     end
     p.rr = i
     p.deadline = nil
+    if DEBUG then p.pumpMs[#p.pumpMs + 1] = debugprofilestop() - pumpStart end   -- time this whole interval
     if #q == 0 then self:_Stop() end                              -- drained -> kill the ticker (no idle work)
 end
 
