@@ -41,6 +41,7 @@ local RAID_DIFF_CANDIDATES = { 7, 17, 3, 4, 9, 148, 14, 5, 6, 15, 16 }
 -- per-raid difficulty probe and the whole journal walk are gated on the client build via the shared
 -- ns.Versioning service: a same-build login reconstructs the catalog from the DB instead of re-walking.
 local CATALOG_DOMAIN = "dashboard_catalog"   -- our key in the general data-version registry
+local DEBUG_SKIP_BUILD = true   -- TEMP: skip the catalog build entirely to test first-login lag
 local DIFF_META = {
     [7]  = { abbr = "LFR", rank = 1 }, [17] = { abbr = "LFR", rank = 1 },
     [3]  = { abbr = "10",  rank = 2 }, [4]  = { abbr = "25",  rank = 2 }, [9] = { abbr = "40", rank = 2 },
@@ -600,6 +601,7 @@ function Dashboard:_ExpansionMap()
     -- No fallback to a re-walk: if the saved catalog is empty/incomplete the dashboard renders nothing,
     -- which surfaces a broken cache instead of silently masking it with an expensive re-walk. The walk
     -- below runs only on the FIRST build ever / after a NEW patch (no stamp, or stamp.build mismatched).
+    if DEBUG_SKIP_BUILD then return nil end   -- TEMP: skip reconstruct AND walk entirely (test login lag)
     if self:IsVersionCurrent() then
         self:_ReconstructFromDB()
         return p.ejInst
