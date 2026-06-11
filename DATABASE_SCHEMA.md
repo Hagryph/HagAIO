@@ -22,7 +22,7 @@ Open **[diagram/DB/index.html](diagram/DB/index.html)** in a browser for an inte
 | [`cvar_managed`](#cvar_managed) | `global` | 2 | name | `Modules/CVars.lua` |
 | [`cvar_tracked`](#cvar_tracked) | `global` | 3 | name | `Modules/CVars.lua` |
 | [`dashboard_char`](#dashboard_char) | `global` | 10 | char_key | `Modules/Dashboard.lua` |
-| [`dashboard_instance`](#dashboard_instance) | `global` | 9 | key | `Modules/Dashboard.lua` |
+| [`dashboard_instance`](#dashboard_instance) | `global` | 12 | key | `Modules/Dashboard.lua` |
 | [`dashboard_lockout`](#dashboard_lockout) | `global` | 5 | char_key, instance_key | `Modules/Dashboard.lua` |
 | [`dashboard_meta`](#dashboard_meta) | `global` | 2 | k | `Modules/Dashboard.lua` |
 | [`dashboard_quest`](#dashboard_quest) | `global` | 3 | char_key, freq, quest_id | `Modules/Dashboard.lua` |
@@ -142,6 +142,9 @@ Open **[diagram/DB/index.html](diagram/DB/index.html)** in a browser for an inte
 |---|---|---|---|---|---|
 | `key` | text | no | PK |  |  |
 | `instance_id` | integer | yes |  |  |  |
+| `lore_id` | integer | yes |  |  |  |
+| `button_id` | integer | yes |  |  |  |
+| `ord` | integer | yes |  |  |  |
 | `name` | text | yes |  |  |  |
 | `diff` | text | yes |  |  |  |
 | `is_raid` | boolean | yes |  |  |  |

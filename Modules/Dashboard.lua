@@ -500,19 +500,25 @@ end
 function Dashboard:_BuildCatalog()
     local p = self:_p()
     if p.catalogBuilt then return end    -- built once per session
-    self:_ExpansionMap()                 -- walk the journal once (cached); the seed/prune source
+    self:_ExpansionMap()                 -- reconstruct from the DB cache, OR walk the journal (new patch)
     if not p.ejInst then return end      -- journal not ready yet -- retry on the next trigger
-    if not p.seededCatalog then
-        self:_SeedInstances()            -- one row per (journal instance, difficulty it offers)
-        self:_PruneInstances()           -- drop instances/difficulties Blizzard has removed + legacy name-keyed rows
+    -- The heavy raid/dungeon seed + prune only run on the WALK path (a new patch / first run). A
+    -- same-patch login reconstructs the maps from the catalog, which is already correct -- nothing to seed.
+    if not p.seededCatalog and not p.ejReconstructed then
+        self:_SeedInstances()            -- one row per (journal instance, difficulty) + its art / order
+        self:_PruneInstances()           -- drop instances/difficulties Blizzard removed + legacy name-keyed rows
         p.seededCatalog = true
     end
-    self:_SeedSeasonDungeons()           -- current M+ season pool (cheap + idempotent)
+    self:_SeedSeasonDungeons()           -- current M+ season pool (cheap; the M+ rotation is live, not journal)
     self:_MarkSeasonFlags()              -- refresh current_season after the prune has cleared orphans
     self:_SeedKeystones()                -- fill local keystone names for every alt's stored map id
     if self:_SeasonDungeons() then
         p.catalogBuilt = true                                  -- done once the M+ season pool is available
-        self:_SetMeta("probe_build", clientBuild())            -- this patch is fully probed + pruned -> cache it
+        -- stamp the cache so the next same-patch login reconstructs instead of re-walking
+        self:_SetMeta("catalog_build", clientBuild())
+        self:_SetMeta("client_build", clientBuild())
+        self:_SetMeta("current_expansion", p.currentExpansion or "")
+        self:_SetMeta("patch_version", tostring((GetBuildInfo and GetBuildInfo()) or ""))
     end
 end
 
@@ -537,6 +543,60 @@ function Dashboard:_SetMeta(k, v)
     else db:Insert("dashboard_meta", { k = k, v = v }) end
 end
 
+-- Rebuild the runtime journal maps (p.ejInst / ejByName / ejImage / ejLore / ejRaidsByTier / ... ) from
+-- the PERSISTED catalog instead of walking the Encounter Journal -- no LoadAddOn, no EJ_* calls. Used on
+-- a normal login: the catalog is static within a patch, so once it's saved we just read it back. Returns
+-- true only if the cache is COMPLETE (rows exist AND carry art) -- otherwise the caller falls back to a
+-- live walk (which re-saves everything, art included).
+function Dashboard:_ReconstructFromDB()
+    local p = self:_p()
+    local db = self:DB(); if not db then return false end
+    local rows = db:Select("*"):From("dashboard_instance"):Run()
+    if #rows == 0 then return false end
+    local inst, byName, image, lore, raidDiffs = {}, {}, {}, {}, {}
+    local raidsByTier, dungeonsByTier, season, seasonList, ordOf = {}, {}, {}, {}, {}
+    local haveArt = false
+    for _, r in ipairs(rows) do
+        local id = denull(r.instance_id)
+        if id then
+            local name, isRaid, tier = denull(r.name), denull(r.is_raid) and true or false, denull(r.expansion)
+            if not inst[id] then
+                inst[id] = { id = id, name = name, tier = tier, isRaid = isRaid }
+                byName[name] = byName[name] or {}; byName[name][#byName[name] + 1] = id
+                ordOf[id] = denull(r.ord) or 0
+                local li, bi = denull(r.lore_id), denull(r.button_id)
+                if li and name then lore[name] = li; haveArt = true end
+                if bi and name then image[name] = bi end
+                if tier then
+                    local b = isRaid and raidsByTier or dungeonsByTier
+                    b[tier] = b[tier] or {}; b[tier][#b[tier] + 1] = id
+                end
+                if isRaid and denull(r.current_season) then season[id] = true; seasonList[#seasonList + 1] = id end
+            end
+            local did = denull(r.diff_id)
+            if isRaid and did then raidDiffs[id] = raidDiffs[id] or {}; raidDiffs[id][#raidDiffs[id] + 1] = did end
+        end
+    end
+    if not haveArt then return false end                       -- pre-art catalog -> re-walk to fill it in
+    local byOrd = function(a, b) return (ordOf[a] or 0) < (ordOf[b] or 0) end
+    for _, list in pairs(raidsByTier)    do table.sort(list, byOrd) end
+    for _, list in pairs(dungeonsByTier) do table.sort(list, byOrd) end
+    table.sort(seasonList, byOrd)
+    local tierLevel, tierOrder = {}, {}
+    for _, e in ipairs(db:Select("name", "level"):From("expansion"):Run()) do
+        local nm = denull(e.name); if nm then tierLevel[nm] = denull(e.level) end
+    end
+    for nm in pairs(tierLevel) do tierOrder[#tierOrder + 1] = nm end
+    table.sort(tierOrder, function(a, b) return (tierLevel[a] or -1) > (tierLevel[b] or -1) end)
+    p.ejInst, p.ejByName, p.ejImage, p.ejLore = inst, byName, image, lore
+    p.ejRaidsByTier, p.ejDungeonsByTier, p.ejRaidDiffs = raidsByTier, dungeonsByTier, raidDiffs
+    p.ejSeasonRaids, p.ejSeasonRaidList = season, seasonList
+    p.ejTierLevel, p.ejTierOrder = tierLevel, tierOrder
+    p.currentExpansion = self:_Meta("current_expansion") or tierOrder[1]
+    p.ejReconstructed = true
+    return true
+end
+
 -- ---- expansion mapping (Encounter Journal) --------------------------------
 -- Map a raid NAME -> its expansion by walking the Encounter Journal tiers (one tier per
 -- expansion). Built lazily and cached on first success; name-matching is locale-consistent
@@ -545,6 +605,10 @@ end
 function Dashboard:_ExpansionMap()
     local p = self:_p()
     if p.ejInst then return p.ejInst end
+    -- CACHE PATH: same patch + a complete saved catalog -> rebuild the maps from the DB. No LoadAddOn,
+    -- no Encounter Journal walk (the whole catalog is static within a patch).
+    if self:_Meta("catalog_build") == clientBuild() and self:_ReconstructFromDB() then return p.ejInst end
+    p.ejReconstructed = false
     if not (EJ_GetNumTiers and EJ_SelectTier and EJ_GetInstanceByIndex and EJ_GetTierInfo) then return nil end
     if C_AddOns and C_AddOns.LoadAddOn then pcall(C_AddOns.LoadAddOn, "Blizzard_EncounterJournal") end
     -- Instances are tracked by their EJ journal INSTANCE ID, not their name -- two distinct journal
@@ -623,31 +687,18 @@ function Dashboard:_ExpansionMap()
     -- Which difficulties each raid ACTUALLY offers (the journal's truth, keyed by instance id) -- so
     -- seeding skips an LFR / Mythic a raid never had, and legacy raids get their 10/25/40-player ids.
     -- The per-raid EJ_SelectInstance probe is the heaviest step and its result only changes across
-    -- PATCHES. So we cache it in the catalog (the seeded rows ARE the answer) and reuse it -- UNLESS
-    -- the client build changed since the last probe, in which case we re-probe so a difficulty or
-    -- instance Blizzard removed/added is caught (the prune then drops the stale rows). On a normal
-    -- same-patch login nothing is probed at all.
+    -- PATCHES. We only ever reach this WALK path on a first run / a new patch (a same-patch login
+    -- reconstructs from the DB above and never gets here), so probe every raid -- the result is then
+    -- persisted and reused until the next patch.
     local raidDiffs = {}
-    local stale = (self:_Meta("probe_build") ~= clientBuild())   -- a patch since the last probe?
-    local known, db = {}, self:DB()
-    if db then
-        for _, r in ipairs(db:Select("instance_id", "diff_id"):From("dashboard_instance"):Where("is_raid", "=", true):Run()) do
-            local iid, did = denull(r.instance_id), denull(r.diff_id)
-            if iid and did then known[iid] = known[iid] or {}; known[iid][#known[iid] + 1] = did end
-        end
-    end
     if EJ_SelectInstance and EJ_IsValidInstanceDifficulty then
         for id, rec in pairs(inst) do
             if rec.isRaid then
-                if known[id] and not stale then
-                    raidDiffs[id] = known[id]      -- cached from a prior session, same patch -- skip the probe
-                else
-                    pcall(EJ_SelectInstance, id)
-                    local ids = {}
-                    for _, d in ipairs(RAID_DIFF_CANDIDATES) do if EJ_IsValidInstanceDifficulty(d) then ids[#ids + 1] = d end end
-                    if #ids > 0 then raidDiffs[id] = ids end
-                    ns.Worker:Yield()             -- only reached on a new patch (or a brand-new instance)
-                end
+                pcall(EJ_SelectInstance, id)
+                local ids = {}
+                for _, d in ipairs(RAID_DIFF_CANDIDATES) do if EJ_IsValidInstanceDifficulty(d) then ids[#ids + 1] = d end end
+                if #ids > 0 then raidDiffs[id] = ids end
+                ns.Worker:Yield()
             end
         end
     end
@@ -661,6 +712,11 @@ function Dashboard:_ExpansionMap()
         p.ejTierLevel = tierLevel             -- tier name -> expansionLevel (for native logos)
         p.ejImage = image                     -- instance NAME -> EJ tile art (buttonImage1; banner fallback)
         p.ejLore = lore                       -- instance NAME -> EJ splash (loreImage; preferred art)
+        -- journal order per instance (index within its tier), persisted so reconstruction can re-sort tiles
+        local ord = {}
+        for _, ids in pairs(raidsByTier)    do for i2, id2 in ipairs(ids) do ord[id2] = i2 end end
+        for _, ids in pairs(dungeonsByTier) do for i2, id2 in ipairs(ids) do ord[id2] = i2 end end
+        p.ejOrd = ord
         p.ejSeasonRaidList = seasonRaidList   -- season raid ids, newest tier first (tile order)
         local seasonSet = {}
         for _, id in ipairs(seasonRaidList) do seasonSet[id] = true end
@@ -1104,14 +1160,18 @@ end
 -- name (which is likewise derived from its id in _CollectLockouts).
 local RAID_DIFF_IDS = { 17, 14, 15, 16 }   -- Raid Finder, Normal, Heroic, Mythic
 
--- Insert a catalog row only if it's MISSING. The catalog is static reference data keyed by journal id,
--- so an existing row never needs rewriting (its lock state lives on dashboard_lockout) -- a plain
--- existence check avoids redundant updates on every re-seed.
+-- Upsert a catalog row (insert if missing, else update the given fields). Seeding only runs on the
+-- WALK path -- a first run or a new patch -- so refreshing existing rows (art / order / expansion /
+-- difficulty) here keeps the persisted catalog current when the journal changes. (A same-patch login
+-- reconstructs from the DB and never seeds.) Lock state lives on dashboard_lockout, untouched.
 function Dashboard:_SeedInstance(key, fields)
     local db = self:DB(); if not db then return end
-    if db:Select("key"):From("dashboard_instance"):Where("key", "=", key):Limit(1):Run()[1] then return end
-    fields.key = key
-    db:Insert("dashboard_instance", fields)
+    if db:Select("key"):From("dashboard_instance"):Where("key", "=", key):Limit(1):Run()[1] then
+        db:Update("dashboard_instance", fields, function(x) return x.key == key end)
+    else
+        fields.key = key
+        db:Insert("dashboard_instance", fields)
+    end
 end
 
 -- Seed the instance CATALOG into dashboard_instance from the Encounter Journal: every raid (one row
@@ -1124,6 +1184,7 @@ function Dashboard:_SeedInstances()
     local season, raidDiffs = p.ejSeasonRaids or {}, p.ejRaidDiffs or {}
     -- one row per (raid instance, difficulty it offers); keyed by journal id so two same-named raids
     -- stay distinct, each under its own home expansion.
+    local lore, image, ord = p.ejLore or {}, p.ejImage or {}, p.ejOrd or {}
     for id, rec in pairs(p.ejInst) do
         if rec.isRaid then
             local cs = season[id] and true or false
@@ -1132,7 +1193,8 @@ function Dashboard:_SeedInstances()
                 if diffName then
                     self:_SeedInstance(id .. "|" .. did,
                         { instance_id = id, name = rec.name, diff = diffName, diff_id = did,
-                          is_raid = true, expansion = rec.tier, current_season = cs })
+                          is_raid = true, expansion = rec.tier, current_season = cs,
+                          lore_id = lore[rec.name], button_id = image[rec.name], ord = ord[id] })
                 end
             end
             ns.Worker:Yield()                                    -- spread the inserts across frames
@@ -1145,7 +1207,8 @@ function Dashboard:_SeedInstances()
         if rec then
             self:_SeedInstance(id .. "|" .. M0_ID,
                 { instance_id = id, name = rec.name, diff = M0, diff_id = M0_ID, is_raid = false,
-                  expansion = cur, current_season = self:_IsSeasonDungeon(rec.name) })
+                  expansion = cur, current_season = self:_IsSeasonDungeon(rec.name),
+                  lore_id = lore[rec.name], button_id = image[rec.name], ord = ord[id] })
         end
     end
 end
@@ -1212,13 +1275,15 @@ function Dashboard:_SeedSeasonDungeons()
     local s = self:_SeasonDungeons()
     if not s then return end
     local p = self:_p()
+    local lore, image, ord = p.ejLore or {}, p.ejImage or {}, p.ejOrd or {}
     for _, name in ipairs(s.list) do
         local id = self:_IdForName(name)              -- the newest journal instance of this name (locks identity)
         local rec = id and p.ejInst and p.ejInst[id]
         if rec and rec.tier then
             self:_SetInstance(id .. "|" .. M0_ID,
                 { instance_id = id, name = rec.name, diff = M0, diff_id = M0_ID, is_raid = false,
-                  expansion = rec.tier, current_season = true })   -- in the season pool by definition
+                  expansion = rec.tier, current_season = true,   -- in the season pool by definition
+                  lore_id = lore[rec.name], button_id = image[rec.name], ord = ord[id] })
         end
     end
 end
@@ -1794,9 +1859,10 @@ ns.ModuleManager:Register(Dashboard:New("Dashboard", {
             { name = "level", type = "integer" },                            -- expansion level (logo lookup + ordering)
             { name = "logo",  type = "integer" },                            -- banner fileID (GetExpansionDisplayInfo)
         } },
-        -- Tiny account-wide key/value store. Used for the journal-probe build stamp: a raid's valid
-        -- difficulties (and which instances exist) only change across PATCHES, so we re-probe (the
-        -- expensive EJ_SelectInstance pass) only when the client build differs from the last probe.
+        -- Tiny account-wide key/value store. Holds the catalog cache stamp (catalog_build / client_build
+        -- / patch_version / current_expansion): the whole Encounter Journal catalog is static within a
+        -- PATCH, so once saved we reconstruct the runtime maps from dashboard_instance on login and only
+        -- re-walk the journal (LoadAddOn + the EJ_* pass) when the client build differs from catalog_build.
         dashboard_meta = { scope = "global", columns = {
             { name = "k", type = "text", primaryKey = true },
             { name = "v", type = "text" },
@@ -1804,6 +1870,9 @@ ns.ModuleManager:Register(Dashboard:New("Dashboard", {
         dashboard_instance = { scope = "global", columns = {
             { name = "key",         type = "text", primaryKey = true },       -- "instanceID|difficultyID"
             { name = "instance_id", type = "integer" },                       -- EJ journal instance id (the identity; same name can repeat)
+            { name = "lore_id",     type = "integer" },                       -- EJ loreImage fileID (splash art) -- persisted so the journal need not be re-walked
+            { name = "button_id",   type = "integer" },                       -- EJ buttonImage1 fileID (banner art)
+            { name = "ord",         type = "integer" },                       -- journal order within its tier (tile ordering)
             { name = "name",      type = "text" },
             { name = "diff",      type = "text" },
             { name = "is_raid",   type = "boolean" },
