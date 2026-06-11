@@ -27,8 +27,12 @@ ARROW_BOTTOM = (33, 182, 201)   # #21b6c9 teal (bottom of the arrows)
 OUTLINE     = (8, 24, 43)       # deep navy outline
 GLOW        = (74, 179, 230)    # #4ab3e6 cyan glow
 
-SIZE = 512                       # final size (power-of-two, as WoW requires)
-SS = 2                           # supersample factor for crisp edges
+# WoW does NOT generate mipmaps for addon .tga textures, so a source much larger than the on-screen
+# size minifies with no mip chain and ALIASES (stair-stepped diagonals). The Home tiles draw this at
+# ~110px, so render close to that (128, power-of-two) with the antialiasing baked in by supersampling
+# down from 512 -- near 1:1 on screen, no runtime minification, smooth edges.
+SIZE = 128                       # final size (power-of-two; matches the on-screen tile, avoids minify aliasing)
+SS = 4                           # supersample factor for crisp edges (render at 512, downsample)
 S = SIZE * SS
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(HERE)
