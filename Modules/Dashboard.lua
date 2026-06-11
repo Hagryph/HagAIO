@@ -1732,7 +1732,9 @@ end
 -- Shared by the main data grid and the inline raid-detail panel so they read identically.
 function Dashboard:_BuildLockoutGrid(cols)
     local columns = { { width = NAME_COL, label = "Character" } }
-    for _, c in ipairs(cols) do columns[#columns + 1] = { width = c.width, label = c.label } end
+    for _, c in ipairs(cols) do
+        columns[#columns + 1] = { width = c.width, label = c.label, justify = "CENTER" }   -- values under centred headers
+    end
     local keys, chars = self:_SortedChars()
     local rows = {}
     for _, key in ipairs(keys) do
