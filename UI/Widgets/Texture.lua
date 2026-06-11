@@ -50,7 +50,17 @@ function TextureW:Render(frame, w, h, spec)
     frame = unwrap(frame)
     local base
     if spec.mode == "contain" then
-        tex:ClearAllPoints(); tex:SetSize(h, h); tex:SetPoint("CENTER", frame, "CENTER", 0, 0)
+        -- centre a square side h; for an ATLAS, fit to its native aspect inside the h x h box (so a
+        -- non-square atlas icon isn't stretched), scaling the longer side to h.
+        local iw, ih = h, h
+        if (spec.atlas or isAtlas(spec.texture)) and C_Texture and C_Texture.GetAtlasInfo then
+            local info = C_Texture.GetAtlasInfo(spec.texture)
+            if info and (info.width or 0) > 0 and (info.height or 0) > 0 then
+                local s = h / math.max(info.width, info.height)
+                iw, ih = info.width * s, info.height * s
+            end
+        end
+        tex:ClearAllPoints(); tex:SetSize(iw, ih); tex:SetPoint("CENTER", frame, "CENTER", 0, 0)
         base = { 0, 1, 0, 1 }
     else
         tex:ClearAllPoints()

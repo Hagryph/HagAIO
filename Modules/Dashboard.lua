@@ -1416,25 +1416,37 @@ end
 function Dashboard:_CategoryTiles()
     local p = self:_p()
     local function go(key) return function() p.nav:Select(key) end end
+    -- First atlas in the list that actually EXISTS on this client. Atlases are transparent + drawn from
+    -- high-res sheets, so they stay crisp blown up to a big tile (unlike the 64x64 Interface\Icons).
+    -- nil if none resolve -> the tile falls back to the category's native icon (no regression).
+    local function atlas(...)
+        if not (C_Texture and C_Texture.GetAtlasInfo) then return nil end
+        for _, a in ipairs({ ... }) do if C_Texture.GetAtlasInfo(a) then return a end end
+    end
     local logo = self:_ExpansionLogo(p.currentExpansion)
     local raidArt = self:_LatestRaidArt()
     local dunArt = self:_SeasonDungeonArt() or self:_LatestDungeonArt()
     local defs = {
         { key = "mplus",    label = "Mythic+",       contain = true,
+          atlas = atlas("Mythic-Plus-Logo", "ChallengeMode-icon-Chest", "questlog-questtypeicon-Dungeon",
+                        "Dungeon-Banner", "GreatVault-32x32"),
           texture = "Interface\\Icons\\Achievement_ChallengeMode_Gold" },
         { key = "raids",    label = "Raids",         art = raidArt, fallback = logo },
         { key = "dungeons", label = "Dungeons",      art = dunArt,  fallback = logo },
         { key = "weekly",   label = "Weekly Quests", contain = true,
+          atlas = atlas("quest-recurring-available", "questlog-questtypeicon-Weekly"),
           texture = "Interface\\Icons\\Achievement_Quests_Completed_06" },
         { key = "daily",    label = "Daily Quests",  contain = true,
+          atlas = atlas("QuestDaily", "questlog-questtypeicon-Daily"),
           texture = "Interface\\Icons\\INV_Misc_PocketWatch_01" },
     }
     local tiles = {}
     for _, d in ipairs(defs) do
         if self:_CategoryVisible(d.key) then
-            local tile = { label = d.label, contain = d.contain,
-                texture = d.texture or d.fallback, onClick = go(d.key) }
-            if d.art then applyArt(tile, d.art) end
+            local tile = { label = d.label, contain = d.contain, onClick = go(d.key) }
+            if d.atlas then tile.texture, tile.atlas = d.atlas, true   -- transparent high-res atlas (contain)
+            elseif d.art then applyArt(tile, d.art)                    -- raids/dungeons: the instance scene
+            else tile.texture = d.texture or d.fallback end            -- native icon fallback
             tiles[#tiles + 1] = tile
         end
     end
