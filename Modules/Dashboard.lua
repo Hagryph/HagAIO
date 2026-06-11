@@ -131,11 +131,11 @@ local CATEGORIES = {
     { key = "lockouts", label = "Lockouts", header = true },
     { key = "raids",    label = "Raids",    indent = true },   -- lockout columns resolved per-key below
     { key = "dungeons", label = "Dungeons", indent = true },
-    { key = "questhdr", label = "Quests",   header = true },
-    -- recorded weekly/daily turn-ins, grouped expansion -> zone (auto-discovered at turn-in);
-    -- "quest:<exp>" sub-keys (added in _NavItems while open) show that expansion's zone tiles,
-    -- each zone expanding its quest x character matrix inline -- the dungeon-page pattern.
-    { key = "quests", label = "All Expansions", indent = true },
+    -- Recorded weekly/daily turn-ins, drilling expansion -> zone -> quests (all auto-discovered
+    -- at turn-in). TOP-LEVEL entry: the page is the expansion overview; "quest:<exp>" sub-keys
+    -- (added in _NavItems while open) show that expansion's ZONE tiles, and a zone opens its
+    -- quest tiles ("quest:<exp>|<zone>", page-only -- the nav stops at the expansion).
+    { key = "quests", label = "Quests" },
 }
 
 -- ---- lifecycle ------------------------------------------------------------
@@ -1330,13 +1330,43 @@ function Dashboard:_QuestExpansions()
     return names
 end
 
--- ALL recorded quests of one expansion: { id, title, freq, zone }, grouped by zone, weekly before
--- daily, title-sorted -- the tile order of the quest page.
-function Dashboard:_QuestsInExpansion(exp)
+-- The zones with recorded quests in `exp`: { key, mapID, name }, name-sorted -- the expansion
+-- page's tile list. A legacy row with no discovered zone buckets under "Unknown Zone".
+function Dashboard:_QuestZones(exp)
+    local db = self:DB(); if not db then return {} end
+    local qb = questExpFilter(db:Select("quest.zone_map_id", "quest.zone_name"):From("dashboard_quest")
+        :InnerJoin("quest", { on = { "dashboard_quest.quest_id", "quest.quest_id" } }):Distinct(), exp)
+    local zones, seen = {}, {}
+    for _, r in ipairs(qb:Run()) do
+        local mapID, name = denull(r.zone_map_id), denull(r.zone_name)
+        local key = mapID and tostring(mapID) or "none"
+        if not seen[key] then
+            seen[key] = true
+            zones[#zones + 1] = { key = key, mapID = mapID, name = name or "Unknown Zone" }
+        end
+    end
+    table.sort(zones, function(a, b) return a.name < b.name end)
+    return zones
+end
+
+-- Resolve a zone-page key ("<uiMapID>" / "none") back to its zone descriptor, or nil if stale.
+function Dashboard:_QuestZoneByKey(exp, key)
+    for _, z in ipairs(self:_QuestZones(exp)) do
+        if z.key == key then return z end
+    end
+end
+
+-- ALL recorded quests of one expansion (optionally ONE zone of it): { id, title, freq, zone },
+-- grouped by zone, weekly before daily, title-sorted -- the tile order of the quest page.
+function Dashboard:_QuestsInExpansion(exp, zone)
     local db = self:DB(); if not db then return {} end
     local qb = questExpFilter(db:Select("quest.quest_id", "quest.title", "dashboard_quest.freq", "quest.zone_name")
         :From("dashboard_quest")
         :InnerJoin("quest", { on = { "dashboard_quest.quest_id", "quest.quest_id" } }):Distinct(), exp)
+    if zone then
+        if zone.mapID then qb:AndWhere("quest.zone_map_id", "=", zone.mapID)
+        else qb:AndWhere("quest.zone_map_id", "is null") end
+    end
     local out = {}
     for _, r in ipairs(qb:Run()) do
         out[#out + 1] = { id = denull(r.quest_id), title = denull(r.title),
@@ -1413,13 +1443,32 @@ function Dashboard:_FillQuestDetail(page, q)
     return g:NaturalHeight() + 4
 end
 
--- Render a quest expansion's page: ONE TYPOGRAPHY TILE PER QUEST (title in the serif, styled by
--- its zone; the zone names the titlebar, Weekly/Daily badges the corner), the clicked quest's
+-- Render a quest EXPANSION's page: its zone overview -- one typography tile per zone, opening
+-- that zone's quest page ("quest:<exp>|<zone>", a page-only drill; the nav stays on the expansion).
+function Dashboard:_ShowQuestZonesPage(page, exp)
+    local p = self:_p()
+    local lvl = (p.ejTierLevel or {})[exp]
+    local tiles = {}
+    for _, z in ipairs(self:_QuestZones(exp)) do
+        tiles[#tiles + 1] = {
+            key = z.key, label = z.name,
+            typo = { text = z.name, style = self:_ZoneStyle(z.name, lvl) },
+            onClick = function()
+                p.category = "quest:" .. exp .. "|" .. z.key
+                self:_Render()
+            end,
+        }
+    end
+    page:SetTiles(tiles)
+end
+
+-- Render a ZONE's quest page: ONE TYPOGRAPHY TILE PER QUEST (title in the serif, styled by its
+-- zone; the zone names the titlebar, Weekly/Daily badges the corner), the clicked quest's
 -- per-character state opening inline -- the raids/dungeons interaction, applied to quests.
-function Dashboard:_ShowQuestPage(page, exp)
+function Dashboard:_ShowQuestPage(page, exp, zone)
     local p = self:_p()
     p.expandedQuest = p.expandedQuest or {}
-    local quests = self:_QuestsInExpansion(exp)
+    local quests = self:_QuestsInExpansion(exp, zone)
     local want, exQ = p.expandedQuest[p.category]
     for _, q in ipairs(quests) do if q.id == want then exQ = q; break end end
     p.expandedQuest[p.category] = exQ and exQ.id or nil   -- drop a stale id
@@ -1961,7 +2010,7 @@ function Dashboard:_NavItems()
             elseif c.key == "quests" and questsOpen then
                 -- one node per expansion that has RECORDED quests (self-curating, newest first)
                 for _, exp in ipairs(self:_QuestExpansions()) do
-                    items[#items + 1] = { key = "quest:" .. exp, label = exp, indent = 2 }
+                    items[#items + 1] = { key = "quest:" .. exp, label = exp, indent = 1 }
                 end
             end
         end
@@ -1990,9 +2039,9 @@ function Dashboard:_ResolveCategory(key)
     -- "raid:current" / "raid:<exp>" are icon pages (resolved in _Render); the label here is only a
     -- fallback. Lockouts open inline on a raid tile, so there's no per-raid columns key any more.
     if key == "raid:current" then return SEASON_LABEL, function() return {} end end
-    -- quest pages are icon pages too (expansion overview / per-expansion zone grid)
+    -- quest pages are icon pages too (expansion overview / zone grid / a zone's quests)
     if key == "quests" then return "Quests", function() return {} end end
-    local qexp = key and key:match("^quest:(.+)$")
+    local qexp = key and key:match("^quest:([^|]+)")
     if qexp then return qexp .. " Quests", function() return {} end end
     local rexp = key and key:match("^raid:(.+)$")
     if rexp then
@@ -2168,14 +2217,16 @@ function Dashboard:_Render()
     -- deferred build finishes it snapshots and re-renders, so the tiles fill in a frame later.
 
     local items = self:_NavItems()
-    -- keep the selection valid: if the active category was hidden, fall back to the first one
+    -- keep the selection valid: if the active category was hidden, fall back to the first one.
+    -- A page-only drill key ("<navKey>|<sub>") is valid while its PARENT nav key is.
+    local navKey = p.category:match("^(.-)|") or p.category
     local valid
-    for _, it in ipairs(items) do if it.key == p.category then valid = true; break end end
+    for _, it in ipairs(items) do if it.key == navKey then valid = true; break end end
     if not valid then
-        for _, it in ipairs(items) do if it.key then p.category = it.key; break end end
+        for _, it in ipairs(items) do if it.key then p.category = it.key; navKey = it.key; break end end
     end
     p.nav:SetItems(items)
-    p.nav:Select(p.category, true)       -- reflect the (possibly changed) active selection silently
+    p.nav:Select(navKey, true)           -- highlight the parent for a drill key; silent
 
     local keys, chars = self:_SortedChars()
     local label, columnsFn = self:_ResolveCategory(p.category)
@@ -2187,7 +2238,8 @@ function Dashboard:_Render()
     -- group as tiles, each with its own art, the lockouts opening inline -- one level below the overview.
     local raidExp = p.category:match("^raid:([^|]+)$")
     local dunGrp  = p.category:match("^dungeon:([^|]+)$")
-    local questExp = p.category:match("^quest:(.+)$")
+    local questExp, questZone = p.category:match("^quest:([^|]+)|(.+)$")
+    if not questExp then questExp = p.category:match("^quest:([^|]+)$") end
     if p.category == "home" or p.category == "raids" or p.category == "dungeons"
         or p.category == "quests" or raidExp or dunGrp or questExp then
         p.grid:Hide()
@@ -2212,9 +2264,19 @@ function Dashboard:_Render()
         elseif p.category == "quests" then
             p.catTitle:SetText("Quests")
             page:SetTiles(self:_QuestExpansionTiles())
+        elseif questExp and questZone then
+            local zone = self:_QuestZoneByKey(questExp, questZone)
+            if zone then
+                p.catTitle:SetText(zone.name .. "  -  " .. questExp)
+                self:_ShowQuestPage(page, questExp, zone)
+            else                                       -- stale zone key -> back to the zone overview
+                p.category = "quest:" .. questExp
+                p.catTitle:SetText(questExp .. " Quests")
+                self:_ShowQuestZonesPage(page, questExp)
+            end
         elseif questExp then
             p.catTitle:SetText(questExp .. " Quests")
-            self:_ShowQuestPage(page, questExp)
+            self:_ShowQuestZonesPage(page, questExp)
         else
             p.catTitle:SetText(label)
             page:SetTiles(self:_OverviewTiles(p.category))
