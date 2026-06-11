@@ -22,7 +22,7 @@ Open **[diagram/DB/index.html](diagram/DB/index.html)** in a browser for an inte
 | [`cvar_managed`](#cvar_managed) | `global` | 2 | name | `Modules/CVars.lua` |
 | [`cvar_tracked`](#cvar_tracked) | `global` | 3 | name | `Modules/CVars.lua` |
 | [`dashboard_char`](#dashboard_char) | `global` | 10 | char_key | `Modules/Dashboard.lua` |
-| [`dashboard_instance`](#dashboard_instance) | `global` | 8 | key | `Modules/Dashboard.lua` |
+| [`dashboard_instance`](#dashboard_instance) | `global` | 9 | key | `Modules/Dashboard.lua` |
 | [`dashboard_lockout`](#dashboard_lockout) | `global` | 5 | char_key, instance_key | `Modules/Dashboard.lua` |
 | [`dashboard_quest`](#dashboard_quest) | `global` | 3 | char_key, freq, quest_id | `Modules/Dashboard.lua` |
 | [`dashboard_vault`](#dashboard_vault) | `global` | 6 | char_key, ordinal | `Modules/Dashboard.lua` |
@@ -140,6 +140,7 @@ Open **[diagram/DB/index.html](diagram/DB/index.html)** in a browser for an inte
 | Column | Type | Null | Key | Default | References |
 |---|---|---|---|---|---|
 | `key` | text | no | PK |  |  |
+| `instance_id` | integer | yes |  |  |  |
 | `name` | text | yes |  |  |  |
 | `diff` | text | yes |  |  |  |
 | `is_raid` | boolean | yes |  |  |  |

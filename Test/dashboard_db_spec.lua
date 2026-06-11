@@ -41,7 +41,8 @@ local function spec()
             { name = "level", type = "integer" }, { name = "logo", type = "integer" },
         } },
         dashboard_instance = { columns = {
-            { name = "key", type = "text", primaryKey = true }, { name = "name", type = "text" },
+            { name = "key", type = "text", primaryKey = true }, { name = "instance_id", type = "integer" },
+            { name = "name", type = "text" },
             { name = "diff", type = "text" }, { name = "is_raid", type = "boolean" }, { name = "diff_id", type = "integer" },
             { name = "expansion", type = "text",
                 references = { table = "expansion", column = "name", onDelete = "cascade" } },
