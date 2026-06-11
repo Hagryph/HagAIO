@@ -163,7 +163,7 @@ UI/
   Widgets\StatusBar.lua    A bare StatusBar widget for HUD fills
   Widgets\Text.lua         (no description)
   Widgets\TextButton.lua   Inline accent text button (Clear / links)
-  Widgets\TextSelection.lua SELECTION over PLAIN text
+  Widgets\TextSelection.lua PER-CHARACTER text selection over plain Text widgets, with NORMAL Ctrl+C -- the behaviour a real
   Widgets\Texture.lua      ---- crop / fit / zoom maths (the single home, owned by the Texture widget) ------------------------
   Widgets\Toggle.lua       Themed checkbox
   Widgets\Tooltip.lua      The shared HagAIO icon tooltip (addon-compartment + minimap buttons)

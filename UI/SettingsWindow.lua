@@ -673,9 +673,9 @@ function SettingsWindow:_BuildLogPage(parent)
     sf:SetPoint("TOPLEFT", div, "BOTTOMLEFT", 0, -8)
     sf:SetPoint("BOTTOMRIGHT", page, "BOTTOMRIGHT", -16, 14)
 
-    -- PLAIN text lines (one pooled FontString per entry) with a TextSelection overlay: drag
-    -- across lines to highlight them, release to get the plain text in the CopyWindow for Ctrl+C.
-    local sel = W.TextSelection:New(sf:Content(), { title = "Activity Log" })
+    -- PLAIN text lines (one pooled FontString per entry) with a TextSelection overlay: drag to
+    -- select per character across lines, then Ctrl+C copies the selection -- like any text editor.
+    local sel = W.TextSelection:New(sf:Content())
 
     local p = self:_p()
     p.logSel = sel
@@ -705,12 +705,14 @@ function SettingsWindow:_RefreshLog()
         end
         fs:ClearAllPoints()
         fs:SetPoint("TOPLEFT", content, "TOPLEFT", 0, y)
-        fs:SetWidth(width); fs:SetJustifyH("LEFT"); fs:SetWordWrap(true)
+        -- SINGLE-ROW lines (no wrap): the selection's per-character maths has no row model
+        fs:SetWidth(width); fs:SetJustifyH("LEFT"); fs:SetWordWrap(false)
         fs:SetText(e.line)
         fs:Show()
         y = y - (fs:GetStringHeight() or 12) - 3
-        -- the COPY text is the plain entry (no colour escapes), rebuilt from its fields
-        lines[n] = { region = fs, text = ("%s  [%s]  %s  %s"):format(e.time, e.module, e.level, e.text) }
+        -- the selection's plain text = EXACTLY the visible characters (escapes stripped), so the
+        -- per-character hit maths lines up with the coloured display glyph for glyph
+        lines[n] = { region = fs, text = e.line:gsub("|c%x%x%x%x%x%x%x%x", ""):gsub("|r", "") }
     end
     if n == 0 then
         n = 1
