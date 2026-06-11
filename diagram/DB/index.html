@@ -114,6 +114,7 @@
         text char_key PK
         text freq PK
         integer quest_id PK
+        integer done_at
     }
     dashboard_vault {
         text char_key PK
@@ -212,8 +213,7 @@
         boolean show_mplus
         boolean show_raids
         boolean show_dungeons
-        boolean show_weekly
-        boolean show_daily
+        boolean show_quests
     }
     o_module_Dev {
         integer id PK
@@ -281,8 +281,7 @@
         boolean show_mplus
         boolean show_raids
         boolean show_dungeons
-        boolean show_weekly
-        boolean show_daily
+        boolean show_quests
     }
     p_module_Dev {
         text profile PK
@@ -340,6 +339,9 @@
         integer quest_id PK
         text title
         number time
+        integer zone_map_id
+        text zone_name
+        text expansion
     }
     zone {
         text name PK

@@ -24,7 +24,7 @@ Open **[diagram/DB/index.html](diagram/DB/index.html)** in a browser for an inte
 | [`dashboard_char`](#dashboard_char) | `global` | 10 | char_key | `Modules/Dashboard.lua` |
 | [`dashboard_instance`](#dashboard_instance) | `global` | 12 | key | `Modules/Dashboard.lua` |
 | [`dashboard_lockout`](#dashboard_lockout) | `global` | 5 | char_key, instance_key | `Modules/Dashboard.lua` |
-| [`dashboard_quest`](#dashboard_quest) | `global` | 3 | char_key, freq, quest_id | `Modules/Dashboard.lua` |
+| [`dashboard_quest`](#dashboard_quest) | `global` | 4 | char_key, freq, quest_id | `Modules/Dashboard.lua` |
 | [`dashboard_vault`](#dashboard_vault) | `global` | 6 | char_key, ordinal | `Modules/Dashboard.lua` |
 | [`data_version`](#data_version) | `global` | 3 | domain | `Services/Versioning.lua` |
 | [`editmode`](#editmode) | `char` | 4 | key | `Core/DB/CoreTables.lua` |
@@ -39,14 +39,14 @@ Open **[diagram/DB/index.html](diagram/DB/index.html)** in a browser for an inte
 | [`module_enable`](#module_enable) | `char` | 2 | name | `Core/DB/CoreTables.lua` |
 | [`o_module_Class_MONK_1`](#o_module_Class_MONK_1) | `char` | 13 | id | `Modules/Class.lua` |
 | [`o_module_Class_MONK_none`](#o_module_Class_MONK_none) | `char` | 8 | id | `Modules/Class.lua` |
-| [`o_module_Dashboard`](#o_module_Dashboard) | `char` | 6 | id | `Modules/Dashboard.lua` |
+| [`o_module_Dashboard`](#o_module_Dashboard) | `char` | 5 | id | `Modules/Dashboard.lua` |
 | [`o_module_Dev`](#o_module_Dev) | `char` | 2 | id | `Modules/Dev.lua` |
 | [`o_module_Misc`](#o_module_Misc) | `char` | 4 | id | `Modules/Misc.lua` |
 | [`o_module_Questing`](#o_module_Questing) | `char` | 10 | id | `Modules/Questing.lua` |
 | [`o_module_UnitFrames`](#o_module_UnitFrames) | `char` | 12 | id | `Modules/UnitFrames.lua` |
 | [`p_module_Class_MONK_1`](#p_module_Class_MONK_1) | `global` | 13 | profile | `Modules/Class.lua` |
 | [`p_module_Class_MONK_none`](#p_module_Class_MONK_none) | `global` | 8 | profile | `Modules/Class.lua` |
-| [`p_module_Dashboard`](#p_module_Dashboard) | `global` | 6 | profile | `Modules/Dashboard.lua` |
+| [`p_module_Dashboard`](#p_module_Dashboard) | `global` | 5 | profile | `Modules/Dashboard.lua` |
 | [`p_module_Dev`](#p_module_Dev) | `global` | 2 | profile | `Modules/Dev.lua` |
 | [`p_module_Misc`](#p_module_Misc) | `global` | 4 | profile | `Modules/Misc.lua` |
 | [`p_module_Questing`](#p_module_Questing) | `global` | 10 | profile | `Modules/Questing.lua` |
@@ -54,7 +54,7 @@ Open **[diagram/DB/index.html](diagram/DB/index.html)** in a browser for an inte
 | [`profile`](#profile) | `global` | 2 | name | `Core/DB/CoreTables.lua` |
 | [`profile_editmode`](#profile_editmode) | `global` | 5 | profile, key | `Core/DB/CoreTables.lua` |
 | [`profile_module_enable`](#profile_module_enable) | `global` | 3 | profile, name | `Core/DB/CoreTables.lua` |
-| [`quest`](#quest) | `global` | 3 | quest_id | `Core/DB/CoreTables.lua` |
+| [`quest`](#quest) | `global` | 6 | quest_id | `Core/DB/CoreTables.lua` |
 | [`zone`](#zone) | `global` | 1 | name | `Core/DB/CoreTables.lua` |
 
 ---
@@ -180,6 +180,7 @@ Open **[diagram/DB/index.html](diagram/DB/index.html)** in a browser for an inte
 | `char_key` | text | no | PK |  | → `dashboard_char.char_key` on delete cascade |
 | `freq` | text | no | PK |  |  |
 | `quest_id` | integer | no | PK |  | → `quest.quest_id` on delete cascade |
+| `done_at` | integer | yes |  |  |  |
 
 **Primary key:** (char_key, freq, quest_id)
 
@@ -395,8 +396,7 @@ Open **[diagram/DB/index.html](diagram/DB/index.html)** in a browser for an inte
 | `show_mplus` | boolean | yes |  |  |  |
 | `show_raids` | boolean | yes |  |  |  |
 | `show_dungeons` | boolean | yes |  |  |  |
-| `show_weekly` | boolean | yes |  |  |  |
-| `show_daily` | boolean | yes |  |  |  |
+| `show_quests` | boolean | yes |  |  |  |
 
 ---
 
@@ -513,8 +513,7 @@ Open **[diagram/DB/index.html](diagram/DB/index.html)** in a browser for an inte
 | `show_mplus` | boolean | yes |  |  |  |
 | `show_raids` | boolean | yes |  |  |  |
 | `show_dungeons` | boolean | yes |  |  |  |
-| `show_weekly` | boolean | yes |  |  |  |
-| `show_daily` | boolean | yes |  |  |  |
+| `show_quests` | boolean | yes |  |  |  |
 
 ---
 
@@ -632,6 +631,9 @@ Open **[diagram/DB/index.html](diagram/DB/index.html)** in a browser for an inte
 | `quest_id` | integer | no | PK |  |  |
 | `title` | text | yes |  |  |  |
 | `time` | number | yes |  |  |  |
+| `zone_map_id` | integer | yes |  |  |  |
+| `zone_name` | text | yes |  |  |  |
+| `expansion` | text | yes |  |  |  |
 
 ---
 

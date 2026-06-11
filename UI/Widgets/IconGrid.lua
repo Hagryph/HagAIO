@@ -14,6 +14,7 @@ local unwrap, style, claimLevel, adopt = _wb.unwrap, _wb.style, _wb.claimLevel, 
 --   opts: name (scrollbar frame name), perRow (3), aspect (image height/width, 0.5),
 --         gap (12), titleHeight (22)
 -- A tile in :SetTiles is { texture=path|fileID, atlas=bool, label=string, labelKey=paletteKey,
+--   mapID=uiMapID (zone map art composed by Widgets.MapArt; overrides texture),
 --   badge=string, badgeKey=paletteKey, selected=bool, onClick=function(tile),
 --   texCoord={l,r,t,b} (a fixed base crop, e.g. the EJ buttonImage1 banner region),
 --   cover=bool + aspect=number (the image's px w/h; auto cover-fits the whole image to the tile),
@@ -105,12 +106,20 @@ function IconGridW:Initialize(parent, opts)
             -- Describe WHAT this tile's image should look like; the Texture widget owns the crop/fit/
             -- anchor maths. Box size (tw x ih) is passed in because the holder's anchored size isn't
             -- resolved yet at refresh time.
-            local mode = d.contain and "contain" or (d.cover and "cover") or "banner"
-            t.img:Render(t.band, tw, ih, {
-                texture = d.texture, atlas = d.atlas, mode = mode,
-                aspect = d.aspect, coord = d.texCoord,
-                zoom = d.zoom, panX = d.panX, panY = d.panY,
-            })
+            if d.mapID then
+                -- zone tiles: the map painting only exists as a tile grid -- MapArt composes it
+                if not t.map then t.map = Widgets.MapArt:New(t.band, { layer = "BACKGROUND", sublevel = 1 }) end
+                t.map:Render(t.band, tw, ih, d.mapID, d.zoom)
+                t.img:Hide()
+            else
+                if t.map then t.map:Hide() end
+                local mode = d.contain and "contain" or (d.cover and "cover") or "banner"
+                t.img:Render(t.band, tw, ih, {
+                    texture = d.texture, atlas = d.atlas, mode = mode,
+                    aspect = d.aspect, coord = d.texCoord,
+                    zoom = d.zoom, panX = d.panX, panY = d.panY,
+                })
+            end
             t.label:SetText(d.label or "")
             t.label:SetTextColor(Theme.Unpack(d.labelKey or "text"))
             t.badge:SetText(d.badge or "")

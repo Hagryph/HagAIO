@@ -105,9 +105,14 @@ ns.DB.CoreTables = {
     quest = {
         scope = "global",
         columns = {
-            { name = "quest_id", type = "integer", primaryKey = true },
-            { name = "title",    type = "text" },      -- display title (Dashboard); nil until seen
-            { name = "time",     type = "number" },     -- time limit in seconds (Questing); nil = not timed
+            { name = "quest_id",    type = "integer", primaryKey = true },
+            { name = "title",       type = "text" },    -- display title (Dashboard); nil until seen
+            { name = "time",        type = "number" },  -- time limit in seconds (Questing); nil = not timed
+            -- AUTO-DISCOVERED at turn-in (Dashboard:_RecordQuest): where the quest lives, so the
+            -- dashboard's quest pages can group by expansion -> zone without any curated list.
+            { name = "zone_map_id", type = "integer" }, -- uiMapID (quest's map, or the player's at turn-in)
+            { name = "zone_name",   type = "text" },    -- display zone name for that map
+            { name = "expansion",   type = "text" },    -- expansion display name (EXPANSION_NAME<n>)
         },
     },
 

@@ -72,28 +72,6 @@ local function vaultDone(e)
 end
 
 
--- A quest column-set from the union of recorded weekly/daily turn-ins of the given `freq`.
-local function questColumns(chars, freq)
-    local seen, cols = {}, {}
-    for _, e in pairs(chars) do
-        local recorded = e.quests and e.quests[freq]
-        if recorded then
-            for id, title in pairs(recorded) do
-                if not seen[id] then
-                    seen[id] = true
-                    local qid = id
-                    cols[#cols + 1] = { label = title or ("Quest " .. id), width = 120, cell = function(entry)
-                        local r = entry.quests and entry.quests[freq]
-                        return (r and r[qid]) and "done" or "-"
-                    end }
-                end
-            end
-        end
-    end
-    table.sort(cols, function(a, b) return a.label < b.label end)
-    return cols
-end
-
 -- The Home nav entry, labelled "Overview". Selecting it shows the overview -- an icon grid of every
 -- category. Re-clicking the already-active category also returns here (see the nav onReselect).
 local HOME_LABEL = "Overview"
@@ -153,11 +131,11 @@ local CATEGORIES = {
     { key = "lockouts", label = "Lockouts", header = true },
     { key = "raids",    label = "Raids",    indent = true },   -- lockout columns resolved per-key below
     { key = "dungeons", label = "Dungeons", indent = true },
-    { key = "quests", label = "Quests", header = true },
-    { key = "weekly", label = "Weekly", indent = true,
-      columns = function(chars) return questColumns(chars, "weekly") end },
-    { key = "daily",  label = "Daily",  indent = true,
-      columns = function(chars) return questColumns(chars, "daily") end },
+    { key = "questhdr", label = "Quests",   header = true },
+    -- recorded weekly/daily turn-ins, grouped expansion -> zone (auto-discovered at turn-in);
+    -- "quest:<exp>" sub-keys (added in _NavItems while open) show that expansion's zone tiles,
+    -- each zone expanding its quest x character matrix inline -- the dungeon-page pattern.
+    { key = "quests", label = "All Expansions", indent = true },
 }
 
 -- ---- lifecycle ------------------------------------------------------------
@@ -266,9 +244,8 @@ end
 -- name/difficulty, quest title). Mirrors the old chars[key] = { ... nested ... } map exactly.
 function Dashboard:_Chars()
     local db = self:DB(); if not db then return {} end
-    local ksName, qTitle, inst = {}, {}, self:_Instances()
+    local ksName, inst = {}, self:_Instances()
     for _, k in ipairs(db:Select("*"):From("keystone"):Run()) do ksName[k.mapid] = denull(k.name) end
-    for _, q in ipairs(db:Select("quest_id", "title"):From("quest"):Run()) do qTitle[q.quest_id] = denull(q.title) end
 
     local chars = {}
     for _, c in ipairs(db:Select("*"):From("dashboard_char"):Run()) do
@@ -302,7 +279,8 @@ function Dashboard:_Chars()
         local doc = chars[q.char_key]
         if doc then
             doc.quests[q.freq] = doc.quests[q.freq] or {}
-            doc.quests[q.freq][q.quest_id] = qTitle[q.quest_id] or ("Quest " .. q.quest_id)
+            -- the LAST turn-in moment (0 = legacy row, never counts as done); titles live on `quest`
+            doc.quests[q.freq][q.quest_id] = denull(q.done_at) or 0
         end
     end
     return chars
@@ -471,15 +449,31 @@ function Dashboard:_RecordQuest(questID)
     self:_SetSelf({})   -- ensure the char row exists (FK target for dashboard_quest) + last_seen
     local db = self:DB()
     if db then
-        -- record the title on the shared `quest` table (the FK target), preserving any `time` Questing
-        -- learned; the per-character row then just references the quest id under its frequency
+        -- record the title + AUTO-DISCOVERED home (zone + expansion) on the shared `quest` table (the
+        -- FK target), preserving any `time` Questing learned; the per-character row then references
+        -- the quest id under its frequency with the turn-in moment (reset-aware doneness).
+        local changes = { title = title }
+        local mapID = C_QuestLog and C_QuestLog.GetQuestUiMapID and C_QuestLog.GetQuestUiMapID(questID)
+        if not mapID or mapID == 0 then     -- quest carries no map -> the player's zone at turn-in
+            mapID = C_Map and C_Map.GetBestMapForUnit and C_Map.GetBestMapForUnit("player")
+        end
+        if mapID and mapID > 0 then
+            changes.zone_map_id = mapID
+            local mi = C_Map and C_Map.GetMapInfo and C_Map.GetMapInfo(mapID)
+            if mi and mi.name then changes.zone_name = mi.name end
+        end
+        local lvl = GetQuestExpansion and GetQuestExpansion(questID)
+        local expName = lvl and _G["EXPANSION_NAME" .. lvl]   -- localized, matches the EJ tier names
+        if expName then changes.expansion = expName end
         if db:Select("quest_id"):From("quest"):Where("quest_id", "=", questID):Limit(1):Run()[1] then
-            db:Update("quest", { title = title }, { quest_id = questID })
-        else db:Insert("quest", { quest_id = questID, title = title }) end
+            db:Update("quest", changes, { quest_id = questID })
+        else changes.quest_id = questID; db:Insert("quest", changes) end
         local key = self:_SelfKey()
+        local now = (GetServerTime and GetServerTime()) or time()
         local exists = db:Select("quest_id"):From("dashboard_quest")
             :Where("char_key", "=", key):AndWhere("freq", "=", freq):AndWhere("quest_id", "=", questID):Limit(1):Run()[1]
-        if not exists then db:Insert("dashboard_quest", { char_key = key, freq = freq, quest_id = questID }) end
+        if exists then db:Update("dashboard_quest", { done_at = now }, { char_key = key, freq = freq, quest_id = questID })
+        else db:Insert("dashboard_quest", { char_key = key, freq = freq, quest_id = questID, done_at = now }) end
     end
     self:_RenderIfShown()
 end
@@ -1092,6 +1086,180 @@ function Dashboard:_ShowInstancePage(page, list, logoTier, isRaid)
     page:SetTiles(self:_InstanceTilesFor(list, logoTier, expanded, isRaid and "raid" or "dungeon"))
 end
 
+-- ---- quests: recorded weekly/daily turn-ins, grouped expansion -> zone (all auto-discovered) ----
+-- The dungeon-page pattern applied to quests: nav node per EXPANSION (only ones with recorded
+-- quests), each opening an icon page of ZONE tiles (real map art via Widgets.MapArt), each zone
+-- expanding its quest x character matrix inline. Everything self-curates from _RecordQuest --
+-- there is no curated quest/zone/expansion list anywhere.
+
+-- Quests whose expansion was never discovered (legacy rows) bucket under this label.
+local QUEST_OTHER = "Other"
+
+local function questExpFilter(qb, exp)
+    if exp == QUEST_OTHER then return qb:Where("quest.expansion", "is null") end
+    return qb:Where("quest.expansion", "=", exp)
+end
+
+-- Expansions with at least one RECORDED quest, newest first (by the expansion registry's level;
+-- unknown names alphabetical after), the "Other" bucket last.
+function Dashboard:_QuestExpansions()
+    local db = self:DB(); if not db then return {} end
+    local rows = db:Select("quest.expansion"):From("dashboard_quest")
+        :InnerJoin("quest", { on = { "dashboard_quest.quest_id", "quest.quest_id" } })
+        :Distinct():Run()
+    local names, other = {}, false
+    for _, r in ipairs(rows) do
+        local e = denull(r.expansion)
+        if e then names[#names + 1] = e else other = true end
+    end
+    local lvl = {}
+    for _, e in ipairs(db:Select("name", "level"):From("expansion"):Run()) do
+        local n = denull(e.name); if n then lvl[n] = denull(e.level) end
+    end
+    table.sort(names, function(a, b)
+        local la, lb = lvl[a], lvl[b]
+        if (la ~= nil) ~= (lb ~= nil) then return la ~= nil end
+        if la and lb and la ~= lb then return la > lb end
+        return a < b
+    end)
+    if other then names[#names + 1] = QUEST_OTHER end
+    return names
+end
+
+-- The zones with recorded quests in `exp`: { key, mapID, name }, name-sorted. A legacy row with no
+-- discovered zone buckets under "Unknown Zone" (keyed by name, no map art).
+function Dashboard:_QuestZones(exp)
+    local db = self:DB(); if not db then return {} end
+    local qb = questExpFilter(db:Select("quest.zone_map_id", "quest.zone_name"):From("dashboard_quest")
+        :InnerJoin("quest", { on = { "dashboard_quest.quest_id", "quest.quest_id" } }):Distinct(), exp)
+    local zones, seen = {}, {}
+    for _, r in ipairs(qb:Run()) do
+        local mapID, name = denull(r.zone_map_id), denull(r.zone_name)
+        local key = mapID and tostring(mapID) or ("name:" .. (name or "?"))
+        if not seen[key] then
+            seen[key] = true
+            zones[#zones + 1] = { key = key, mapID = mapID, name = name or "Unknown Zone" }
+        end
+    end
+    table.sort(zones, function(a, b) return a.name < b.name end)
+    return zones
+end
+
+-- The recorded quests of one zone in `exp`: { id, title, freq }, weekly first then daily,
+-- title-sorted within each frequency (the matrix's row order).
+function Dashboard:_QuestZoneQuests(exp, zone)
+    local db = self:DB(); if not db then return {} end
+    local qb = questExpFilter(db:Select("quest.quest_id", "quest.title", "dashboard_quest.freq")
+        :From("dashboard_quest")
+        :InnerJoin("quest", { on = { "dashboard_quest.quest_id", "quest.quest_id" } }):Distinct(), exp)
+    if zone.mapID then qb:AndWhere("quest.zone_map_id", "=", zone.mapID)
+    else qb:AndWhere("quest.zone_map_id", "is null") end
+    local out = {}
+    for _, r in ipairs(qb:Run()) do
+        out[#out + 1] = { id = denull(r.quest_id), title = denull(r.title), freq = denull(r.freq) or "weekly" }
+    end
+    table.sort(out, function(a, b)
+        if a.freq ~= b.freq then return a.freq == "weekly" end
+        return (a.title or "") < (b.title or "")
+    end)
+    return out
+end
+
+-- Reset-aware doneness: a turn-in only counts while its done_at falls inside the CURRENT reset
+-- window (daily/weekly), computed from the server clock + the next-reset countdowns. A legacy row
+-- without done_at never counts (it re-earns its check on the next turn-in).
+function Dashboard:_QuestDone(doneAt, freq)
+    if not doneAt or doneAt == 0 then return false end
+    local now = (GetServerTime and GetServerTime()) or time()
+    local untilNext
+    if freq == "daily" then
+        untilNext = C_DateAndTime and C_DateAndTime.GetSecondsUntilDailyReset and C_DateAndTime.GetSecondsUntilDailyReset()
+    else
+        untilNext = C_DateAndTime and C_DateAndTime.GetSecondsUntilWeeklyReset and C_DateAndTime.GetSecondsUntilWeeklyReset()
+    end
+    if not untilNext then return true end                 -- no reset info: trust the recorded state
+    local period = (freq == "daily") and 86400 or 604800
+    return doneAt >= ((now + untilNext) - period)         -- after the LAST reset = inside this window
+end
+
+-- The per-page inline quest detail Grid (rows = quests under Weekly/Daily sections, cols = the
+-- characters), mirroring _InstanceDetailGrid. Cached per page.
+function Dashboard:_QuestZoneDetailGrid(page)
+    local p = self:_p()
+    p.questDetailGrids = p.questDetailGrids or {}
+    if p.questDetailGrids[page] then return p.questDetailGrids[page] end
+    local g = W.Grid:New(page:DetailParent(), { header = true, scroll = false, striped = true, rowHeight = 22 })
+    p.questDetailGrids[page] = g
+    return g
+end
+
+-- Fill the page's detail Grid with `zone`'s quest x character matrix; returns the px height needed.
+function Dashboard:_FillQuestZoneDetail(page, exp, zone)
+    local g = self:_QuestZoneDetailGrid(page)
+    local keys, chars = self:_SortedChars()
+    local columns = { { width = 240, label = "Quest" } }
+    for _, key in ipairs(keys) do
+        columns[#columns + 1] = { width = 92, label = chars[key].name or key, justify = "CENTER" }
+    end
+    local rows, lastFreq = {}, nil
+    for _, q in ipairs(self:_QuestZoneQuests(exp, zone)) do
+        if q.freq ~= lastFreq then
+            lastFreq = q.freq
+            rows[#rows + 1] = { section = (q.freq == "weekly") and "Weekly" or "Daily" }
+        end
+        local cells = { q.title or ("Quest " .. tostring(q.id)) }
+        for _, key in ipairs(keys) do
+            local rec = chars[key].quests
+            rec = rec and rec[q.freq]
+            cells[#cells + 1] = self:_QuestDone(rec and rec[q.id], q.freq)   -- boolean -> check / dash
+        end
+        rows[#rows + 1] = { cells = cells }
+    end
+    g:SetColumns(columns)
+    g:SetRows(rows)
+    return g:NaturalHeight() + 4
+end
+
+-- Render a quest expansion's page: zone tiles (map art) + the clicked zone's matrix opening inline.
+function Dashboard:_ShowQuestZonePage(page, exp)
+    local p = self:_p()
+    p.expandedZone = p.expandedZone or {}
+    local zones = self:_QuestZones(exp)
+    local want, exZone = p.expandedZone[p.category]
+    for _, z in ipairs(zones) do if z.key == want then exZone = z; break end end
+    p.expandedZone[p.category] = exZone and exZone.key or nil   -- drop a stale key
+    if exZone then page:SetDetail(self:_QuestZoneDetailGrid(page), self:_FillQuestZoneDetail(page, exp, exZone))
+    else page:SetDetail(nil, 0) end
+    local tiles = {}
+    for _, z in ipairs(zones) do
+        local on = exZone and (z.key == exZone.key) or false
+        tiles[#tiles + 1] = {
+            key = z.key, label = z.name, mapID = z.mapID, selected = on, expanded = on,
+            texture = (not z.mapID) and self:_ExpansionLogo(exp) or nil,   -- zone-less bucket: logo fallback
+            onClick = function()
+                if p.expandedZone[p.category] == z.key then p.expandedZone[p.category] = nil
+                else p.expandedZone[p.category] = z.key end
+                self:_Render()
+            end,
+        }
+    end
+    page:SetTiles(tiles)
+end
+
+-- The "Quests" overview: one tile per expansion with recorded quests (its logo), drilling into
+-- that expansion's zone page.
+function Dashboard:_QuestExpansionTiles()
+    local p = self:_p()
+    local tiles = {}
+    for _, exp in ipairs(self:_QuestExpansions()) do
+        tiles[#tiles + 1] = {
+            key = exp, label = exp, texture = self:_ExpansionLogo(exp),
+            onClick = function() p.nav:Select("quest:" .. exp) end,
+        }
+    end
+    return tiles
+end
+
 -- The newest season raid's splash, for the Current Season overview tile (else nil).
 function Dashboard:_LatestSeasonRaidArt()
     local list = self:_SeasonRaidNames()
@@ -1422,9 +1590,10 @@ function Dashboard:_Build()
     p.nav:Select(p.category)   -- highlight the default category + render it via onSelect
 end
 
--- Is a category enabled in the settings? Dynamic "raid:<exp>" keys follow the Raids toggle.
+-- Is a category enabled in the settings? Dynamic "raid:<exp>"/"quest:<exp>" keys follow their toggle.
 function Dashboard:_CategoryVisible(key)
     if key:match("^raid:") then return self:GetSetting("show_raids") ~= false end
+    if key == "quests" or key:match("^quest:") then return self:GetSetting("show_quests") ~= false end
     return self:GetSetting("show_" .. key) ~= false
 end
 
@@ -1436,6 +1605,7 @@ function Dashboard:_NavItems()
     -- expansion sub-nodes stay COLLAPSED until that category (or one of its sub-keys) is active
     local raidsOpen = cat == "raids" or cat:match("^raid:") ~= nil
     local dungeonsOpen = cat == "dungeons" or cat:match("^dungeon:") ~= nil
+    local questsOpen = cat == "quests" or cat:match("^quest:") ~= nil
     local items = { { key = "home", label = HOME_LABEL } }   -- "Overview" Home entry, above everything
     for _, c in ipairs(CATEGORIES) do
         if c.header then
@@ -1466,6 +1636,11 @@ function Dashboard:_NavItems()
                         items[#items + 1] = { key = "dungeon:" .. exp, label = exp, indent = 2 }
                     end
                 end
+            elseif c.key == "quests" and questsOpen then
+                -- one node per expansion that has RECORDED quests (self-curating, newest first)
+                for _, exp in ipairs(self:_QuestExpansions()) do
+                    items[#items + 1] = { key = "quest:" .. exp, label = exp, indent = 2 }
+                end
             end
         end
     end
@@ -1493,6 +1668,10 @@ function Dashboard:_ResolveCategory(key)
     -- "raid:current" / "raid:<exp>" are icon pages (resolved in _Render); the label here is only a
     -- fallback. Lockouts open inline on a raid tile, so there's no per-raid columns key any more.
     if key == "raid:current" then return SEASON_LABEL, function() return {} end end
+    -- quest pages are icon pages too (expansion overview / per-expansion zone grid)
+    if key == "quests" then return "Quests", function() return {} end end
+    local qexp = key and key:match("^quest:(.+)$")
+    if qexp then return qexp .. " Quests", function() return {} end end
     local rexp = key and key:match("^raid:(.+)$")
     if rexp then
         return rexp .. " Raids", function() return self:_CatalogColumns(rexp, true) end
@@ -1555,12 +1734,10 @@ function Dashboard:_CategoryTiles()
           texture = "Interface\\Icons\\Achievement_ChallengeMode_Gold" },
         { key = "raids",    label = "Raids",         art = raidArt, fallback = logo },
         { key = "dungeons", label = "Dungeons",      art = dunArt,  fallback = logo },
-        -- custom high-res transparent art (tools/gen_quest_icons.py): a "!" with revolving arrows for
-        -- the recurring weekly reset, a plain "!" for daily -- crisp at any tile size, unlike the atlases.
-        { key = "weekly",   label = "Weekly Quests", contain = true,
+        -- custom high-res transparent art (tools/gen_quest_icons.py): a "!" with revolving arrows --
+        -- crisp at any tile size, unlike the atlases. One tile: quests group by expansion -> zone inside.
+        { key = "quests",   label = "Quests", contain = true,
           texture = "Interface\\AddOns\\HagAIO\\Media\\quest-weekly" },
-        { key = "daily",    label = "Daily Quests",  contain = true,
-          texture = "Interface\\AddOns\\HagAIO\\Media\\quest-daily" },
     }
     local tiles = {}
     for _, d in ipairs(defs) do
@@ -1688,7 +1865,9 @@ function Dashboard:_Render()
     -- group as tiles, each with its own art, the lockouts opening inline -- one level below the overview.
     local raidExp = p.category:match("^raid:([^|]+)$")
     local dunGrp  = p.category:match("^dungeon:([^|]+)$")
-    if p.category == "home" or p.category == "raids" or p.category == "dungeons" or raidExp or dunGrp then
+    local questExp = p.category:match("^quest:(.+)$")
+    if p.category == "home" or p.category == "raids" or p.category == "dungeons"
+        or p.category == "quests" or raidExp or dunGrp or questExp then
         p.grid:Hide()
         local page = self:_IconPage(p.category)
         for _, g in pairs(p.iconPages) do g:SetShown(g == page) end
@@ -1708,6 +1887,12 @@ function Dashboard:_Render()
             local cur = self:_CurrentExpansionTier()
             p.catTitle:SetText(((dunGrp == cur and (self:_CurrentExpansionName() or dunGrp)) or dunGrp) .. " Dungeons")
             self:_ShowInstancePage(page, self:_DungeonsInExpansion(dunGrp), dunGrp, false)
+        elseif p.category == "quests" then
+            p.catTitle:SetText("Quests")
+            page:SetTiles(self:_QuestExpansionTiles())
+        elseif questExp then
+            p.catTitle:SetText(questExp .. " Quests")
+            self:_ShowQuestZonePage(page, questExp)
         else
             p.catTitle:SetText(label)
             page:SetTiles(self:_OverviewTiles(p.category))
@@ -1870,6 +2055,8 @@ ns.ModuleManager:Register(Dashboard:New("Dashboard", {
             },
             primaryKey = { "char_key", "instance_key" } },
         -- One row per (character, freq, quest). The title lives on the shared `quest` table.
+        -- `done_at` (server epoch of the LAST turn-in) is what makes "done" reset-aware: a cell only
+        -- counts as done while done_at falls inside the current daily/weekly window (_QuestDone).
         dashboard_quest = { scope = "global",
             columns = {
                 { name = "char_key", type = "text", nullable = false,
@@ -1877,6 +2064,7 @@ ns.ModuleManager:Register(Dashboard:New("Dashboard", {
                 { name = "freq",     type = "text",    nullable = false },    -- "daily" | "weekly"
                 { name = "quest_id", type = "integer", nullable = false,
                     references = { table = "quest", column = "quest_id", onDelete = "cascade" } },
+                { name = "done_at",  type = "integer" },                      -- server epoch of last turn-in
             },
             primaryKey = { "char_key", "freq", "quest_id" } },
         -- Account-wide expansion registry (one row per Encounter Journal tier, e.g. "Midnight",
@@ -1917,8 +2105,7 @@ ns.ModuleManager:Register(Dashboard:New("Dashboard", {
         { type = "toggle", key = "show_mplus",    label = "Mythic+",       default = true },
         { type = "toggle", key = "show_raids",    label = "Raids",         default = true },
         { type = "toggle", key = "show_dungeons", label = "Dungeons",      default = true },
-        { type = "toggle", key = "show_weekly",   label = "Weekly Quests", default = true },
-        { type = "toggle", key = "show_daily",    label = "Daily Quests",  default = true },
+        { type = "toggle", key = "show_quests",   label = "Quests",        default = true },
         { type = "note", text = "Choose which categories appear in the Dashboard. Open it with /hag dashboard." },
     },
 }))

@@ -149,6 +149,7 @@ UI/
   Widgets\Grid.lua         Column-aligned GRID -- the one row/column layout engine
   Widgets\IconGrid.lua     Auto-sizing ICON GRID -- Encounter-Journal-style tiles laid out a FIXED number per row, each
   Widgets\Input.lua        Themed single-line EditBox
+  Widgets\MapArt.lua       ZONE MAP ART, composed by hand
   Widgets\MultilineEdit.lua A scrollable multi-line EditBox -- the copy-in/out surface
   Widgets\Nav.lua          A vertical NAVIGATION list: section labels + selectable items (optionally indented as
   Widgets\NavItem.lua      Left-rail navigation item with active accent bar + tint
