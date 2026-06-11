@@ -472,6 +472,16 @@ function Dashboard:_RecordQuest(questID)
     self:_RenderIfShown()
 end
 
+-- Cooperative chunking: the one-time journal walk + catalog seed is hundreds of Encounter Journal API
+-- calls + DB inserts -- enough to hitch a frame at login. The build runs inside a COROUTINE; its hot
+-- loops call maybeYield(), which hands the frame back once this frame's time budget is spent and
+-- resumes next frame, so the cost spreads across a handful of frames instead of stalling one.
+local BUILD_BUDGET_MS = 6              -- max time the build may spend per frame
+local buildDeadline                   -- set by the pump around each resume; nil outside the build
+local function maybeYield()
+    if buildDeadline and debugprofilestop() > buildDeadline then coroutine.yield() end
+end
+
 -- Refresh AFTER the world is on screen, never during the loading screen. C_Timer callbacks don't fire
 -- while a loading screen is up, so a pass scheduled on PLAYER_LOGIN / at enable runs on the first real
 -- frame once the world has loaded -- exactly where the data should load. Coalesced: rapid re-fires
@@ -484,9 +494,35 @@ function Dashboard:_ScheduleRefresh()
     C_Timer.After(0, function()
         p.refreshPending = false
         if not self:IsEnabled() then return end   -- skip if disabled before the frame ran
+        self:_RunBuild()
+    end)
+end
+
+-- Drive the build coroutine a slice at a time: give it BUILD_BUDGET_MS each frame, then reschedule
+-- until it finishes. Guarded so overlapping refreshes (zone changes) don't start a second build.
+function Dashboard:_RunBuild()
+    local p = self:_p()
+    if p.buildCo then return end                  -- a build is already in flight
+    p.buildCo = coroutine.create(function()
         self:_BuildCatalog()
         self:_Snapshot()
     end)
+    local function pump()
+        if not (p.buildCo and self:IsEnabled()) then p.buildCo = nil; return end
+        buildDeadline = debugprofilestop() + BUILD_BUDGET_MS
+        local ok, err = coroutine.resume(p.buildCo)
+        buildDeadline = nil
+        if not ok then
+            if ns.Logger then ns.Logger:Core():Warn("Dashboard build error: " .. tostring(err)) end
+            p.buildCo = nil
+        elseif coroutine.status(p.buildCo) == "dead" then
+            p.buildCo = nil
+            self:_RenderIfShown()                 -- final paint once the catalog is complete
+        else
+            C_Timer.After(0, pump)                -- more work -- continue next frame
+        end
+    end
+    pump()
 end
 
 -- Populate dashboard_instance with the full catalog the dashboard shows -- every raid (one row per
@@ -572,6 +608,7 @@ function Dashboard:_ExpansionMap()
                 if sink then sink[#sink + 1] = instID end
             end
             i = i + 1
+            maybeYield()                          -- spread the walk across frames (cooperative build)
         end
     end
     local seasonRaidList = {}                 -- ids of raids on the journal's "Current Season" page
@@ -608,6 +645,7 @@ function Dashboard:_ExpansionMap()
                 local ids = {}
                 for _, d in ipairs(RAID_DIFF_CANDIDATES) do if EJ_IsValidInstanceDifficulty(d) then ids[#ids + 1] = d end end
                 if #ids > 0 then raidDiffs[id] = ids end
+                maybeYield()                      -- the per-raid EJ_SelectInstance probe is the heaviest step
             end
         end
     end
@@ -1095,6 +1133,7 @@ function Dashboard:_SeedInstances()
                           is_raid = true, expansion = rec.tier, current_season = cs })
                 end
             end
+            maybeYield()                                         -- spread the inserts across frames
         end
     end
     -- every dungeon of the current expansion (Mythic 0), keyed by journal id
