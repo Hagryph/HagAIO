@@ -15,8 +15,9 @@ local unwrap, style, claimLevel, adopt = _wb.unwrap, _wb.style, _wb.claimLevel, 
 --         gap (12), titleHeight (22)
 -- A tile in :SetTiles is { texture=path|fileID, atlas=bool, label=string, labelKey=paletteKey,
 --   mapID=uiMapID (zone map art composed by Widgets.MapArt; overrides texture),
---   typo={ text=string, color={r,g,b} } (a TYPOGRAPHY plate: scrim + the text in the fantasy
---     serif + a thin colour rule -- over the dimmed map art when mapID is also set, else alone),
+--   typo={ text=string, style={ bg={r,g,b}, bg2={r,g,b}, fg={r,g,b} } } (a TYPOGRAPHY tile:
+--     a two-stop gradient plate + the text in the fantasy serif + a thin rule, all hand-built --
+--     used instead of an image),
 --   badge=string, badgeKey=paletteKey, selected=bool, onClick=function(tile),
 --   texCoord={l,r,t,b} (a fixed base crop, e.g. the EJ buttonImage1 banner region),
 --   cover=bool + aspect=number (the image's px w/h; auto cover-fits the whole image to the tile),
@@ -112,7 +113,6 @@ function IconGridW:Initialize(parent, opts)
                 -- zone tiles: the map painting only exists as a tile grid -- MapArt composes it
                 if not t.map then t.map = Widgets.MapArt:New(t.band, { layer = "BACKGROUND", sublevel = 1 }) end
                 t.map:Render(t.band, tw, ih, d.mapID, d.zoom)
-                t.map:SetAlpha(d.typo and 0.35 or 1)            -- recede under a typography plate
                 t.img:Hide()
             else
                 if t.map then t.map:Hide() end
@@ -123,13 +123,12 @@ function IconGridW:Initialize(parent, opts)
                     zoom = d.zoom, panX = d.panX, panY = d.panY,
                 })
             end
-            -- TYPOGRAPHY plate: a hand-built scrim + the name set LARGE in the fantasy serif
-            -- (Morpheus, the quest-title font) + a thin rule in the tile's signature colour.
+            -- TYPOGRAPHY tile: a hand-built two-stop gradient plate + the name set LARGE in the
+            -- fantasy serif (Morpheus, the quest-title font) + a thin rule in the style's colour.
             if d.typo then
                 if not t.typoFS then
-                    t.typoScrim = t.band:CreateTexture(nil, "BACKGROUND", nil, 2)
-                    t.typoScrim:SetAllPoints(t.band)
-                    t.typoScrim:SetColorTexture(0, 0, 0, 0.45)
+                    t.typoBG = t.band:CreateTexture(nil, "BACKGROUND", nil, 2)
+                    t.typoBG:SetAllPoints(t.band)
                     t.typoFS = t.band:CreateFontString(nil, "OVERLAY")
                     t.typoFS:SetPoint("CENTER", t.band, "CENTER", 0, 4)
                     t.typoFS:SetJustifyH("CENTER")
@@ -137,16 +136,25 @@ function IconGridW:Initialize(parent, opts)
                     t.typoRule:SetHeight(1)
                     t.typoRule:SetPoint("TOP", t.typoFS, "BOTTOM", 0, -5)
                 end
-                local c = d.typo.color or { 0.85, 0.80, 0.65 }
+                local s = d.typo.style or {}
+                local bg, bg2 = s.bg or { 0.08, 0.10, 0.14 }, s.bg2 or s.bg or { 0.04, 0.05, 0.08 }
+                if t.typoBG.SetGradient and CreateColor then
+                    t.typoBG:SetTexture("Interface\\Buttons\\WHITE8X8")
+                    t.typoBG:SetGradient("VERTICAL",                       -- bottom -> top
+                        CreateColor(bg2[1], bg2[2], bg2[3], 1), CreateColor(bg[1], bg[2], bg[3], 1))
+                else
+                    t.typoBG:SetColorTexture(bg[1], bg[2], bg[3], 1)
+                end
+                local c = s.fg or { 0.85, 0.80, 0.65 }
                 t.typoFS:SetFont("Fonts\\MORPHEUS.TTF", math.max(13, math.floor(ih * 0.2)), "")
                 t.typoFS:SetWidth(tw - 16); t.typoFS:SetWordWrap(true)
                 t.typoFS:SetText(d.typo.text or d.label or "")
                 t.typoFS:SetTextColor(c[1], c[2], c[3])
                 t.typoRule:SetColorTexture(c[1], c[2], c[3], 0.8)
                 t.typoRule:SetWidth(math.floor(tw * 0.3))
-                t.typoScrim:Show(); t.typoFS:Show(); t.typoRule:Show()
+                t.typoBG:Show(); t.typoFS:Show(); t.typoRule:Show()
             elseif t.typoFS then
-                t.typoScrim:Hide(); t.typoFS:Hide(); t.typoRule:Hide()
+                t.typoBG:Hide(); t.typoFS:Hide(); t.typoRule:Hide()
             end
             t.label:SetText(d.label or "")
             t.label:SetTextColor(Theme.Unpack(d.labelKey or "text"))

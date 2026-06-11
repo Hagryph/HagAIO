@@ -1096,10 +1096,6 @@ end
 -- Quests whose expansion was never discovered (legacy rows) bucket under this label.
 local QUEST_OTHER = "Other"
 
--- Zone tiles crop INTO the map painting (1 = the whole map, with its faded borders + ocean; >1
--- centre-crops). 1.45 reads as scenery instead of cartography while staying recognisable.
-local ZONE_ART_ZOOM = 1.45
-
 -- The data-version domain of the ZONE CATALOG (the full uiMapID sweep below): rebuilt once per
 -- patch, reconstructed from the persisted `zone` rows on a same-build login -- exactly like the
 -- instance catalog. (Not via the VersioningOwner mixin -- that binds this module's ONE domain to
@@ -1108,6 +1104,135 @@ local ZONE_DOMAIN = "zone_catalog"
 
 -- The loading screens are 16:9 widescreen art (see tools/gen_loadingscreens.mjs).
 local LOADING_ASPECT = 16 / 9
+
+-- ---- zone typography styles -------------------------------------------------------------------
+-- A zone WITHOUT its own loading screen renders as a TYPOGRAPHY tile: a two-stop gradient plate +
+-- the zone name in the fantasy serif, coloured to evoke the place. Resolution order (_ZoneStyle):
+--   1. ZONE_STYLE   -- hand-curated for the RECOGNISABLE zones (each researched: Elwynn's sunlit
+--                      canopy, Durotar's red dust, Crystalsong's violet crystal, ...)
+--   2. BIOME_STYLE  -- keyword inference from the name (Desert/Frost/Marsh/... -> biome palette)
+--   3. expansion tint (EXP_STYLE) on the neutral plate
+-- A style is { bg = {r,g,b} top, bg2 = {r,g,b} bottom, fg = {r,g,b} type } -- backgrounds stay
+-- dark so tiles sit in the theme; the HUE carries the zone, the type colour carries the light.
+local function zs(bg, bg2, fg) return { bg = bg, bg2 = bg2, fg = fg } end
+
+local ZONE_STYLE = {
+    -- Eastern Kingdoms / Kalimdor classics
+    ["Elwynn Forest"]       = zs({0.10,0.18,0.08}, {0.04,0.09,0.03}, {0.95,0.85,0.55}),  -- sunlit canopy gold on green
+    ["Westfall"]            = zs({0.24,0.18,0.08}, {0.12,0.08,0.03}, {0.95,0.82,0.50}),  -- wheat under harvest light
+    ["Duskwood"]            = zs({0.05,0.07,0.05}, {0.01,0.02,0.01}, {0.70,0.78,0.62}),  -- lantern-pale in black forest
+    ["Deadwind Pass"]       = zs({0.10,0.08,0.09}, {0.03,0.02,0.03}, {0.62,0.58,0.66}),  -- ashen storm over Karazhan
+    ["Stranglethorn Vale"]  = zs({0.06,0.16,0.08}, {0.02,0.07,0.03}, {0.65,0.92,0.55}),  -- dense jungle leaf-light
+    ["Durotar"]             = zs({0.26,0.10,0.05}, {0.12,0.04,0.02}, {0.95,0.70,0.45}),  -- red dust and dry sun
+    ["Mulgore"]             = zs({0.20,0.16,0.06}, {0.08,0.08,0.03}, {0.95,0.85,0.60}),  -- golden plains
+    ["The Barrens"]         = zs({0.22,0.16,0.08}, {0.10,0.07,0.03}, {0.92,0.78,0.52}),  -- savanna tan
+    ["Tirisfal Glades"]     = zs({0.08,0.10,0.07}, {0.03,0.04,0.02}, {0.68,0.80,0.58}),  -- sickly forsaken green
+    ["Ashenvale"]           = zs({0.06,0.10,0.14}, {0.02,0.04,0.07}, {0.70,0.85,0.95}),  -- moonlit silver-blue
+    ["Felwood"]             = zs({0.08,0.12,0.04}, {0.03,0.05,0.01}, {0.60,0.95,0.35}),  -- corrupted fel glow
+    ["Winterspring"]        = zs({0.14,0.18,0.26}, {0.06,0.08,0.14}, {0.92,0.96,1.00}),  -- snowfield night
+    ["Tanaris"]             = zs({0.28,0.20,0.08}, {0.14,0.09,0.03}, {1.00,0.88,0.55}),  -- open desert glare
+    ["Un'Goro Crater"]      = zs({0.07,0.15,0.06}, {0.03,0.06,0.02}, {0.70,0.95,0.50}),  -- primordial jungle
+    ["Silithus"]            = zs({0.18,0.13,0.08}, {0.06,0.04,0.03}, {0.90,0.70,0.45}),  -- dusk sand, silithid dark
+    -- Outland
+    ["Hellfire Peninsula"]  = zs({0.24,0.07,0.04}, {0.10,0.02,0.01}, {1.00,0.55,0.30}),  -- fel-scorched red rock
+    ["Zangarmarsh"]         = zs({0.04,0.13,0.14}, {0.01,0.05,0.06}, {0.55,0.95,0.90}),  -- giant mushroom glow
+    ["Nagrand"]             = zs({0.09,0.16,0.09}, {0.03,0.07,0.04}, {0.75,0.95,0.70}),  -- floating-isle grassland
+    ["Netherstorm"]         = zs({0.12,0.07,0.16}, {0.05,0.02,0.08}, {0.85,0.60,1.00}),  -- shattered arcane sky
+    ["Shadowmoon Valley"]   = zs({0.08,0.06,0.12}, {0.03,0.02,0.06}, {0.75,0.70,0.95}),  -- night-violet moonglow
+    -- Northrend
+    ["Howling Fjord"]       = zs({0.06,0.13,0.13}, {0.02,0.05,0.06}, {0.65,0.92,0.88}),  -- deep teal fjord
+    ["Grizzly Hills"]       = zs({0.18,0.12,0.05}, {0.08,0.05,0.02}, {0.95,0.70,0.40}),  -- autumn timber amber
+    ["Dragonblight"]        = zs({0.16,0.19,0.23}, {0.07,0.09,0.12}, {0.90,0.94,1.00}),  -- bone-white snowfield
+    ["Crystalsong Forest"]  = zs({0.11,0.08,0.18}, {0.04,0.03,0.09}, {0.85,0.75,1.00}),  -- violet crystal trees
+    ["Icecrown"]            = zs({0.08,0.11,0.17}, {0.02,0.04,0.08}, {0.80,0.92,1.00}),  -- cold steel and saronite
+    ["The Storm Peaks"]     = zs({0.08,0.10,0.16}, {0.03,0.04,0.08}, {0.85,0.90,1.00}),  -- titan night-blue
+    ["Sholazar Basin"]      = zs({0.08,0.16,0.07}, {0.03,0.07,0.02}, {0.75,0.98,0.55}),  -- lifebloom jungle
+    -- Cataclysm
+    ["Mount Hyjal"]         = zs({0.10,0.14,0.06}, {0.05,0.05,0.02}, {1.00,0.65,0.35}),  -- green crown, ember edge
+    ["Uldum"]               = zs({0.26,0.20,0.10}, {0.11,0.08,0.04}, {0.55,0.80,1.00}),  -- gold sand, lapis accents
+    ["Deepholm"]            = zs({0.10,0.09,0.12}, {0.04,0.03,0.05}, {0.80,0.65,1.00}),  -- amethyst stone heart
+    ["Twilight Highlands"]  = zs({0.12,0.09,0.13}, {0.05,0.03,0.06}, {0.85,0.70,0.95}),  -- twilight dragon dusk
+    -- Pandaria
+    ["The Jade Forest"]     = zs({0.06,0.15,0.10}, {0.02,0.06,0.04}, {0.60,0.95,0.75}),  -- jade mist
+    ["Valley of the Four Winds"] = zs({0.18,0.16,0.06}, {0.08,0.07,0.02}, {0.98,0.88,0.55}), -- golden grain
+    ["Kun-Lai Summit"]      = zs({0.15,0.18,0.22}, {0.06,0.08,0.11}, {0.95,0.97,1.00}),  -- white summit air
+    ["Dread Wastes"]        = zs({0.08,0.11,0.06}, {0.03,0.04,0.02}, {0.70,0.90,0.50}),  -- mantid amber-green
+    -- Draenor
+    ["Frostfire Ridge"]     = zs({0.16,0.10,0.10}, {0.06,0.03,0.04}, {1.00,0.60,0.35}),  -- lava through snow
+    ["Talador"]             = zs({0.18,0.14,0.07}, {0.08,0.06,0.03}, {0.98,0.85,0.55}),  -- autumn gold arakkoa light
+    ["Spires of Arak"]      = zs({0.12,0.08,0.12}, {0.05,0.03,0.05}, {0.95,0.75,0.45}),  -- dusk cliffs, amber sky
+    ["Gorgrond"]            = zs({0.10,0.13,0.06}, {0.04,0.05,0.02}, {0.75,0.90,0.50}),  -- overgrowth vs iron
+    -- Legion
+    ["Azsuna"]              = zs({0.06,0.11,0.16}, {0.02,0.04,0.08}, {0.55,0.85,1.00}),  -- azure ley-ruins
+    ["Val'sharah"]          = zs({0.07,0.14,0.08}, {0.02,0.06,0.03}, {0.65,0.95,0.65}),  -- emerald dream edge
+    ["Highmountain"]        = zs({0.14,0.11,0.07}, {0.06,0.04,0.02}, {0.90,0.75,0.50}),  -- tauren stone and pine
+    ["Stormheim"]           = zs({0.10,0.12,0.14}, {0.04,0.05,0.06}, {0.78,0.88,0.95}),  -- vrykul storm cliffs
+    ["Suramar"]             = zs({0.12,0.06,0.16}, {0.05,0.02,0.08}, {0.95,0.60,1.00}),  -- nightborne arcwine glow
+    -- Battle for Azeroth
+    ["Tiragarde Sound"]     = zs({0.07,0.10,0.14}, {0.02,0.04,0.06}, {0.90,0.80,0.55}),  -- harbour brass on navy
+    ["Drustvar"]            = zs({0.10,0.11,0.11}, {0.04,0.04,0.04}, {0.88,0.90,0.92}),  -- witch-fog and bone
+    ["Stormsong Valley"]    = zs({0.08,0.13,0.11}, {0.03,0.05,0.04}, {0.70,0.92,0.85}),  -- tidesage green-blue
+    ["Zuldazar"]            = zs({0.14,0.12,0.04}, {0.06,0.05,0.02}, {0.98,0.85,0.45}),  -- golden troll empire
+    ["Nazmir"]              = zs({0.07,0.10,0.08}, {0.02,0.04,0.03}, {0.60,0.85,0.70}),  -- blood-swamp mist
+    ["Vol'dun"]             = zs({0.24,0.17,0.09}, {0.11,0.07,0.03}, {0.98,0.82,0.55}),  -- exile desert
+    ["Nazjatar"]            = zs({0.04,0.09,0.14}, {0.01,0.03,0.06}, {0.50,0.90,0.95}),  -- abyssal naga deep
+    -- Shadowlands
+    ["Bastion"]             = zs({0.14,0.16,0.20}, {0.06,0.07,0.10}, {0.95,0.90,0.70}),  -- kyrian white-gold
+    ["Maldraxxus"]          = zs({0.08,0.11,0.05}, {0.03,0.04,0.01}, {0.70,0.95,0.40}),  -- necropolis bile-green
+    ["Ardenweald"]          = zs({0.05,0.08,0.15}, {0.02,0.03,0.07}, {0.60,0.80,1.00}),  -- star-lit faerie blue
+    ["Revendreth"]          = zs({0.12,0.05,0.06}, {0.05,0.01,0.02}, {0.95,0.45,0.45}),  -- venthyr crimson gothic
+    ["Zereth Mortis"]       = zs({0.15,0.15,0.13}, {0.07,0.07,0.06}, {0.95,0.92,0.75}),  -- progenitor pearl-gold
+    -- Dragonflight
+    ["The Waking Shores"]   = zs({0.18,0.08,0.05}, {0.08,0.03,0.02}, {1.00,0.60,0.35}),  -- volcanic dragonfire
+    ["Ohn'ahran Plains"]    = zs({0.10,0.15,0.08}, {0.04,0.06,0.03}, {0.80,0.95,0.65}),  -- windswept centaur grass
+    ["The Azure Span"]      = zs({0.07,0.11,0.16}, {0.02,0.04,0.08}, {0.60,0.85,1.00}),  -- blue frost-forest
+    ["Thaldraszus"]         = zs({0.14,0.11,0.07}, {0.06,0.04,0.02}, {0.95,0.78,0.45}),  -- bronze titan stone
+    ["The Emerald Dream"]   = zs({0.06,0.14,0.07}, {0.02,0.06,0.02}, {0.60,1.00,0.60}),  -- vivid dream green
+    -- The War Within
+    ["Isle of Dorn"]        = zs({0.13,0.14,0.08}, {0.05,0.06,0.03}, {0.95,0.85,0.55}),  -- mediterranean earthen gold
+    ["The Ringing Deeps"]   = zs({0.09,0.07,0.05}, {0.03,0.02,0.01}, {1.00,0.70,0.35}),  -- machine-amber in the dark
+    ["Hallowfall"]          = zs({0.10,0.13,0.18}, {0.04,0.05,0.09}, {1.00,0.85,0.55}),  -- Beledar's light in cavern dusk
+    ["Azj-Kahet"]           = zs({0.09,0.06,0.11}, {0.03,0.02,0.05}, {0.80,0.60,0.95}),  -- web-violet nerubian dark
+    -- Midnight
+    ["Eversong Woods"]      = zs({0.16,0.11,0.05}, {0.07,0.04,0.02}, {1.00,0.80,0.45}),  -- radiant autumn-spring gold
+    ["Zul'Aman"]            = zs({0.07,0.13,0.07}, {0.02,0.05,0.02}, {0.85,0.95,0.55}),  -- amani rainforest
+    ["Harandar"]            = zs({0.06,0.10,0.12}, {0.02,0.04,0.05}, {0.55,0.95,0.85}),  -- bioluminescent fungal roots
+    ["Voidstorm"]           = zs({0.09,0.05,0.13}, {0.03,0.01,0.06}, {0.80,0.50,1.00}),  -- void gorges and pylons
+    ["Naigtal"]             = zs({0.08,0.06,0.12}, {0.03,0.02,0.05}, {0.70,0.60,1.00}),  -- fungal-arcane haze
+    ["Val"]                 = zs({0.12,0.14,0.18}, {0.05,0.06,0.08}, {0.85,0.92,1.00}),  -- frozen legion wasteland
+}
+
+-- Biome inference for everything not curated: the FIRST keyword hit (checked in order, darkest
+-- moods before generic terrain so "Deadwood Forest" reads dark, not forest) picks the palette.
+local BIOME_STYLE = {
+    dark     = zs({0.07,0.07,0.08}, {0.02,0.02,0.03}, {0.72,0.74,0.70}),
+    volcanic = zs({0.20,0.08,0.04}, {0.09,0.03,0.01}, {1.00,0.60,0.32}),
+    snow     = zs({0.13,0.16,0.22}, {0.05,0.07,0.11}, {0.92,0.96,1.00}),
+    desert   = zs({0.25,0.18,0.08}, {0.11,0.08,0.03}, {0.98,0.84,0.52}),
+    swamp    = zs({0.07,0.11,0.08}, {0.02,0.04,0.03}, {0.62,0.88,0.70}),
+    jungle   = zs({0.06,0.14,0.07}, {0.02,0.06,0.02}, {0.68,0.95,0.50}),
+    forest   = zs({0.08,0.14,0.07}, {0.03,0.06,0.02}, {0.85,0.92,0.60}),
+    coast    = zs({0.06,0.10,0.15}, {0.02,0.04,0.07}, {0.60,0.88,0.95}),
+    mountain = zs({0.13,0.11,0.08}, {0.05,0.04,0.03}, {0.88,0.78,0.58}),
+    plains   = zs({0.15,0.14,0.06}, {0.06,0.06,0.02}, {0.95,0.88,0.58}),
+    arcane   = zs({0.10,0.06,0.15}, {0.04,0.02,0.07}, {0.85,0.65,1.00}),
+}
+local BIOME_WORDS = {
+    { "dark",     { "shadow", "dusk", "dark", "dread", "dead", "grim", "blight", "plague", "maw" } },
+    { "volcanic", { "fire", "molten", "burning", "cinder", "searing", "lava", "crater", "scorch" } },
+    { "snow",     { "frost", "ice", "winter", "snow", "glacier", "tundra", "chill" } },
+    { "desert",   { "desert", "sand", "dune", "waste", "scarab", "sun" } },
+    { "swamp",    { "marsh", "swamp", "bog", "mire", "fen" } },
+    { "jungle",   { "jungle", "wilds", "basin", "thorn" } },
+    { "forest",   { "forest", "wood", "grove", "glade", "vale" } },
+    { "coast",    { "isle", "island", "shore", "coast", "bay", "sea", "tide", "reef", "depth", "sound" } },
+    { "mountain", { "mount", "peak", "ridge", "highland", "cliff", "summit", "crag", "spire" } },
+    { "plains",   { "plain", "steppe", "field", "meadow", "prairie" } },
+    { "arcane",   { "crystal", "arcane", "moon", "star", "storm", "void", "nether" } },
+}
+
+-- The neutral plate the expansion tint colours when neither curation nor biome matches.
+local PLATE_BG, PLATE_BG2 = { 0.08, 0.10, 0.14 }, { 0.04, 0.05, 0.08 }
 
 -- Typography palette: each expansion's signature colour, used to tint the zone-name plate of a
 -- zone WITHOUT its own loading screen (keyed by Map.db2 ExpansionID, carried on the zone row).
@@ -1162,6 +1287,20 @@ function Dashboard:_BuildZoneCatalog()
     end
     p.zoneCatalogBuilt = true
     if ns.Versioning then ns.Versioning:Stamp(ZONE_DOMAIN) end
+end
+
+-- Resolve a zone's typography style: curated -> biome keywords -> the expansion tint on the
+-- neutral plate (see the style tables above).
+function Dashboard:_ZoneStyle(name, expId)
+    local s = ZONE_STYLE[name]
+    if s then return s end
+    local lower = tostring(name or ""):lower()
+    for _, entry in ipairs(BIOME_WORDS) do
+        for _, word in ipairs(entry[2]) do
+            if lower:find(word, 1, true) then return BIOME_STYLE[entry[1]] end
+        end
+    end
+    return { bg = PLATE_BG, bg2 = PLATE_BG2, fg = EXP_STYLE[expId] or EXP_STYLE_DEFAULT }
 end
 
 -- The zone-registry row for a uiMapID (index-backed point lookup), or nil.
@@ -1317,18 +1456,14 @@ function Dashboard:_ShowQuestZonePage(page, exp)
                 self:_Render()
             end,
         }
-        -- art, best first: the zone's OWN loading screen (zone registry) -> the zone painting
-        -- dimmed under a typography plate in the expansion's colour -> a plain typography plate.
+        -- art: the zone's OWN loading screen (zone registry), else a pure TYPOGRAPHY plate in the
+        -- zone's style (curated / biome / expansion tint) -- never the map painting.
         local zrow = z.mapID and self:_ZoneRow(z.mapID) or nil
         local lsid = zrow and denull(zrow.loading_file_id)
-        local expId = zrow and denull(zrow.expansion_id)
         if lsid then
             tile.texture, tile.cover, tile.aspect = lsid, true, LOADING_ASPECT
-        elseif z.mapID then
-            tile.mapID, tile.zoom = z.mapID, ZONE_ART_ZOOM
-            tile.typo = { text = z.name, color = EXP_STYLE[expId] or EXP_STYLE_DEFAULT }
         else
-            tile.typo = { text = z.name, color = EXP_STYLE_DEFAULT }
+            tile.typo = { text = z.name, style = self:_ZoneStyle(z.name, zrow and denull(zrow.expansion_id)) }
         end
         tiles[#tiles + 1] = tile
     end
