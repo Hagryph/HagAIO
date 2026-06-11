@@ -140,9 +140,30 @@ end
 function Dev:_StartHitchWatch()
     local p = self:_p()
     if p.watch then return end
+    if ResetCPUUsage and GetCVar and GetCVar("scriptProfile") == "1" then ResetCPUUsage() end
     p.watch = { worst = {}, frames = 0, t0 = GetTime(), last = GetTime(),
-                kb = collectgarbage("count"), kbTotal = 0 }
+                kb = collectgarbage("count"), kbTotal = 0, mem0 = self:_AddonMemSnapshot() }
     p.watch.ticker = self:Every(0, function() self:_HitchFrame() end)
+end
+
+-- Per-addon RETAINED Lua memory (KB by addon index). UpdateAddOnMemoryUsage is expensive, so this
+-- runs exactly twice: at watch start and at report. Retained-memory growth names which addon is
+-- building big structures during startup; pure churn (allocated then collected) won't show here --
+-- that needs scriptProfile CPU attribution (reported too, when the CVar is on).
+function Dev:_AddonMemSnapshot()
+    if not (UpdateAddOnMemoryUsage and GetAddOnMemoryUsage) then return nil end
+    local num = (C_AddOns and C_AddOns.GetNumAddOns and C_AddOns.GetNumAddOns())
+        or (GetNumAddOns and GetNumAddOns()) or 0
+    if num == 0 then return nil end
+    UpdateAddOnMemoryUsage()
+    local snap = {}
+    for i = 1, num do snap[i] = GetAddOnMemoryUsage(i) or 0 end
+    return snap
+end
+
+local function addonName(i)
+    local name = C_AddOns and C_AddOns.GetAddOnInfo and C_AddOns.GetAddOnInfo(i)
+    return tostring(name or ("addon #" .. i))
 end
 
 function Dev:_HitchFrame()
@@ -176,6 +197,48 @@ function Dev:_ReportHitches()
         local e = w.worst[i]
         self:LogWarn(("  %2d. %6.1f ms at +%4.1fs  (worker %5.2f ms, %s%.0f KB)")
             :format(i, e.ms, e.at, e.worker, e.kb >= 0 and "+" or "", e.kb))
+    end
+    self:_ReportAddonShares(w.mem0)
+end
+
+-- Attribution: which ADDON grew its retained Lua memory over the watch window (top 8), and -- when
+-- the scriptProfile CVar is on -- which addon burned the most CPU. Without scriptProfile only the
+-- memory view exists; churn-heavy addons need the CPU view, so hint at it once.
+function Dev:_ReportAddonShares(mem0)
+    local mem1 = self:_AddonMemSnapshot()
+    if mem0 and mem1 then
+        local deltas = {}
+        for i = 1, #mem1 do
+            local d = mem1[i] - (mem0[i] or 0)
+            if d > 256 then deltas[#deltas + 1] = { i = i, d = d } end   -- ignore < 256 KB noise
+        end
+        table.sort(deltas, function(a, b) return a.d > b.d end)
+        if #deltas > 0 then
+            self:LogWarn("  Retained Lua memory growth by addon:")
+            for k = 1, math.min(8, #deltas) do
+                local e = deltas[k]
+                self:LogWarn(("    +%7.1f MB  %s"):format(e.d / 1024, addonName(e.i)))
+            end
+        end
+    end
+    if GetCVar and GetCVar("scriptProfile") == "1" and UpdateAddOnCPUUsage and GetAddOnCPUUsage then
+        UpdateAddOnCPUUsage()
+        local num = (C_AddOns and C_AddOns.GetNumAddOns and C_AddOns.GetNumAddOns())
+            or (GetNumAddOns and GetNumAddOns()) or 0
+        local cpu = {}
+        for i = 1, num do
+            local ms = GetAddOnCPUUsage(i) or 0
+            if ms > 10 then cpu[#cpu + 1] = { i = i, ms = ms } end
+        end
+        table.sort(cpu, function(a, b) return a.ms > b.ms end)
+        if #cpu > 0 then
+            self:LogWarn("  Addon CPU since watch start (scriptProfile):")
+            for k = 1, math.min(8, #cpu) do
+                self:LogWarn(("    %8.0f ms  %s"):format(cpu[k].ms, addonName(cpu[k].i)))
+            end
+        end
+    else
+        self:LogWarn("  (for per-addon CPU attribution: /console scriptProfile 1 + reload; set it back to 0 after)")
     end
 end
 

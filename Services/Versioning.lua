@@ -16,8 +16,6 @@ local Class = ns.Class
 
 local Versioning = Class.new("Versioning", ns.Service)
 
-local DEBUG_FORCE_CURRENT = true -- TEMP: IsCurrent always true -> owners skip their rebuild/walk (test lag)
-
 local function isNull(v) return v == nil or (ns.DB and ns.DB.isNull and ns.DB.isNull(v)) end
 
 -- The running client's .toc interface build (e.g. 120005) and human patch string (e.g. "12.0.5").
@@ -36,7 +34,6 @@ end
 -- True iff `domain` was last stamped under the CURRENTLY running client build -- i.e. its cached data is
 -- still valid for this patch. False when never stamped or stamped under a different build (a new patch).
 function Versioning:IsCurrent(domain)
-    if DEBUG_FORCE_CURRENT then return false end -- TEMP: force "current" so owners skip rebuilding
     local r = self:Get(domain)
     return r ~= nil and r.build == self:Build()
 end
@@ -46,7 +43,7 @@ function Versioning:Stamp(domain)
     local db = self:DB(); if not db then return end
     local fields = { build = self:Build(), patch = self:Patch() }
     if db:Select("domain"):From("data_version"):Where("domain", "=", domain):Limit(1):Run()[1] then
-        db:Update("data_version", fields, function(x) return x.domain == domain end)
+        db:Update("data_version", fields, { domain = domain })   -- PK map: index lookup
     else
         fields.domain = domain; db:Insert("data_version", fields)
     end
