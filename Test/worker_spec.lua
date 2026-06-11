@@ -76,6 +76,15 @@ describe("Worker", function()
         assert.is_true(done)
     end)
 
+    it("steps multiple iterators round-robin so they progress together", function()
+        local worker, _, ns = newWorker()
+        local order = {}
+        worker:Queue(function() for i = 1, 2 do order[#order + 1] = "A" .. i; ns.Worker:Yield() end end)
+        worker:Queue(function() for i = 1, 2 do order[#order + 1] = "B" .. i; ns.Worker:Yield() end end)
+        worker:_Pump()                                  -- budget unspent (no time advanced) -> drains both
+        assert.are.equal("A1,B1,A2,B2", table.concat(order, ","))   -- interleaved, not A1,A2 then B1,B2
+    end)
+
     it("Cancel drops a still-pending job", function()
         local worker = newWorker()
         local ran = false

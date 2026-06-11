@@ -7,16 +7,17 @@ local Class = ns.Class
 -- frames' delay), so it can never stall a frame. Combat / real-time work (Monk markers,
 -- Range/Cooldowns, the flight timer, UI drag) stays IMMEDIATE and does NOT use this.
 --
--- NO IDLE WORK / NO POLLING: the Worker has no per-frame loop. A pump is scheduled (one
--- next-frame timer) only when there is queued work, runs jobs until it has spent BUDGET_MS
--- this frame, and re-schedules ONLY while the queue is non-empty -- so when there is nothing
--- to do, zero timers exist. Periodic work uses :Every (a real timer reminds the Worker to
--- queue the job); the Worker never spins waiting for the next interval.
+-- 60 Hz, NEVER PER-FRAME: the pump runs on a FIXED 60 Hz ticker (1/60s), created only when there
+-- is queued work and CANCELLED the instant the queue drains -- so a 240 FPS client isn't hammered
+-- every frame, and there are zero timers while idle (no polling). Periodic work uses :Every (a real
+-- timer reminds the Worker to queue the job); the Worker never spins waiting for the next interval.
 --
--- A job is a function run inside a coroutine; it calls ns.Worker:Yield() at chunk boundaries
--- to spread a long job across frames. Its RETURN VALUE is the result. On completion the Worker
--- delivers over the EventBus: it Emits the job's `message` (default "HagAIO_WorkerDone") with
--- (id, result) -- iterator-with-return callers get their result, the rest get a done signal.
+-- ITERATORS: a job is a function run inside a coroutine -- an iterator. It calls ns.Worker:Yield()
+-- after each UNIT of work to hand control back; the Worker steps the queued iterators ROUND-ROBIN,
+-- one step at a time, checking the time budget BETWEEN every step. So no job accumulates past the
+-- budget before the next check, and several iterators make progress together. A job's RETURN VALUE
+-- is its result; on completion the Worker Emits the job's `message` (default "HagAIO_WorkerDone")
+-- with (id, result) -- iterator-with-return callers get their result, the rest get a done signal.
 --
 -- OWNER BINDING: pass opts.owner = a Module/Service to bind work to it. The work only runs
 -- while the owner is ENABLED, and the Worker auto-listens to the owner's enable/disable
@@ -31,15 +32,17 @@ local Class = ns.Class
 
 local Worker = Class.new("Worker", ns.Service)
 
-local BUDGET_MS = 10        -- hard cap on the time the Worker may spend per frame
+local BUDGET_MS = 10          -- hard cap on the time the Worker may spend in one pump
+local TICK = 1 / 60          -- pump at a FIXED 60 Hz, never per-frame (so 240 FPS isn't hammered)
 local DONE_MSG = "HagAIO_WorkerDone"
 local STATE_MSG = "HagAIO_OwnerState"   -- (owner, enabled) -- emitted by Component + Service
 
 function Worker:OnInitialize()
     local p = self:_p()
-    p.queue = {}             -- FIFO list of live jobs: { co, id, message, onDone, label }
-    p.deadline = nil         -- this frame's time budget end (ms); set only while pumping
-    p.scheduled = false      -- is a next-frame pump already queued?
+    p.queue = {}             -- live jobs (ITERATORS): { co, id, message, onDone, owner, label, _after }
+    p.deadline = nil         -- this pump's time budget end (ms); set only while pumping
+    p.rr = 1                 -- round-robin cursor: which job to step next (fairness across iterators)
+    p.ticker = nil           -- the 60 Hz pump ticker, alive ONLY while there is queued work
     p.nextId = 1
 end
 
@@ -49,51 +52,61 @@ local function freshId(p)
     return id
 end
 
--- Inside a job: give the frame back if this frame's budget is spent. A no-op outside a pumped
--- job (deadline nil) or before the budget runs out, so jobs can call it liberally.
+-- Inside a job: hand control back to the Worker -- ONE step done. The Worker resumes the job again on
+-- its next budget slice, so the WORKER (not the job) decides when the budget is spent. Call it after
+-- each unit of work; a no-op outside a job coroutine (so callers can call it unconditionally).
 function Worker:Yield()
-    local d = self:_p().deadline
-    if d and debugprofilestop() > d then coroutine.yield() end
+    if coroutine.running() then coroutine.yield() end
 end
 
--- Schedule ONE next-frame pump if work is waiting and none is scheduled. The Worker is otherwise
--- inert -- no timer exists while the queue is empty (event-driven, no polling).
+-- Start the 60 Hz pump ticker if there's work and it isn't already running. The Worker is otherwise
+-- INERT: no timer exists while the queue is empty (no polling), and the pump can never run faster than
+-- 60 Hz regardless of the client's frame rate.
 function Worker:_Wake()
     local p = self:_p()
-    if p.scheduled or #p.queue == 0 then return end
-    p.scheduled = true
-    C_Timer.After(0, function() self:_Pump() end)
+    if p.ticker or #p.queue == 0 then return end
+    p.ticker = ns.Scheduler:Every(TICK, function() self:_Pump() end)
 end
 
--- One frame's work: run jobs (FIFO) until the time budget is spent. A job that yields (budget)
--- stays at the front and continues next frame; one that returns is completed and removed. Re-arms
--- a pump only if the queue still has work -- so the chain stops the instant it's drained.
+function Worker:_Stop()
+    local p = self:_p()
+    if p.ticker then p.ticker:Cancel(); p.ticker = nil end
+end
+
+-- One tick's work: STEP the queued iterators round-robin -- resume each one a single step at a time --
+-- until the time budget is spent. Checking the budget BETWEEN every step (not just between jobs) caps
+-- the overshoot to one unit and lets several iterators progress together instead of one hogging the
+-- slice. A job that returns is completed (result delivered) and removed; a yield = one step done.
 function Worker:_Pump()
     local p = self:_p()
-    p.scheduled = false
     local q = p.queue
-    if #q == 0 then return end
+    if #q == 0 then self:_Stop(); return end
     p.deadline = debugprofilestop() + BUDGET_MS
+    local i = p.rr
     while #q > 0 and debugprofilestop() < p.deadline do
-        local job = q[1]
+        if i > #q then i = 1 end
+        local job = q[i]
         if job.owner and not self:_OwnerEnabled(job.owner) then   -- owner disabled since enqueue -> drop
-            table.remove(q, 1)
+            table.remove(q, i)
             if job._after then job._after() end
+            -- next job shifted into slot i; don't advance
         else
-            local ok, result = coroutine.resume(job.co)
+            local ok, result = coroutine.resume(job.co)           -- ONE step
             if not ok then
-                table.remove(q, 1)
+                table.remove(q, i)
                 self:LogWarn(("job '%s' error: %s"):format(tostring(job.label), tostring(result)))
-                if job._after then job._after() end       -- still release any coalescing guard
+                if job._after then job._after() end               -- still release any coalescing guard
             elseif coroutine.status(job.co) == "dead" then
-                table.remove(q, 1)
+                table.remove(q, i)
                 self:_Complete(job, result)
+            else
+                i = i + 1                                         -- still running: round-robin to the next iterator
             end
-            -- else: the job yielded (budget spent) -- leave it at the front; the while ends the frame.
         end
     end
+    p.rr = i
     p.deadline = nil
-    self:_Wake()                                          -- more work? continue next frame; else stay inert
+    if #q == 0 then self:_Stop() end                              -- drained -> kill the ticker (no idle work)
 end
 
 -- Deliver a finished job's outcome over the EventBus (and an optional direct callback). The result
