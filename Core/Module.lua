@@ -192,7 +192,10 @@ function Module:Enable()
     local db = self:DB()
     if db then ns.SettingsTables:SetModuleEnabled(db, p.name, true, p.defaultEnabled) end  -- enable override (diffed vs profile/default)
     if p.log then p.log:Success("enabled") end
-    if ns.EventBus and ns.EventBus.Emit then ns.EventBus:Emit("HagAIO_ModuleState", p.name, true) end
+    if ns.EventBus and ns.EventBus.Emit then
+        ns.EventBus:Emit("HagAIO_ModuleState", p.name, true)   -- (name, enabled) -- legacy/by-name listeners
+        ns.EventBus:Emit("HagAIO_OwnerState", self, true)       -- (owner, enabled) -- the Worker's owner binding
+    end
 end
 
 function Module:Disable()
@@ -207,7 +210,10 @@ function Module:Disable()
     if db then ns.SettingsTables:SetModuleEnabled(db, p.name, false, p.defaultEnabled) end  -- enable override (diffed vs profile/default)
     if p.log then p.log:Info("disabled") end
     ns.ModuleManager:DisableDependents(p.name)  -- cascade: modules that needed this one
-    if ns.EventBus and ns.EventBus.Emit then ns.EventBus:Emit("HagAIO_ModuleState", p.name, false) end
+    if ns.EventBus and ns.EventBus.Emit then
+        ns.EventBus:Emit("HagAIO_ModuleState", p.name, false)
+        ns.EventBus:Emit("HagAIO_OwnerState", self, false)      -- the Worker pauses/cancels owner-bound work
+    end
 end
 
 function Module:Toggle()

@@ -60,7 +60,14 @@ function Service:_Init()
     self:_WireContributions()
     self:_ContributeTables()    -- contribute owned tables to the shared database (built later)
     self:OnInitialize()
+    -- A service is ALWAYS-ON once loaded (no enable/disable), so it announces enabled here for symmetry
+    -- with a Module -- the Worker's owner binding treats a Service owner as permanently enabled.
+    if ns.EventBus and ns.EventBus.Emit then ns.EventBus:Emit("HagAIO_OwnerState", self, true) end
 end
+
+-- Services have no enable/disable lifecycle: once loaded they are permanently active. (The Worker's
+-- owner binding relies on this so a Service-bound job never gets gated off.)
+function Service:IsEnabled() return true end
 
 -- Register declarative commands / general toggles once at init (a service has no
 -- enable/disable lifecycle, so there is no teardown -- unlike a Module). Uses the same

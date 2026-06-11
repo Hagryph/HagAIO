@@ -109,19 +109,37 @@ function Component:Debounced(delay, fn, scope)
     return wrapped
 end
 
--- Queue ONE-TIME deferrable work through the frame-budgeted Worker (see Services/Worker.lua);
--- cancelled on scope release if it hasn't run yet. For long jobs, call ns.Worker:Yield() (or the
--- `yield` passed to fn) at chunk points. Returns the job id.
+-- Owner-stamp Worker opts with this component so the Worker gates the work on this owner's
+-- enabled state (and auto-listens to its enable/disable). Copies so the caller's table is untouched.
+function Component:_workerOpts(opts)
+    local o = {}
+    if opts then for k, v in pairs(opts) do o[k] = v end end
+    o.owner = self
+    return o
+end
+
+-- Queue ONE-TIME deferrable work through the frame-budgeted Worker (see Services/Worker.lua), BOUND
+-- to this component (only runs while enabled); cancelled on scope release if it hasn't run yet. For
+-- long jobs, call ns.Worker:Yield() (or the `yield` passed to fn) at chunk points. Returns the job id.
 function Component:Queue(fn, opts, scope)
-    local id = ns.Worker:Queue(fn, opts)
+    local id = ns.Worker:Queue(fn, self:_workerOpts(opts))
     self:OnTeardown(function() ns.Worker:Cancel(id) end, scope)
     return id
 end
 
 -- Run `fn` through the Worker whenever `event` fires (a game event, or a custom message with
--- opts.message=true); auto-unregistered on scope release. Fires are coalesced (see Worker:Register).
+-- opts.message=true), BOUND to this component; auto-unregistered on scope release. Fires are coalesced
+-- and only run while this component is enabled (see Worker:Register).
 function Component:WorkOn(event, fn, opts, scope)
-    local handle = ns.Worker:Register(event, fn, opts)
+    local handle = ns.Worker:Register(event, fn, self:_workerOpts(opts))
+    self:OnTeardown(handle.Unregister, scope)
+    return handle
+end
+
+-- Run `fn` through the Worker every `interval` seconds via a timer reminder (no polling), BOUND to
+-- this component (paused while disabled); auto-unregistered on scope release.
+function Component:WorkEvery(interval, fn, opts, scope)
+    local handle = ns.Worker:Every(interval, fn, self:_workerOpts(opts))
     self:OnTeardown(handle.Unregister, scope)
     return handle
 end
