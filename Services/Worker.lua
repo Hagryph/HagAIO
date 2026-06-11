@@ -75,6 +75,23 @@ function Worker:MaybeYield()
     if debugprofilestop() >= p.deadline then coroutine.yield() end
 end
 
+-- The pump time (ms) this Worker spent in the frame stamped `frameT` (a GetTime value), 0 for any
+-- other frame. Lets a frame-time watchdog (Dev's hitch watch) split a slow frame into "the Worker's
+-- share" vs "everything else".
+function Worker:FramePumpMs(frameT)
+    local p = self:_p()
+    return (p.framePumpT == frameT and p.framePumpMs) or 0
+end
+
+-- Inside a job: name the PHASE now running. Pure debug attribution -- when a step overshoots the
+-- budget, the drain report shows "label @ mark", pointing at the exact phase instead of the whole
+-- job. Persists across the job's yields; a no-op outside the job coroutine being stepped.
+function Worker:Mark(phase)
+    local p = self:_p()
+    local co = coroutine.running()
+    if co and co == p.currentCo then p.mark = phase end
+end
+
 -- Start the 60 Hz pump ticker if there's work and it isn't already running. The Worker is otherwise
 -- INERT: no timer exists while the queue is empty (no polling), and the pump can never run faster than
 -- 60 Hz regardless of the client's frame rate.
@@ -137,9 +154,11 @@ function Worker:_Pump()
                 ok, result = pcall(job.step)                      -- stepper: result here is "more?" not the value
                 done = ok and not result; result = nil
             else
-                p.currentCo = job.co                              -- MaybeYield only fires for THIS coroutine
+                p.currentCo = job.co                              -- MaybeYield/Mark only fire for THIS coroutine
+                p.mark = job.mark                                 -- restore the job's phase marker
                 ok, result = coroutine.resume(job.co)             -- coroutine: one yield = one step
-                p.currentCo = nil
+                job.mark = p.mark                                 -- keep the marker across yields
+                p.currentCo, p.mark = nil, nil
                 done = ok and coroutine.status(job.co) == "dead"
             end
             if not ok then
@@ -154,11 +173,17 @@ function Worker:_Pump()
             end
         end
         local t1 = debugprofilestop()                             -- doubles as the budget re-check time
-        if DEBUG and t1 - t0 > worst then worst, worstLabel = t1 - t0, job.label end
+        if DEBUG and t1 - t0 > worst then
+            worst = t1 - t0
+            worstLabel = job.mark and (tostring(job.label) .. " @ " .. tostring(job.mark)) or job.label
+        end
         t0 = t1
     end
     p.rr = i
     p.deadline = nil
+    local frameT = GetTime and GetTime() or 0                     -- constant within a frame
+    p.framePumpMs = (p.framePumpT == frameT and p.framePumpMs or 0) + (t0 - pumpStart)
+    p.framePumpT = frameT
     if DEBUG then p.pumpMs[#p.pumpMs + 1] = { ms = t0 - pumpStart, worst = worst, label = worstLabel } end
     if #q == 0 then self:_Stop() end                              -- drained -> kill the ticker (no idle work)
 end

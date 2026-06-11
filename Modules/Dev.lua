@@ -123,6 +123,62 @@ function Dev:OnInitialize()
     ns.Logger:SetDebug(self:_DebugOn())  -- apply the saved (default-on) choice for this character
 end
 
+-- ---- hitch watchdog ---------------------------------------------------------------------------
+-- For the first WATCH_SECS after enable, measure EVERY frame (a 0-interval ticker fires once per
+-- frame) and keep the slow ones -- each with the Worker's share of that frame (ns.Worker:
+-- FramePumpMs) and the Lua allocation delta across it -- then log ONE report and stop. This splits
+-- "our deferred work is stalling frames" from "something else is" (allocation/GC churn shows as big
+-- KB deltas; asset streaming / other addons show as slow frames with a tiny worker share).
+local WATCH_SECS = 30          -- observation window after module enable
+local WATCH_TOP  = 10          -- worst frames to report
+local HITCH_MS   = 25          -- a frame slower than this (40 FPS) counts as a hitch
+
+function Dev:OnEnable()
+    self:_StartHitchWatch()
+end
+
+function Dev:_StartHitchWatch()
+    local p = self:_p()
+    if p.watch then return end
+    p.watch = { worst = {}, frames = 0, t0 = GetTime(), last = GetTime(),
+                kb = collectgarbage("count"), kbTotal = 0 }
+    p.watch.ticker = self:Every(0, function() self:_HitchFrame() end)
+end
+
+function Dev:_HitchFrame()
+    local w = self:_p().watch
+    if not w then return end
+    local now = GetTime()
+    local kb = collectgarbage("count")
+    local dt = (now - w.last) * 1000          -- duration of the frame that just ended
+    local dkb = kb - w.kb                     -- alloc (+) / collection (-) across that frame
+    w.frames = w.frames + 1
+    if dkb > 0 then w.kbTotal = w.kbTotal + dkb end
+    if dt >= HITCH_MS and w.frames > 1 then   -- frame 1 has no real dt yet
+        local worker = (ns.Worker and ns.Worker.FramePumpMs) and ns.Worker:FramePumpMs(w.last) or 0
+        w.worst[#w.worst + 1] = { ms = dt, at = w.last - w.t0, worker = worker, kb = dkb }
+    end
+    w.last, w.kb = now, kb
+    if now - w.t0 >= WATCH_SECS then self:_ReportHitches() end
+end
+
+function Dev:_ReportHitches()
+    local p = self:_p()
+    local w = p.watch
+    if not w then return end
+    if w.ticker and not w.ticker:IsCancelled() then w.ticker:Cancel() end
+    p.watch = nil
+    local secs = GetTime() - w.t0
+    self:LogWarn(("HitchWatch: %d frames in %.0fs (avg %.0f fps), %.1f MB Lua allocated. Frames over %dms: %d")
+        :format(w.frames, secs, w.frames / secs, w.kbTotal / 1024, HITCH_MS, #w.worst))
+    table.sort(w.worst, function(a, b) return a.ms > b.ms end)
+    for i = 1, math.min(WATCH_TOP, #w.worst) do
+        local e = w.worst[i]
+        self:LogWarn(("  %2d. %6.1f ms at +%4.1fs  (worker %5.2f ms, %s%.0f KB)")
+            :format(i, e.ms, e.at, e.worker, e.kb >= 0 and "+" or "", e.kb))
+    end
+end
+
 -- Registered (always-on) ONLY on a whitelisted dev character. The `not ns.IsDevChar` arm keeps the
 -- headless test harness -- which doesn't load Core/Namespace.lua -- able to load this file.
 if (not ns.IsDevChar) or ns.IsDevChar() then
@@ -131,7 +187,7 @@ if (not ns.IsDevChar) or ns.IsDevChar() then
         description = "Developer tooling for this character. Live-tunes the Dashboard scene art.",
         alwaysOn = true,
         color = ns.Theme.hex.red,
-        deps = { "SettingsWindow" },  -- contributes the Debug toggle to the General page
+        deps = { "SettingsWindow", "Worker" },  -- Debug toggle on the General page; Worker share in HitchWatch
         settings = { { type = "toggle", key = "debug", label = "Debug", default = true } },  -- per-char; seeds default ON
         generalToggles = {
             { section = "Developer", label = "Debug", desc = "Show debug messages in chat.",

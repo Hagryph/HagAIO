@@ -321,6 +321,7 @@ end
 -- keystone (its map id persists on dashboard_char, but the local name table is rebuilt each session)
 -- still renders a name. Cheap: GetMapUIInfo resolves any map id offline.
 function Dashboard:_SeedKeystones()
+    ns.Worker:Mark("seed keystones")
     local db = self:DB(); if not db then return end
     if not (C_ChallengeMode and C_ChallengeMode.GetMapUIInfo) then return end
     for _, c in ipairs(db:Select("ks_mapid"):From("dashboard_char"):Run()) do
@@ -521,11 +522,11 @@ function Dashboard:_BuildCatalog()
 end
 
 function Dashboard:_Snapshot()
-    self:_CollectInfo()
-    self:_CollectKeystone()
-    self:_CollectVault()
-    self:_CollectLockouts()
-    self:_RenderIfShown()
+    ns.Worker:Mark("collect info");     self:_CollectInfo()
+    ns.Worker:Mark("collect keystone"); self:_CollectKeystone()
+    ns.Worker:Mark("collect vault");    self:_CollectVault()
+    ns.Worker:Mark("collect lockouts"); self:_CollectLockouts()
+    ns.Worker:Mark("render");           self:_RenderIfShown()
 end
 
 
@@ -536,6 +537,7 @@ end
 -- cache with no re-walk, so an incomplete cache renders nothing (a visible failure, not a silent re-walk).
 function Dashboard:_ReconstructFromDB()
     local p = self:_p()
+    ns.Worker:Mark("reconstruct catalog")
     local db = self:DB(); if not db then return false end
     local rows = db:Select("*"):From("dashboard_instance"):Run()
     if #rows == 0 then return false end
@@ -609,7 +611,9 @@ function Dashboard:_ExpansionMap()
     end
     p.ejReconstructed = false
     if not (EJ_GetNumTiers and EJ_SelectTier and EJ_GetInstanceByIndex and EJ_GetTierInfo) then return nil end
+    ns.Worker:Mark("load Blizzard_EncounterJournal")   -- synchronous addon load: the one unavoidable big step
     if C_AddOns and C_AddOns.LoadAddOn then pcall(C_AddOns.LoadAddOn, "Blizzard_EncounterJournal") end
+    ns.Worker:Mark("journal walk")
     -- Instances are tracked by their EJ journal INSTANCE ID, not their name -- two distinct journal
     -- instances can share a name (e.g. a Burning Crusade dungeon and a reworked current-season one),
     -- and only the id keeps them apart with their own home expansion. Art stays keyed by NAME (a shared
@@ -690,6 +694,7 @@ function Dashboard:_ExpansionMap()
     -- reconstructs from the DB above and never gets here), so probe every raid -- the result is then
     -- persisted and reused until the next patch.
     local raidDiffs = {}
+    ns.Worker:Mark("raid difficulty probe")
     if EJ_SelectInstance and EJ_IsValidInstanceDifficulty then
         for id, rec in pairs(inst) do
             if rec.isRaid then
@@ -1178,6 +1183,7 @@ end
 -- seeded separately (_SeedSeasonDungeons). Insert-if-missing; needs the journal map (caller guards).
 function Dashboard:_SeedInstances()
     local p = self:_p()
+    ns.Worker:Mark("seed instances")
     if not (GetDifficultyInfo and p.ejInst) then return end
     self:_SeedExpansions()                                   -- the FK target rows, before any instance
     local season, raidDiffs = p.ejSeasonRaids or {}, p.ejRaidDiffs or {}
@@ -1224,6 +1230,7 @@ end
 -- expansion is null or a known registry entry, so a stray orphan (e.g. a not-yet-pruned legacy row)
 -- can't trip the FK recheck Update runs; the `~=` guards skip rows already in the right state.
 function Dashboard:_MarkSeasonFlags()
+    ns.Worker:Mark("season flags")
     local db = self:DB(); if not db then return end
     local valid = {}
     for _, e in ipairs(db:Select("name"):From("expansion"):Run()) do valid[denull(e.name)] = true end
@@ -1249,6 +1256,7 @@ end
 -- would be empty and wipe everything); a deleted instance cascades to every character's lockout row.
 function Dashboard:_PruneInstances()
     local p = self:_p()
+    ns.Worker:Mark("prune instances")
     if not (GetDifficultyInfo and p.ejInst) then return end
     local exists = {}
     for id in pairs(p.ejInst) do exists[id] = true end
@@ -1275,6 +1283,7 @@ end
 -- home lookup (skips a dungeon whose expansion isn't known yet); _PruneInstances removes these again
 -- if the dungeon's difficulty is ever retired.
 function Dashboard:_SeedSeasonDungeons()
+    ns.Worker:Mark("seed season dungeons")
     local s = self:_SeasonDungeons()
     if not s then return end
     local p = self:_p()
