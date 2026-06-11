@@ -55,8 +55,13 @@ function MapArtW:Render(frame, w, h, mapID, zoom)
             local tex = p.texes[i]
             if not tex then tex = f:CreateTexture(nil, p.layer, nil, p.sublevel); p.texes[i] = tex end
             local c, r = (i - 1) % cols, math.floor((i - 1) / cols)
+            -- the LAST column/row tiles paint past the layer's real edge (tile-size padding, often
+            -- black garbage) -- crop each to its valid fraction so no junk can land in view
+            local fx = math.min(1, L.layerWidth / L.tileWidth - c)
+            local fy = math.min(1, L.layerHeight / L.tileHeight - r)
             tex:SetTexture(files[i])
-            tex:SetSize(tw, th)
+            tex:SetTexCoord(0, fx, 0, fy)
+            tex:SetSize(tw * fx, th * fy)
             tex:ClearAllPoints()
             tex:SetPoint("TOPLEFT", f, "TOPLEFT", ox + c * tw, -(oy + r * th))
             tex:Show()

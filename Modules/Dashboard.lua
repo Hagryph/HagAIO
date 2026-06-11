@@ -1095,6 +1095,10 @@ end
 -- Quests whose expansion was never discovered (legacy rows) bucket under this label.
 local QUEST_OTHER = "Other"
 
+-- Zone tiles crop INTO the map painting (1 = the whole map, with its faded borders + ocean; >1
+-- centre-crops). 1.45 reads as scenery instead of cartography while staying recognisable.
+local ZONE_ART_ZOOM = 1.45
+
 local function questExpFilter(qb, exp)
     if exp == QUEST_OTHER then return qb:Where("quest.expansion", "is null") end
     return qb:Where("quest.expansion", "=", exp)
@@ -1235,6 +1239,7 @@ function Dashboard:_ShowQuestZonePage(page, exp)
         local on = exZone and (z.key == exZone.key) or false
         tiles[#tiles + 1] = {
             key = z.key, label = z.name, mapID = z.mapID, selected = on, expanded = on,
+            zoom = z.mapID and ZONE_ART_ZOOM or nil,   -- MapArt zoom (>1 = crop in); not for the logo fallback
             texture = (not z.mapID) and self:_ExpansionLogo(exp) or nil,   -- zone-less bucket: logo fallback
             onClick = function()
                 if p.expandedZone[p.category] == z.key then p.expandedZone[p.category] = nil
