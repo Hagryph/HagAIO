@@ -1330,39 +1330,20 @@ function Dashboard:_QuestExpansions()
     return names
 end
 
--- The zones with recorded quests in `exp`: { key, mapID, name }, name-sorted. A legacy row with no
--- discovered zone buckets under "Unknown Zone" (keyed by name, no map art).
-function Dashboard:_QuestZones(exp)
+-- ALL recorded quests of one expansion: { id, title, freq, zone }, grouped by zone, weekly before
+-- daily, title-sorted -- the tile order of the quest page.
+function Dashboard:_QuestsInExpansion(exp)
     local db = self:DB(); if not db then return {} end
-    local qb = questExpFilter(db:Select("quest.zone_map_id", "quest.zone_name"):From("dashboard_quest")
-        :InnerJoin("quest", { on = { "dashboard_quest.quest_id", "quest.quest_id" } }):Distinct(), exp)
-    local zones, seen = {}, {}
-    for _, r in ipairs(qb:Run()) do
-        local mapID, name = denull(r.zone_map_id), denull(r.zone_name)
-        local key = mapID and tostring(mapID) or ("name:" .. (name or "?"))
-        if not seen[key] then
-            seen[key] = true
-            zones[#zones + 1] = { key = key, mapID = mapID, name = name or "Unknown Zone" }
-        end
-    end
-    table.sort(zones, function(a, b) return a.name < b.name end)
-    return zones
-end
-
--- The recorded quests of one zone in `exp`: { id, title, freq }, weekly first then daily,
--- title-sorted within each frequency (the matrix's row order).
-function Dashboard:_QuestZoneQuests(exp, zone)
-    local db = self:DB(); if not db then return {} end
-    local qb = questExpFilter(db:Select("quest.quest_id", "quest.title", "dashboard_quest.freq")
+    local qb = questExpFilter(db:Select("quest.quest_id", "quest.title", "dashboard_quest.freq", "quest.zone_name")
         :From("dashboard_quest")
         :InnerJoin("quest", { on = { "dashboard_quest.quest_id", "quest.quest_id" } }):Distinct(), exp)
-    if zone.mapID then qb:AndWhere("quest.zone_map_id", "=", zone.mapID)
-    else qb:AndWhere("quest.zone_map_id", "is null") end
     local out = {}
     for _, r in ipairs(qb:Run()) do
-        out[#out + 1] = { id = denull(r.quest_id), title = denull(r.title), freq = denull(r.freq) or "weekly" }
+        out[#out + 1] = { id = denull(r.quest_id), title = denull(r.title),
+            freq = denull(r.freq) or "weekly", zone = denull(r.zone_name) }
     end
     table.sort(out, function(a, b)
+        if (a.zone or "~") ~= (b.zone or "~") then return (a.zone or "~") < (b.zone or "~") end
         if a.freq ~= b.freq then return a.freq == "weekly" end
         return (a.title or "") < (b.title or "")
     end)
@@ -1386,9 +1367,15 @@ function Dashboard:_QuestDone(doneAt, freq)
     return doneAt >= ((now + untilNext) - period)         -- after the LAST reset = inside this window
 end
 
--- The per-page inline quest detail Grid (rows = quests under Weekly/Daily sections, cols = the
--- characters), mirroring _InstanceDetailGrid. Cached per page.
-function Dashboard:_QuestZoneDetailGrid(page)
+-- "x ago" for the detail's Completed column (coarse on purpose: it answers "this reset?").
+local function timeAgo(secs)
+    if secs < 3600 then return "<1h ago" end
+    if secs < 86400 then return math.floor(secs / 3600) .. "h ago" end
+    return math.floor(secs / 86400) .. "d ago"
+end
+
+-- The per-page inline quest detail Grid (rows = characters), mirroring _InstanceDetailGrid.
+function Dashboard:_QuestDetailGrid(page)
     local p = self:_p()
     p.questDetailGrids = p.questDetailGrids or {}
     if p.questDetailGrids[page] then return p.questDetailGrids[page] end
@@ -1397,59 +1384,63 @@ function Dashboard:_QuestZoneDetailGrid(page)
     return g
 end
 
--- Fill the page's detail Grid with `zone`'s quest x character matrix; returns the px height needed.
-function Dashboard:_FillQuestZoneDetail(page, exp, zone)
-    local g = self:_QuestZoneDetailGrid(page)
+-- Fill the page's detail Grid with ONE quest's per-character state (the raid-detail shape:
+-- Character | done this window (check/dash) | when); returns the px height needed.
+function Dashboard:_FillQuestDetail(page, q)
+    local g = self:_QuestDetailGrid(page)
     local keys, chars = self:_SortedChars()
-    local columns = { { width = 240, label = "Quest" } }
+    local columns = {
+        { width = NAME_COL, label = "Character" },
+        { width = 90,  label = (q.freq == "weekly") and "Weekly" or "Daily", justify = "CENTER" },
+        { width = 110, label = "Completed", justify = "CENTER" },
+    }
+    local now = (GetServerTime and GetServerTime()) or time()
+    local rows = {}
     for _, key in ipairs(keys) do
-        columns[#columns + 1] = { width = 92, label = chars[key].name or key, justify = "CENTER" }
-    end
-    local rows, lastFreq = {}, nil
-    for _, q in ipairs(self:_QuestZoneQuests(exp, zone)) do
-        if q.freq ~= lastFreq then
-            lastFreq = q.freq
-            rows[#rows + 1] = { section = (q.freq == "weekly") and "Weekly" or "Daily" }
-        end
-        local cells = { q.title or ("Quest " .. tostring(q.id)) }
-        for _, key in ipairs(keys) do
-            local rec = chars[key].quests
-            rec = rec and rec[q.freq]
-            cells[#cells + 1] = self:_QuestDone(rec and rec[q.id], q.freq)   -- boolean -> check / dash
-        end
-        rows[#rows + 1] = { cells = cells }
+        local e = chars[key]
+        local rec = e.quests and e.quests[q.freq]
+        local doneAt = rec and rec[q.id]
+        local done = self:_QuestDone(doneAt, q.freq)
+        local cc = e.class and RAID_CLASS_COLORS and RAID_CLASS_COLORS[e.class]
+        local nameColor = cc and { cc.r, cc.g, cc.b } or "text"
+        rows[#rows + 1] = {
+            cells = { e.name or key, done, done and timeAgo(math.max(0, now - doneAt)) or "-" },
+            cellColor = function(ci) if ci == 1 then return nameColor end end,
+        }
     end
     g:SetColumns(columns)
     g:SetRows(rows)
     return g:NaturalHeight() + 4
 end
 
--- Render a quest expansion's page: zone tiles (map art) + the clicked zone's matrix opening inline.
-function Dashboard:_ShowQuestZonePage(page, exp)
+-- Render a quest expansion's page: ONE TYPOGRAPHY TILE PER QUEST (title in the serif, styled by
+-- its zone; the zone names the titlebar, Weekly/Daily badges the corner), the clicked quest's
+-- per-character state opening inline -- the raids/dungeons interaction, applied to quests.
+function Dashboard:_ShowQuestPage(page, exp)
     local p = self:_p()
-    p.expandedZone = p.expandedZone or {}
-    local zones = self:_QuestZones(exp)
-    local want, exZone = p.expandedZone[p.category]
-    for _, z in ipairs(zones) do if z.key == want then exZone = z; break end end
-    p.expandedZone[p.category] = exZone and exZone.key or nil   -- drop a stale key
-    if exZone then page:SetDetail(self:_QuestZoneDetailGrid(page), self:_FillQuestZoneDetail(page, exp, exZone))
+    p.expandedQuest = p.expandedQuest or {}
+    local quests = self:_QuestsInExpansion(exp)
+    local want, exQ = p.expandedQuest[p.category]
+    for _, q in ipairs(quests) do if q.id == want then exQ = q; break end end
+    p.expandedQuest[p.category] = exQ and exQ.id or nil   -- drop a stale id
+    if exQ then page:SetDetail(self:_QuestDetailGrid(page), self:_FillQuestDetail(page, exQ))
     else page:SetDetail(nil, 0) end
+    local lvl = (p.ejTierLevel or {})[exp]
     local tiles = {}
-    for _, z in ipairs(zones) do
-        local on = exZone and (z.key == exZone.key) or false
-        local tile = {
-            key = z.key, label = z.name, selected = on, expanded = on,
+    for _, q in ipairs(quests) do
+        local on = exQ and (q.id == exQ.id) or false
+        tiles[#tiles + 1] = {
+            key = q.id, label = q.zone or "Unknown Zone", selected = on, expanded = on,
+            badge = (q.freq == "weekly") and "Weekly" or "Daily",
+            badgeKey = (q.freq == "weekly") and "accent" or "green",
+            typo = { text = q.title or ("Quest " .. tostring(q.id)),
+                     style = self:_ZoneStyle(q.zone, lvl), scale = 0.16 },   -- titles run long: smaller type
             onClick = function()
-                if p.expandedZone[p.category] == z.key then p.expandedZone[p.category] = nil
-                else p.expandedZone[p.category] = z.key end
+                if p.expandedQuest[p.category] == q.id then p.expandedQuest[p.category] = nil
+                else p.expandedQuest[p.category] = q.id end
                 self:_Render()
             end,
         }
-        -- EVERY zone renders as a TYPOGRAPHY plate (curated / biome / expansion tint) -- one
-        -- visual language for the whole page, no image art at all. The tint fallback keys off the
-        -- PAGE's expansion (its EJ tier level matches the expansion ids EXP_STYLE uses).
-        tile.typo = { text = z.name, style = self:_ZoneStyle(z.name, (self:_p().ejTierLevel or {})[exp]) }
-        tiles[#tiles + 1] = tile
     end
     page:SetTiles(tiles)
 end
@@ -2223,7 +2214,7 @@ function Dashboard:_Render()
             page:SetTiles(self:_QuestExpansionTiles())
         elseif questExp then
             p.catTitle:SetText(questExp .. " Quests")
-            self:_ShowQuestZonePage(page, questExp)
+            self:_ShowQuestPage(page, questExp)
         else
             p.catTitle:SetText(label)
             page:SetTiles(self:_OverviewTiles(p.category))
