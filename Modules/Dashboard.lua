@@ -37,6 +37,11 @@ local DIFF = {
 -- raids use 10/25/40-player ids. DIFF_META (abbr + sort rank for the inline columns) is keyed by ID,
 -- so it's locale-proof; an unlisted id falls back to its GetDifficultyInfo name and sorts last.
 local RAID_DIFF_CANDIDATES = { 7, 17, 3, 4, 9, 148, 14, 5, 6, 15, 16 }
+-- The client's patch stamp (the .toc interface number). Raid difficulties and the set of journal
+-- instances only change across patches, so this gates the expensive per-raid difficulty re-probe.
+local function clientBuild()
+    return tostring((GetBuildInfo and select(4, GetBuildInfo())) or 0)
+end
 local DIFF_META = {
     [7]  = { abbr = "LFR", rank = 1 }, [17] = { abbr = "LFR", rank = 1 },
     [3]  = { abbr = "10",  rank = 2 }, [4]  = { abbr = "25",  rank = 2 }, [9] = { abbr = "40", rank = 2 },
@@ -505,7 +510,10 @@ function Dashboard:_BuildCatalog()
     self:_SeedSeasonDungeons()           -- current M+ season pool (cheap + idempotent)
     self:_MarkSeasonFlags()              -- refresh current_season after the prune has cleared orphans
     self:_SeedKeystones()                -- fill local keystone names for every alt's stored map id
-    if self:_SeasonDungeons() then p.catalogBuilt = true end   -- done once the M+ season pool is available
+    if self:_SeasonDungeons() then
+        p.catalogBuilt = true                                  -- done once the M+ season pool is available
+        self:_SetMeta("probe_build", clientBuild())            -- this patch is fully probed + pruned -> cache it
+    end
 end
 
 function Dashboard:_Snapshot()
@@ -514,6 +522,19 @@ function Dashboard:_Snapshot()
     self:_CollectVault()
     self:_CollectLockouts()
     self:_RenderIfShown()
+end
+
+-- ---- account-wide key/value meta (dashboard_meta) -------------------------
+function Dashboard:_Meta(k)
+    local db = self:DB(); if not db then return nil end
+    local r = db:Select("v"):From("dashboard_meta"):Where("k", "=", k):Limit(1):Run()[1]
+    return r and denull(r.v) or nil
+end
+function Dashboard:_SetMeta(k, v)
+    local db = self:DB(); if not db then return end
+    if db:Select("k"):From("dashboard_meta"):Where("k", "=", k):Limit(1):Run()[1] then
+        db:Update("dashboard_meta", { v = v }, function(x) return x.k == k end)
+    else db:Insert("dashboard_meta", { k = k, v = v }) end
 end
 
 -- ---- expansion mapping (Encounter Journal) --------------------------------
@@ -601,10 +622,13 @@ function Dashboard:_ExpansionMap()
     end
     -- Which difficulties each raid ACTUALLY offers (the journal's truth, keyed by instance id) -- so
     -- seeding skips an LFR / Mythic a raid never had, and legacy raids get their 10/25/40-player ids.
-    -- The per-raid EJ_SelectInstance probe is the heaviest step and its result is STATIC, so it's
-    -- effectively cached in the catalog: the rows seeded last session ARE the answer. Reuse them and
-    -- probe ONLY instances we've never catalogued -- on a normal login nothing is probed at all.
+    -- The per-raid EJ_SelectInstance probe is the heaviest step and its result only changes across
+    -- PATCHES. So we cache it in the catalog (the seeded rows ARE the answer) and reuse it -- UNLESS
+    -- the client build changed since the last probe, in which case we re-probe so a difficulty or
+    -- instance Blizzard removed/added is caught (the prune then drops the stale rows). On a normal
+    -- same-patch login nothing is probed at all.
     local raidDiffs = {}
+    local stale = (self:_Meta("probe_build") ~= clientBuild())   -- a patch since the last probe?
     local known, db = {}, self:DB()
     if db then
         for _, r in ipairs(db:Select("instance_id", "diff_id"):From("dashboard_instance"):Where("is_raid", "=", true):Run()) do
@@ -615,14 +639,14 @@ function Dashboard:_ExpansionMap()
     if EJ_SelectInstance and EJ_IsValidInstanceDifficulty then
         for id, rec in pairs(inst) do
             if rec.isRaid then
-                if known[id] then
-                    raidDiffs[id] = known[id]      -- persisted from a prior session -- skip the probe
+                if known[id] and not stale then
+                    raidDiffs[id] = known[id]      -- cached from a prior session, same patch -- skip the probe
                 else
                     pcall(EJ_SelectInstance, id)
                     local ids = {}
                     for _, d in ipairs(RAID_DIFF_CANDIDATES) do if EJ_IsValidInstanceDifficulty(d) then ids[#ids + 1] = d end end
                     if #ids > 0 then raidDiffs[id] = ids end
-                    ns.Worker:Yield()             -- only a brand-new instance reaches this heavy step
+                    ns.Worker:Yield()             -- only reached on a new patch (or a brand-new instance)
                 end
             end
         end
@@ -1769,6 +1793,13 @@ ns.ModuleManager:Register(Dashboard:New("Dashboard", {
             { name = "name",  type = "text", primaryKey = true },             -- journal tier name
             { name = "level", type = "integer" },                            -- expansion level (logo lookup + ordering)
             { name = "logo",  type = "integer" },                            -- banner fileID (GetExpansionDisplayInfo)
+        } },
+        -- Tiny account-wide key/value store. Used for the journal-probe build stamp: a raid's valid
+        -- difficulties (and which instances exist) only change across PATCHES, so we re-probe (the
+        -- expensive EJ_SelectInstance pass) only when the client build differs from the last probe.
+        dashboard_meta = { scope = "global", columns = {
+            { name = "k", type = "text", primaryKey = true },
+            { name = "v", type = "text" },
         } },
         dashboard_instance = { scope = "global", columns = {
             { name = "key",         type = "text", primaryKey = true },       -- "instanceID|difficultyID"

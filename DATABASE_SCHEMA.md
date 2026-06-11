@@ -24,6 +24,7 @@ Open **[diagram/DB/index.html](diagram/DB/index.html)** in a browser for an inte
 | [`dashboard_char`](#dashboard_char) | `global` | 10 | char_key | `Modules/Dashboard.lua` |
 | [`dashboard_instance`](#dashboard_instance) | `global` | 9 | key | `Modules/Dashboard.lua` |
 | [`dashboard_lockout`](#dashboard_lockout) | `global` | 5 | char_key, instance_key | `Modules/Dashboard.lua` |
+| [`dashboard_meta`](#dashboard_meta) | `global` | 2 | k | `Modules/Dashboard.lua` |
 | [`dashboard_quest`](#dashboard_quest) | `global` | 3 | char_key, freq, quest_id | `Modules/Dashboard.lua` |
 | [`dashboard_vault`](#dashboard_vault) | `global` | 6 | char_key, ordinal | `Modules/Dashboard.lua` |
 | [`editmode`](#editmode) | `char` | 4 | key | `Core/DB/CoreTables.lua` |
@@ -164,6 +165,17 @@ Open **[diagram/DB/index.html](diagram/DB/index.html)** in a browser for an inte
 | `reset` | integer | yes |  |  |  |
 
 **Primary key:** (char_key, instance_key)
+
+---
+
+### `dashboard_meta`  ·  scope `global`
+
+*Defined in `Modules/Dashboard.lua`.*
+
+| Column | Type | Null | Key | Default | References |
+|---|---|---|---|---|---|
+| `k` | text | no | PK |  |  |
+| `v` | text | yes |  |  |  |
 
 ---
 

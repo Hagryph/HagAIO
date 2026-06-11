@@ -73,10 +73,11 @@ function Worker:_Stop()
     if p.ticker then p.ticker:Cancel(); p.ticker = nil end
 end
 
--- One tick's work: STEP the queued iterators round-robin -- resume each one a single step at a time --
--- until the time budget is spent. Checking the budget BETWEEN every step (not just between jobs) caps
--- the overshoot to one unit and lets several iterators progress together instead of one hogging the
--- slice. A job that returns is completed (result delivered) and removed; a yield = one step done.
+-- One tick's work: advance the queued jobs round-robin -- ONE step each -- until the TIME budget is
+-- spent. Checking the budget BETWEEN every step (not just between jobs) caps the overshoot to one unit
+-- and lets several jobs progress together. A job is either a STEPPER (job.step -- called directly,
+-- returns truthy while more remains) or a COROUTINE (job.co -- resumed, a yield = one step). A finished
+-- job delivers its result and is removed.
 function Worker:_Pump()
     local p = self:_p()
     local q = p.queue
@@ -91,16 +92,23 @@ function Worker:_Pump()
             if job._after then job._after() end
             -- next job shifted into slot i; don't advance
         else
-            local ok, result = coroutine.resume(job.co)           -- ONE step
+            local ok, done, result      -- ok = no error; done = job finished this step
+            if job.step then
+                ok, result = pcall(job.step)                      -- stepper: result here is "more?" not the value
+                done = ok and not result; result = nil
+            else
+                ok, result = coroutine.resume(job.co)             -- coroutine: one yield = one step
+                done = ok and coroutine.status(job.co) == "dead"
+            end
             if not ok then
                 table.remove(q, i)
                 self:LogWarn(("job '%s' error: %s"):format(tostring(job.label), tostring(result)))
                 if job._after then job._after() end               -- still release any coalescing guard
-            elseif coroutine.status(job.co) == "dead" then
+            elseif done then
                 table.remove(q, i)
                 self:_Complete(job, result)
             else
-                i = i + 1                                         -- still running: round-robin to the next iterator
+                i = i + 1                                         -- still running: round-robin to the next job
             end
         end
     end
@@ -149,13 +157,23 @@ function Worker:Queue(fn, opts)
 end
 
 -- Run a loop-free STEPPER through the Worker -- the ATT-runner shape, where the WORKER owns the loop.
--- `step()` does ONE unit of work and returns truthy while more remains; the Worker calls it again on
--- its next budget slice (60 Hz, round-robin with other jobs). The whole point is that `step` contains
--- NO for/while of its own (the loop here, inside the Worker, is the only one) -- so heavy work can't
--- accumulate past the budget between checks. Prefer this over Queue for anything iterative.
+-- `step()` does ONE unit of work and returns truthy while more remains. The Worker calls it DIRECTLY
+-- (no per-unit coroutine) as many times as fit the TIME budget each pump, then again next pump -- so
+-- the number of units per frame is driven by time, not a fixed count. `step` must contain NO for/while
+-- of its own (the lint enforces it); the only loop is the Worker's budget loop. Prefer this for
+-- anything iterative. opts: owner / message / onDone / label (same as Queue).
 function Worker:Run(step, opts)
     assert(type(step) == "function", "Worker:Run needs a step function")
-    return self:Queue(function() while step() do self:Yield() end end, opts)
+    opts = opts or {}
+    if not self:_OwnerEnabled(opts.owner) then return nil end
+    local p = self:_p()
+    local id = opts.id or freshId(p)
+    p.queue[#p.queue + 1] = {
+        step = step, id = id, message = opts.message, onDone = opts.onDone, owner = opts.owner,
+        label = opts.label or opts.message or ("step#" .. tostring(id)), _after = opts._after,
+    }
+    self:_Wake()
+    return id
 end
 
 -- Drop a job that hasn't finished yet (best-effort; a job mid-slice finishes its slice).
