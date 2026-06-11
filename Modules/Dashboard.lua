@@ -484,6 +484,7 @@ end
 -- the DB executor chunks itself) so the cost spreads across frames and never stalls a render.
 function Dashboard:_RefreshNow()
     self:_BuildCatalog()
+    self:_BuildZoneCatalog()            -- the full zone registry (versioned: a real sweep once per patch)
     self:_Snapshot()                    -- ends with _RenderIfShown; no second render here
 end
 
@@ -1099,6 +1100,77 @@ local QUEST_OTHER = "Other"
 -- centre-crops). 1.45 reads as scenery instead of cartography while staying recognisable.
 local ZONE_ART_ZOOM = 1.45
 
+-- The data-version domain of the ZONE CATALOG (the full uiMapID sweep below): rebuilt once per
+-- patch, reconstructed from the persisted `zone` rows on a same-build login -- exactly like the
+-- instance catalog. (Not via the VersioningOwner mixin -- that binds this module's ONE domain to
+-- the instance catalog -- so this asks ns.Versioning directly.)
+local ZONE_DOMAIN = "zone_catalog"
+
+-- The loading screens are 16:9 widescreen art (see tools/gen_loadingscreens.mjs).
+local LOADING_ASPECT = 16 / 9
+
+-- Typography palette: each expansion's signature colour, used to tint the zone-name plate of a
+-- zone WITHOUT its own loading screen (keyed by Map.db2 ExpansionID, carried on the zone row).
+local EXP_STYLE = {
+    [0]  = { 0.85, 0.71, 0.38 },   -- Classic: aged gold / parchment
+    [1]  = { 0.55, 0.85, 0.35 },   -- Burning Crusade: fel green
+    [2]  = { 0.55, 0.78, 0.95 },   -- Wrath: glacial blue
+    [3]  = { 0.95, 0.45, 0.15 },   -- Cataclysm: molten orange
+    [4]  = { 0.35, 0.80, 0.55 },   -- Mists: jade
+    [5]  = { 0.80, 0.50, 0.25 },   -- Draenor: savage bronze
+    [6]  = { 0.45, 0.90, 0.30 },   -- Legion: fel
+    [7]  = { 0.30, 0.55, 0.90 },   -- Battle for Azeroth: war-sea navy
+    [8]  = { 0.78, 0.86, 1.00 },   -- Shadowlands: pale anima
+    [9]  = { 0.90, 0.65, 0.30 },   -- Dragonflight: dragon bronze
+    [10] = { 0.95, 0.75, 0.40 },   -- The War Within: earthen gold
+    [11] = { 0.70, 0.45, 0.95 },   -- Midnight: void violet
+}
+local EXP_STYLE_DEFAULT = { 0.85, 0.80, 0.65 }
+
+-- ONE pass per patch: sweep every uiMapID for zone-type maps and upsert the full zone registry --
+-- name, uiMapID, world map instance id (GetWorldPosFromMapPos) and, via the GENERATED
+-- ns.MapLoadingScreen table, the zone's own loading-screen art + expansion id. Runs inside the
+-- Worker job (MaybeYield per id); rows are added/updated only (flight_master FKs zone names).
+function Dashboard:_BuildZoneCatalog()
+    local p = self:_p()
+    if p.zoneCatalogBuilt then return end
+    if not (C_Map and C_Map.GetMapInfo) then return end
+    if ns.Versioning and ns.Versioning:IsCurrent(ZONE_DOMAIN) then p.zoneCatalogBuilt = true; return end
+    local db = self:DB(); if not db then return end
+    ns.Worker:Mark("zone catalog")
+    local zoneType = (Enum and Enum.UIMapType and Enum.UIMapType.Zone) or 3
+    local centre = CreateVector2D and CreateVector2D(0.5, 0.5)
+    for id = 1, 3200 do
+        local mi = C_Map.GetMapInfo(id)
+        if mi and mi.mapType == zoneType and mi.name and mi.name ~= "" then
+            local mapID
+            if centre and C_Map.GetWorldPosFromMapPos then
+                local instance = C_Map.GetWorldPosFromMapPos(id, centre)
+                if instance and instance >= 0 then mapID = instance end
+            end
+            local data = mapID and ns.MapLoadingScreen and ns.MapLoadingScreen[mapID]
+            local fields = { ui_map_id = id, map_id = mapID,
+                loading_file_id = data and data.ls, expansion_id = data and data.exp }
+            if db:Select("name"):From("zone"):Where("name", "=", mi.name):Limit(1):Run()[1] then
+                db:Update("zone", fields, { name = mi.name })
+            else
+                fields.name = mi.name
+                db:Insert("zone", fields)
+            end
+        end
+        ns.Worker:MaybeYield()
+    end
+    p.zoneCatalogBuilt = true
+    if ns.Versioning then ns.Versioning:Stamp(ZONE_DOMAIN) end
+end
+
+-- The zone-registry row for a uiMapID (index-backed point lookup), or nil.
+function Dashboard:_ZoneRow(uiMapID)
+    if not uiMapID then return nil end
+    local db = self:DB(); if not db then return nil end
+    return db:Select("*"):From("zone"):Where("ui_map_id", "=", uiMapID):Limit(1):Run()[1]
+end
+
 local function questExpFilter(qb, exp)
     if exp == QUEST_OTHER then return qb:Where("quest.expansion", "is null") end
     return qb:Where("quest.expansion", "=", exp)
@@ -1237,16 +1309,28 @@ function Dashboard:_ShowQuestZonePage(page, exp)
     local tiles = {}
     for _, z in ipairs(zones) do
         local on = exZone and (z.key == exZone.key) or false
-        tiles[#tiles + 1] = {
-            key = z.key, label = z.name, mapID = z.mapID, selected = on, expanded = on,
-            zoom = z.mapID and ZONE_ART_ZOOM or nil,   -- MapArt zoom (>1 = crop in); not for the logo fallback
-            texture = (not z.mapID) and self:_ExpansionLogo(exp) or nil,   -- zone-less bucket: logo fallback
+        local tile = {
+            key = z.key, label = z.name, selected = on, expanded = on,
             onClick = function()
                 if p.expandedZone[p.category] == z.key then p.expandedZone[p.category] = nil
                 else p.expandedZone[p.category] = z.key end
                 self:_Render()
             end,
         }
+        -- art, best first: the zone's OWN loading screen (zone registry) -> the zone painting
+        -- dimmed under a typography plate in the expansion's colour -> a plain typography plate.
+        local zrow = z.mapID and self:_ZoneRow(z.mapID) or nil
+        local lsid = zrow and denull(zrow.loading_file_id)
+        local expId = zrow and denull(zrow.expansion_id)
+        if lsid then
+            tile.texture, tile.cover, tile.aspect = lsid, true, LOADING_ASPECT
+        elseif z.mapID then
+            tile.mapID, tile.zoom = z.mapID, ZONE_ART_ZOOM
+            tile.typo = { text = z.name, color = EXP_STYLE[expId] or EXP_STYLE_DEFAULT }
+        else
+            tile.typo = { text = z.name, color = EXP_STYLE_DEFAULT }
+        end
+        tiles[#tiles + 1] = tile
     end
     page:SetTiles(tiles)
 end
@@ -1281,13 +1365,20 @@ local DEV_Q1 = { "Bounty", "Tribute", "Patrol", "Offering", "Harvest", "Errand",
 local DEV_Q2 = { "of the Depths", "at Dawn", "for the Flame", "of Renown", "in the Mists",
                  "of the Vault", "for the Archives", "of Embers", "at the Crossing", "of the Hollow" }
 
--- Real ZONE maps (uiMapID + name) that actually have world-map art, scanned once per session --
--- so test quests land in zones whose tiles can paint themselves.
+-- Real zones for test quests: the zone REGISTRY when the catalog has built (every zone, ids +
+-- art resolution included), else a live scan of zone maps with world-map art.
 function Dashboard:_DevZonePool()
     local p = self:_p()
     if p.devZones then return p.devZones end
     local out = {}
-    if C_Map and C_Map.GetMapInfo and C_Map.GetMapArtLayerTextures then
+    local db = self:DB()
+    if db then
+        for _, r in ipairs(db:Select("ui_map_id", "name"):From("zone"):Run()) do
+            local id = denull(r.ui_map_id)
+            if id then out[#out + 1] = { mapID = id, name = denull(r.name) or ("Zone " .. id) } end
+        end
+    end
+    if #out == 0 and C_Map and C_Map.GetMapInfo and C_Map.GetMapArtLayerTextures then
         local zoneType = (Enum and Enum.UIMapType and Enum.UIMapType.Zone) or 3
         for id = 1, 2600 do
             local mi = C_Map.GetMapInfo(id)

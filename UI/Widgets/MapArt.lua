@@ -71,4 +71,9 @@ function MapArtW:Render(frame, w, h, mapID, zoom)
     f:Show()
     return self
 end
+-- Dim the whole composition (e.g. behind a typography plate). 1 = full.
+function MapArtW:SetAlpha(a)
+    self:_frame():SetAlpha(a or 1)
+    return self
+end
 Widgets.MapArt = MapArtW

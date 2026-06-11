@@ -55,7 +55,7 @@ Open **[diagram/DB/index.html](diagram/DB/index.html)** in a browser for an inte
 | [`profile_editmode`](#profile_editmode) | `global` | 5 | profile, key | `Core/DB/CoreTables.lua` |
 | [`profile_module_enable`](#profile_module_enable) | `global` | 3 | profile, name | `Core/DB/CoreTables.lua` |
 | [`quest`](#quest) | `global` | 6 | quest_id | `Core/DB/CoreTables.lua` |
-| [`zone`](#zone) | `global` | 1 | name | `Core/DB/CoreTables.lua` |
+| [`zone`](#zone) | `global` | 5 | name | `Core/DB/CoreTables.lua` |
 
 ---
 
@@ -644,3 +644,9 @@ Open **[diagram/DB/index.html](diagram/DB/index.html)** in a browser for an inte
 | Column | Type | Null | Key | Default | References |
 |---|---|---|---|---|---|
 | `name` | text | no | PK |  |  |
+| `ui_map_id` | integer | yes |  |  |  |
+| `map_id` | integer | yes |  |  |  |
+| `loading_file_id` | integer | yes |  |  |  |
+| `expansion_id` | integer | yes |  |  |  |
+
+**Indexes:** (ui_map_id)
