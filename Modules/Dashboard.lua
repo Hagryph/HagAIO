@@ -1699,9 +1699,9 @@ function Dashboard:Show()
     local p = self:_p()
     p.shown = true
     p.frame:Show()
-    self:_Render()                                     -- cheap: renders off the cached catalog (may be empty)
-    self:_ScheduleRefresh()                            -- DEFER the heavy journal walk / catalog build off this
-                                                       -- frame; it snapshots + re-renders when done (coalesced)
+    self:_Render()                                     -- cheap paint off the cached catalog; no refresh --
+                                                       -- the catalog is built once at login and the live
+                                                       -- character's data is kept current by events
     if p.ticker then p.ticker:Cancel() end
     p.ticker = C_Timer.NewTicker(1, function() if p.shown then self:_UpdateCountdown() end end)
     C_Timer.After(0, function() self:_Render() end)   -- re-measure once on screen
