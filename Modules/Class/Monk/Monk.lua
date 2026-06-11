@@ -182,6 +182,15 @@ function ClassModule:_ScheduleUpdate()
     end)
 end
 
+-- A marker is SetPoint-anchored to its bar's fill, so it tracks the CURRENT value (health/energy) for
+-- free -- the only non-event input to its geometry is the bar's WIDTH. Watch a bar's resize (once per
+-- bar) so a layout / Edit Mode / scale change re-runs `onResize`; the per-tick value updates do NOT.
+function ClassModule:_WatchBarSize(bar, onResize)
+    if not bar or bar.__hagSizeWatched then return end
+    bar.__hagSizeWatched = true
+    bar:HookScript("OnSizeChanged", onResize)
+end
+
 -- Poll the orb count to keep the colour live: fast (0.1s) in combat where the count
 -- changes; out of combat keep the slow (0.5s) poll ONLY while orbs remain, then stop --
 -- no new orbs spawn out of combat, so spinning forever is pointless. A generation token

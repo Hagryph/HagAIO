@@ -41,8 +41,16 @@ function MonkBrewmaster:Load()
     if not p.powerHookInstalled and type(UnitFrameManaBar_Update) == "function" then
         hooksecurefunc("UnitFrameManaBar_Update", function(statusbar, unit)
             if unit == "player" and statusbar.unitFrame == PlayerFrame then
-                host:_p().powerBar = statusbar
-                if not host:_p().tigerMarker then host:_ScheduleTiger() end
+                local hp = host:_p()
+                -- The missing-energy bar is anchored to the fill, so it tracks current energy on its
+                -- own: don't repaint on a plain power tick. Only LEARN the bar (first time / a swap)
+                -- and repaint then; thereafter its geometry changes only on max-power / cost (talent /
+                -- level) / bar-resize events, wired separately.
+                if hp.powerBar ~= statusbar then
+                    hp.powerBar = statusbar
+                    host:_WatchBarSize(statusbar, function() host:_ScheduleTiger() end)
+                    host:_ScheduleTiger()
+                end
             end
         end)
         p.powerHookInstalled = true

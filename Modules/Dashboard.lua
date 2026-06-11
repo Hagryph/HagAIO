@@ -487,13 +487,16 @@ end
 
 -- Populate dashboard_instance with the full catalog the dashboard shows -- every raid (one row per
 -- difficulty) and the latest expansion's + current season's dungeons -- and drop rows whose instance
--- or difficulty no longer exists. The heavy raid/dungeon seed + prune run ONCE per session (the
--- journal catalog is static within a client); the small season pool re-seeds each pass since it can
--- finalise a moment after login. No-op until the Encounter Journal has loaded (retried next refresh).
+-- or difficulty no longer exists. The whole catalog (journal walk, seed, prune, season, keystone) is
+-- static within a client, so it builds exactly ONCE per session. The only reason a pass can repeat is
+-- readiness: the journal must have loaded AND the M+ season pool must have finalised (it can lag login
+-- a moment); until both are ready `catalogBuilt` stays false and a later trigger retries. After that
+-- it's a cheap no-op -- zone changes never rebuild it.
 function Dashboard:_BuildCatalog()
     local p = self:_p()
+    if p.catalogBuilt then return end    -- built once per session
     self:_ExpansionMap()                 -- walk the journal once (cached); the seed/prune source
-    if not p.ejInst then return end      -- journal not ready yet -- try again on the next refresh
+    if not p.ejInst then return end      -- journal not ready yet -- retry on the next trigger
     if not p.seededCatalog then
         self:_SeedInstances()            -- one row per (journal instance, difficulty it offers)
         self:_PruneInstances()           -- drop instances/difficulties Blizzard has removed + legacy name-keyed rows
@@ -502,6 +505,7 @@ function Dashboard:_BuildCatalog()
     self:_SeedSeasonDungeons()           -- current M+ season pool (cheap + idempotent)
     self:_MarkSeasonFlags()              -- refresh current_season after the prune has cleared orphans
     self:_SeedKeystones()                -- fill local keystone names for every alt's stored map id
+    if self:_SeasonDungeons() then p.catalogBuilt = true end   -- done once the M+ season pool is available
 end
 
 function Dashboard:_Snapshot()

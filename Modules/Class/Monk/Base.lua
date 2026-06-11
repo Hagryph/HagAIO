@@ -38,8 +38,16 @@ function MonkBase:Load()
             -- transiently carry unit "player" during vehicle/art swaps; touching
             -- them here can flush a pending resize that compares secret health.
             if unit == "player" and statusbar.unitFrame == PlayerFrame then
-                host:_p().bar = statusbar
-                host:_ScheduleUpdate()
+                local hp = host:_p()
+                -- The marker is anchored to the fill, so it tracks current health on its own: we do
+                -- NOT repaint on a plain health tick. Only LEARN the bar (first time / a swap) and
+                -- repaint then; its position thereafter changes solely on max-HP / heal-threshold /
+                -- bar-resize events, which are wired separately.
+                if hp.bar ~= statusbar then
+                    hp.bar = statusbar
+                    host:_WatchBarSize(statusbar, function() host:_ScheduleUpdate() end)
+                    host:_ScheduleUpdate()
+                end
             end
         end)
         p.healthHookInstalled = true
