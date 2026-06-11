@@ -37,10 +37,15 @@ local DIFF = {
 -- raids use 10/25/40-player ids. DIFF_META (abbr + sort rank for the inline columns) is keyed by ID,
 -- so it's locale-proof; an unlisted id falls back to its GetDifficultyInfo name and sorts last.
 local RAID_DIFF_CANDIDATES = { 7, 17, 3, 4, 9, 148, 14, 5, 6, 15, 16 }
--- The client's patch stamp (the .toc interface number). Raid difficulties and the set of journal
--- instances only change across patches, so this gates the expensive per-raid difficulty re-probe.
+-- The client's patch stamp (the .toc interface number, e.g. 120005). The journal catalog -- instances,
+-- difficulties, art -- only changes across patches, so this gates both the per-raid difficulty probe
+-- and the whole journal walk (a same-build login reconstructs the catalog from the DB instead).
 local function clientBuild()
-    return tostring((GetBuildInfo and select(4, GetBuildInfo())) or 0)
+    return (GetBuildInfo and tonumber((select(4, GetBuildInfo()))) or 0)
+end
+-- The human-readable patch version string (e.g. "12.0.5"), stored alongside the build for the schema.
+local function patchVersion()
+    return tostring((GetBuildInfo and (GetBuildInfo())) or "")
 end
 local DIFF_META = {
     [7]  = { abbr = "LFR", rank = 1 }, [17] = { abbr = "LFR", rank = 1 },
@@ -514,11 +519,8 @@ function Dashboard:_BuildCatalog()
     self:_SeedKeystones()                -- fill local keystone names for every alt's stored map id
     if self:_SeasonDungeons() then
         p.catalogBuilt = true                                  -- done once the M+ season pool is available
-        -- stamp the cache so the next same-patch login reconstructs instead of re-walking
-        self:_SetMeta("catalog_build", clientBuild())
-        self:_SetMeta("client_build", clientBuild())
-        self:_SetMeta("current_expansion", p.currentExpansion or "")
-        self:_SetMeta("patch_version", tostring((GetBuildInfo and GetBuildInfo()) or ""))
+        -- stamp the cache so the next same-build login reconstructs instead of re-walking the journal
+        self:_SetCatalogStamp({ build = clientBuild(), patch = patchVersion(), expansion = p.currentExpansion or "" })
     end
 end
 
@@ -530,17 +532,21 @@ function Dashboard:_Snapshot()
     self:_RenderIfShown()
 end
 
--- ---- account-wide key/value meta (dashboard_meta) -------------------------
-function Dashboard:_Meta(k)
+-- ---- catalog cache stamp (dashboard_catalog, single account-wide row) ------
+-- The whole journal catalog is static within a patch, so we save it once and reconstruct from the DB on
+-- later same-build logins. This one row records WHICH build/patch the saved catalog belongs to (plus the
+-- current expansion at save time) -- the build is compared against the live client build to decide
+-- reconstruct-vs-rewalk. One row, addressed by a constant id.
+local CATALOG_ROW = "current"
+function Dashboard:_CatalogStamp()
     local db = self:DB(); if not db then return nil end
-    local r = db:Select("v"):From("dashboard_meta"):Where("k", "=", k):Limit(1):Run()[1]
-    return r and denull(r.v) or nil
+    return db:Select("*"):From("dashboard_catalog"):Where("id", "=", CATALOG_ROW):Limit(1):Run()[1]
 end
-function Dashboard:_SetMeta(k, v)
+function Dashboard:_SetCatalogStamp(fields)
     local db = self:DB(); if not db then return end
-    if db:Select("k"):From("dashboard_meta"):Where("k", "=", k):Limit(1):Run()[1] then
-        db:Update("dashboard_meta", { v = v }, function(x) return x.k == k end)
-    else db:Insert("dashboard_meta", { k = k, v = v }) end
+    if db:Select("id"):From("dashboard_catalog"):Where("id", "=", CATALOG_ROW):Limit(1):Run()[1] then
+        db:Update("dashboard_catalog", fields, function(x) return x.id == CATALOG_ROW end)
+    else fields.id = CATALOG_ROW; db:Insert("dashboard_catalog", fields) end
 end
 
 -- Rebuild the runtime journal maps (p.ejInst / ejByName / ejImage / ejLore / ejRaidsByTier / ... ) from
@@ -592,7 +598,8 @@ function Dashboard:_ReconstructFromDB()
     p.ejRaidsByTier, p.ejDungeonsByTier, p.ejRaidDiffs = raidsByTier, dungeonsByTier, raidDiffs
     p.ejSeasonRaids, p.ejSeasonRaidList = season, seasonList
     p.ejTierLevel, p.ejTierOrder = tierLevel, tierOrder
-    p.currentExpansion = self:_Meta("current_expansion") or tierOrder[1]
+    local stamp = self:_CatalogStamp()
+    p.currentExpansion = (stamp and denull(stamp.expansion)) or tierOrder[1]
     p.ejReconstructed = true
     return true
 end
@@ -608,8 +615,9 @@ function Dashboard:_ExpansionMap()
     -- CACHE PATH: this patch's catalog is already saved -> rebuild the maps from the DB and COMMIT to it.
     -- No fallback to a re-walk: if the saved catalog is empty/incomplete the dashboard renders nothing,
     -- which surfaces a broken cache instead of silently masking it with an expensive re-walk. The walk
-    -- below runs only on the FIRST build ever / after a NEW patch (catalog_build unset or mismatched).
-    if self:_Meta("catalog_build") == clientBuild() then
+    -- below runs only on the FIRST build ever / after a NEW patch (no stamp, or stamp.build mismatched).
+    local stamp = self:_CatalogStamp()
+    if stamp and denull(stamp.build) == clientBuild() then
         self:_ReconstructFromDB()
         return p.ejInst
     end
@@ -1864,13 +1872,16 @@ ns.ModuleManager:Register(Dashboard:New("Dashboard", {
             { name = "level", type = "integer" },                            -- expansion level (logo lookup + ordering)
             { name = "logo",  type = "integer" },                            -- banner fileID (GetExpansionDisplayInfo)
         } },
-        -- Tiny account-wide key/value store. Holds the catalog cache stamp (catalog_build / client_build
-        -- / patch_version / current_expansion): the whole Encounter Journal catalog is static within a
-        -- PATCH, so once saved we reconstruct the runtime maps from dashboard_instance on login and only
-        -- re-walk the journal (LoadAddOn + the EJ_* pass) when the client build differs from catalog_build.
-        dashboard_meta = { scope = "global", columns = {
-            { name = "k", type = "text", primaryKey = true },
-            { name = "v", type = "text" },
+        -- Catalog cache stamp -- ONE account-wide row recording which client build the saved
+        -- dashboard_instance catalog belongs to. The whole Encounter Journal catalog (instances,
+        -- difficulties, art) is static within a PATCH, so once saved we reconstruct the runtime maps from
+        -- dashboard_instance on login and only re-walk the journal (LoadAddOn + the EJ_* pass) when the
+        -- live client build differs from `build` here.
+        dashboard_catalog = { scope = "global", columns = {
+            { name = "id",        type = "text",    primaryKey = true },   -- constant "current" (single-row stamp)
+            { name = "build",     type = "integer" },                      -- .toc interface number the catalog was saved under
+            { name = "patch",     type = "text" },                         -- patch version string, e.g. "12.0.5"
+            { name = "expansion", type = "text" },                         -- current expansion tier name at save time
         } },
         dashboard_instance = { scope = "global", columns = {
             { name = "key",         type = "text", primaryKey = true },       -- "instanceID|difficultyID"

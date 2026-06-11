@@ -77,6 +77,12 @@
         text type
         integer category_id FK
     }
+    dashboard_catalog {
+        text id PK
+        integer build
+        text patch
+        text expansion
+    }
     dashboard_char {
         text char_key PK
         text name
@@ -109,10 +115,6 @@
         integer progress
         integer total
         integer reset
-    }
-    dashboard_meta {
-        text k PK
-        text v
     }
     dashboard_quest {
         text char_key PK
