@@ -137,6 +137,46 @@ function Dev:OnEnable()
     self:_StartHitchWatch()
 end
 
+-- ---- MemWatch: leak vs. GC churn ----------------------------------------------------------------
+-- The addon-list memory number climbs CONTINUOUSLY between GC cycles by design (it counts garbage
+-- not yet collected), so "it keeps growing" alone never proves a leak. MemWatch measures the only
+-- number that does: every MEM_INTERVAL it forces a FULL collection and samples what survives -- the
+-- retained baseline. A leak = the baseline climbing sample after sample; a flat baseline = normal
+-- churn. Dev-character tool (the forced collect costs a frame); toggle with /hag mem.
+local MEM_INTERVAL = 60   -- seconds between samples
+
+function Dev:ToggleMemWatch()
+    local p = self:_p()
+    if p.mem then
+        if not p.mem.ticker:IsCancelled() then p.mem.ticker:Cancel() end
+        p.mem = nil
+        self:LogWarn("MemWatch off")
+        return
+    end
+    p.mem = {}
+    p.mem.ticker = self:Every(MEM_INTERVAL, function() self:_MemSample() end)
+    self:LogWarn(("MemWatch on: forced-GC retained sample every %ds (expect a brief hitch per sample)")
+        :format(MEM_INTERVAL))
+    self:_MemSample()
+end
+
+function Dev:_MemSample()
+    local m = self:_p().mem
+    if not m then return end
+    collectgarbage("collect")                 -- settle the heap: whatever remains is RETAINED
+    local heapKb = collectgarbage("count")
+    local ourKb
+    if UpdateAddOnMemoryUsage and GetAddOnMemoryUsage then
+        UpdateAddOnMemoryUsage()
+        ourKb = GetAddOnMemoryUsage(addonName)
+    end
+    local dOur  = (ourKb and m.ourKb) and (ourKb - m.ourKb) or 0
+    local dHeap = m.heapKb and (heapKb - m.heapKb) or 0
+    self:LogWarn(("MemWatch: retained %s MB HagAIO (%+.0f KB), %.1f MB total Lua (%+.0f KB)")
+        :format(ourKb and ("%.2f"):format(ourKb / 1024) or "?", dOur, heapKb / 1024, dHeap))
+    m.ourKb, m.heapKb = ourKb, heapKb
+end
+
 function Dev:_StartHitchWatch()
     local p = self:_p()
     if p.watch then return end
@@ -250,7 +290,10 @@ if (not ns.IsDevChar) or ns.IsDevChar() then
         description = "Developer tooling for this character. Live-tunes the Dashboard scene art.",
         alwaysOn = true,
         color = ns.Theme.hex.red,
-        deps = { "SettingsWindow", "Worker" },  -- Debug toggle on the General page; Worker share in HitchWatch
+        deps = { "SettingsWindow", "Worker", "SlashCommand" },  -- General-page toggle; HitchWatch; /hag mem
+        commands = {
+            mem = { handler = "ToggleMemWatch", help = "toggle the memory watch (one sample per minute)" },
+        },
         settings = { { type = "toggle", key = "debug", label = "Debug", default = true } },  -- per-char; seeds default ON
         generalToggles = {
             { section = "Developer", label = "Debug", desc = "Show debug messages in chat.",
