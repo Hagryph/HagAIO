@@ -1232,8 +1232,8 @@ local BIOME_WORDS = {
 -- The neutral plate the expansion tint colours when neither curation nor biome matches.
 local PLATE_BG, PLATE_BG2 = { 0.08, 0.10, 0.14 }, { 0.04, 0.05, 0.08 }
 
--- Typography palette: each expansion's signature colour, used to tint the zone-name plate of a
--- zone WITHOUT its own loading screen (keyed by Map.db2 ExpansionID, carried on the zone row).
+-- Typography palette: each expansion's signature colour -- the zone plate's LAST-RESORT tint when
+-- neither curation nor biome matches (keyed by expansion level == EJ tier level).
 local EXP_STYLE = {
     [0]  = { 0.85, 0.71, 0.38 },   -- Classic: aged gold / parchment
     [1]  = { 0.55, 0.85, 0.35 },   -- Burning Crusade: fel green
@@ -1251,9 +1251,8 @@ local EXP_STYLE = {
 local EXP_STYLE_DEFAULT = { 0.85, 0.80, 0.65 }
 
 -- ONE pass per patch: sweep every uiMapID for zone-type maps and upsert the full zone registry --
--- name, uiMapID, world map instance id (GetWorldPosFromMapPos) and, via the GENERATED
--- ns.MapLoadingScreen table, the zone's own loading-screen art + expansion id. Runs inside the
--- Worker job (MaybeYield per id); rows are added/updated only (flight_master FKs zone names).
+-- name, uiMapID, world map instance id (GetWorldPosFromMapPos). Runs inside the Worker job
+-- (MaybeYield per id); rows are added/updated only (flight_master FKs zone names).
 function Dashboard:_BuildZoneCatalog()
     local p = self:_p()
     if p.zoneCatalogBuilt then return end
@@ -1271,9 +1270,7 @@ function Dashboard:_BuildZoneCatalog()
                 local instance = C_Map.GetWorldPosFromMapPos(id, centre)
                 if instance and instance >= 0 then mapID = instance end
             end
-            local data = mapID and ns.MapLoadingScreen and ns.MapLoadingScreen[mapID]
-            local fields = { ui_map_id = id, map_id = mapID,
-                loading_file_id = data and data.ls, expansion_id = data and data.exp }
+            local fields = { ui_map_id = id, map_id = mapID }
             if db:Select("name"):From("zone"):Where("name", "=", mi.name):Limit(1):Run()[1] then
                 db:Update("zone", fields, { name = mi.name })
             else
@@ -1301,12 +1298,6 @@ function Dashboard:_ZoneStyle(name, expId)
     return { bg = PLATE_BG, bg2 = PLATE_BG2, fg = EXP_STYLE[expId] or EXP_STYLE_DEFAULT }
 end
 
--- The zone-registry row for a uiMapID (index-backed point lookup), or nil.
-function Dashboard:_ZoneRow(uiMapID)
-    if not uiMapID then return nil end
-    local db = self:DB(); if not db then return nil end
-    return db:Select("*"):From("zone"):Where("ui_map_id", "=", uiMapID):Limit(1):Run()[1]
-end
 
 local function questExpFilter(qb, exp)
     if exp == QUEST_OTHER then return qb:Where("quest.expansion", "is null") end
@@ -1455,9 +1446,9 @@ function Dashboard:_ShowQuestZonePage(page, exp)
             end,
         }
         -- EVERY zone renders as a TYPOGRAPHY plate (curated / biome / expansion tint) -- one
-        -- visual language for the whole page, no image art at all.
-        local zrow = z.mapID and self:_ZoneRow(z.mapID) or nil
-        tile.typo = { text = z.name, style = self:_ZoneStyle(z.name, zrow and denull(zrow.expansion_id)) }
+        -- visual language for the whole page, no image art at all. The tint fallback keys off the
+        -- PAGE's expansion (its EJ tier level matches the expansion ids EXP_STYLE uses).
+        tile.typo = { text = z.name, style = self:_ZoneStyle(z.name, (self:_p().ejTierLevel or {})[exp]) }
         tiles[#tiles + 1] = tile
     end
     page:SetTiles(tiles)

@@ -146,19 +146,17 @@ ns.DB.CoreTables = {
 
     -- Map zones. Two writers, one registry: the LocalTables service inserts a zone's name when a
     -- flight master is discovered there, and the Dashboard's ZONE CATALOG (versioned, once per
-    -- patch) sweeps every uiMapID and enriches/inserts the full set with its ids + loading-screen
-    -- art. GLOBAL/account-wide; rows are only ever ADDED or UPDATED (never deleted -- flight_master
+    -- patch) sweeps every uiMapID and enriches/inserts the full set with its map ids.
+    -- GLOBAL/account-wide; rows are only ever ADDED or UPDATED (never deleted -- flight_master
     -- cascade-FKs into name).
     zone = {
         scope = "global",
         columns = {
-            { name = "name",            type = "text", primaryKey = true }, -- zone name (the PK), e.g. "Elwynn Forest"
-            { name = "ui_map_id",       type = "integer" },                 -- C_Map uiMapID (zone-type map)
-            { name = "map_id",          type = "integer" },                 -- world map INSTANCE id (Map.db2)
-            { name = "loading_file_id", type = "integer" },                 -- own loading screen texture (else NULL)
-            { name = "expansion_id",    type = "integer" },                 -- ExpansionID (typography palette key)
+            { name = "name",      type = "text", primaryKey = true },   -- zone name (the PK), e.g. "Elwynn Forest"
+            { name = "ui_map_id", type = "integer" },                   -- C_Map uiMapID (zone-type map)
+            { name = "map_id",    type = "integer" },                   -- world map INSTANCE id
         },
-        indices = { { columns = { "ui_map_id" } } },   -- zone tiles resolve art by uiMapID
+        indices = { { columns = { "ui_map_id" } } },   -- point lookups by uiMapID
     },
 
     -- Flight masters, discovered (with their zone + map coords) by the LocalTables service whenever a
