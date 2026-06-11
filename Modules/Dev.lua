@@ -101,6 +101,22 @@ function Dev:BuildSettingsPage(sf)
         groups[#groups + 1] = g
     end
 
+    -- Dashboard test data: fill every dashboard page with random characters / keystones / vaults /
+    -- lockouts / quests to eyeball the layouts; Clear removes exactly the marked test rows.
+    if dash and dash.DevSeedTestData then
+        local g = W.SettingsGroup:New(content, "Dashboard Test Data")
+        local gc = g:GetContent()
+        local seed = W.Button:New(gc, "Seed random data")
+        seed:SetPoint("TOPLEFT", gc, "TOPLEFT", 0, 0)
+        seed:SetOnClick(function() dash:DevSeedTestData() end)
+        local clear = W.Button:New(gc, "Clear test data")
+        clear:SetPoint("LEFT", seed, "RIGHT", 10, 0)
+        clear:SetOnClick(function() dash:DevClearTestData() end)
+        g:SetContentHeight(30)
+        g:SetOnToggle(function() relayout() end)
+        groups[#groups + 1] = g
+    end
+
     relayout()
 end
 

@@ -1260,6 +1260,122 @@ function Dashboard:_QuestExpansionTiles()
     return tiles
 end
 
+-- ---- dev tooling: random test data (buttons on the Dev settings page) --------------------------
+-- Fill every dashboard page with RANDOM characters / keystones / vaults / lockouts / quests so the
+-- layouts can be eyeballed fully populated without grinding alts. Test rows are MARKED (characters
+-- on realm DEV_REALM, quest ids >= DEV_QUEST_BASE) so DevClearTestData removes exactly them and
+-- never touches real data. Lockouts reference the REAL seeded catalog (all expansions) and quest
+-- zones come from REAL zone maps, so tiles render their actual art.
+local DEV_REALM = "DevTest"
+local DEV_QUEST_BASE = 900000
+local DEV_NAMES = { "Aravel", "Borgrim", "Cynthra", "Dorel", "Eryndis", "Fenwick", "Gormak",
+                    "Hesperia", "Ilthane", "Jorvana", "Kaelis", "Lunara" }
+local DEV_CLASSES = { "WARRIOR", "PALADIN", "HUNTER", "ROGUE", "PRIEST", "SHAMAN", "MAGE",
+                      "WARLOCK", "MONK", "DRUID", "DEMONHUNTER", "DEATHKNIGHT", "EVOKER" }
+local DEV_Q1 = { "Bounty", "Tribute", "Patrol", "Offering", "Harvest", "Errand", "Trial", "Rally", "Procession", "Vigil" }
+local DEV_Q2 = { "of the Depths", "at Dawn", "for the Flame", "of Renown", "in the Mists",
+                 "of the Vault", "for the Archives", "of Embers", "at the Crossing", "of the Hollow" }
+
+-- Real ZONE maps (uiMapID + name) that actually have world-map art, scanned once per session --
+-- so test quests land in zones whose tiles can paint themselves.
+function Dashboard:_DevZonePool()
+    local p = self:_p()
+    if p.devZones then return p.devZones end
+    local out = {}
+    if C_Map and C_Map.GetMapInfo and C_Map.GetMapArtLayerTextures then
+        local zoneType = (Enum and Enum.UIMapType and Enum.UIMapType.Zone) or 3
+        for id = 1, 2600 do
+            local mi = C_Map.GetMapInfo(id)
+            if mi and mi.mapType == zoneType and mi.name then
+                local files = C_Map.GetMapArtLayerTextures(id, 1)
+                if files and #files > 0 then out[#out + 1] = { mapID = id, name = mi.name } end
+            end
+        end
+    end
+    if #out == 0 then out[1] = { mapID = nil, name = "Testlands" } end
+    p.devZones = out
+    return out
+end
+
+function Dashboard:DevSeedTestData()
+    local db = self:DB(); if not db then return end
+    local now = (GetServerTime and GetServerTime()) or time()
+    -- expansion pool: the real registry when the catalog has run, else the client's expansion names
+    local exps = {}
+    for _, e in ipairs(db:Select("name"):From("expansion"):Run()) do exps[#exps + 1] = denull(e.name) end
+    if #exps == 0 then
+        for i = 0, 12 do local n = _G["EXPANSION_NAME" .. i]; if n then exps[#exps + 1] = n end end
+    end
+    local ksIds = (C_ChallengeMode and C_ChallengeMode.GetMapTable and C_ChallengeMode.GetMapTable()) or {}
+    local instRows = db:Select("key"):From("dashboard_instance"):Run()
+    -- characters (fresh each seed: cascade-drop, then insert)
+    local charKeys = {}
+    for i = 1, math.random(6, 10) do
+        local name = DEV_NAMES[math.random(#DEV_NAMES)] .. i
+        local key = name .. "-" .. DEV_REALM
+        charKeys[#charKeys + 1] = key
+        db:Delete("dashboard_char", { char_key = key })
+        local fields = { char_key = key, name = name, realm = DEV_REALM,
+            class = DEV_CLASSES[math.random(#DEV_CLASSES)], level = math.random(60, 80),
+            ilvl = math.random(380, 680), rating = math.random(0, 3500),
+            last_seen = now - math.random(0, 6 * 86400) }
+        if #ksIds > 0 and math.random() < 0.8 then
+            local mapid = ksIds[math.random(#ksIds)]
+            self:_SetKeystone(mapid, C_ChallengeMode.GetMapUIInfo and C_ChallengeMode.GetMapUIInfo(mapid))
+            fields.ks_mapid, fields.ks_level = mapid, math.random(2, 20)
+        end
+        db:Insert("dashboard_char", fields)
+        for ord = 1, 9 do                                     -- vault slots, most filled
+            if math.random() < 0.8 then
+                local thr = math.random(1, 8)
+                db:Insert("dashboard_vault", { char_key = key, ordinal = ord,
+                    type = math.ceil(ord / 3), level = math.random(2, 20),
+                    progress = math.random(0, thr + 2), threshold = thr })
+            end
+        end
+        for _, r in ipairs(instRows) do                       -- a random fifth of the real catalog locked
+            if math.random() < 0.2 then
+                local total = math.random(4, 12)
+                db:Insert("dashboard_lockout", { char_key = key, instance_key = denull(r.key),
+                    total = total, progress = math.random(0, total),
+                    reset = now + math.random(3600, 6 * 86400) })
+            end
+        end
+    end
+    -- quests: a handful of zones, a few quests each, random expansion/freq; done_at scattered so
+    -- the matrix shows a believable mix of checks, dashes, and stale (pre-reset) turn-ins
+    local pool = self:_DevZonePool()
+    local qid = DEV_QUEST_BASE
+    for _ = 1, math.min(8, #pool) do
+        local z = pool[math.random(#pool)]
+        for _ = 1, math.random(2, 5) do
+            qid = qid + 1
+            local freq = (math.random() < 0.5) and "weekly" or "daily"
+            db:Delete("quest", { quest_id = qid })
+            db:Insert("quest", { quest_id = qid,
+                title = DEV_Q1[math.random(#DEV_Q1)] .. " " .. DEV_Q2[math.random(#DEV_Q2)],
+                zone_map_id = z.mapID, zone_name = z.name,
+                expansion = exps[math.random(math.max(1, #exps))] })
+            local period = (freq == "daily") and 86400 or 604800
+            for _, key in ipairs(charKeys) do
+                if math.random() < 0.7 then
+                    db:Insert("dashboard_quest", { char_key = key, freq = freq, quest_id = qid,
+                        done_at = now - math.random(0, math.floor(period * 1.5)) })
+                end
+            end
+        end
+    end
+    self:_RenderIfShown()
+end
+
+-- Remove exactly the marked test rows (children cascade with their character / quest).
+function Dashboard:DevClearTestData()
+    local db = self:DB(); if not db then return end
+    db:Delete("dashboard_char", function(r) return r.realm == DEV_REALM end)
+    db:Delete("quest", function(r) return (r.quest_id or 0) >= DEV_QUEST_BASE end)
+    self:_RenderIfShown()
+end
+
 -- The newest season raid's splash, for the Current Season overview tile (else nil).
 function Dashboard:_LatestSeasonRaidArt()
     local list = self:_SeasonRaidNames()
