@@ -15,30 +15,9 @@ local Class = ns.Class
 ns.DB = ns.DB or {}
 local DB = ns.DB
 
-local SEP = "\31"   -- unit separator: safe between composite key parts
-
--- A type-tagged, collision-free string for one scalar value (so number 1 ~= string "1",
--- and true ~= "true"). Returns nil for a NULL/absent value (callers skip indexing it).
-local function valueKey(v)
-    if v == nil or v == DB.NULL then return nil end
-    local t = type(v)
-    if t == "string"  then return "s" .. v end
-    if t == "number"  then return "n" .. tostring(v) end
-    if t == "boolean" then return v and "b1" or "b0" end
-    return "?" .. tostring(v)
-end
-
--- Combined key over an ordered list of columns; nil if ANY part is NULL (composite NULLs, like
--- single NULLs, are not enforced/looked up).
-local function combinedKey(row, cols)
-    local parts = {}
-    for i = 1, #cols do
-        local k = valueKey(row[cols[i]])
-        if k == nil then return nil end
-        parts[i] = k
-    end
-    return table.concat(parts, SEP)
-end
+-- The shared value/key encoding (Core/DB/Types.lua) -- one byte-compatible source for every
+-- layer that keys on row values. Upvalued: these run per row per map on the index hot path.
+local valueKey, combinedKey = DB.valueKey, DB.combinedKey
 
 local IndexManager = Class.new("DBIndexManager")
 

@@ -42,7 +42,7 @@ local function keyOf(v)
 end
 
 -- Capture all return values + their count in one table (handles embedded/trailing nils).
-local function pack(...) return { n = select("#", ...), ... } end
+local pack = ns.Helpers.Pack   -- shared varargs capture (Lib/Helpers.lua)
 
 -- Build a standalone memoized wrapper around fn, plus a control handle.
 local function build(fn, opts)

@@ -52,18 +52,9 @@ function Database:_RowConforms(tbl, row)
     return true
 end
 
--- A type-tagged combined key over `cols` for de-duplication; nil if any part is NULL (SQL allows
--- many NULLs in a unique key, so NULL rows aren't treated as duplicates).
-local function conformKey(row, cols)
-    local parts = {}
-    for i = 1, #cols do
-        local v = row[cols[i]]
-        if v == nil or v == DB.NULL then return nil end
-        local t = type(v)
-        parts[i] = (t == "string" and "s" or t == "number" and "n" or t == "boolean" and "b" or "?") .. tostring(v)
-    end
-    return table.concat(parts, "\31")
-end
+-- The load-sweep de-dup key: the SHARED combined key over `cols` (Core/DB/Types.lua); nil if
+-- any part is NULL (SQL allows many NULLs in a unique key, so NULL rows aren't duplicates).
+local conformKey = DB.combinedKey
 
 -- Reconcile a persisted row to the CURRENT schema (an automatic column-level migration), in place:
 --   * DROP any key whose column no longer exists (e.g. a removed PK column left behind in old saves,
@@ -255,8 +246,10 @@ end
 function Database:Delete(tname, predicate)
     local p = self:_p()
     assert(p.schema:Table(tname), ("unknown table '%s'"):format(tostring(tname)))
-    local targets = self:_Targets(tname, predicate)
+    -- BEFORE-statement trigger first, THEN resolve targets (same order as Update) -- so a
+    -- statement trigger that inserts/edits rows still influences which rows match.
     self:_FireStmt(DB.TriggerTime.BEFORE, DB.TriggerEvent.DELETE, tname)
+    local targets = self:_Targets(tname, predicate)
     local count = 0
     for _, row in ipairs(targets) do
         count = count + self:_DeleteRow(tname, row)

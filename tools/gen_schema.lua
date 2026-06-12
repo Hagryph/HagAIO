@@ -97,6 +97,7 @@ ns.LibManager       = {
 -- used across the framework, loaded before any feature file.
 local SKIP_FRAMEWORK = {
     ["Core/Namespace.lua"] = true,        -- WoW-API bound (dev identity); nothing here needs it
+    ["Core/DB/Types.lua"] = true,         -- loaded with the rest of the DB engine (DBFILES below)
     ["Lib/Color.lua"] = true,             -- loaded with the rest of Lib/ in the sandbox scan
     ["UI/Theme.lua"] = true,              -- stubbed above
     ["Core/DependencyGraph.lua"] = true,  -- manager machinery; managers are stubbed

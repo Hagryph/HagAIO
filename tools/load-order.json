@@ -20,6 +20,7 @@
     "Core/Interface.lua",
     "Core/Delegate.lua",
     "Core/Contributions.lua",
+    "Core/DB/Types.lua",
     "Lib/Color.lua",
     "UI/Theme.lua",
     "Core/DependencyGraph.lua",

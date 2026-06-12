@@ -155,7 +155,11 @@ end
 function CopyWindow:Show(title, text)
     self:_Build()
     local p = self:_p()
+    -- Mode reset ON ENTRY: a Prompt may have been dismissed with Esc/X (skipping its
+    -- Import button entirely), so copy-out mode re-shows the pager controls itself
+    -- instead of trusting the previous mode to have cleaned up.
     if p.acceptBtn then p.acceptBtn:Hide() end   -- copy-out mode: no Import button
+    p.prev:Show(); p.next:Show(); p.pageLabel:Show()
     p.titleText = title or "Copy"
     p.pages = paginate(text or "")
     p.frame:Show()
@@ -179,8 +183,7 @@ function CopyWindow:Prompt(title, onAccept)
     p.acceptBtn:Show()
     p.acceptBtn:SetScript("OnClick", function()
         local text = p.edit:GetText()
-        self:Hide()
-        p.prev:Show(); p.next:Show(); p.pageLabel:Show()  -- restore for copy-out
+        self:Hide()   -- pager controls come back in Show()'s mode reset, not here
         if onAccept then onAccept(text) end
     end)
     p.frame:Show()

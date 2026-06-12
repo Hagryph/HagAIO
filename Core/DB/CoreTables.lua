@@ -90,9 +90,10 @@ ns.DB.CoreTables = {
         scope = "global",
         columns = {
             { name = "id",        type = "integer", primaryKey = true },
-            { name = "min_level", type = "integer" },
-            { name = "echo",      type = "boolean" },
-            { name = "keep",      type = "integer" },
+            { name = "min_level", type = "integer" },   -- chat-echo level threshold (Log page "Chat level")
+            { name = "echo",      type = "boolean" },   -- the "Echo to chat" toggle
+            -- `keep` (history capacity) lived here until 2026-06-12: it never had a setter or
+            -- UI, so it was removed; old saved rows drop the column automatically on load.
         },
     },
 

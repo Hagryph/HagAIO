@@ -42,7 +42,7 @@ function QueryBuilder:Initialize(db, projectionArgs)
     self:_AddProjection(projectionArgs)
 end
 
-local function bareName(ref) return tostring(ref):match("([%w_]+)$") or ref end
+local bareName = ns.DB.bareName   -- shared ref helper (Core/DB/Types.lua)
 
 function QueryBuilder:_AddProjection(args)
     local p = self:_p()

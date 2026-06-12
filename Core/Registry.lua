@@ -116,17 +116,25 @@ function Registry:_StartEach(startFn, order)
 end
 
 -- Call `hookName` on each item, guarded so one item's teardown error never aborts the
--- rest. Default walks registration order; opts.order overrides the name list and
--- opts.reverse walks it back-to-front (reverse-dependency teardown). The hook is assumed
--- present -- Module and Service both declare a base no-op OnShutdown -- so there's no
--- per-item presence guard.
+-- rest -- but each failure is WARNED (like Component:ReleaseScope), never swallowed: a
+-- shutdown that throws every logout would otherwise go unnoticed forever. Default walks
+-- registration order; opts.order overrides the name list and opts.reverse walks it
+-- back-to-front (reverse-dependency teardown). The hook is assumed present -- Module and
+-- Service both declare a base no-op OnShutdown -- so there's no per-item presence guard.
 function Registry:_ShutdownEach(hookName, opts)
     local p = self:_p()
     local order = (opts and opts.order) or p.order
     local n = #order
     for k = 1, n do
-        local item = p.items[order[(opts and opts.reverse) and (n - k + 1) or k]]
-        if item then pcall(function() item[hookName](item) end) end
+        local name = order[(opts and opts.reverse) and (n - k + 1) or k]
+        local item = p.items[name]
+        if item then
+            local ok, err = pcall(function() item[hookName](item) end)
+            if not ok and ns.Logger then
+                ns.Logger:Core():Warn(("%s '%s' %s error: %s")
+                    :format(p.kind, tostring(name), hookName, tostring(err)))
+            end
+        end
     end
 end
 

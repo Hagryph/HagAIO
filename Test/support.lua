@@ -79,6 +79,7 @@ end
 -- headless (Namespace/Color/Widgets). Module/Submodule load on demand from the specs.
 local RIG_SKIP = {
     ["Core/Namespace.lua"] = true,        -- WoW-API bound (dev identity)
+    ["Core/DB/Types.lua"] = true,         -- DB specs load the engine explicitly (their DB_FILES list)
     ["Lib/Color.lua"] = true,             -- specs that need it load it themselves
     ["UI/Theme.lua"] = true,              -- stubbed below
     ["Core/DependencyGraph.lua"] = true,  -- manager machinery; managers are stubbed

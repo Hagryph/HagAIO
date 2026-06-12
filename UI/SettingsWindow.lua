@@ -659,11 +659,25 @@ function SettingsWindow:_BuildLogPage(parent)
     echo:SetChecked(ns.Logger:GetEcho())
     echo:SetOnToggle(function(on) ns.Logger:SetEcho(on) end)
 
-    -- Note pinned below the whole header band (title + controls), not chained
-    -- to the title, so the spacing is fixed regardless of font metrics.
+    -- Which reports reach chat while "Echo to chat" is on (the Logger's persisted level
+    -- threshold -- forced lines like errors marked always-show still get through).
+    local lvlLabel = W.Text:New(page, "Chat shows", "text", "GameFontHighlight")
+    lvlLabel:SetPoint("TOPLEFT", page, "TOPLEFT", 18, -50)
+    local lvl = W.Segmented:New(page, {
+        { value = ns.LogLevel.INFO.order, text = "Everything" },
+        { value = ns.LogLevel.WARN.order, text = "Warnings" },
+        { value = ns.LogLevel.ERROR.order, text = "Errors only" },
+    })
+    lvl:SetPoint("LEFT", lvlLabel, "RIGHT", 12, 0)
+    lvl:SetPoint("TOP", lvlLabel, "TOP", 0, 6)
+    lvl:SetValue(ns.Logger:GetMinLevel())
+    lvl:SetOnChange(function(v) ns.Logger:SetMinLevel(v) end)
+
+    -- Note pinned below the whole header band (title + controls + chat-level row), not
+    -- chained to the title, so the spacing is fixed regardless of font metrics.
     local note = W.Text:New(page, "Every module report is recorded here automatically.",
         "textDim", "GameFontHighlightSmall")
-    note:SetPoint("TOPLEFT", page, "TOPLEFT", 18, -46)
+    note:SetPoint("TOPLEFT", page, "TOPLEFT", 18, -82)
 
     local div = W.Divider:New(page)
     div:SetPoint("TOPLEFT", note, "BOTTOMLEFT", 0, -10)

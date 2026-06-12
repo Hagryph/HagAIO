@@ -90,6 +90,7 @@ Core/
   Interface.lua            INTERFACE factory -- a sibling of ns.Class for CONTRACTS: a named list of method names a
   Delegate.lua             A multicast DELEGATE / signal -- an object-owned event you Connect handlers to and Fire
   Contributions.lua        ns.Contributions -- the shared, PURE machinery for a feature's declarative cross-cutting
+  DB\Types.lua             Frozen vocabulary for the SQL-style database engine: the column/join/cascade/trigger
   DependencyGraph.lua      A generic dependency forest
   Logger.lua               Central logging service
   Registry.lua             Shared base for the three lifecycle registries (Module / Service / Submodule
@@ -118,7 +119,6 @@ Core/
   DB\RowStore.lua          The ONLY thing that reads or writes the persistence backing
   DB\Schema.lua            The schema DSL: immutable Column / Table / Schema objects built from a declarative spec
   DB\TriggerManager.lua    Holds a schema's triggers and fires them around the Database's DML, in SQL order:
-  DB\Types.lua             Frozen vocabulary for the SQL-style database engine: the column/join/cascade/trigger
   DB\WhereClause.lua       The predicate grammar shared by WHERE (and, via the executor, by a trigger WHEN)
   Init.lua                 The single Core initializer
 Lib/

@@ -19,7 +19,10 @@ local Class = ns.Class
 --   toggle -> <key> boolean   select/input -> <key> text   number/slider/range -> <key> number
 --   color  -> <key>_r, <key>_g, <key>_b number
 
-local function isSet(v) return v ~= nil and not ns.DB.isNull(v) end
+-- Shared row-cell guard (ns.DB.isSet). Bound at CALL time: this lib also loads in headless
+-- rigs that don't bring the DB engine in, where ns.DB doesn't exist yet (it's only ever
+-- called with a built database, so the late bind is always satisfied in practice).
+local function isSet(v) return ns.DB.isSet(v) end
 
 -- Structural equality (handles the small tables settings use, e.g. {r,g,b} colours).
 local function deepEqual(a, b)

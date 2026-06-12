@@ -81,6 +81,8 @@ ns.LogChannel = Channel
 local Logger = Class.new("Logger")
 
 local PREFIX = "|cff" .. Theme.hex.accent .. "HagAIO|r"
+local KEEP = 500   -- history capacity (entries). Fixed: a tunable `keep` pref existed but had
+                   -- no setter or UI, so it was dead persisted state -- removed 2026-06-12.
 
 function Logger:Initialize()
     local p = self:_p()
@@ -94,7 +96,6 @@ function Logger:Initialize()
     p.minLevel = LEVELS.INFO.order
     p.echo = true
     p.debug = false   -- when on, normally-silent DEBUG lines also surface to chat (dev aid; not persisted)
-    p.keep = 500
     p.frame = DEFAULT_CHAT_FRAME
 end
 
@@ -104,7 +105,7 @@ local function val(v, default) return (v ~= nil and not ns.DB.isNull(v)) and v o
 
 function Logger:_PrefRow()
     local db = sharedDB(); if not db then return nil end
-    return db:Select("min_level", "echo", "keep"):From("logger"):Where("id", "=", 1):Limit(1):Run()[1]
+    return db:Select("min_level", "echo"):From("logger"):Where("id", "=", 1):Limit(1):Run()[1]
 end
 
 -- Upsert the singleton logger row, merging `changes`.
@@ -119,7 +120,6 @@ function Logger:LoadSettings()
     local p, r = self:_p(), self:_PrefRow()
     p.minLevel = val(r and r.min_level, LEVELS.INFO.order)
     p.echo     = val(r and r.echo, true)
-    p.keep     = val(r and r.keep, 500)
 end
 
 -- Register is idempotent: the first registration of a name wins, so calling it
@@ -206,10 +206,10 @@ function Logger:Record(channel, level, text, echo)
     local h = p.history
     p.last = p.last + 1
     h[p.last] = entry
-    if (p.last - p.start + 1) > p.keep then
+    if (p.last - p.start + 1) > KEEP then
         h[p.start] = nil          -- release the oldest for GC; advance the head (O(1))
         p.start = p.start + 1
-        if (p.start - 1) >= p.keep then  -- dead prefix (length start-1) reached keep: compact (amortised O(1))
+        if (p.start - 1) >= KEEP then  -- dead prefix (length start-1) reached capacity: compact (amortised O(1))
             local compact, j = {}, 0
             for i = p.start, p.last do j = j + 1; compact[j] = h[i] end
             p.history = compact

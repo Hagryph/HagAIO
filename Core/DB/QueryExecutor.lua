@@ -34,7 +34,7 @@ local Class = ns.Class
 ns.DB = ns.DB or {}
 local DB = ns.DB
 
-local SEP = "\31"
+local SEP = DB.KEY_SEP
 local CHUNK = 64            -- rows between yield offers (a clock read each; a switch only when due)
 local MAX_RESTARTS = 2      -- mutated-mid-scan restarts before a live-row phase finishes unchunked
 
@@ -43,18 +43,13 @@ local function offerYield(n)
     if n % CHUNK == 0 and ns.Worker then ns.Worker:MaybeYield() end
 end
 
--- type-tagged key for grouping / distinct (NULL -> "\0")
-local function vkey(v)
-    if v == nil or v == DB.NULL then return "\0" end
-    local t = type(v)
-    if t == "string"  then return "s" .. v end
-    if t == "number"  then return "n" .. tostring(v) end
-    if t == "boolean" then return v and "b1" or "b0" end
-    return "?" .. tostring(v)
-end
+-- The shared value/key encoding + ref helper (Core/DB/Types.lua). Grouping/distinct key NULL
+-- cells together, so vkey maps NULL to "\0" instead of skipping it like the index layer.
+local NULL_KEY = "\0"
+local function vkey(v) return DB.valueKey(v, NULL_KEY) end
+local bareName = DB.bareName
 
 local function shallow(t) local o = {}; if t then for k, v in pairs(t) do o[k] = v end end; return o end
-local function bareName(ref) return tostring(ref):match("([%w_]+)$") or ref end
 
 -- Snapshot a source table into the pipeline (JOIN path): a fresh array of shallow row copies (a
 -- full clone, since rows are flat scalar maps). The query then works on this copy and never touches

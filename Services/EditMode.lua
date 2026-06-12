@@ -34,7 +34,7 @@ function EditMode:IsEditing() return self:_p().editing end
 -- Frame layout is per-character config in the database (the central `editmode` table, keyed by frame
 -- key -> {point,x,y}): this char's override ?? the loaded profile (`profile_editmode`) ?? nil (then
 -- the frame's coded default). So layouts differ per character and travel in that character's profile.
-local function isSet(v) return v ~= nil and not ns.DB.isNull(v) end
+local function isSet(v) return ns.DB.isSet(v) end   -- shared row-cell guard (Core/DB/Types.lua)
 
 function EditMode:_GetPosition(key)
     local db = self:DB()

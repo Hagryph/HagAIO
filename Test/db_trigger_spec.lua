@@ -131,4 +131,14 @@ describe("DB triggers", function()
         assert.are.equal(1, stmtFires)                     -- once for the whole UPDATE
         assert.are.equal(3, rowFires)                      -- once per row
     end)
+
+    it("a BEFORE-statement DELETE trigger runs before targets are resolved (same as UPDATE)", function()
+        local ns = newTrigNs()
+        local db = mk(ns, { { table = "items", time = "before", event = "delete", level = "statement",
+            action = function(ctx) ctx.db:Insert("items", { name = "lastminute" }) end } })
+        db:Insert("items", { name = "a" })
+        local deleted = db:Delete("items", nil)            -- delete ALL rows
+        assert.are.equal(2, deleted)                       -- the trigger's row was targeted too
+        assert.are.equal(0, db:Store():Count("items"))
+    end)
 end)

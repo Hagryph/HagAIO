@@ -19,7 +19,7 @@ local Class = ns.Class
 local Scheduler = Class.new("Scheduler", ns.Service)
 
 local unpack = unpack or table.unpack
-local function pack(...) return { n = select("#", ...), ... } end
+local pack = ns.Helpers.Pack   -- shared varargs capture (Lib/Helpers.lua)
 
 -- Repeating timer. `iterations` optional (nil = forever). Returns the C_Timer
 -- ticker handle (has :Cancel() and :IsCancelled()).

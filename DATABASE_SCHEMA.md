@@ -34,7 +34,7 @@ Open **[diagram/DB/index.html](diagram/DB/index.html)** in a browser for an inte
 | [`flight_master`](#flight_master) | `global` | 6 | node_id | `Core/DB/CoreTables.lua` |
 | [`flight_route`](#flight_route) | `global` | 5 | id | `Modules/Misc.lua` |
 | [`keystone`](#keystone) | `local` | 2 | mapid | `Core/DB/CoreTables.lua` |
-| [`logger`](#logger) | `global` | 4 | id | `Core/DB/CoreTables.lua` |
+| [`logger`](#logger) | `global` | 3 | id | `Core/DB/CoreTables.lua` |
 | [`minimap`](#minimap) | `global` | 3 | id | `Services/MinimapIcon.lua` |
 | [`module_enable`](#module_enable) | `char` | 2 | name | `Core/DB/CoreTables.lua` |
 | [`o_module_Class_MONK_1`](#o_module_Class_MONK_1) | `char` | 13 | id | `Modules/Class.lua` |
@@ -320,7 +320,6 @@ Open **[diagram/DB/index.html](diagram/DB/index.html)** in a browser for an inte
 | `id` | integer | no | PK |  |  |
 | `min_level` | integer | yes |  |  |  |
 | `echo` | boolean | yes |  |  |  |
-| `keep` | integer | yes |  |  |  |
 
 ---
 

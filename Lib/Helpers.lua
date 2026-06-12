@@ -18,4 +18,8 @@ function Helpers.DeepCopy(v)
     return t
 end
 
+-- Capture all return values + their count in one table (handles embedded/trailing nils):
+-- { n = <count>, ... }. Unpack with `unpack(t, 1, t.n)`.
+function Helpers.Pack(...) return { n = select("#", ...), ... } end
+
 ns.LibManager:RegisterValue("Helpers", Helpers)
