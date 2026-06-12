@@ -228,28 +228,24 @@ end
 
 -- ---- Flight database access (the module's own DAO over self:DB()) ---------------------------
 -- A flight node is one `flight_master` row (discovered, with its zone, by the LocalTables service).
--- A `flight_route` references two masters by id (src, dst) and carries no faction -- the faction is
--- the masters' (a route is valid for you when both are your faction or Neutral). The rest of the
--- module works in node NAMES; this DAO translates names -> master ids at the boundary, scoping every
--- lookup to the current faction. Recording only LOOKS masters up (discovery creates them); a node
--- that hasn't been discovered yet is simply not recorded. Small tables, read while flying.
+-- A `flight_route` references two masters by id (src, dst) and carries no faction of its own.
+-- FACTION CONTRACT: `faction` exists in this DAO for exactly one purpose -- guaranteeing that a
+-- route's stops are all usable by the player: every name -> id resolution is scoped to
+-- { faction, Neutral }, and _FlightRecords returns only routes whose EVERY stop (src, each hop,
+-- dst) passes that test. Callers derive it ONCE per operation (self:_Faction()) and thread it
+-- through, so it's never re-read per lookup. The rest of the module works in node NAMES; this DAO
+-- translates names -> master ids at the boundary. Recording only LOOKS masters up (discovery
+-- creates them); a node that hasn't been discovered yet is simply not recorded. Small tables.
 
--- The flight_master node id (its PK) for a node name usable by the player -- one of the player's
+-- The flight_master node id (its PK) for a node name usable by a `faction` player -- one of that
 -- faction or a Neutral point -- or nil if undiscovered (or the faction can't be attributed).
-function Misc:_MasterId(name)
+function Misc:_MasterId(name, faction)
     local db = self:DB(); if not db then return nil end
-    local faction = self:_Faction()
     if faction ~= "Alliance" and faction ~= "Horde" and faction ~= "Neutral" then return nil end
     -- Normalise here too (idempotent) so a raw taxi name from any caller still keys correctly.
     local rows = db:Select("node_id"):From("flight_master")
         :Where("name", "=", Flight:NodeName(tostring(name))):AndWhere("faction", "in", { faction, "Neutral" }):Limit(1):Run()
     return rows[1] and rows[1].node_id or nil
-end
-
-function Misc:_MasterName(nodeId)
-    local db = self:DB(); if not db then return nil end
-    local rows = db:Select("name"):From("flight_master"):Where("node_id", "=", nodeId):Limit(1):Run()
-    return rows[1] and rows[1].name or nil
 end
 
 -- The flight_route row { id, t, quality } for the directed master pair, or nil.
@@ -260,31 +256,22 @@ function Misc:_FlightRow(srcId, dstId)
     return rows[1]
 end
 
--- Ordered intermediate node NAMES for a route (hop master ids resolved back to names), or nil.
-function Misc:_FlightHops(routeId)
-    local db = self:DB(); if not db then return nil end
-    local rows = db:Select("master"):From("flight_hop"):Where("route_id", "=", routeId):OrderBy("ordinal", "asc"):Run()
-    if #rows == 0 then return nil end
-    local via = {}
-    for i, r in ipairs(rows) do via[i] = self:_MasterName(r.master) end
-    return via
-end
-
--- The entry { t, q } for the a -> b direction (node names), or nil. Read-only (creates no master).
+-- The entry { t, q } for the a -> b direction (node names), or nil. Read-only (creates no master);
+-- both endpoints must resolve within { faction, Neutral }.
 function Misc:_FlightGet(faction, a, b)
-    local srcId, dstId = self:_MasterId(a), self:_MasterId(b)
+    local srcId, dstId = self:_MasterId(a, faction), self:_MasterId(b, faction)
     local row = self:_FlightRow(srcId, dstId)
     if not row then return nil end
     return { t = row.t, q = row.quality }
 end
 
 -- Replace a route's hops with `via` (node names -> intermediate master ids; nil clears them).
-function Misc:_FlightSetHops(routeId, via)
+function Misc:_FlightSetHops(routeId, via, faction)
     local db = self:DB(); if not db then return end
     db:Delete("flight_hop", { route_id = routeId })   -- FK map: index lookup, no scan
     if via then
         for i, n in ipairs(via) do
-            local mid = self:_MasterId(n)
+            local mid = self:_MasterId(n, faction)
             if mid then db:Insert("flight_hop", { route_id = routeId, ordinal = i, master = mid }) end
         end
     end
@@ -294,21 +281,21 @@ end
 -- direct-over-direct only when the time changed by >= 5s. Returns true if anything changed.
 function Misc:_FlightStore(faction, a, b, seconds, via)
     local db = self:DB(); if not db then return false end
-    local srcId, dstId = self:_MasterId(a), self:_MasterId(b)
+    local srcId, dstId = self:_MasterId(a, faction), self:_MasterId(b, faction)
     if not srcId or not dstId then return false end
     local row = self:_FlightRow(srcId, dstId)
     if not row then
         local r = db:Insert("flight_route", { src = srcId, dst = dstId, t = seconds, quality = Quality.DIRECT })
-        self:_FlightSetHops(r.id, via)
+        self:_FlightSetHops(r.id, via, faction)
         return true
     end
     if row.quality < Quality.DIRECT then
         db:Update("flight_route", { t = seconds, quality = Quality.DIRECT }, { id = row.id })
-        self:_FlightSetHops(row.id, via)
+        self:_FlightSetHops(row.id, via, faction)
         return true
     elseif math.abs(seconds - row.t) >= 5 then
         db:Update("flight_route", { t = seconds }, { id = row.id })
-        self:_FlightSetHops(row.id, via)
+        self:_FlightSetHops(row.id, via, faction)
         return true
     end
     return false
@@ -317,30 +304,50 @@ end
 -- Fill-only FLY write: insert only if the direction has no entry. Returns true if it inserted.
 function Misc:_FlightStoreIfNew(faction, a, b, seconds, via)
     local db = self:DB(); if not db then return false end
-    local srcId, dstId = self:_MasterId(a), self:_MasterId(b)
+    local srcId, dstId = self:_MasterId(a, faction), self:_MasterId(b, faction)
     if not srcId or not dstId then return false end
     if self:_FlightRow(srcId, dstId) then return false end
     local r = db:Insert("flight_route", { src = srcId, dst = dstId, t = seconds, quality = Quality.FLY })
-    self:_FlightSetHops(r.id, via)
+    self:_FlightSetHops(r.id, via, faction)
     return true
 end
 
--- Every recorded segment whose masters belong to `faction`, as a FlightGraph record: an ordered
--- node-name sequence (src, hops..., dst) with its total time + quality. The faction filter is a
--- join to the src master (routes carry no faction of their own).
+-- Every recorded segment USABLE by a `faction` player, as a FlightGraph record: an ordered
+-- node-name sequence (src, hops..., dst) with its total time + quality. Routes carry no faction
+-- of their own, so the guarantee lives here: a record is returned ONLY when EVERY stop -- src,
+-- each hop AND dst -- resolves to a master of `faction` or a Neutral one; a record with any
+-- off-faction (or no-longer-known) stop is dropped whole, since the player couldn't fly that
+-- path. One pass over flight_master builds the id -> { name, usable } map, so per-stop checks
+-- and hop name resolution cost no further master queries.
 function Misc:_FlightRecords(faction)
     local db = self:DB(); if not db then return {} end
-    local routes = db:Select("flight_route.id", "flight_route.src", "flight_route.dst", "flight_route.t", "flight_route.quality")
-        :From("flight_route")
-        :InnerJoin("flight_master", { on = { "flight_route.src", "flight_master.node_id" } })
-        :Where("flight_master.faction", "in", { faction, "Neutral" }):Run()
+    local master = {}
+    for _, m in ipairs(db:Select("node_id", "name", "faction"):From("flight_master"):Run()) do
+        master[m.node_id] = { name = m.name, usable = (m.faction == faction or m.faction == "Neutral") }
+    end
+    -- The stop's node name, or nil when a `faction` player can't use it (off-faction/unknown).
+    local function stop(id)
+        local m = master[id]
+        if m and m.usable then return m.name end
+    end
     local out = {}
-    for _, row in ipairs(routes) do
-        local seq = { self:_MasterName(row.src) }
-        local via = self:_FlightHops(row.id)
-        if via then for _, n in ipairs(via) do seq[#seq + 1] = n end end
-        seq[#seq + 1] = self:_MasterName(row.dst)
-        out[#out + 1] = { seq = seq, t = row.t, q = row.quality }
+    for _, row in ipairs(db:Select("id", "src", "dst", "t", "quality"):From("flight_route"):Run()) do
+        local seq, ok = { stop(row.src) }, nil
+        ok = seq[1] ~= nil
+        if ok then
+            local hops = db:Select("master"):From("flight_hop")
+                :Where("route_id", "=", row.id):OrderBy("ordinal", "asc"):Run()
+            for _, h in ipairs(hops) do
+                local n = stop(h.master)
+                if not n then ok = false; break end
+                seq[#seq + 1] = n
+            end
+        end
+        if ok then
+            seq[#seq + 1] = stop(row.dst)
+            ok = seq[#seq] ~= nil
+        end
+        if ok then out[#out + 1] = { seq = seq, t = row.t, q = row.quality } end
     end
     return out
 end
@@ -478,7 +485,7 @@ function Misc:_PollCrossing()
             self:_RecordCross(p.crossIdx, p.crossMinTime)
         end
         p.crossIdx = p.crossIdx + 1
-        p.crossMinDist = math.huge
+        p.crossMinDist = huge
         p.crossMinTime = nil
     end
 end
