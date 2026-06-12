@@ -16,7 +16,11 @@ local Class = ns.Class
 
 local Versioning = Class.new("Versioning", ns.Service)
 
-local DEBUG_FORCE_STALE = true -- TEMP dev skip: IsCurrent always false -> owners re-walk/rebuild every login
+-- Dev skip: while the Logger DEBUG flag is on (auto-on for dev characters), IsCurrent is always
+-- false, so owners re-walk/rebuild every login. With debug off (every normal user) the stamps
+-- work as designed -- the flag can never disable the cache in a shipped build.
+local DEBUG_FORCE_STALE = true
+local function debugOn() return ns.Logger and ns.Logger.GetDebug and ns.Logger:GetDebug() or false end
 
 local function isNull(v) return v == nil or (ns.DB and ns.DB.isNull and ns.DB.isNull(v)) end
 
@@ -36,7 +40,7 @@ end
 -- True iff `domain` was last stamped under the CURRENTLY running client build -- i.e. its cached data is
 -- still valid for this patch. False when never stamped or stamped under a different build (a new patch).
 function Versioning:IsCurrent(domain)
-    if DEBUG_FORCE_STALE then return false end -- TEMP dev skip: force the rebuild path every login
+    if DEBUG_FORCE_STALE and debugOn() then return false end -- dev skip (debug flag only): force the rebuild path
     local r = self:Get(domain)
     return r ~= nil and r.build == self:Build()
 end

@@ -46,4 +46,23 @@ describe("Interface", function()
         local Bad = ns.Class.new("Bad", nil, { implements = { I } })
         assert.is_false((pcall(function() return Bad:New() end)))  -- missing Required
     end)
+
+    it("a SUBCLASS inherits the contract and is verified at its own first :New()", function()
+        local ns = ns_()
+        local I = ns.Interface.new("I", { "Required" })
+        local Base = ns.Class.new("Base", nil, { implements = { I } })
+        function Base:Required() return 1 end
+        local GoodSub = ns.Class.new("GoodSub", Base)            -- inherits Required
+        assert.are.equal(1, GoodSub:New():Required())
+
+        local Base2 = ns.Class.new("Base2", nil, { abstract = true, implements = { I } })
+        local BadSub = ns.Class.new("BadSub", Base2)             -- never defines Required
+        local ok, err = pcall(function() return BadSub:New() end)
+        assert.is_false(ok)
+        assert.is_true(tostring(err):find("Required") ~= nil)    -- the abstract base's contract bites
+
+        local GoodSub2 = ns.Class.new("GoodSub2", Base2)         -- sibling DOES implement it
+        function GoodSub2:Required() return 2 end
+        assert.are.equal(2, GoodSub2:New():Required())           -- BadSub's failure didn't poison it
+    end)
 end)

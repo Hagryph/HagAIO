@@ -224,8 +224,9 @@ end
 -- which fire UNIT_MAXHEALTH (out of combat / pre-pull) and re-snapshot here.
 function ClassModule:_SnapshotMaxHP()
     local p = self:_p()
+    -- Check Secrets:Is BEFORE the > 0 comparison: comparing a secret throws.
     local mh = UnitHealthMax("player")
-    if mh and mh > 0 and not (issecretvalue and issecretvalue(mh)) then
+    if mh and not ns.Secrets:Is(mh) and mh > 0 then
         p.maxHPSnap = mh
     end
 end
@@ -351,7 +352,7 @@ function ClassModule:_UpdateMarker()
     -- snapshot in restricted content (where the live one is secret and unusable for
     -- geometry). Without either we can't size any offset.
     local liveMax = UnitHealthMax("player")
-    local maxHP = (liveMax and liveMax > 0 and not ns.Secrets:Is(liveMax)) and liveMax or p.maxHPSnap
+    local maxHP = (liveMax and not ns.Secrets:Is(liveMax) and liveMax > 0) and liveMax or p.maxHPSnap
     if not maxHP or maxHP <= 0 then return hideAll() end
 
     -- Bar WIDTH can also come back SECRET in restricted content (like max health),

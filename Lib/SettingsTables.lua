@@ -84,11 +84,26 @@ end
 
 local SettingsTables = Class.new("SettingsTables", ns.Lib)
 
+-- Cache sentinel: "this key RESOLVED to nil" (distinct from "not cached yet").
+local NIL = {}
+
 function SettingsTables:Initialize(name)
     ns.Lib.Initialize(self, name)
     local p = self:_p()
     p.namespaces = {}   -- list of { ns = <key>, schema = <schema> }
     p.seen = {}         -- ns -> true (registration is idempotent)
+    -- Resolved-value cache: db -> nsKey -> key -> value (NIL = resolved to nil). GetSetting sits on
+    -- per-event and combat-ticker paths, and a cold read costs 2-3 full query pipelines -- so reads
+    -- are served from here and every WRITE path in this lib invalidates (Set/ClearChar/SetLoadedProfile/
+    -- SnapshotInto/WriteProfileValues). Weak db keys so a discarded database doesn't pin its cache.
+    p.cache = setmetatable({}, { __mode = "k" })
+end
+
+-- Drop cached resolved values: one namespace on `db`, or the whole db when nsKey is nil.
+function SettingsTables:Invalidate(db, nsKey)
+    local byNs = self:_p().cache[db]
+    if not byNs then return end
+    if nsKey then byNs[nsKey] = nil else self:_p().cache[db] = nil end
 end
 
 -- ---- namespace registry ---------------------------------------------------
@@ -146,11 +161,30 @@ function SettingsTables:SetLoadedProfile(db, name)
     elseif name ~= nil then
         db:Insert("config", { id = 1, loaded_profile = name })
     end
+    self:Invalidate(db)   -- the middle cascade layer changed for EVERY namespace
 end
 
 -- ---- settings read / write (the cascade) ----------------------------------
--- Effective value: char override ?? loaded profile ?? code default.
+-- Effective value: char override ?? loaded profile ?? code default. Served from the resolved-value
+-- cache (this sits on per-event / combat-ticker paths); a miss runs _Resolve's query cascade once.
+-- A returned table (e.g. a colour) is the CACHED value -- treat settings values as read-only.
 function SettingsTables:Get(db, nsKey, schema, key)
+    local byNs = self:_p().cache[db]
+    if not byNs then byNs = {}; self:_p().cache[db] = byNs end
+    local vals = byNs[nsKey]
+    if not vals then vals = {}; byNs[nsKey] = vals end
+    local hit = vals[key]
+    if hit ~= nil then
+        if hit == NIL then return nil end
+        return hit
+    end
+    local v = self:_Resolve(db, nsKey, schema, key)
+    vals[key] = (v == nil) and NIL or v
+    return v
+end
+
+-- The uncached cascade walk (override row -> loaded profile row -> code default).
+function SettingsTables:_Resolve(db, nsKey, schema, key)
     local f = schemaFields(schema).byKey[key]
     if not f then return nil end
     local orow = charRow(db, nsKey)
@@ -180,6 +214,7 @@ end
 function SettingsTables:Set(db, nsKey, schema, key, value)
     local f = schemaFields(schema).byKey[key]
     if not f then return end
+    self:Invalidate(db, nsKey)
     local t = oName(nsKey)
     local exists = charRow(db, nsKey) ~= nil
     if deepEqual(value, self:Baseline(db, nsKey, schema, key)) then
@@ -195,12 +230,14 @@ end
 
 -- Wipe this character's override row for <ns> (used by "load profile" so the cascade falls through).
 function SettingsTables:ClearChar(db, nsKey)
+    self:Invalidate(db, nsKey)
     db:Truncate(oName(nsKey))
 end
 
 -- ---- profile snapshot / read / write (for the Profiles service) -----------
 -- Snapshot this char's EFFECTIVE config for <ns> as diffs-from-default into profile `name`'s row.
 function SettingsTables:SnapshotInto(db, nsKey, schema, name)
+    self:Invalidate(db, nsKey)   -- `name` may be the loaded profile (the middle cascade layer)
     local fs = schemaFields(schema)
     local cols, any = {}, false
     for _, f in ipairs(fs) do
@@ -245,6 +282,7 @@ end
 
 -- Write a { key = value } map into profile `name`'s row for <ns> (used by import).
 function SettingsTables:WriteProfileValues(db, nsKey, schema, name, values)
+    self:Invalidate(db, nsKey)   -- `name` may be the loaded profile (the middle cascade layer)
     local cols = {}
     for _, f in ipairs(schemaFields(schema)) do
         local v = values and values[f.key]

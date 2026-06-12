@@ -144,6 +144,23 @@ describe("Worker", function()
         assert.are.equal(2, runs)                       -- re-enabled -> ran again
     end)
 
+    it("a job cancelled PENDING by owner-disable doesn't deadlock the runner after re-enable", function()
+        local worker, bus, ns = newWorker()
+        local owner = fakeOwner()
+        local runs = 0
+        worker:Register("FAKE_EVENT", function() runs = runs + 1 end, { owner = owner })
+        local driver = bus:_p().frame
+        driver:Fire("FAKE_EVENT")                       -- queued (pending), NOT yet pumped
+        owner.enabled = false
+        ns.EventBus:Emit("HagAIO_OwnerState", owner, false)   -- cancels the pending job
+        worker:_Pump()
+        assert.are.equal(0, runs)
+        owner.enabled = true
+        ns.EventBus:Emit("HagAIO_OwnerState", owner, true)
+        driver:Fire("FAKE_EVENT"); worker:_Pump()
+        assert.are.equal(1, runs)                       -- the coalescing guard was released, so it fires
+    end)
+
     it("Every reminds via a timer and pauses while the owner is disabled (no polling)", function()
         local worker, _, ns, _, clock = newWorker()
         local owner = fakeOwner()

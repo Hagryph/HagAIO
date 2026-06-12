@@ -95,7 +95,8 @@ local Class = {}
 --                               ns.Class.statics(cls). Owned by THIS class and shared by its
 --                               subclasses (C#); a subclass re-declaring gets its own.
 --   mixins   = { M1, M2 }    -- trait method tables (ns.Mixin) merged in; your own methods win
---   implements = { I1 }      -- interfaces (ns.Interface) verified at first :New()
+--   implements = { I1 }      -- interfaces (ns.Interface) verified at each concrete class's
+--                               first :New() -- subclasses inherit (and re-verify) the contract
 function Class.new(name, parent, opts)
     parent = parent or Object
     local class = setmetatable({}, { __index = parent })
@@ -125,24 +126,43 @@ function Class.new(name, parent, opts)
         if opts.implements then class.__implements = opts.implements end
     end
 
-    -- Classes that opt into abstract/implements get a checking constructor; every other
-    -- class keeps the minimal fast path (no per-New overhead -- protects hot value types).
-    if opts and (opts.abstract or opts.implements) then
+    -- True when any class in the parent chain declared `implements` -- a subclass must
+    -- honour every ancestor's interface contracts, so it needs the checking constructor too.
+    local inheritsContracts = false
+    do
+        local c = parent
+        while c do
+            if rawget(c, "__implements") then inheritsContracts = true; break end
+            c = rawget(c, "__parent")
+        end
+    end
+
+    -- Classes that opt into abstract/implements -- or INHERIT an interface contract -- get a
+    -- checking constructor; every other class keeps the minimal fast path (no per-New
+    -- overhead -- protects hot value types).
+    if (opts and (opts.abstract or opts.implements)) or inheritsContracts then
         function class:New(...)
             if rawget(self, "__abstract") then
                 error(("cannot instantiate abstract class '%s'"):format(self.__name), 2)
             end
-            local impl = rawget(self, "__implements")
-            if impl then
-                self.__implements = nil   -- verify once, now every method is defined
-                for _, iface in ipairs(impl) do
-                    for _, m in ipairs(iface) do
-                        if type(self[m]) ~= "function" then
-                            error(("class '%s' is missing method '%s' required by interface '%s'"):format(
-                                self.__name, m, iface.__name or "?"), 2)
+            -- Verify every contract in the ancestry ONCE per concrete class, at its first
+            -- :New() (when every method is defined). The declarer's __implements is kept --
+            -- each subclass verifies against ITS OWN method set (an abstract base can't be
+            -- instantiated, so its contract is only ever checkable here, on a subclass).
+            if not rawget(self, "__implChecked") then
+                local c = self
+                while c do
+                    for _, iface in ipairs(rawget(c, "__implements") or {}) do
+                        for _, m in ipairs(iface) do
+                            if type(self[m]) ~= "function" then
+                                error(("class '%s' is missing method '%s' required by interface '%s'"):format(
+                                    self.__name, m, iface.__name or "?"), 2)
+                            end
                         end
                     end
+                    c = rawget(c, "__parent")
                 end
+                self.__implChecked = true   -- latched only after the contracts verified
             end
             return makeInstance(self, ...)
         end

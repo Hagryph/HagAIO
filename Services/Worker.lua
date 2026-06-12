@@ -19,10 +19,11 @@ local Class = ns.Class
 -- is its result; on completion the Worker Emits the job's `message` (default "HagAIO_WorkerDone")
 -- with (id, result) -- iterator-with-return callers get their result, the rest get a done signal.
 --
--- OWNER BINDING: pass opts.owner = a Module/Service to bind work to it. The work only runs
--- while the owner is ENABLED, and the Worker auto-listens to the owner's enable/disable
--- (HagAIO_OwnerState, emitted by Component + Service): disabling cancels pending work and
--- pauses interval timers; enabling resumes them. A Service owner is always enabled.
+-- OWNER BINDING: pass opts.owner = a Module/Submodule/Service to bind work to it. The work only
+-- runs while the owner is ENABLED (a submodule: while LOADED), and the Worker auto-listens to the
+-- owner's enable/disable (HagAIO_OwnerState, emitted by Module + Submodule + Service): disabling
+-- cancels pending work and pauses interval timers; enabling resumes them. A Service owner is
+-- always enabled.
 --
 --   ns.Worker:Queue(fn, { owner=, message=, onDone=, label= })       -> id      one-time work
 --   ns.Worker:Register(event, fn, { owner=, message=, ... })         -> handle  run on each event
@@ -40,7 +41,7 @@ local TICK = 1 / 60          -- pump at a FIXED 60 Hz, never per-frame (so 240 F
 -- flag -- auto-on for dev characters, toggled from the Dev module). Off = zero profiling work.
 local function debugOn() return ns.Logger and ns.Logger.GetDebug and ns.Logger:GetDebug() or false end
 local DONE_MSG = "HagAIO_WorkerDone"
-local STATE_MSG = "HagAIO_OwnerState"   -- (owner, enabled) -- emitted by Component + Service
+local STATE_MSG = "HagAIO_OwnerState"   -- (owner, enabled) -- emitted by Module + Submodule + Service
 
 function Worker:OnInitialize()
     local p = self:_p()
@@ -252,11 +253,18 @@ function Worker:Run(step, opts)
 end
 
 -- Drop a job that hasn't finished yet (best-effort; a job mid-slice finishes its slice).
+-- Runs the job's _after like every other removal path (_Pump's drop/error/complete), so a
+-- runner's coalescing guard is released -- otherwise st.pending would stay true forever and
+-- the runner could never queue again after its owner re-enables.
 function Worker:Cancel(id)
     if id == nil then return end
     local q = self:_p().queue
     for i = #q, 1, -1 do
-        if q[i].id == id then table.remove(q, i) end
+        local job = q[i]
+        if job.id == id then
+            table.remove(q, i)
+            if job._after then job._after() end
+        end
     end
 end
 
@@ -277,6 +285,9 @@ function Worker:_Runner(fn, opts)
                 if st.again then st.again = false; fire() end
             end,
         })
+        -- Queue refused (the owner raced to disabled): nothing is in flight, so don't
+        -- leave the coalescing guard latched -- the next fire after re-enable must queue.
+        if not st.queuedId then st.pending = false end
     end
     st.fire = fire
     return fire, st
@@ -307,6 +318,7 @@ function Worker:Register(event, fn, opts)
     return { Unregister = function()
         if opts.message then ns.EventBus:Unsubscribe(event, evToken) else ns.EventBus:Off(event, evToken) end
         if stateToken then ns.EventBus:Unsubscribe(STATE_MSG, stateToken) end
+        st.active = false            -- so the cancelled job's _after can't coalesce-refire
         self:Cancel(st.queuedId)
     end }
 end
@@ -327,6 +339,7 @@ function Worker:Every(interval, fn, opts)
     return { Unregister = function()
         stop()
         if stateToken then ns.EventBus:Unsubscribe(STATE_MSG, stateToken) end
+        st.active = false            -- so the cancelled job's _after can't coalesce-refire
         self:Cancel(st.queuedId)
     end }
 end

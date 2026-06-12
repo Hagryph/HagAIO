@@ -85,6 +85,10 @@ function Submodule:GetSubmoduleDeps() return self:_p().submoduleDeps end
 function Submodule:GetAddonDeps() return self:_p().addonDeps end
 function Submodule:GetHost() return self:_p().host end
 function Submodule:IsLoaded() return self:_p().loaded end
+-- The Worker's owner-gating contract (see Services/Worker.lua): an owner is "enabled" via
+-- IsEnabled(). For a submodule that IS its loaded state -- so inherited self:Queue/WorkOn/
+-- WorkEvery genuinely pause while unloaded instead of being treated as always-on.
+function Submodule:IsEnabled() return self:_p().loaded end
 
 -- This submodule's own activation predicate (its Lua condition). Structural deps
 -- (parent + declared deps) are evaluated by the graph, not here.
@@ -118,6 +122,9 @@ function Submodule:_Load()
     if p.loaded then return end
     p.loaded = true
     if p.onLoad then p.onLoad(p.host, self) end
+    if ns.EventBus and ns.EventBus.Emit then
+        ns.EventBus:Emit("HagAIO_OwnerState", self, true)    -- (owner, enabled) -- the Worker's owner binding
+    end
 end
 
 function Submodule:_Unload()
@@ -126,6 +133,9 @@ function Submodule:_Unload()
     p.loaded = false
     if p.onUnload then p.onUnload(p.host, self) end
     self:_ReleaseAll()  -- undo any self:On / self:Every / ... registered while loaded
+    if ns.EventBus and ns.EventBus.Emit then
+        ns.EventBus:Emit("HagAIO_OwnerState", self, false)   -- the Worker pauses/cancels owner-bound work
+    end
 end
 
 ns.Submodule = Submodule
