@@ -30,11 +30,14 @@ $ErrorActionPreference = "Stop"
 $src  = $PSScriptRoot
 $dest = Join-Path $AddonsPath "HagAIO"
 
-# Deploy-time autogen (Common must load first; it defines the shared helpers + load order).
+# Deploy-time autogen (Common must load first; it defines the shared helpers + the load
+# order from tools/load-order.json). tools/autogen.ps1 owns the repo-doc generation
+# (README regions + DATABASE_SCHEMA.md) and is also runnable standalone — dot-sourcing it
+# here only defines Update-RepoDocs.
 . (Join-Path $src "tools\autogen\Common.ps1")
 . (Join-Path $src "tools\autogen\Toc.ps1")
 . (Join-Path $src "tools\autogen\NamespaceSlots.ps1")
-. (Join-Path $src "tools\autogen\Readme.ps1")
+. (Join-Path $src "tools\autogen.ps1")
 
 if (-not (Test-Path $AddonsPath)) {
     throw "WoW AddOns folder not found: $AddonsPath  (set WOW_ADDONS_PATH or pass -AddonsPath)"
@@ -42,14 +45,11 @@ if (-not (Test-Path $AddonsPath)) {
 
 New-Item -ItemType Directory -Force -Path $dest | Out-Null
 
-# /MIR keeps dest an exact mirror of the addon files; exclusions keep repo tooling out
-# of the deployed copy. HagAIO.toc is excluded from the mirror because the full manifest
-# (header template + generated file list) is written into dest below, after the mirror.
-$exclDirs  = @(".git", ".github", ".claude", "tools", "Test", "Dev")
-$exclFiles = @("deploy.ps1", "README.md", "CONTRIBUTING.md", "DATABASE_SCHEMA.md", "package.json",
-    "package-lock.json", ".gitignore", "LICENSE", "HagAIO.toc", "*.zip", "*.ps1", "*.py")
-
-robocopy $src $dest /MIR /XD $exclDirs /XF $exclFiles /NFL /NDL /NJH /NJS /NP | Out-Null
+# /MIR keeps dest an exact mirror of the addon files; the exclusion lists (shared with
+# tools/package.ps1 via Common.ps1) keep repo tooling out of the deployed copy. HagAIO.toc
+# is excluded from the mirror because the full manifest (header template + generated file
+# list) is written into dest below, after the mirror.
+robocopy $src $dest /MIR /XD $script:DeployExcludeDirs /XF $script:DeployExcludeFiles /NFL /NDL /NJH /NJS /NP | Out-Null
 
 # robocopy exit codes < 8 are success (0-7 = copied/extra/mismatch, not errors).
 if ($LASTEXITCODE -ge 8) {
@@ -61,21 +61,9 @@ if ($LASTEXITCODE -ge 8) {
 Write-Utf8NoBom -Path (Join-Path $dest "HagAIO.toc") -Text (New-TocText -Root $src)
 # 2. Namespace slots: inject the ns.* block into the deployed Namespace.lua (at its marker).
 Update-DeployedNamespaceSlots -Root $src -DeployedFile (Join-Path $dest "Core\Namespace.lua")
-# 3. README: regenerate the repo doc's managed regions so they track the source.
-Update-Readme -Root $src
-# 4. Database schema doc: rebuild DATABASE_SCHEMA.md from the live table definitions (needs LuaJIT;
-#    the generator loads the real engine + every module headless, so the doc can't drift).
-$luajit = (Get-Command luajit -ErrorAction SilentlyContinue).Source
-if (-not $luajit) {
-    $cand = Join-Path $env:LOCALAPPDATA "Programs\LuaJIT\bin\luajit.exe"
-    if (Test-Path $cand) { $luajit = $cand }
-}
-if ($luajit) {
-    Push-Location $src
-    try { & $luajit "tools\gen_schema.lua" } finally { Pop-Location }
-} else {
-    Write-Host "Skipped DATABASE_SCHEMA.md (no luajit/lua found)." -ForegroundColor Yellow
-}
+# 3. Repo docs: README regions + DATABASE_SCHEMA.md, shared with the standalone
+#    tools/autogen.ps1 (CI checks their freshness). A missing LuaJIT only warns here.
+Update-RepoDocs -Root $src -SchemaOptional
 
 Write-Host "Deployed HagAIO -> $dest" -ForegroundColor Green
 Write-Host "Autogen: .toc + namespace slots (deployed), README (repo) regenerated." -ForegroundColor DarkGray

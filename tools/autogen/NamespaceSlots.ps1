@@ -55,13 +55,11 @@ function Get-PublishedServiceLibs {
             foreach ($m in [regex]::Matches($code, 'LibManager:Register\(\s*\w+:New\(\s*["''](\w+)["'']')) {
                 $found += [pscustomobject]@{ Name = $m.Groups[1].Value; Path = $rel }
             }
-            # Value-class libs (e.g. Format, Vector2D) publish by direct assignment rather
-            # than LibManager:Register -- catch those too, but only in Lib/ (so unrelated
-            # ns.* assignments aren't pulled into the framework slot list).
-            if ($rel -like 'Lib\*') {
-                foreach ($m in [regex]::Matches($code, '(?m)^ns\.(\w+)\s*=[^=]')) {
-                    $found += [pscustomobject]@{ Name = $m.Groups[1].Value; Path = $rel }
-                }
+            # Value libs (e.g. Format, Vector2D) register through the same anchor via
+            # RegisterValue. (Lib\Color.lua is the one bare-assignment exception -- it loads
+            # before the LibManager -- and is documented via the Core-slot map above.)
+            foreach ($m in [regex]::Matches($code, 'LibManager:RegisterValue\(\s*["''](\w+)["'']')) {
+                $found += [pscustomobject]@{ Name = $m.Groups[1].Value; Path = $rel }
             }
             # Module public aliases published via the declarative hook (opts.publishAs = "X",
             # ns.Module:_Publish).

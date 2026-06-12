@@ -1,8 +1,9 @@
 #!/usr/bin/env node
-// tools/check.mjs — run the same gates CI runs (.github/workflows/lint.yml), locally, in
-// one command. Mirrors the lint jobs + the headless Lua test suite.
+// tools/check.mjs — THE list of lint gates. CI (.github/workflows/lint.yml) runs
+// `node tools/check.mjs --lint` directly, so a gate added to LINT below reaches CI
+// automatically — never edit the workflow to add a gate.
 //   node tools/check.mjs          lint + tests   (alias: npm run check)
-//   node tools/check.mjs --lint   just the four lint tools
+//   node tools/check.mjs --lint   just the lint gates (what CI's lint job runs)
 //   node tools/check.mjs --test   just the Lua suite
 // Exits non-zero if any gate fails. The Lua interpreter is auto-resolved (luajit on PATH,
 // then a known Windows LuaJIT install, then `lua` — matching CI's lua 5.1).
@@ -17,9 +18,10 @@ const args = process.argv.slice(2);
 const only = args.includes("--lint") ? "lint" : args.includes("--test") ? "test" : "all";
 const sh = process.platform === "win32";  // resolve PATH-based commands via the shell on Windows
 
-// The lint gates, each a `node tools/<x>.mjs ...` invocation (same as the CI jobs). The
-// namespace slot block, README, and .toc are GENERATED at deploy (tools/autogen/*.ps1),
-// not checked here -- so only the real lints (undeclared deps, dead code) remain.
+// The lint gates, each a `node tools/<x>.mjs ...` invocation — the SINGLE list CI and
+// `npm run check` share. The namespace slot block and .toc are generated at deploy
+// (tools/autogen/*.ps1); the committed README/DATABASE_SCHEMA docs have their own CI
+// freshness jobs (tools/autogen.ps1 / tools/gen_schema.lua) -- so only the real lints live here.
 const LINT = [
   ["depcheck", ["tools/depcheck.mjs"]],
   ["deadcode", ["tools/deadcode.mjs"]],

@@ -35,23 +35,22 @@ import { join, relative, basename, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
-const SCAN = ["Core", "Lib", "Services", "UI", "Modules"];
 const FIX = process.argv.includes("--fix");  // --fix: inject missing deps into each file
+
+// The load-order manifest is the ONE source for the scan dirs and the foundation file
+// set (shared with tools/autogen/Common.ps1, tools/gen_schema.lua, Test/support.lua).
+const MANIFEST = JSON.parse(readFileSync(join(ROOT, "tools", "load-order.json"), "utf8"));
+const SCAN = MANIFEST.scanDirs;
 
 // Foundation files (core singletons / base classes / statics): always available, so
 // their OWN accesses aren't linted. These are precisely the files that register neither
-// a service nor a module; kept explicit because that exemption is a deliberate choice.
-// Repo-relative paths (NOT basenames) -- Core/Class.lua the OOP factory must stay
-// exempt without also exempting Modules/Class.lua the feature module.
+// a service nor a module — the manifest's pinned head (minus the widget layer, which the
+// EXEMPT_PREFIX below already covers) plus the initializer. Repo-relative paths (NOT
+// basenames) -- Core/Class.lua the OOP factory is exempt; Modules/Class.lua the feature
+// module is not.
 const EXEMPT = new Set([
-  "Core/Namespace.lua", "Core/Class.lua", "Core/Type.lua", "Core/Enum.lua",
-  "Core/Mixin.lua", "Core/Interface.lua", "Core/Delegate.lua",
-  "Core/Contributions.lua", "Core/DatabaseOwner.lua", "Lib/Color.lua",
-  "UI/Theme.lua", "Core/DependencyGraph.lua",
-  "Core/Logger.lua", "Core/Loggable.lua", "Core/Service.lua", "Core/ServiceManager.lua",
-  "Core/Component.lua", "Core/Module.lua", "Core/ModuleManager.lua", "Core/Submodule.lua",
-  "Core/SubmoduleManager.lua", "Core/Registry.lua", "Core/Lib.lua", "Core/LibManager.lua",
-  "Core/Init.lua",
+  ...MANIFEST.pinnedHead.filter((p) => !p.startsWith("UI/Widgets/")),
+  MANIFEST.init,
 ]);
 // The whole Widget layer (UI/Widgets/<Name>.lua) is foundation UI, like the old UI/Widgets.lua was:
 // widgets reference foundation singletons (Logger/EventBus) without being modules that declare deps.
@@ -84,6 +83,11 @@ for (const path of ALL_FILES) {
     SERVICES.add(m[1]);
   }
   for (const m of code.matchAll(/LibManager:Register\(\s*\w+:New\(\s*["'](\w+)["']/g)) {
+    LIBS.add(m[1]);
+  }
+  // Value libs (plain static tables / value types) register through the same anchor via
+  // RegisterValue — they're libs too: always available, never a dependency.
+  for (const m of code.matchAll(/LibManager:RegisterValue\(\s*["'](\w+)["']/g)) {
     LIBS.add(m[1]);
   }
   const reg = code.match(/ModuleManager:Register\(\s*\w+:New\(\s*["'](\w+)["']/);

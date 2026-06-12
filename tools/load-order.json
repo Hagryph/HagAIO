@@ -1,0 +1,42 @@
+{
+  "_comment": [
+    "Single source of truth for the addon load order and the foundation file set.",
+    "Consumed by tools/autogen/Common.ps1 (.toc + README generation), tools/depcheck.mjs",
+    "(the EXEMPT foundation set), tools/gen_schema.lua (the headless framework load) and",
+    "Test/support.lua (the spec rig's framework load). Paths use FORWARD slashes; consumers",
+    "convert as needed. Keep this file strictly arrays/objects of plain strings with no",
+    "colons or brackets inside the strings -- the Lua consumers parse it by syntactic",
+    "translation, not a full JSON library.",
+    "Core/Init.lua's runtime fail-fast list is the one intentional duplicate (the game",
+    "client cannot read repo files); keep it in step when a new manager joins the head."
+  ],
+  "scanDirs": ["Core", "Lib", "Services", "UI", "Modules"],
+  "pinnedHead": [
+    "Core/Namespace.lua",
+    "Core/Class.lua",
+    "Core/Type.lua",
+    "Core/Enum.lua",
+    "Core/Mixin.lua",
+    "Core/Interface.lua",
+    "Core/Delegate.lua",
+    "Core/Contributions.lua",
+    "Lib/Color.lua",
+    "UI/Theme.lua",
+    "Core/DependencyGraph.lua",
+    "Core/Logger.lua",
+    "Core/Registry.lua",
+    "Core/Loggable.lua",
+    "Core/DatabaseOwner.lua",
+    "Core/Component.lua",
+    "Core/Service.lua",
+    "Core/ServiceManager.lua",
+    "Core/Module.lua",
+    "Core/ModuleManager.lua",
+    "Core/Submodule.lua",
+    "Core/SubmoduleManager.lua",
+    "Core/Lib.lua",
+    "Core/LibManager.lua",
+    "UI/Widgets/Widgets.lua"
+  ],
+  "init": "Core/Init.lua"
+}

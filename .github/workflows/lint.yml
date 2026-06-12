@@ -5,49 +5,19 @@ on:
   pull_request:
 
 jobs:
-  depcheck:
-    name: Dependency declarations
+  # ONE job for every lint gate. tools/check.mjs is the single source of truth for the
+  # gate list (npm run check locally runs the same thing) — a gate added there reaches
+  # CI automatically, the way a new spec reaches Test/run.lua via discovery.
+  lint:
+    name: Lint gates
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
           node-version: "20"
-      - name: Check every ns.<Service/Module> access is a declared dependency
-        run: node tools/depcheck.mjs
-
-  frames:
-    name: Frame access
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: "20"
-      - name: Check nothing touches a raw frame/texture outside the Widgets layer
-        run: node tools/check-frames.mjs
-
-  widgets:
-    name: Widget definitions
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: "20"
-      - name: Check every widget is defined the same way (one per file, named, registered)
-        run: node tools/check-widgets.mjs
-
-  deadcode:
-    name: Dead code
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: "20"
-      - name: Check for unused locals / uncalled private methods
-        run: node tools/deadcode.mjs
+      - name: Run every lint gate (single list in tools/check.mjs)
+        run: node tools/check.mjs --lint
 
   test:
     name: Unit tests
@@ -59,3 +29,32 @@ jobs:
           luaVersion: "5.1"   # match WoW's Lua 5.1
       - name: Run the headless test suite
         run: lua Test/run.lua
+
+  # Generated-doc freshness: the committed docs are derived from the source, so CI
+  # regenerates them and fails when a merge let them drift (previously they were only
+  # refreshed as a side effect of one developer's local deploy).
+  docs-readme:
+    name: Generated docs (README regions)
+    runs-on: windows-latest   # the generator is PowerShell with Windows path separators
+    steps:
+      - name: Keep LF endings (the generator and the index both use LF)
+        run: git config --global core.autocrlf false
+      - uses: actions/checkout@v4
+      - name: Regenerate README.md's managed regions (tools/autogen.ps1) and fail when stale
+        shell: pwsh
+        run: |
+          ./tools/autogen.ps1 -SkipSchema
+          git diff --exit-code -- README.md
+
+  docs-schema:
+    name: Generated docs (DATABASE_SCHEMA)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: leafo/gh-actions-lua@v10
+        with:
+          luaVersion: "5.1"
+      - name: Regenerate DATABASE_SCHEMA.md + diagram (tools/gen_schema.lua) and fail when stale
+        run: |
+          lua tools/gen_schema.lua
+          git diff --exit-code -- DATABASE_SCHEMA.md diagram

@@ -1,28 +1,25 @@
 # tools/autogen/Common.ps1 — shared helpers for the deploy-time autogen scripts
 # (Toc.ps1, NamespaceSlots.ps1, Readme.ps1). deploy.ps1 dot-sources this FIRST, then the
-# others. The load-order rules live here so the .toc and the README file tree share one
-# source of truth (no more duplicated pinned lists across PowerShell and Node).
+# others. The load order comes from tools/load-order.json — the ONE machine-readable
+# manifest every consumer (this file, depcheck.mjs, gen_schema.lua, Test/support.lua)
+# reads, so a new Core base class is added in exactly one place.
+#
+# The pinned head: foundation files with a fixed load order — a base class must be defined
+# before any file that extends it at load time; UI\Widgets\Widgets.lua (the widget base
+# layer + factory table) is pinned too because the UI windows + several modules alias
+# ns.UI.Widgets at file scope, and every per-widget file reads ns.UI._wb from it.
+# The init file boots services in dependency order; loads after all service/UI files,
+# before the modules.
+$script:LoadOrder = Get-Content -Raw (Join-Path $PSScriptRoot '..\load-order.json') | ConvertFrom-Json
+$script:ScanDirs   = @($script:LoadOrder.scanDirs)
+$script:PinnedHead = @($script:LoadOrder.pinnedHead | ForEach-Object { $_ -replace '/', '\' })
+$script:PinnedInit = ($script:LoadOrder.init -replace '/', '\')
 
-$script:ScanDirs = @('Core', 'Lib', 'Services', 'UI', 'Modules')
-
-# Foundation files with a fixed load order: a base class must be defined before any file
-# that extends it at load time; UI\Widgets\Widgets.lua (the widget base layer + factory table) is
-# pinned here too because the UI windows + several modules alias ns.UI.Widgets at file scope, and
-# every per-widget file (UI\Widgets\<Name>.lua, in the free tier) reads ns.UI._wb from it.
-$script:PinnedHead = @(
-    'Core\Namespace.lua', 'Core\Class.lua', 'Core\Type.lua', 'Core\Enum.lua',
-    'Core\Mixin.lua', 'Core\Interface.lua', 'Core\Delegate.lua',
-    'Core\Contributions.lua', 'Lib\Color.lua',
-    'UI\Theme.lua', 'Core\DependencyGraph.lua',
-    'Core\Logger.lua', 'Core\Registry.lua', 'Core\Loggable.lua', 'Core\DatabaseOwner.lua',
-    'Core\Component.lua',
-    'Core\Service.lua', 'Core\ServiceManager.lua', 'Core\Module.lua', 'Core\ModuleManager.lua',
-    'Core\Submodule.lua', 'Core\SubmoduleManager.lua', 'Core\Lib.lua', 'Core\LibManager.lua',
-    'UI\Widgets\Widgets.lua'
-)
-# The Core initializer boots services in dependency order; loads after all service/UI
-# files, before the modules.
-$script:PinnedInit = 'Core\Init.lua'
+# Repo tooling that is never part of the shipped addon — the mirror/staging exclusion
+# lists shared by deploy.ps1 and tools/package.ps1 (one source for "what ships").
+$script:DeployExcludeDirs  = @('.git', '.github', '.claude', '.vscode', 'tools', 'Test', 'Dev', 'diagram', 'dist')
+$script:DeployExcludeFiles = @('deploy.ps1', 'README.md', 'CONTRIBUTING.md', 'DATABASE_SCHEMA.md',
+    'package.json', 'package-lock.json', '.gitignore', 'LICENSE', 'HagAIO.toc', '*.zip', '*.ps1', '*.py')
 
 # Every .lua under the code dirs, in load-safe order: pinned foundation, then the
 # order-independent tier (folder-then-name), then Init, then modules (folder-then-name so

@@ -31,4 +31,7 @@ function Color.FromHex(hex)
     return Color:New(tonumber(r, 16) / 255, tonumber(g, 16) / 255, tonumber(b, 16) / 255, 1)
 end
 
+-- Direct assignment, NOT LibManager:RegisterValue: Color is pinned BEFORE Core/LibManager.lua
+-- in the load order (ns.Theme is built from it), so the manager doesn't exist yet. The
+-- NamespaceSlots generator documents it via its Core-slot map instead.
 ns.Color = Color

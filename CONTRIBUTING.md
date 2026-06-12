@@ -20,12 +20,14 @@ place. For the architecture overview and the "add a module / submodule" recipes,
 
 ## Running the checks locally
 
-CI (`.github/workflows/lint.yml`) runs four lint gates + the test suite. Reproduce them
-all in one command:
+CI (`.github/workflows/lint.yml`) runs the lint gates, the test suite, and two
+generated-doc freshness checks. The gate list lives in **one place** —
+`tools/check.mjs` — and CI runs that file directly (`node tools/check.mjs --lint`), so
+a new gate added there reaches CI automatically. Reproduce everything in one command:
 
 ```
-npm run check        # lint + tests (everything CI runs)
-npm run lint         # just the four lint gates
+npm run check        # lint + tests (the same gates CI runs)
+npm run lint         # just the lint gates
 npm test             # just the Lua suite
 ```
 
@@ -37,11 +39,16 @@ dependencies to install — the tools are plain Node ESM. The test runner auto-f
 |---|---|
 | `depcheck` | Every `ns.<Service/Module>` a file uses is declared as a dependency, and every defined service/module/lib/submodule self-registers |
 | `deadcode` | No unused file-local declarations or uncalled private methods |
+| `frames` | Nothing touches a raw frame/texture outside the Widgets layer |
+| `widgets` | Every widget is defined the same way (one per file, named, registered) |
+| `savedvars` | The persistence boundary holds (saved variables only via the SavedVars/DB layer) |
+| `worker` | Worker stepper jobs contain no loops of their own (the Worker owns the loop) |
 | `test` | `lua Test/run.lua` — the spec suite |
 
-The `.toc`, the `Core/Namespace.lua` slot block, and the `README.md` regions are
-**generated at deploy** (see below), so there are no checks for them — `deploy.ps1` keeps
-them in step.
+The deployed artifacts (`.toc`, the `Core/Namespace.lua` slot block) are generated at
+deploy (see below). The **committed** docs (`README.md` regions, `DATABASE_SCHEMA.md`)
+are regenerable anywhere via `./tools/autogen.ps1` — and CI regenerates them and fails
+when they're stale, so a schema/file-layout change can't merge with drifted docs.
 
 ## Waiver / convention comments
 
@@ -55,17 +62,28 @@ deliberate exceptions:
   file.
 - **`-- deadcode-allow: name1, name2`** — keep a public method or local the scan thinks is
   unused (public API, dynamic dispatch the scan can't see).
-- **`EXEMPT` foundation list** (in `tools/depcheck.mjs`) — the core singletons / base
-  classes / statics whose own `ns.*` accesses aren't linted, because they're always
-  available. These are exactly the files that register neither a service nor a module;
-  the list is kept explicit because the exemption is a deliberate choice. Repo-relative
-  paths (e.g. `Core/Class.lua` is exempt; `Modules/Class.lua` the feature module is not).
+- **`EXEMPT` foundation set** (derived in `tools/depcheck.mjs` from
+  `tools/load-order.json`) — the core singletons / base classes / statics whose own
+  `ns.*` accesses aren't linted, because they're always available. These are exactly the
+  manifest's pinned head (plus `Core/Init.lua`): the files that register neither a
+  service nor a module. Repo-relative paths (e.g. `Core/Class.lua` is exempt;
+  `Modules/Class.lua` the feature module is not).
+
+## The load-order manifest
+
+`tools/load-order.json` is the single machine-readable source for the addon's load order
+and foundation file set. Four consumers read it: `tools/autogen/Common.ps1` (the `.toc`
+file list + README tree), `tools/depcheck.mjs` (the `EXEMPT` set), `tools/gen_schema.lua`
+and `Test/support.lua` (their headless framework loads). Adding a new Core base class
+means adding it to the manifest **once** — every consumer picks it up. The one
+intentional duplicate is `Core/Init.lua`'s runtime fail-fast list (the game client can't
+read repo files); keep it in step when a new manager joins the pinned head.
 
 ## What's generated (don't hand-edit)
 
-Generation is **all done at deploy** by PowerShell scripts in `tools/autogen/`, driven by
-`deploy.ps1`. The shared ordering/description helpers live in `tools/autogen/Common.ps1`
-(one source for the load order). Edit the source, not the generated output:
+Deployed-artifact generation is done at deploy by PowerShell scripts in `tools/autogen/`,
+driven by `deploy.ps1`; the committed repo docs are also regenerable standalone via
+`./tools/autogen.ps1` (no WoW install needed). Edit the source, not the generated output:
 
 - **`HagAIO.toc`** (`Toc.ps1`) — only the **header** is tracked (Interface, saved vars,
   version tags). The Lua **file list** is filled from disk and written into the *deployed*
@@ -80,11 +98,23 @@ Generation is **all done at deploy** by PowerShell scripts in `tools/autogen/`, 
   `AUTOGEN:version` "Target version" table (from `HagAIO.toc`: `## Interface` + the
   `# expansion:` / `# next-patch:` tags). Unlike the two above, this is regenerated **in
   the repo** (the README is a committed GitHub doc). To bump the patch: edit the tags in
-  `HagAIO.toc`, then deploy.
+  `HagAIO.toc`, then run `./tools/autogen.ps1` (or deploy).
+- **`DATABASE_SCHEMA.md` + `diagram/DB`** (`tools/gen_schema.lua`) — the full table
+  reference, derived by loading the real engine + every module headless. Regenerated by
+  `./tools/autogen.ps1` and on deploy; CI fails when it's stale.
+
+## Packaging a release
+
+`./tools/package.ps1` builds `dist/HagAIO-v<version>.zip` — the same staged artifact
+deploy mirrors into the live folder (full generated `.toc` + namespace slot block), with
+`HagAIO/` as the archive root so it extracts straight into `Interface\AddOns`. It is
+**manual only** (never run by deploy); the version comes from `HagAIO.toc`'s
+`## Version:` line.
 
 ## Before you push
 
-1. `npm run check` — depcheck + deadcode + tests green.
+1. `npm run check` — every lint gate + tests green.
 2. `./deploy.ps1` — mirror into the live AddOns folder; this also regenerates the `.toc`,
-   the deployed namespace block, and the repo `README.md`.
+   the deployed namespace block, and the repo docs (`README.md`, `DATABASE_SCHEMA.md`).
+   Without a WoW install, `./tools/autogen.ps1` refreshes the repo docs on their own.
 3. Commit (`Area: summary` subject) and push to `main`.

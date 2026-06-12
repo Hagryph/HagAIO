@@ -2,9 +2,8 @@
 local S = dofile("Test/support.lua")
 
 local function loadHelpers()
-    local ns = { UI = {} }
-    S.load(ns, "Lib/Helpers.lua")
-    return ns.Helpers
+    local ns = S.newNs()   -- Helpers registers via ns.LibManager:RegisterValue (stubbed by the rig)
+    return ns.Helpers      -- the rig already loads Lib/Helpers.lua
 end
 
 describe("Helpers.DeepCopy", function()

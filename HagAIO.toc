@@ -11,8 +11,8 @@
 ## AllowLoadGameType: retail
 
 # Single source of truth for the addon's target version: the `## Interface` line above
-# plus the two tags below. README.md's "Target version" table is GENERATED from these by
-# tools/gen_readme.mjs -- edit them here, then run `node tools/gen_readme.mjs`.
+# plus the two tags below. README.md's "Target version" table is GENERATED from these
+# (tools/autogen/Readme.ps1) -- edit them here, then run `./tools/autogen.ps1` (or deploy).
 # expansion: Midnight
 # next-patch: 12.0.7 "Revelations" — 2026-06-16 → bump Interface to 120007
 #

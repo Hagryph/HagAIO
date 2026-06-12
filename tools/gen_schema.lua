@@ -8,6 +8,17 @@
 
 local WIN = package.config:sub(1, 1) == "\\"
 
+-- Parse tools/load-order.json -- the shared load-order manifest (one source of truth with
+-- tools/autogen/Common.ps1, tools/depcheck.mjs and Test/support.lua). The file is strictly
+-- arrays/objects of plain strings with no colons/brackets inside the strings, so a
+-- syntactic translation to a Lua literal is safe -- no JSON library needed headless.
+local function loadOrderManifest()
+    local f = assert(io.open("tools/load-order.json", "rb"), "tools/load-order.json not found (run from the repo root)")
+    local s = f:read("*a"); f:close()
+    s = s:gsub("%[", "{"):gsub("%]", "}"):gsub('("[^"\n]-")%s*:', "[%1]=")
+    return assert((loadstring or load)("return " .. s))()
+end
+
 local function loadInto(path, ns)
     local chunk, err = loadfile(path)
     if not chunk then return false, err end
@@ -75,14 +86,33 @@ ns.ModuleManager    = {
     GetModule = function(_, name) return registeredModules[name] end,
 }
 ns.SubmoduleManager = { Register = reg }
-ns.LibManager       = { Register = function(_, item) if item and item._Publish then pcall(function() item:_Publish() end) end; return item end }
-
-local FRAMEWORK = {
-    "Core/Class.lua", "Core/Type.lua", "Core/Enum.lua", "Core/Mixin.lua", "Core/Interface.lua",
-    "Core/Delegate.lua", "Core/Contributions.lua", "Core/Loggable.lua",
-    "Core/DatabaseOwner.lua", "Core/Lib.lua", "Lib/Helpers.lua", "Core/Component.lua",
-    "Core/Service.lua", "Core/Module.lua", "Core/Submodule.lua",
+ns.LibManager       = {
+    Register      = function(_, item) if item and item._Publish then pcall(function() item:_Publish() end) end; return item end,
+    RegisterValue = function(_, name, value) ns[name] = value; return value end,
 }
+
+-- The framework files, in manifest order (tools/load-order.json), minus what this rig
+-- stubs above or doesn't need headless -- so a new Core base class added to the manifest
+-- is loaded here automatically. Lib/Helpers.lua rides along: pure helpers (DeepCopy)
+-- used across the framework, loaded before any feature file.
+local SKIP_FRAMEWORK = {
+    ["Core/Namespace.lua"] = true,        -- WoW-API bound (dev identity); nothing here needs it
+    ["Lib/Color.lua"] = true,             -- loaded with the rest of Lib/ in the sandbox scan
+    ["UI/Theme.lua"] = true,              -- stubbed above
+    ["Core/DependencyGraph.lua"] = true,  -- manager machinery; managers are stubbed
+    ["Core/Logger.lua"] = true,           -- stubbed above
+    ["Core/Registry.lua"] = true,         -- manager base; managers are stubbed
+    ["Core/ServiceManager.lua"] = true,   -- stubbed above
+    ["Core/ModuleManager.lua"] = true,    -- stubbed above
+    ["Core/SubmoduleManager.lua"] = true, -- stubbed above
+    ["Core/LibManager.lua"] = true,       -- stubbed above
+    ["UI/Widgets/Widgets.lua"] = true,    -- UI; the sandbox stub covers widget access
+}
+local FRAMEWORK = {}
+for _, f in ipairs(loadOrderManifest().pinnedHead) do
+    if not SKIP_FRAMEWORK[f] then FRAMEWORK[#FRAMEWORK + 1] = f end
+end
+FRAMEWORK[#FRAMEWORK + 1] = "Lib/Helpers.lua"
 for _, f in ipairs(FRAMEWORK) do
     local ok, err = loadInto(f, ns)
     if not ok then io.stderr:write("gen_schema: framework load failed " .. f .. ": " .. tostring(err) .. "\n"); os.exit(1) end

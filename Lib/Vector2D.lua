@@ -50,4 +50,4 @@ function Vector2D:Nearest(vectors, maxDist)
     return best, sqrt(bestD2), bestI
 end
 
-ns.Vector2D = Vector2D
+ns.LibManager:RegisterValue("Vector2D", Vector2D)

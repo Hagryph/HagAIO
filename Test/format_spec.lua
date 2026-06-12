@@ -1,8 +1,8 @@
 local S = dofile("Test/support.lua")
 
 local function fmt()
-    local ns = {}
-    assert(loadfile("Lib/Format.lua"))("HagAIO", ns)
+    local ns = S.newNs()   -- Format registers via ns.LibManager:RegisterValue (stubbed by the rig)
+    S.load(ns, "Lib/Format.lua")
     return ns.Format
 end
 

@@ -36,4 +36,4 @@ function Format.MMSS(s)
     return ("%d:%02d"):format(floor(s / 60), s % 60)
 end
 
-ns.Format = Format
+ns.LibManager:RegisterValue("Format", Format)

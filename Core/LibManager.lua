@@ -22,5 +22,23 @@ function LibManager:Register(lib)
     return lib
 end
 
+-- deadcode-allow: RegisterValue  (every caller lives in Lib/, which the deadcode scan skips)
+-- Register + publish a VALUE lib: a plain static table (ns.Format, ns.Helpers) or a value
+-- type (ns.Vector2D) that is published as-is rather than instantiated. Same discovery
+-- anchor as Register, so the tooling (depcheck / NamespaceSlots) finds every lib here
+-- instead of special-casing bare `ns.X = X` assignments. The one exception is Lib/Color.lua,
+-- which is pinned BEFORE this manager in the load order (ns.Theme needs it) and therefore
+-- still publishes by direct assignment.
+function LibManager:RegisterValue(name, value)
+    assert(type(name) == "string" and name ~= "", "LibManager:RegisterValue needs a name")
+    assert(type(value) == "table", "LibManager:RegisterValue needs the lib's value table")
+    local p = self:_p()
+    p.values = p.values or {}                 -- name -> value (duplicate check + Iterate-free registry)
+    assert(not p.values[name], ("duplicate value lib '%s'"):format(name))
+    p.values[name] = value
+    ns[name] = value
+    return value
+end
+
 -- Self-instantiate so lib files can register into it as they load (after the Core layer).
 ns.LibManager = LibManager:New()

@@ -1,5 +1,6 @@
-# Packaged builds
+# Packaged builds (tools/package.ps1 writes dist/HagAIO-v<version>.zip)
 *.zip
+dist/
 
 # Scratch space (dumps, captures) — never tracked, excluded from deploy
 Dev/

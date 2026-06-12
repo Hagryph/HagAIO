@@ -18,4 +18,4 @@ function Helpers.DeepCopy(v)
     return t
 end
 
-ns.Helpers = Helpers
+ns.LibManager:RegisterValue("Helpers", Helpers)

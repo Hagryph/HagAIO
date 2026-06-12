@@ -1,9 +1,21 @@
--- spec/support.lua
+-- Test/support.lua
 -- Headless test harness: load HagAIO Lua files with a fake `ns` namespace and
 -- controllable WoW API stubs (GetTime, C_Timer), so the pure-logic services can be
 -- unit-tested with busted outside the game. dofile() this from a spec.
 
 local M = {}
+
+-- Parse tools/load-order.json -- the shared load-order manifest (one source of truth with
+-- tools/autogen/Common.ps1, tools/depcheck.mjs and tools/gen_schema.lua). The file is
+-- strictly arrays/objects of plain strings with no colons/brackets inside the strings, so
+-- a syntactic translation to a Lua literal is safe -- no JSON library needed headless.
+function M.loadOrder()
+    local f = assert(io.open("tools/load-order.json", "rb"),
+        "tools/load-order.json not found (run the specs from the repo root)")
+    local s = f:read("*a"); f:close()
+    s = s:gsub("%[", "{"):gsub("%]", "}"):gsub('("[^"\n]-")%s*:', "[%1]=")
+    return assert((loadstring or load)("return " .. s))()
+end
 
 -- A controllable clock + timer factory. advance(dt) fires every due one-shot /
 -- ticker in chronological order (so throttled/debounced trailing calls, which
@@ -62,31 +74,41 @@ function M.newClock()
     return clock
 end
 
+-- Framework files this rig SKIPS from the manifest's pinned head: either stubbed below
+-- (Theme, Logger, the managers + their Registry/DependencyGraph machinery) or not needed
+-- headless (Namespace/Color/Widgets). Module/Submodule load on demand from the specs.
+local RIG_SKIP = {
+    ["Core/Namespace.lua"] = true,        -- WoW-API bound (dev identity)
+    ["Lib/Color.lua"] = true,             -- specs that need it load it themselves
+    ["UI/Theme.lua"] = true,              -- stubbed below
+    ["Core/DependencyGraph.lua"] = true,  -- manager machinery; managers are stubbed
+    ["Core/Logger.lua"] = true,           -- stubbed below
+    ["Core/Registry.lua"] = true,         -- manager base; managers are stubbed
+    ["Core/ServiceManager.lua"] = true,   -- stubbed below
+    ["Core/Module.lua"] = true,           -- specs load it when they exercise modules
+    ["Core/ModuleManager.lua"] = true,    -- stubbed by the specs that need it
+    ["Core/Submodule.lua"] = true,        -- specs load it when they exercise submodules
+    ["Core/SubmoduleManager.lua"] = true, -- specs load it when they exercise submodules
+    ["Core/LibManager.lua"] = true,       -- stubbed below
+    ["UI/Widgets/Widgets.lua"] = true,    -- UI layer; widget specs build their own rig
+}
+
 -- A fresh namespace with the real Class + Service loaded and the managers / logger
--- stubbed. Registered service instances are captured in ns._captured by name.
+-- stubbed. The framework files come from the shared load-order manifest (in manifest
+-- order, minus RIG_SKIP), so a new Core base class reaches the rig automatically.
+-- Registered service instances are captured in ns._captured by name.
 function M.newNs()
     local ns = { UI = {} }
-    assert(loadfile("Core/Class.lua"))("HagAIO", ns)
-    assert(loadfile("Core/Type.lua"))("HagAIO", ns)       -- value-type factory (e.g. Vector2D)
-    assert(loadfile("Core/Enum.lua"))("HagAIO", ns)       -- frozen-enum factory
-    assert(loadfile("Core/Mixin.lua"))("HagAIO", ns)          -- trait/mixin factory
-    assert(loadfile("Core/Interface.lua"))("HagAIO", ns)      -- interface (contract) factory
-    assert(loadfile("Core/Delegate.lua"))("HagAIO", ns)       -- multicast delegate / signal
-    assert(loadfile("Core/Contributions.lua"))("HagAIO", ns)  -- declarative-contribution builders
     ns.Theme = { hex = setmetatable({}, { __index = function() return "ffffff" end }) }
     local noop = function() end
     local channel = { Debug = noop, Info = noop, Success = noop, Warn = noop, Error = noop }
     ns.Logger = { Core = function() return channel end, Register = function() return channel end }
     ns.Log = { Print = noop, Warn = noop, Error = noop }  -- static print helpers (Namespace.lua)
-    -- Loggable before Component before Service (mirrors the .toc): Component and Service
-    -- both inherit ns.Loggable for the shared logging surface. Lib is the pure-helper base.
-    assert(loadfile("Core/Loggable.lua"))("HagAIO", ns)
-    assert(loadfile("Core/DatabaseOwner.lua"))("HagAIO", ns)  -- DB-ownership mixin (Module/Service use it)
-    assert(loadfile("Core/VersioningOwner.lua"))("HagAIO", ns) -- data-version domain mixin (opt-in per owner)
-    assert(loadfile("Core/Lib.lua"))("HagAIO", ns)
-    assert(loadfile("Lib/Helpers.lua"))("HagAIO", ns)   -- pure helpers (DeepCopy) used across the framework
-    assert(loadfile("Core/Component.lua"))("HagAIO", ns)
-    assert(loadfile("Core/Service.lua"))("HagAIO", ns)
+    -- The pinned head in manifest order: OOP primitives, then Loggable before Component
+    -- before Service (Component and Service both inherit ns.Loggable), then the Lib base.
+    for _, f in ipairs(M.loadOrder().pinnedHead) do
+        if not RIG_SKIP[f] then assert(loadfile(f))("HagAIO", ns) end
+    end
     ns._captured = {}
     -- Both managers mirror the real ones: capture by name AND publish to ns.<Name>.
     local function captureRegister(_, item)
@@ -95,9 +117,20 @@ function M.newNs()
         return item
     end
     ns.ServiceManager = { Register = captureRegister, IsLoaded = function() return true end }
-    ns.LibManager = { Register = captureRegister }
-    -- SettingsTables is a framework dependency now: Module/Submodule derive their settings tables from
-    -- it at construction. Load it here (after LibManager exists) so every rig has ns.SettingsTables.
+    ns.LibManager = {
+        Register = captureRegister,
+        -- Value libs (plain static tables / value types) publish through the same anchor.
+        RegisterValue = function(_, name, value)
+            ns._captured[name] = value
+            ns[name] = value
+            return value
+        end,
+    }
+    -- Not in the pinned head but part of every rig: the opt-in data-version mixin, the
+    -- shared pure helpers, and SettingsTables (Module/Submodule derive their settings
+    -- tables from it at construction; needs ns.Lib + the LibManager stub above).
+    assert(loadfile("Core/VersioningOwner.lua"))("HagAIO", ns)
+    assert(loadfile("Lib/Helpers.lua"))("HagAIO", ns)
     assert(loadfile("Lib/SettingsTables.lua"))("HagAIO", ns)
     return ns
 end
