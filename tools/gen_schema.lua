@@ -90,6 +90,9 @@ ns.LibManager       = {
     Register      = function(_, item) if item and item._Publish then pcall(function() item:_Publish() end) end; return item end,
     RegisterValue = function(_, name, value) ns[name] = value; return value end,
 }
+-- Dev-gated registrations (Services/Dev, Modules/Dev) defer through this in-game; headless we
+-- resolve immediately AS a dev character so their contributed tables stay in the documented schema.
+ns.WhenDevCharKnown = function(fn) fn(true) end
 
 -- The framework files, in manifest order (tools/load-order.json), minus what this rig
 -- stubs above or doesn't need headless -- so a new Core base class added to the manifest

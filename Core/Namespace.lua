@@ -41,6 +41,35 @@ function ns.IsDevChar()
     return ns._isDevChar
 end
 
+-- Run `fn(isDevChar)` once the character identity is KNOWN -- immediately when it already
+-- is, else queued until Core/Init.lua flushes on PLAYER_LOGIN (identity is guaranteed by
+-- then). Dev-only surfaces register through this instead of a bare load-time IsDevChar()
+-- check, which silently lost them for the whole session whenever identity resolved late
+-- (IsDevChar returns false-without-caching while the player unit isn't available yet).
+local pendingIdentity = {}
+function ns.WhenDevCharKnown(fn)
+    ns.IsDevChar()                                            -- try to resolve + cache now
+    if ns._isDevChar ~= nil then return fn(ns._isDevChar) end
+    pendingIdentity[#pendingIdentity + 1] = fn
+end
+
+-- Flush the deferred registrations once the identity resolves. Core/Init.lua calls this
+-- SOFTLY on ADDON_LOADED (before the database builds, so a dev module's tables still make
+-- the schema) -- a still-unknown identity just keeps waiting -- and FORCED on PLAYER_LOGIN,
+-- where the player unit is guaranteed: if it somehow still can't resolve, the answer is
+-- finalised as "not a dev character" rather than left dangling.
+function ns.ResolveDevChar(force)
+    ns.IsDevChar()                                            -- try to resolve + cache
+    if ns._isDevChar == nil then
+        if not force then return false end                    -- still unknown: wait for the next flush
+        ns._isDevChar = false                                 -- forced final: identity never appeared
+    end
+    local pending = pendingIdentity
+    pendingIdentity = {}
+    for _, fn in ipairs(pending) do fn(ns._isDevChar) end
+    return true
+end
+
 -- Registry slots (ns.<Name>) documenting the shape of the namespace. GENERATED at deploy
 -- by tools/autogen/NamespaceSlots.ps1 and injected below this marker into the DEPLOYED
 -- copy; the repo source keeps only the marker so it stays free of the derived block.

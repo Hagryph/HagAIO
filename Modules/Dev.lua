@@ -305,15 +305,25 @@ function Dev:_ReportAddonShares(mem0)
     end
 end
 
--- Registered (always-on) ONLY on a whitelisted dev character. The `not ns.IsDevChar` arm keeps the
--- headless test harness -- which doesn't load Core/Namespace.lua -- able to load this file.
-if (not ns.IsDevChar) or ns.IsDevChar() then
+-- Registered (always-on) ONLY on a whitelisted dev character, via ns.WhenDevCharKnown: at file
+-- load the player unit may not exist yet, so the registration defers until the identity is KNOWN
+-- (Init.lua flushes on ADDON_LOADED / PLAYER_LOGIN) instead of silently losing the dev tooling for
+-- the session. This module contributes settings TABLES, which must land before the database
+-- builds -- in the vanishingly rare case identity only resolves after the build (the forced
+-- PLAYER_LOGIN flush), the module is skipped with a warning rather than crashing the schema. The
+-- `not ns.WhenDevCharKnown` arm keeps the headless test harness -- which doesn't load
+-- Core/Namespace.lua -- able to load this file.
+local function registerDev()
+    if ns.DatabaseManager and ns.DatabaseManager:IsBuilt() then
+        ns.Logger:Core():Warn("Dev module unavailable this session (character identity resolved after the database was built).")
+        return
+    end
     ns.ModuleManager:Register(Dev:New("Dev", {
         title = "Dev",
         description = "Developer tooling for this character. Live-tunes the Dashboard scene art.",
         alwaysOn = true,
         color = ns.Theme.hex.red,
-        deps = { "SettingsWindow", "Worker", "SlashCommand" },  -- General-page toggle; HitchWatch; /hag mem
+        deps = { "SettingsWindow", "Worker", "SlashCommand", "DatabaseManager" },  -- General-page toggle; HitchWatch; /hag mem; settings tables + the built-DB guard above
         commands = {
             mem = { handler = "ToggleMemWatch", help = "toggle the memory watch (one sample per minute)" },
         },
@@ -324,3 +334,5 @@ if (not ns.IsDevChar) or ns.IsDevChar() then
         },
     }))
 end
+if not ns.WhenDevCharKnown then registerDev()
+else ns.WhenDevCharKnown(function(isDev) if isDev then registerDev() end end) end

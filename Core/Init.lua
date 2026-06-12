@@ -48,8 +48,17 @@ function Initializer:Run()
 
     local bus = ns.EventBus
 
+    -- On a whitelisted dev character, surface DEBUG output in chat automatically
+    -- (session-only). Deferred until the character identity is KNOWN -- at file-load /
+    -- boot time the player unit may not exist yet (see ns.WhenDevCharKnown).
+    ns.WhenDevCharKnown(function(isDev) if isDev then ns.Logger:SetDebug(true) end end)
+
     bus:On("ADDON_LOADED", function(_, loaded)
         if loaded ~= addonName then return end
+        -- Soft dev-identity flush FIRST: a dev surface whose registration was deferred at
+        -- file load (identity not ready) registers now, BEFORE the table-contribution
+        -- sweep + Build below -- so its tables still make the schema.
+        ns.ResolveDevChar()
         -- Bind the saved-variable globals (the SavedVars slot library), then build the ONE shared
         -- database, before anything reads it (Logger prefs just below; Compartment/MinimapIcon on their
         -- own PLAYER_LOGIN handlers). Every owner contributes its tables first -- services already did at
@@ -71,14 +80,16 @@ function Initializer:Run()
         -- profile here -- before modules bind, so no /reload is needed.
         if ns.Profiles then ns.Profiles:ApplyGlobalForFreshChar() end
         ns.Logger:LoadSettings()
-        -- On a whitelisted dev character, surface DEBUG output in chat automatically (session-only).
-        if ns.IsDevChar and ns.IsDevChar() then ns.Logger:SetDebug(true) end
         ns.SlashCommand:Activate()
         ns.Logger:Core():EchoInfo(
             ("loaded v%s - type /hag to open."):format(tostring(ns.version)))
     end)
 
     bus:On("PLAYER_LOGIN", function()
+        -- Forced dev-identity flush: the player unit is guaranteed now, so any deferred
+        -- dev registration that ADDON_LOADED couldn't resolve lands here -- BEFORE
+        -- StartAll, so it starts with everything else (late registration also works).
+        ns.ResolveDevChar(true)
         ns.ModuleManager:StartAll()
         ns.SubmoduleManager:StartAll()   -- after modules: load condition-gated submodules
         -- (the shared database was already built on ADDON_LOADED, before any owner reads it)

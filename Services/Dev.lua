@@ -75,12 +75,17 @@ function Dev:_Slash(rest)
 end
 
 -- Dev declares its "/hag dev" sub-command (the Service base registers it after SlashCommand is up)
--- and shows its dumps in the shared CopyWindow. Registered ONLY on a whitelisted dev character
--- (ns.IsDevChar) so "/hag dev" never reaches normal users. The `not ns.IsDevChar` arm keeps the
--- headless test harness -- which doesn't load Core/Namespace.lua -- able to load this file.
-if (not ns.IsDevChar) or ns.IsDevChar() then
+-- and shows its dumps in the shared CopyWindow. Registered ONLY on a whitelisted dev character, via
+-- ns.WhenDevCharKnown: at file load the player unit may not exist yet, so the registration defers
+-- until the identity is KNOWN (Init.lua flushes on ADDON_LOADED / PLAYER_LOGIN; the ServiceManager
+-- supports late registration) instead of silently losing the dev tooling for the session. The
+-- `not ns.WhenDevCharKnown` arm keeps the headless test harness -- which doesn't load
+-- Core/Namespace.lua -- able to load this file.
+local function registerDev()
     ns.ServiceManager:Register(Dev:New("Dev", {
         deps = { "SlashCommand", "CopyWindow" },
         commands = { dev = { handler = "_Slash", help = "developer tools" } },
     }))
 end
+if not ns.WhenDevCharKnown then registerDev()
+else ns.WhenDevCharKnown(function(isDev) if isDev then registerDev() end end) end

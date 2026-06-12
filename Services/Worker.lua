@@ -17,7 +17,7 @@ local Class = ns.Class
 -- one step at a time, checking the time budget BETWEEN every step. So no job accumulates past the
 -- budget before the next check, and several iterators make progress together. A job's RETURN VALUE
 -- is its result; on completion the Worker Emits the job's `message` (default "HagAIO_WorkerDone")
--- with (id, result) -- iterator-with-return callers get their result, the rest get a done signal.
+-- with (handle, result) -- iterator-with-return callers get their result, the rest get a done signal.
 --
 -- OWNER BINDING: pass opts.owner = a Module/Submodule/Service to bind work to it. The work only
 -- runs while the owner is ENABLED (a submodule: while LOADED), and the Worker auto-listens to the
@@ -25,13 +25,37 @@ local Class = ns.Class
 -- cancels pending work and pauses interval timers; enabling resumes them. A Service owner is
 -- always enabled.
 --
---   ns.Worker:Queue(fn, { owner=, message=, onDone=, label= })       -> id      one-time work
---   ns.Worker:Register(event, fn, { owner=, message=, ... })         -> handle  run on each event
---   ns.Worker:Every(interval, fn, { owner=, ... })                   -> handle  timer-reminded
---   ns.Worker:Yield() / :MaybeYield() / :Cancel(id)
+--   ns.Worker:Queue(fn, { owner=, message=, onDone=, label= })       -> handle  one-time work
+--   ns.Worker:Run(step, { owner=, ... })                              -> handle  stepper job
+--   ns.Worker:Register(event, fn, { owner=, message=, ... })         -> { Unregister }  per event
+--   ns.Worker:Every(interval, fn, { owner=, ... })                   -> { Unregister }  timer-reminded
+--   ns.Worker:Yield() / :MaybeYield()
+-- A queued job is reached ONLY through its handle (handle:Cancel()) -- the Worker exposes no job
+-- ids (an id namespace invited cross-caller collisions); the handle holds the job itself, so a
+-- cancel can never hit another caller's work.
 -- INSIDE a Component prefer self:Queue / self:WorkOn / self:WorkEvery (owner=self, auto-released).
 
 local Worker = Class.new("Worker", ns.Service)
+
+-- ---- job handle -------------------------------------------------------------
+-- The opaque handle Queue/Run return: the caller's only grip on a queued job. Cancel is
+-- IDENTITY-based (the handle holds its job), so no id namespace exists to collide in.
+local JobHandle = Class.new("WorkerJobHandle")
+
+function JobHandle:Initialize(worker, job)
+    local p = self:_p()
+    p.worker = worker
+    p.job = job
+    job.handle = self      -- completion messages carry the handle as the job's identity
+end
+
+-- Drop the job if it hasn't finished yet (best-effort; a job mid-slice finishes its
+-- slice; a no-op once the job completed/errored/was dropped). Releases a runner's
+-- coalescing guard like every other removal path.
+function JobHandle:Cancel()
+    local p = self:_p()
+    p.worker:_CancelJob(p.job)
+end
 
 local BUDGET_MS = 2           -- hard cap on the time the Worker may spend in one pump (a small slice
                               -- of a 60 FPS frame's ~16.7ms, so a drain is never felt as a hitch)
@@ -45,12 +69,12 @@ local STATE_MSG = "HagAIO_OwnerState"   -- (owner, enabled) -- emitted by Module
 
 function Worker:OnInitialize()
     local p = self:_p()
-    p.queue = {}             -- live jobs (ITERATORS): { co, id, message, onDone, owner, label, _after }
+    p.queue = {}             -- live jobs (ITERATORS): { co|step, handle, message, onDone, owner, label, _after }
     p.deadline = nil         -- this pump's time budget end (ms); set only while pumping
     p.currentCo = nil        -- the job coroutine being stepped right now (MaybeYield's identity check)
     p.rr = 1                 -- round-robin cursor: which job to step next (fairness across iterators)
     p.ticker = nil           -- the 60 Hz pump ticker, alive ONLY while there is queued work
-    p.nextId = 1
+    p.nextId = 1             -- INTERNAL counter for default labels only (never exposed, never matched on)
     p.pumpMs = {}            -- DEBUG: per interval pump { ms, worst, label } since the queue last drained
 end
 
@@ -194,13 +218,14 @@ function Worker:_Pump()
 end
 
 -- Deliver a finished job's outcome over the EventBus (and an optional direct callback). The result
--- is whatever the job returned (nil = "just done"), passed as (id, result).
+-- is whatever the job returned (nil = "just done"), passed as (handle, result) -- the handle the
+-- caller got from Queue/Run is the job's identity on the bus.
 function Worker:_Complete(job, result)
     if job.onDone then
         local ok, err = pcall(job.onDone, result)
         if not ok then self:LogWarn(("job '%s' onDone error: %s"):format(tostring(job.label), tostring(err))) end
     end
-    if ns.EventBus then ns.EventBus:Emit(job.message or DONE_MSG, job.id, result) end
+    if ns.EventBus then ns.EventBus:Emit(job.message or DONE_MSG, job.handle, result) end
     if job._after then job._after() end                  -- internal: Register/Every coalescing bookkeeping
 end
 
@@ -214,22 +239,22 @@ end
 -- Queue ONE-TIME deferred work. `fn(yield)` runs in a coroutine; call yield() (or ns.Worker:Yield())
 -- at chunk points so a long job spreads across frames. fn's return value is delivered on completion.
 -- opts: owner (skip + don't queue if disabled), message (EventBus msg on done), onDone (fn(result)),
--- label, id. Returns the job id (nil if an owner was given and is disabled).
+-- label. Returns the job HANDLE (handle:Cancel(); nil if an owner was given and is disabled).
 function Worker:Queue(fn, opts)
     assert(type(fn) == "function", "Worker:Queue needs a function")
     opts = opts or {}
     if not self:_OwnerEnabled(opts.owner) then return nil end   -- owner disabled -> drop the work
     local p = self:_p()
-    local id = opts.id or freshId(p)
     local yield = function() self:Yield() end
-    p.queue[#p.queue + 1] = {
+    local job = {
         co = coroutine.create(function() return fn(yield) end),
-        id = id, message = opts.message, onDone = opts.onDone, owner = opts.owner,
-        label = opts.label or opts.message or ("job#" .. tostring(id)),
+        message = opts.message, onDone = opts.onDone, owner = opts.owner,
+        label = opts.label or opts.message or ("job#" .. tostring(freshId(p))),
         _after = opts._after,
     }
+    p.queue[#p.queue + 1] = job
     self:_Wake()
-    return id
+    return JobHandle:New(self, job)
 end
 
 -- Run a loop-free STEPPER through the Worker -- the ATT-runner shape, where the WORKER owns the loop.
@@ -237,33 +262,33 @@ end
 -- (no per-unit coroutine) as many times as fit the TIME budget each pump, then again next pump -- so
 -- the number of units per frame is driven by time, not a fixed count. `step` must contain NO for/while
 -- of its own (the lint enforces it); the only loop is the Worker's budget loop. Prefer this for
--- anything iterative. opts: owner / message / onDone / label (same as Queue).
+-- anything iterative. opts: owner / message / onDone / label (same as Queue). Returns the job HANDLE.
 function Worker:Run(step, opts)
     assert(type(step) == "function", "Worker:Run needs a step function")
     opts = opts or {}
     if not self:_OwnerEnabled(opts.owner) then return nil end
     local p = self:_p()
-    local id = opts.id or freshId(p)
-    p.queue[#p.queue + 1] = {
-        step = step, id = id, message = opts.message, onDone = opts.onDone, owner = opts.owner,
-        label = opts.label or opts.message or ("step#" .. tostring(id)), _after = opts._after,
+    local job = {
+        step = step, message = opts.message, onDone = opts.onDone, owner = opts.owner,
+        label = opts.label or opts.message or ("step#" .. tostring(freshId(p))), _after = opts._after,
     }
+    p.queue[#p.queue + 1] = job
     self:_Wake()
-    return id
+    return JobHandle:New(self, job)
 end
 
--- Drop a job that hasn't finished yet (best-effort; a job mid-slice finishes its slice).
--- Runs the job's _after like every other removal path (_Pump's drop/error/complete), so a
--- runner's coalescing guard is released -- otherwise st.pending would stay true forever and
--- the runner could never queue again after its owner re-enables.
-function Worker:Cancel(id)
-    if id == nil then return end
+-- INTERNAL (the JobHandle's Cancel): drop `job` if it hasn't finished yet (best-effort; a
+-- job mid-slice finishes its slice). Identity match, so it can only ever remove the
+-- handle's own job. Runs the job's _after like every other removal path (_Pump's
+-- drop/error/complete), so a runner's coalescing guard is released -- otherwise st.pending
+-- would stay true forever and the runner could never queue again after its owner re-enables.
+function Worker:_CancelJob(job)
     local q = self:_p().queue
     for i = #q, 1, -1 do
-        local job = q[i]
-        if job.id == id then
+        if q[i] == job then
             table.remove(q, i)
             if job._after then job._after() end
+            return
         end
     end
 end
@@ -273,12 +298,12 @@ end
 -- it, so the latest fire is honoured and bursts never pile up). Returns (fire, state).
 function Worker:_Runner(fn, opts)
     local owner = opts.owner
-    local st = { active = self:_OwnerEnabled(owner), pending = false, again = false, queuedId = nil }
+    local st = { active = self:_OwnerEnabled(owner), pending = false, again = false, queued = nil }
     local function fire()
         if not st.active then return end                  -- owner disabled -> don't run
         if st.pending then st.again = true; return end    -- one in flight -> coalesce
         st.pending = true
-        st.queuedId = self:Queue(fn, {
+        st.queued = self:Queue(fn, {                      -- the in-flight job's handle
             owner = owner, message = opts.doneMessage, onDone = opts.onDone, label = opts.label,
             _after = function()
                 st.pending = false
@@ -287,7 +312,7 @@ function Worker:_Runner(fn, opts)
         })
         -- Queue refused (the owner raced to disabled): nothing is in flight, so don't
         -- leave the coalescing guard latched -- the next fire after re-enable must queue.
-        if not st.queuedId then st.pending = false end
+        if not st.queued then st.pending = false end
     end
     st.fire = fire
     return fire, st
@@ -301,7 +326,7 @@ function Worker:_BindOwner(st, owner)
     return ns.EventBus:Subscribe(STATE_MSG, function(_, o, enabled)
         if o ~= owner then return end
         st.active = enabled and true or false
-        if not st.active and st.queuedId then self:Cancel(st.queuedId) end
+        if not st.active and st.queued then st.queued:Cancel() end
         if st.onActive then st.onActive(st.active) end
     end)
 end
@@ -319,7 +344,7 @@ function Worker:Register(event, fn, opts)
         if opts.message then ns.EventBus:Unsubscribe(event, evToken) else ns.EventBus:Off(event, evToken) end
         if stateToken then ns.EventBus:Unsubscribe(STATE_MSG, stateToken) end
         st.active = false            -- so the cancelled job's _after can't coalesce-refire
-        self:Cancel(st.queuedId)
+        if st.queued then st.queued:Cancel() end
     end }
 end
 
@@ -340,7 +365,7 @@ function Worker:Every(interval, fn, opts)
         stop()
         if stateToken then ns.EventBus:Unsubscribe(STATE_MSG, stateToken) end
         st.active = false            -- so the cancelled job's _after can't coalesce-refire
-        self:Cancel(st.queuedId)
+        if st.queued then st.queued:Cancel() end
     end }
 end
 

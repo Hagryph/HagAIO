@@ -29,13 +29,13 @@ local function fakeOwner()
 end
 
 describe("Worker", function()
-    it("runs a queued job and delivers its result over the EventBus", function()
+    it("runs a queued job and delivers its result over the EventBus (keyed by its handle)", function()
         local worker, bus = newWorker()
         local got
-        bus:Subscribe("HagAIO_Done", function(_, id, result) got = { id = id, result = result } end)
-        local id = worker:Queue(function() return 42 end, { message = "HagAIO_Done" })
+        bus:Subscribe("HagAIO_Done", function(_, h, result) got = { h = h, result = result } end)
+        local handle = worker:Queue(function() return 42 end, { message = "HagAIO_Done" })
         worker:_Pump()
-        assert.are.equal(id, got.id)
+        assert.are.equal(handle, got.h)    -- the handle from Queue IS the job's identity on the bus
         assert.are.equal(42, got.result)
     end)
 
@@ -93,13 +93,16 @@ describe("Worker", function()
         assert.are.equal("A1,B1,A2,B2", table.concat(order, ","))   -- interleaved, not A1,A2 then B1,B2
     end)
 
-    it("Cancel drops a still-pending job", function()
+    it("handle:Cancel() drops a still-pending job (and only that job)", function()
         local worker = newWorker()
-        local ran = false
-        local id = worker:Queue(function() ran = true end)
-        worker:Cancel(id)
+        local ran, otherRan = false, false
+        local handle = worker:Queue(function() ran = true end)
+        worker:Queue(function() otherRan = true end)
+        handle:Cancel()
+        handle:Cancel()                    -- second cancel is a safe no-op
         worker:_Pump()
         assert.is_false(ran)
+        assert.is_true(otherRan)           -- identity-based: the other job is untouched
     end)
 
     it("Register coalesces rapid fires into one run, honouring the last fire", function()
@@ -120,9 +123,9 @@ describe("Worker", function()
         local worker = newWorker()
         local owner = fakeOwner(); owner.enabled = false
         local ran = false
-        local id = worker:Queue(function() ran = true end, { owner = owner })
+        local handle = worker:Queue(function() ran = true end, { owner = owner })
         worker:_Pump()
-        assert.is_nil(id)
+        assert.is_nil(handle)
         assert.is_false(ran)
     end)
 
