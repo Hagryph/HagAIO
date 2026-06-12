@@ -11,6 +11,9 @@
                          (the repo keeps only the .toc header; the file list is derived).
       * NamespaceSlots — injects the ns.* slot block into the deployed Core/Namespace.lua
                          at its `-- @AUTOGEN:slots` marker (kept out of the repo source).
+      * DevChars       — injects this machine's dev-character whitelist (git-ignored
+                         Dev/devchars.txt) at the `-- @AUTOGEN:devchars` marker; the repo
+                         and release zips ship ns.DEV_WHITELIST empty.
       * Readme         — regenerates README.md's file tree + version table IN THE REPO
                          (the README is a committed GitHub doc, not a deployed file).
     Dev/repo artifacts (.git, README, this script, etc.) are excluded from the mirror.
@@ -37,6 +40,7 @@ $dest = Join-Path $AddonsPath "HagAIO"
 . (Join-Path $src "tools\autogen\Common.ps1")
 . (Join-Path $src "tools\autogen\Toc.ps1")
 . (Join-Path $src "tools\autogen\NamespaceSlots.ps1")
+. (Join-Path $src "tools\autogen\DevChars.ps1")
 . (Join-Path $src "tools\autogen.ps1")
 
 if (-not (Test-Path $AddonsPath)) {
@@ -61,6 +65,9 @@ if ($LASTEXITCODE -ge 8) {
 Write-Utf8NoBom -Path (Join-Path $dest "HagAIO.toc") -Text (New-TocText -Root $src)
 # 2. Namespace slots: inject the ns.* block into the deployed Namespace.lua (at its marker).
 Update-DeployedNamespaceSlots -Root $src -DeployedFile (Join-Path $dest "Core\Namespace.lua")
+# 2b. Dev whitelist: inject this machine's dev characters (git-ignored Dev/devchars.txt)
+#     into the deployed Namespace.lua -- the repo and release zips ship it empty.
+Update-DeployedDevChars -Root $src -DeployedFile (Join-Path $dest "Core\Namespace.lua")
 # 3. Repo docs: README regions + DATABASE_SCHEMA.md, shared with the standalone
 #    tools/autogen.ps1 (CI checks their freshness). A missing LuaJIT only warns here.
 Update-RepoDocs -Root $src -SchemaOptional

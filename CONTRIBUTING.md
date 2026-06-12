@@ -94,6 +94,10 @@ driven by `deploy.ps1`; the committed repo docs are also regenerable standalone 
   documentation. The repo source keeps **only** a `-- @AUTOGEN:slots` marker; the block is
   injected into the *deployed* `Namespace.lua` (Core framework slots + discovered
   services/libs, descriptions from each file's header). Nothing to maintain by hand.
+- **Dev-character whitelist** (`DevChars.ps1`) — `ns.DEV_WHITELIST` ships **empty** in the
+  repo and in release zips. Your own dev characters go in the git-ignored
+  `Dev/devchars.txt` (one `Name-Realm` per line); deploy injects them into the *deployed*
+  `Namespace.lua` at its `-- @AUTOGEN:devchars` marker. No personal data is committed.
 - **`README.md`** (`Readme.ps1`) — the `AUTOGEN:filetree` source tree and the
   `AUTOGEN:version` "Target version" table (from `HagAIO.toc`: `## Interface` + the
   `# expansion:` / `# next-patch:` tags). Unlike the two above, this is regenerated **in

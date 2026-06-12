@@ -86,4 +86,17 @@ describe("Registry core", function()
         r:_GetGraph(nb)
         assert.are.equal(2, builds)
     end)
+
+    it("Registry.All lists every constructed registry across subclasses, in order", function()
+        local ns = { UI = {} }
+        assert(loadfile("Core/Class.lua"))("HagAIO", ns)
+        assert(loadfile("Core/Registry.lua"))("HagAIO", ns)
+        local A = ns.Class.new("RegA", ns.Registry)
+        local B = ns.Class.new("RegB", ns.Registry)
+        local a, b = A:New("alpha"), B:New("beta")   -- subclasses share Registry's one list
+        local all = ns.Registry.All()
+        assert.are.equal(2, #all)
+        assert.are.equal(a, all[1])
+        assert.are.equal(b, all[2])
+    end)
 end)

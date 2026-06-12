@@ -52,7 +52,7 @@ function Get-OrderedLuaFiles {
 }
 
 # The file's one-line description: first comment line after its `-- <path>.lua` banner,
-# trimmed to the first sentence (the convention the old gen_readme.mjs used).
+# trimmed to the first sentence.
 function Get-FileDescription {
     param([string]$Root, [string]$RelPath)
     $full = Join-Path $Root $RelPath

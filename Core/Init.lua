@@ -57,7 +57,10 @@ function Initializer:Run()
         -- _ContributeTables is idempotent (the later _Init is a no-op).
         if ns.DatabaseManager then
             ns.DatabaseManager:LoadSaved()   -- bind the saved-variable globals (via the SavedVars library)
-            for _, reg in ipairs({ ns.ServiceManager, ns.ModuleManager, ns.SubmoduleManager }) do
+            -- Sweep EVERY registry (Registry.All -- the managers append themselves at
+            -- construction), duck-typed on _ContributeTables, so a future owner-bearing
+            -- registry contributes its tables without this list being edited.
+            for _, reg in ipairs(ns.Registry.All()) do
                 for it in reg:Iterate() do if it._ContributeTables then it:_ContributeTables() end end
             end
             ns.DatabaseManager:Build()

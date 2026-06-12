@@ -311,3 +311,6 @@ Regenerate with `python tools/gen_icon.py`.
 
 Mirrors the addon into `…\_retail_\Interface\AddOns\HagAIO`, then `/reload` in-game.
 Override the target with `-AddonsPath` or the `WOW_ADDONS_PATH` environment variable.
+
+The full contributor workflow — lint gates (`npm run check`), what's generated, the
+load-order manifest, and release packaging — lives in [CONTRIBUTING.md](CONTRIBUTING.md).

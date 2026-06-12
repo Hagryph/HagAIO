@@ -20,9 +20,11 @@ ns.ICON = "Interface\\AddOns\\HagAIO\\Media\\icon"
 -- Developer-character whitelist. Dev-only surfaces (the Dev service's "/hag dev" command, the
 -- always-on Dev settings module, and "/hag cvar dump") register/run ONLY on these characters, so
 -- they never reach normal users. Keyed "Name-Realm" (realm normalised: spaces stripped).
-ns.DEV_WHITELIST = {
-    ["Hagryph-Stormscale"] = true,
-}
+-- The repo (and any release zip) ships this EMPTY -- entries are personal per-machine config,
+-- injected below the marker into the DEPLOYED copy by deploy.ps1 from the git-ignored
+-- Dev/devchars.txt (one Name-Realm per line; see tools/autogen/DevChars.ps1).
+ns.DEV_WHITELIST = {}
+-- @AUTOGEN:devchars
 
 -- True on a whitelisted developer character. Safe to call at file-load time: UnitName/realm are
 -- available once the player unit exists (before PLAYER_LOGIN). The answer is cached once the

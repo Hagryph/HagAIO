@@ -13,7 +13,8 @@
     namespace slot block), then zips with HagAIO/ as the archive root so it extracts
     straight into Interface\AddOns. The version comes from HagAIO.toc's ## Version line,
     so a tagged commit's zip is reconstructible from the repo alone — no WoW install
-    needed.
+    needed. The dev-character whitelist injection (tools/autogen/DevChars.ps1) is
+    deliberately NOT run: a release ships ns.DEV_WHITELIST empty.
 
 .PARAMETER OutDir
     Where to put the zip. Defaults to <repo>/dist (git-ignored).

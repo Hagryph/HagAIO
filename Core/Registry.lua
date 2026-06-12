@@ -13,6 +13,19 @@ local Class = ns.Class
 
 local Registry = Class.new("Registry")
 
+-- Every constructed registry, in construction order -- class-level state in the private
+-- statics side-table, ANCHORED on Registry so every subclass (ServiceManager,
+-- ModuleManager, SubmoduleManager, LibManager, ...) shares the one list. Lets the
+-- bootstrapper sweep "all registries" (Registry.All) instead of naming managers by hand,
+-- so a future owner-bearing registry joins the ADDON_LOADED table-contribution sweep
+-- automatically (see Core/Init.lua).
+Class.statics(Registry).all = {}
+
+-- STATIC: the constructed registries, in construction order. Read-only by convention.
+function Registry.All()
+    return Class.statics(Registry).all
+end
+
 -- `kind` is the singular noun used in duplicate / validation error messages
 -- ("module", "service", "submodule").
 function Registry:Initialize(kind)
@@ -22,6 +35,8 @@ function Registry:Initialize(kind)
     p.order = {}      -- registration order (list of names)
     p.graph = nil     -- cached dependency graph; cleared on every Register
     p.started = false
+    local all = self:_statics().all
+    all[#all + 1] = self
 end
 
 -- Register an item (anything answering :GetName()). Duplicate names are fatal.
