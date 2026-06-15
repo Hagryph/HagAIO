@@ -12,6 +12,7 @@
 import { readdirSync, readFileSync, statSync } from "node:fs";
 import { join, relative, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
+import { parseAnnotations } from "./lib/annotations.mjs";
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
 const SCAN = ["Core", "Services", "UI", "Modules"];
@@ -54,12 +55,12 @@ const lineOf = (code, idx) => code.slice(0, idx).split("\n").length;
 const FILES = SCAN.flatMap((s) => luaFiles(join(ROOT, s)));
 const TEST_FILES = luaFiles(join(ROOT, "Test"));  // count test usage as "alive"
 
-// Global allow set (a name kept on purpose, declared anywhere).
+// Global allow set (a name kept on purpose, declared anywhere). The dead-code check is
+// codebase-wide (a public method unused across ALL files), so the allow-names union across every
+// file -- via the shared annotation parser (`-- deadcode-allow: X` or `-- hag-lint-disable deadcode: X`).
 const ALLOW = new Set();
 for (const p of FILES) {
-  for (const a of readFileSync(p, "utf8").matchAll(/deadcode-allow:\s*([\w,\s]+)/g)) {
-    a[1].split(",").forEach((t) => { t = t.trim(); if (t) ALLOW.add(t); });
-  }
+  for (const name of parseAnnotations(readFileSync(p, "utf8")).fileArgs("deadcode")) ALLOW.add(name);
 }
 
 // ---- pass 1: unused file-locals -------------------------------------------

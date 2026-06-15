@@ -150,6 +150,25 @@ describe("Cache", function()
         assert.are.equal(1, s:Stats().count)         -- managed now: count tracked (weak would omit it)
     end)
 
+    it("sweeps expired-but-UNREAD nodes from a ttl-only store (not just the key being read)", function()
+        local c, clock = newCache()
+        local s = c:Store("ttl", { ttl = 10 })
+        s:Set("a", 1); s:Set("b", 2); s:Set("c", 3)
+        assert.are.equal(3, s:Stats().count)
+        clock.now = 11                            -- everything has expired, but none re-read yet
+        -- A single interaction with ANY key triggers the (now-due) full sweep, reclaiming all three.
+        s:Get("a")
+        assert.are.equal(0, s:Stats().count)      -- b and c were dropped too, not just a
+    end)
+
+    it("Stats count is the LIVE size: it never reports expired nodes", function()
+        local c, clock = newCache()
+        local s = c:Store("ttl", { ttl = 10 })
+        s:Set("a", 1); s:Set("b", 2)
+        clock.now = 11
+        assert.are.equal(0, s:Stats().count)      -- forced sweep -> count excludes the expired pair
+    end)
+
     it("ttl and max compose: LRU eviction AND per-entry expiry on one store", function()
         local c, clock = newCache()
         local s = c:Store("tm", { max = 2, ttl = 10 })

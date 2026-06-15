@@ -61,6 +61,7 @@ function Store:Initialize(name, opts)
         p.map = {}                 -- key -> node { key, value, expiry, prev, next }
         p.count = 0
         p.head, p.tail = nil, nil  -- head = most-recently-used (only used when max set)
+        p.nextSweep = nil          -- ttl: next time _Sweep does a full expired-node walk
     end
 end
 
@@ -97,6 +98,22 @@ function Store:_Remove(node)
     p.count = p.count - 1
 end
 
+-- Drop every EXPIRED node (ttl stores only). Without this a ttl-only store (no `max` bound) keeps
+-- expired-but-unread nodes forever -- Get only evicts a node when its OWN key is read again -- and
+-- its count drifts above the live size. TIME-GATED: a full walk runs at most once per ttl window,
+-- so steady-state reads/writes stay O(1) between sweeps; `force` (Stats) sweeps unconditionally so
+-- the reported count is exact. Removing the CURRENT key mid-`pairs` is the one mutation Lua allows.
+function Store:_Sweep(force)
+    local p = self:_p()
+    if not p.ttl then return end                      -- nothing expires (weak/max-only/plain stores)
+    local now = GetTime()
+    if not force and p.nextSweep and now < p.nextSweep then return end
+    p.nextSweep = now + p.ttl
+    for _, node in pairs(p.map) do
+        if node.expiry and now > node.expiry then self:_Remove(node) end
+    end
+end
+
 -- Look up a value. Returns (value, true) on a hit (value may itself be nil) or
 -- (nil, false) on a miss. Expired/evicted entries count as misses.
 function Store:Get(key)
@@ -106,6 +123,7 @@ function Store:Get(key)
         if v ~= nil then p.hits = p.hits + 1; return v, true end
         p.misses = p.misses + 1; return nil, false
     end
+    self:_Sweep()                              -- reclaim other keys' expired nodes (time-gated)
     local node = p.map[key]
     if not node then p.misses = p.misses + 1; return nil, false end
     if node.expiry and GetTime() > node.expiry then
@@ -125,6 +143,7 @@ function Store:Set(key, value)
         p.data[key] = value
         return value
     end
+    self:_Sweep()                              -- reclaim expired nodes before growing (time-gated)
     local node = p.map[key]
     if node then
         node.value = value
@@ -155,6 +174,7 @@ end
 function Store:Invalidate(key)
     local p = self:_p()
     if p.weak then p.data[key] = nil; return end
+    self:_Sweep()                              -- opportunistic: reclaim other expired nodes too
     local node = p.map[key]
     if node then self:_Remove(node) end
 end
@@ -167,13 +187,16 @@ function Store:Clear()
         p.map = {}
         p.count = 0
         p.head, p.tail = nil, nil
+        p.nextSweep = nil
     end
     p.hits, p.misses = 0, 0
 end
 
--- { hits, misses, count } -- count is omitted for weak stores (the GC owns it).
+-- { hits, misses, count } -- count is omitted for weak stores (the GC owns it). Forces a full
+-- expiry sweep first, so `count` is the LIVE (non-expired) size, never inflated by dead nodes.
 function Store:Stats()
     local p = self:_p()
+    if not p.weak then self:_Sweep(true) end
     return { hits = p.hits, misses = p.misses, count = p.weak and nil or p.count }
 end
 

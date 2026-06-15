@@ -33,6 +33,7 @@
 import { readdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { join, relative, basename, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
+import { parseAnnotations } from "./lib/annotations.mjs";
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
 const FIX = process.argv.includes("--fix");  // --fix: inject missing deps into each file
@@ -152,10 +153,9 @@ for (const path of ALL_FILES) {
   const rel = relative(ROOT, path).replace(/\\/g, "/");
   if (EXEMPT.has(rel) || rel.startsWith(EXEMPT_PREFIX)) continue;
   const raw = readFileSync(path, "utf8");
-  const allow = new Set();
-  for (const a of raw.matchAll(/depcheck-allow:\s*([\w,\s]+)/g)) {
-    a[1].split(",").forEach((t) => { t = t.trim(); if (t) allow.add(t); });
-  }
+  // Waived names (a dep reference or the `noregister` token) via the shared annotation parser:
+  // `-- depcheck-allow: X` or `-- hag-lint-disable depcheck: X`.
+  const allow = parseAnnotations(raw).fileArgs("depcheck");
   const code = stripComments(raw);
 
   // Self-registration: a file that DEFINES a service / module / submodule must also

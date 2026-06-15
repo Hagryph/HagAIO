@@ -43,6 +43,7 @@ dependencies to install — the tools are plain Node ESM. The test runner auto-f
 | `widgets` | Every widget is defined the same way (one per file, named, registered) |
 | `savedvars` | The persistence boundary holds (saved variables only via the SavedVars/DB layer) |
 | `worker` | Worker stepper jobs contain no loops of their own (the Worker owns the loop) |
+| `annotations` | Self-test for the shared lint-suppression parser (`tools/lib/annotations.mjs`) |
 | `test` | `lua Test/run.lua` — the spec suite |
 
 The deployed artifacts (`.toc`, the `Core/Namespace.lua` slot block) are generated at
@@ -53,15 +54,27 @@ when they're stale, so a schema/file-layout change can't merge with drifted docs
 ## Waiver / convention comments
 
 The lint gates are heuristic (Lua is dynamic), so each has an in-file escape hatch for
-deliberate exceptions:
+deliberate exceptions. All of them are parsed by **one** shared parser
+(`tools/lib/annotations.mjs`, self-tested by the `annotations` gate), in two scopes —
+ESLint-style:
 
-- **`-- depcheck-allow: A, B`** — waive specific undeclared-dependency references (e.g. an
-  intentional/cyclic access). Place the comment anywhere in the file.
-- **`-- depcheck-allow: noregister`** — waive the self-registration rule for a file that
-  defines a service/module/submodule/lib but deliberately doesn't register it in the same
-  file.
-- **`-- deadcode-allow: name1, name2`** — keep a public method or local the scan thinks is
-  unused (public API, dynamic dispatch the scan can't see).
+- **File-scoped, with allow-names** — `-- hag-lint-disable <rule>: name1, name2` (placed
+  anywhere in the file). The legacy spellings **`-- deadcode-allow: name1, name2`** and
+  **`-- depcheck-allow: A, B`** are equivalent aliases and still work. Used by:
+  - `deadcode` — keep a public method/local the scan thinks is unused (public API, dynamic
+    dispatch it can't see).
+  - `depcheck` — waive specific undeclared-dependency references; the special name
+    `noregister` waives the self-registration rule for a file that defines a
+    service/module/submodule/lib but deliberately doesn't register it in the same file.
+- **Line-scoped** (for the per-line gates `raw-frame`, `raw-texture`, `widget-call-form`,
+  `mini-event-bus`, `worker-loop`):
+  - `-- hag-lint-disable-next-line <rule>` — silence the rule on the **next** line.
+  - `-- hag-lint-disable-line <rule>` — silence it on **this** line (trailing comment).
+  - `-- hag-lint-disable <rule>` — silence it for the **whole file**.
+
+  `<rule>` is the lint's rule id, or `*` / `all` for every rule. The structural-boundary
+  gates (`savedvars`, `widgets`) deliberately have **no** escape hatch — those boundaries
+  are absolute.
 - **`EXEMPT` foundation set** (derived in `tools/depcheck.mjs` from
   `tools/load-order.json`) — the core singletons / base classes / statics whose own
   `ns.*` accesses aren't linted, because they're always available. These are exactly the

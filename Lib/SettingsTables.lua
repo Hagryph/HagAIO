@@ -212,6 +212,17 @@ function SettingsTables:Baseline(db, nsKey, schema, key)
     return f.default
 end
 
+-- True if this char's override row holds ANY override (some settings column is set). The id-only
+-- row that's left once every override is cleared reads false here.
+local function hasAnyOverride(db, nsKey, schema)
+    local orow = charRow(db, nsKey)
+    if not orow then return false end
+    for _, f in ipairs(schemaFields(schema)) do
+        if f.read(orow) ~= nil then return true end
+    end
+    return false
+end
+
 -- Write `value` to this char's override layer, DIFFING against the baseline: store it only when it
 -- differs (so a later default/profile change still flows through), else clear the override columns.
 function SettingsTables:Set(db, nsKey, schema, key, value)
@@ -224,6 +235,11 @@ function SettingsTables:Set(db, nsKey, schema, key, value)
         if not exists then return end
         local clear = {}; for _, c in ipairs(f.cols) do clear[c.name] = ns.DB.NULL end
         db:Update(t, clear, function(r) return r.id == 1 end)
+        -- Don't leave an all-NULL override row behind (it only exists to hold overrides): once the
+        -- last column is cleared, drop the row so it stops accumulating in saved variables.
+        if not hasAnyOverride(db, nsKey, schema) then
+            db:Delete(t, function(r) return r.id == 1 end)
+        end
     else
         local cols = f.write(value)
         if exists then db:Update(t, cols, function(r) return r.id == 1 end)

@@ -224,7 +224,10 @@ function Dev:_AddonMemSnapshot()
     return snap
 end
 
-local function addonName(i)
+-- Display name for an addon INDEX (the *_MemSnapshot / CPU lists are keyed by index). Named
+-- addonNameOf, not addonName, so it never shadows the file's `addonName` vararg (the string passed
+-- to GetAddOnMemoryUsage above) -- a same-named local here would silently turn that into a function.
+local function addonNameOf(i)
     local name = C_AddOns and C_AddOns.GetAddOnInfo and C_AddOns.GetAddOnInfo(i)
     return tostring(name or ("addon #" .. i))
 end
@@ -280,7 +283,7 @@ function Dev:_ReportAddonShares(mem0)
             self:LogWarn("  Retained Lua memory growth by addon:")
             for k = 1, math.min(8, #deltas) do
                 local e = deltas[k]
-                self:LogWarn(("    +%7.1f MB  %s"):format(e.d / 1024, addonName(e.i)))
+                self:LogWarn(("    +%7.1f MB  %s"):format(e.d / 1024, addonNameOf(e.i)))
             end
         end
     end
@@ -297,7 +300,7 @@ function Dev:_ReportAddonShares(mem0)
         if #cpu > 0 then
             self:LogWarn("  Addon CPU since watch start (scriptProfile):")
             for k = 1, math.min(8, #cpu) do
-                self:LogWarn(("    %8.0f ms  %s"):format(cpu[k].ms, addonName(cpu[k].i)))
+                self:LogWarn(("    %8.0f ms  %s"):format(cpu[k].ms, addonNameOf(cpu[k].i)))
             end
         end
     else

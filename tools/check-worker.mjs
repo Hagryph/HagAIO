@@ -18,10 +18,14 @@
 import { readdirSync, readFileSync, statSync } from "node:fs";
 import { join, relative, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
+import { parseAnnotations } from "./lib/annotations.mjs";
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
 const SCAN = ["Core", "Lib", "Services", "UI", "Modules"];
 const EXEMPT = ["Services/Worker.lua", "Core/Component.lua"];
+// A deliberate in-job loop is silenced with the shared annotation (tools/lib/annotations.mjs):
+// `-- hag-lint-disable-next-line worker-loop` on the line above the for/while.
+const RULE = "worker-loop";
 
 // The worker-job entry points (NOT the generic :Run/:Register/:Every of other services): the direct
 // ns.Worker:Queue/Run/Register/Every, and the Component helpers self:Queue / self:WorkOn / self:WorkEvery.
@@ -81,7 +85,9 @@ for (const sub of SCAN) {
   for (const full of luaFiles(base)) {
     const rel = relative(ROOT, full).replace(/\\/g, "/");
     if (EXEMPT.includes(rel)) continue;
-    const src = strip(readFileSync(full, "utf8"));
+    const raw = readFileSync(full, "utf8");
+    const ann = parseAnnotations(raw);           // suppressions read from the un-stripped source
+    const src = strip(raw);
     const lineAt = (idx) => src.slice(0, idx).split("\n").length;
     ENTRY.lastIndex = 0;
     let call;
@@ -98,7 +104,10 @@ for (const sub of SCAN) {
         const body = args.slice(f.index, bodyEnd);
         const loop = /\b(for|while)\b/.exec(body);
         if (loop) {
-          violations.push({ rel, line: lineAt(open + 1 + f.index + loop.index), kw: loop[1] });
+          const line = lineAt(open + 1 + f.index + loop.index);
+          if (!(ann.lineDisabled(RULE, line) || ann.fileDisabled(RULE))) {
+            violations.push({ rel, line, kw: loop[1] });
+          }
         }
         fnRe.lastIndex = bodyEnd;   // don't re-scan inside this literal
       }

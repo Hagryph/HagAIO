@@ -28,10 +28,15 @@
 import { readdirSync, readFileSync, statSync } from "node:fs";
 import { join, relative, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
+import { parseAnnotations } from "./lib/annotations.mjs";
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
 const SCAN = ["Core", "Lib", "Services", "UI", "Modules"];
 const SUMMARY_ONLY = process.argv.includes("--summary");
+
+// A deliberate exception is silenced with a shared annotation comment (tools/lib/annotations.mjs),
+// keyed by the rule id below -- e.g. `-- hag-lint-disable-next-line raw-frame` above the line, or
+// `-- hag-lint-disable raw-frame` for the whole file.
 
 // Files permitted to create/own raw FRAMES (the Widget layer + infrastructural frame owners). Paths
 // are repo-relative; a trailing "/" matches everything beneath it (so the split-up Widgets folder is
@@ -112,14 +117,18 @@ for (const sub of SCAN) {
   try { statSync(base); } catch { continue; }
   for (const full of luaFiles(base)) {
     const rel = relative(ROOT, full).replace(/\\/g, "/");
-    const src = stripComments(readFileSync(full, "utf8"));
+    const raw = readFileSync(full, "utf8");
+    const ann = parseAnnotations(raw);           // read suppressions BEFORE comments are stripped
+    const src = stripComments(raw);
     const lineAt = (idx) => src.slice(0, idx).split("\n").length;
     for (const rule of RULES) {
       if (rule.skip(rel)) continue;
       rule.re.lastIndex = 0;
       let m;
       while ((m = rule.re.exec(src))) {
-        violations.push({ rel, line: lineAt(m.index), rule: rule.id, msg: rule.msg, hit: m[0].trim() });
+        const line = lineAt(m.index);
+        if (ann.lineDisabled(rule.id, line) || ann.fileDisabled(rule.id)) continue;
+        violations.push({ rel, line, rule: rule.id, msg: rule.msg, hit: m[0].trim() });
       }
     }
   }

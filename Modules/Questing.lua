@@ -184,7 +184,7 @@ function Questing:OnInitialize()
     -- quests
     p.skipTurnIn = {}     -- questIDs that need a manual reward choice
     p.pendingAccept = {}  -- questIDs WE auto-accepted, awaiting QUEST_ACCEPTED (for the timed check)
-    -- Known-timed quests are learned account-wide in the shared DB's quest_timed table (see DAO below).
+    -- Known-timed quests are learned account-wide in the shared DB's `quest` table (see DAO below).
 end
 
 -- Event subscriptions are declared on the module (see registration below) and

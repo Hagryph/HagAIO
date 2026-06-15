@@ -24,10 +24,18 @@ local function debugOn() return ns.Logger and ns.Logger.GetDebug and ns.Logger:G
 
 local function isNull(v) return v == nil or (ns.DB and ns.DB.isNull and ns.DB.isNull(v)) end
 
--- The running client's .toc interface build (e.g. 120005) and human patch string (e.g. "12.0.5").
-function Versioning:Build() return (GetBuildInfo and tonumber((select(4, GetBuildInfo())))) or 0 end
+-- GetBuildInfo() -> (version, build, date, tocVersion); we want the human `version` ("12.0.5")
+-- and the numeric `tocVersion` interface build (120005). Names instead of select()/extra-paren
+-- truncation, so it reads as what it is. Returns ("", 0) when the API is absent (test paths).
+local function buildInfo()
+    if not GetBuildInfo then return "", 0 end
+    local version, _build, _date, tocVersion = GetBuildInfo()
+    return tostring(version or ""), tonumber(tocVersion) or 0
+end
 
-function Versioning:Patch() return tostring((GetBuildInfo and (GetBuildInfo())) or "") end
+-- The running client's .toc interface build (e.g. 120005) and human patch string (e.g. "12.0.5").
+function Versioning:Build() local _, build = buildInfo(); return build end
+function Versioning:Patch() local version = buildInfo(); return version end
 
 -- The saved stamp for a domain: { build, patch }, or nil if it was never stamped.
 function Versioning:Get(domain)
