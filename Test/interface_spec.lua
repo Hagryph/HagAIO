@@ -65,4 +65,57 @@ describe("Interface", function()
         function GoodSub2:Required() return 2 end
         assert.are.equal(2, GoodSub2:New():Required())           -- BadSub's failure didn't poison it
     end)
+
+    it("verifies a contract declared GENERATIONS up, satisfied anywhere down the chain", function()
+        local ns = ns_()
+        local I = ns.Interface.new("I", { "Required" })
+        -- A(abstract, implements I) -> B -> C -> D ; Required is defined on C (a middle generation).
+        local A = ns.Class.new("A", nil, { abstract = true, implements = { I } })
+        local B = ns.Class.new("B", A)
+        local C = ns.Class.new("C", B)
+        function C:Required() return 42 end
+        local D = ns.Class.new("D", C)
+        assert.are.equal(42, D:New():Required())   -- the grandparent's contract is found + satisfied
+        assert.are.equal(42, C:New():Required())   -- and at the concrete class that defines it
+
+        -- A sibling deep chain that never defines Required fails at its own first :New(), naming it.
+        local B2 = ns.Class.new("B2", A)
+        local C2 = ns.Class.new("C2", B2)          -- nothing defines Required anywhere on this branch
+        local ok, err = pcall(function() return C2:New() end)
+        assert.is_false(ok)
+        assert.is_true(tostring(err):find("Required") ~= nil)
+        assert.is_true(tostring(err):find("'C2'") ~= nil)   -- reported against the concrete class
+    end)
+
+    it("accumulates SEPARATE interfaces declared at different levels of the hierarchy", function()
+        local ns = ns_()
+        local IA = ns.Interface.new("IA", { "A" })
+        local IB = ns.Interface.new("IB", { "B" })
+        local Base = ns.Class.new("Base", nil, { abstract = true, implements = { IA } })
+        local Mid  = ns.Class.new("Mid", Base, { implements = { IB } })   -- adds a 2nd contract midway
+        local Leaf = ns.Class.new("Leaf", Mid)
+
+        -- Missing B (only A defined) -> the mid-level contract bites.
+        function Leaf:A() return "a" end
+        local ok, err = pcall(function() return Leaf:New() end)
+        assert.is_false(ok)
+        assert.is_true(tostring(err):find("'B'") ~= nil)
+
+        -- Define B too -> BOTH inherited contracts (IA from Base, IB from Mid) are satisfied.
+        function Leaf:B() return "b" end
+        local inst = Leaf:New()
+        assert.are.equal("a", inst:A())
+        assert.are.equal("b", inst:B())
+    end)
+
+    it("verifies each concrete class ONCE: the per-class latch isn't re-checked after the first :New()", function()
+        local ns = ns_()
+        local I = ns.Interface.new("I", { "Required" })
+        local Base = ns.Class.new("Base", nil, { abstract = true, implements = { I } })
+        local Sub = ns.Class.new("Sub", Base)
+        function Sub:Required() return true end
+        assert(Sub:New())                           -- first :New() verifies + latches
+        Sub.Required = nil                          -- break the contract AFTER the latch is set
+        assert.is_true(pcall(function() return Sub:New() end))   -- second :New() does NOT re-verify
+    end)
 end)

@@ -3,14 +3,17 @@ local Class = ns.Class
 
 -- Core/Component.lua
 -- Shared base for the two things that have an on/off lifecycle plus a settings page:
--- a Module (enable/disable) and a Submodule (load/unload). It owns the two pieces
+-- a Module (enable/disable) and a Submodule (load/unload). It owns the three pieces
 -- they used to duplicate:
 --   * an auto-released RESOURCE REGISTRY (events, messages, hooks, timers) with
 --     NAMED SCOPES -- so a sub-lifecycle (e.g. a class spec swap) can be torn down on
---     its own (ReleaseScope) without disturbing everything else; and
---   * the SETTINGS accessors + the HagAIO_SettingChanged broadcast.
--- Subclasses say their settings namespace via _SettingsNamespace(), and may override
--- _SettingsOwnerId() (broadcast id) and OnSettingChanged().
+--     its own (ReleaseScope) without disturbing everything else;
+--   * the SETTINGS accessors + the HagAIO_SettingChanged broadcast; and
+--   * the ENABLED-STATE + owner-gating contract (IsEnabled + the HagAIO_OwnerState
+--     broadcast the Worker binds to) -- so neither subclass can diverge or forget it.
+-- Subclasses say their settings namespace via _SettingsNamespace(), may override
+-- _SettingsOwnerId() (broadcast id) and OnSettingChanged(), and implement the abstract
+-- Enable()/Disable() lifecycle (routing every state change through self:_SetEnabled).
 --
 --   self:On(event, fn[, scope])           self:Subscribe(msg, fn[, scope])
 --   self:Every(iv, fn[, iters][, scope])  self:After(delay, fn[, scope])
@@ -108,6 +111,36 @@ function Component:Debounced(delay, fn, scope)
     self:OnTeardown(control.Cancel, scope)
     return wrapped
 end
+
+-- ---- enabled state + owner-gating contract --------------------------------
+-- A Component is an OWNER the Worker gates work on: a job bound to it (self:Queue / WorkOn /
+-- WorkEvery) only runs while the owner is enabled, and the Worker tracks that through IsEnabled()
+-- plus the HagAIO_OwnerState broadcast (see Services/Worker.lua). Both live HERE, once -- so a
+-- subclass can neither define a divergent IsEnabled nor forget the broadcast (the bug that once
+-- left a Submodule's Worker jobs believing it was permanently enabled).
+function Component:IsEnabled() return self:_p().enabled == true end
+
+-- The ONLY place the enabled flag moves. Coerces to bool, no-ops (returns false) when already in
+-- that state, else flips it and broadcasts HagAIO_OwnerState so the Worker's owner binding always
+-- tracks it. Subclasses transition state THROUGH here -- never by touching p.enabled or emitting
+-- the message themselves. Returns true iff the state actually changed.
+function Component:_SetEnabled(on)
+    on = on and true or false
+    local p = self:_p()
+    if p.enabled == on then return false end
+    p.enabled = on
+    if ns.EventBus and ns.EventBus.Emit then
+        ns.EventBus:Emit("HagAIO_OwnerState", self, on)   -- (owner, enabled) -- Worker owner binding
+    end
+    return true
+end
+
+-- The enable/disable WORK is per-subclass and ABSTRACT: a Module toggles on the user's choice, a
+-- Submodule loads when its condition holds. Each override does its own setup/teardown and routes
+-- the state change through self:_SetEnabled(...). Declared abstract so a new Component kind can't
+-- silently lack a lifecycle, and so neither subclass re-implements the shared contract above.
+Component.Enable  = ns.Class.abstract("Enable")
+Component.Disable = ns.Class.abstract("Disable")
 
 -- Owner-stamp Worker opts with this component so the Worker gates the work on this owner's
 -- enabled state (and auto-listens to its enable/disable). Copies so the caller's table is untouched.

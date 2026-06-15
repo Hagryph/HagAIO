@@ -50,7 +50,7 @@ function Submodule:Initialize(name, opts)
     p.onSettingChanged = opts.onSettingChanged
     p.settingsWatch = opts.settingsWatch -- declarative setting-key -> handler (see ns.Component)
     p.dbSchema  = opts.dbSchema          -- structural nested tables to seed in the namespace
-    p.loaded = false
+    p.enabled = false                    -- "loaded" IS this Component's enabled state (ns.Component)
 
     -- A submodule's settings are ordinary database rows like a module's: contribute the two settings
     -- tables auto-derived from its schema (override + per-profile layers; see Lib/SettingsTables.lua).
@@ -84,11 +84,10 @@ function Submodule:GetModuleDeps() return self:_p().moduleDeps end
 function Submodule:GetSubmoduleDeps() return self:_p().submoduleDeps end
 function Submodule:GetAddonDeps() return self:_p().addonDeps end
 function Submodule:GetHost() return self:_p().host end
-function Submodule:IsLoaded() return self:_p().loaded end
--- The Worker's owner-gating contract (see Services/Worker.lua): an owner is "enabled" via
--- IsEnabled(). For a submodule that IS its loaded state -- so inherited self:Queue/WorkOn/
--- WorkEvery genuinely pause while unloaded instead of being treated as always-on.
-function Submodule:IsEnabled() return self:_p().loaded end
+-- "Loaded" IS this Component's enabled state: IsEnabled() (the Worker's owner-gating query) lives on
+-- ns.Component and reads p.enabled, so inherited self:Queue/WorkOn/WorkEvery genuinely pause while
+-- unloaded instead of being treated as always-on. IsLoaded is the submodule-domain name for it.
+function Submodule:IsLoaded() return self:IsEnabled() end
 
 -- This submodule's own activation predicate (its Lua condition). Structural deps
 -- (parent + declared deps) are evaluated by the graph, not here.
@@ -113,29 +112,27 @@ function Submodule:_Refs()
     return refs
 end
 
--- Lifecycle. The declarative `onLoad`/`onUnload` opts ARE the single extension point --
--- run with (host, self) when this submodule becomes / stops being loaded. _Load/_Unload own
--- the loaded-state latch and the auto-release of anything wired (self:On/Every/...) while
--- loaded; submodules customise via the callbacks, not by subclassing.
-function Submodule:_Load()
+-- Lifecycle. A submodule LOADS when its condition holds -- that IS ns.Component's enable/disable for
+-- it, so Enable/Disable here are the concrete overrides of the abstract Component lifecycle. The
+-- declarative `onLoad`/`onUnload` opts ARE the single extension point (run with (host, self));
+-- _SetEnabled owns the loaded-state latch + the HagAIO_OwnerState broadcast, and Disable auto-releases
+-- anything wired (self:On/Every/...) while loaded. Submodules customise via the callbacks, not by
+-- subclassing.
+function Submodule:Enable()
+    if not self:_SetEnabled(true) then return end   -- already loaded -> no-op (also broadcasts owner-state)
     local p = self:_p()
-    if p.loaded then return end
-    p.loaded = true
     if p.onLoad then p.onLoad(p.host, self) end
-    if ns.EventBus and ns.EventBus.Emit then
-        ns.EventBus:Emit("HagAIO_OwnerState", self, true)    -- (owner, enabled) -- the Worker's owner binding
-    end
 end
 
-function Submodule:_Unload()
+function Submodule:Disable()
+    if not self:_SetEnabled(false) then return end   -- already unloaded -> no-op (also broadcasts owner-state)
     local p = self:_p()
-    if not p.loaded then return end
-    p.loaded = false
     if p.onUnload then p.onUnload(p.host, self) end
     self:_ReleaseAll()  -- undo any self:On / self:Every / ... registered while loaded
-    if ns.EventBus and ns.EventBus.Emit then
-        ns.EventBus:Emit("HagAIO_OwnerState", self, false)   -- the Worker pauses/cancels owner-bound work
-    end
 end
+
+-- The SubmoduleManager speaks load/unload; they ARE enable/disable for a submodule.
+function Submodule:_Load()   self:Enable()  end
+function Submodule:_Unload() self:Disable() end
 
 ns.Submodule = Submodule

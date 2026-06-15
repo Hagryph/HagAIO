@@ -56,6 +56,34 @@ describe("SubmoduleManager", function()
         assert.are.equal(1, count)   -- loaded once, not on every sweep
     end)
 
+    it("is a Worker OWNER: load/unload flips IsEnabled and broadcasts HagAIO_OwnerState", function()
+        local ns = setup()
+        -- Capture HagAIO_OwnerState (the message the Worker binds to). The submodule's enabled-state
+        -- contract lives on ns.Component now, so loading/unloading MUST emit it -- the bug was a
+        -- submodule that emitted nothing, leaving its Worker jobs believing it was always enabled.
+        local ownerStates = {}
+        ns.EventBus = { Emit = function(_, msg, owner, on)
+            if msg == "HagAIO_OwnerState" then ownerStates[#ownerStates + 1] = on end
+        end }
+        local on = true
+        local sub = ns.Submodule:New("X", { condition = function() return on end })
+        ns.SubmoduleManager:Register(sub)
+        assert.is_false(sub:IsEnabled())              -- Component's owner query, before load
+        assert.is_false(sub:IsLoaded())               -- the submodule-domain alias agrees
+
+        ns.SubmoduleManager:Reevaluate()
+        assert.is_true(sub:IsEnabled())               -- loaded -> the Worker would gate work ON
+        assert.is_true(sub:IsLoaded())
+
+        on = false
+        ns.SubmoduleManager:Reevaluate()
+        assert.is_false(sub:IsEnabled())              -- unloaded -> gated OFF
+
+        assert.are.equal(2, #ownerStates)             -- emitted on BOTH load and unload
+        assert.is_true(ownerStates[1])
+        assert.is_false(ownerStates[2])
+    end)
+
     it("IsLoaded reflects a sub's loaded state by name (unknown -> false)", function()
         local ns = setup()
         local mgr = ns.SubmoduleManager

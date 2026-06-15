@@ -112,7 +112,7 @@ end
 function Module:AreModuleDepsMet()
     return ns.ModuleManager:AreModuleDepsMet(self:_p().name)
 end
-function Module:IsEnabled() return self:_p().enabled end
+-- IsEnabled() is the shared owner-gating query on ns.Component (reads p.enabled); not redefined here.
 function Module:IsDefaultEnabled() return self:_p().defaultEnabled end
 -- Always-on (mandatory): enabled at start, can't be disabled, and shows no on/off toggle.
 function Module:IsAlwaysOn() return self:_p().alwaysOn end
@@ -175,15 +175,18 @@ function Module:_Publish()
     if alias then ns[alias] = self end
 end
 
+-- The concrete enable lifecycle (implements ns.Component's abstract Enable). The state flip + the
+-- HagAIO_OwnerState broadcast are the shared contract (self:_SetEnabled); HagAIO_ModuleState is the
+-- module-specific by-name signal layered on top.
 function Module:Enable()
     local p = self:_p()
-    if p.enabled then return end
+    if self:IsEnabled() then return end
     if not self:IsAvailable() then return end                 -- required addon missing
     if not self:AreModuleDepsMet() then                        -- a prerequisite module is off
         ns.Logger:Core():Warn(("%s needs another module enabled first."):format(p.name))
         return
     end
-    p.enabled = true
+    self:_SetEnabled(true)   -- flips p.enabled + broadcasts HagAIO_OwnerState (the Worker's owner binding)
     -- Guard the subclass hook (like OnShutdown) so one module's error can't abort the
     -- ModuleManager's start loop; log it rather than swallowing silently.
     local ok, err = pcall(self.OnEnable, self)  -- base no-op unless the subclass overrides
@@ -194,15 +197,14 @@ function Module:Enable()
     if p.log then p.log:Success("enabled") end
     if ns.EventBus and ns.EventBus.Emit then
         ns.EventBus:Emit("HagAIO_ModuleState", p.name, true)   -- (name, enabled) -- legacy/by-name listeners
-        ns.EventBus:Emit("HagAIO_OwnerState", self, true)       -- (owner, enabled) -- the Worker's owner binding
     end
 end
 
 function Module:Disable()
     local p = self:_p()
     if p.alwaysOn then return end   -- mandatory module: stays enabled regardless of any toggle
-    if not p.enabled then return end
-    p.enabled = false
+    if not self:IsEnabled() then return end
+    self:_SetEnabled(false)   -- flips p.enabled + broadcasts HagAIO_OwnerState (Worker pauses/cancels owner-bound work)
     local ok, err = pcall(self.OnDisable, self)  -- base no-op unless the subclass overrides
     if not ok then ns.Logger:Core():Warn(("%s OnDisable error: %s"):format(p.name, tostring(err))) end
     self:_ReleaseAll()  -- undo every self:On / self:Subscribe / self:Hook + declared wiring
@@ -212,7 +214,6 @@ function Module:Disable()
     ns.ModuleManager:DisableDependents(p.name)  -- cascade: modules that needed this one
     if ns.EventBus and ns.EventBus.Emit then
         ns.EventBus:Emit("HagAIO_ModuleState", p.name, false)
-        ns.EventBus:Emit("HagAIO_OwnerState", self, false)      -- the Worker pauses/cancels owner-bound work
     end
 end
 

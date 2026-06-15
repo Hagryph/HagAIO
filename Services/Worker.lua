@@ -21,9 +21,9 @@ local Class = ns.Class
 --
 -- OWNER BINDING: pass opts.owner = a Module/Submodule/Service to bind work to it. The work only
 -- runs while the owner is ENABLED (a submodule: while LOADED), and the Worker auto-listens to the
--- owner's enable/disable (HagAIO_OwnerState, emitted by Module + Submodule + Service): disabling
--- cancels pending work and pauses interval timers; enabling resumes them. A Service owner is
--- always enabled.
+-- owner's enable/disable (HagAIO_OwnerState, emitted once by ns.Component for Module + Submodule,
+-- and by Service): disabling cancels pending work and pauses interval timers; enabling resumes them.
+-- A Service owner is always enabled.
 --
 --   ns.Worker:Queue(fn, { owner=, message=, onDone=, label= })       -> handle  one-time work
 --   ns.Worker:Run(step, { owner=, ... })                              -> handle  stepper job
@@ -65,7 +65,7 @@ local TICK = 1 / 60          -- pump at a FIXED 60 Hz, never per-frame (so 240 F
 -- flag -- auto-on for dev characters, toggled from the Dev module). Off = zero profiling work.
 local function debugOn() return ns.Logger and ns.Logger.GetDebug and ns.Logger:GetDebug() or false end
 local DONE_MSG = "HagAIO_WorkerDone"
-local STATE_MSG = "HagAIO_OwnerState"   -- (owner, enabled) -- emitted by Module + Submodule + Service
+local STATE_MSG = "HagAIO_OwnerState"   -- (owner, enabled) -- emitted by ns.Component (Module/Submodule) + Service
 
 function Worker:OnInitialize()
     local p = self:_p()
