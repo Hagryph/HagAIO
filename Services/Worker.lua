@@ -263,7 +263,7 @@ end
 -- the number of units per frame is driven by time, not a fixed count. `step` must contain NO for/while
 -- of its own (the lint enforces it); the only loop is the Worker's budget loop. Prefer this for
 -- anything iterative. opts: owner / message / onDone / label (same as Queue). Returns the job HANDLE.
--- deadcode-allow: Run  (public stepper API -- the sanctioned shape for iterative jobs, exercised by worker_spec)
+-- hag-lint-disable deadcode: Run  (public stepper API -- the sanctioned shape for iterative jobs, exercised by worker_spec)
 function Worker:Run(step, opts)
     assert(type(step) == "function", "Worker:Run needs a step function")
     opts = opts or {}

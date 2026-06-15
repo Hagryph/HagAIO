@@ -15,14 +15,14 @@ function check(label, cond) {
 const sorted = (set) => [...set].sort();
 const eq = (a, b) => JSON.stringify(a) === JSON.stringify(b);
 
-// ---- file-scoped args: legacy `<rule>-allow:` and new `hag-lint-disable <rule>: args` ----
+// ---- file-scoped args: `hag-lint-disable <rule>: args` (union across the file) ----
 {
   const a = parseAnnotations([
-    "-- deadcode-allow: Run, Names  (trailing prose is ignored)",
+    "-- hag-lint-disable deadcode: Run, Names  (trailing prose is ignored)",
     "-- hag-lint-disable deadcode: Extra",
     "-- hag-lint-disable depcheck: noregister, Foo",
   ].join("\n"));
-  check("legacy + new file args union for a rule", eq(sorted(a.fileArgs("deadcode")), ["Extra", "Names", "Run"]));
+  check("file args union for a rule across directives", eq(sorted(a.fileArgs("deadcode")), ["Extra", "Names", "Run"]));
   check("depcheck file args incl. noregister", eq(sorted(a.fileArgs("depcheck")), ["Foo", "noregister"]));
   check("prose after names is not captured", !a.fileArgs("deadcode").has("trailing"));
   check("an unrelated rule has no args", a.fileArgs("widget-call-form").size === 0);
@@ -64,7 +64,7 @@ const eq = (a, b) => JSON.stringify(a) === JSON.stringify(b);
 
 // ---- robustness: a directive INSIDE a string literal is not an annotation ----
 {
-  const a = parseAnnotations('local s = "-- deadcode-allow: NOPE"');
+  const a = parseAnnotations('local s = "-- hag-lint-disable deadcode: NOPE"');
   check("annotation inside a string is ignored", !a.fileArgs("deadcode").has("NOPE"));
 }
 

@@ -7,7 +7,7 @@
 //       as a string anywhere in the codebase (heuristic -- Lua is dynamic).
 // Run: node tools/deadcode.mjs   CI runs it via .github/workflows/lint.yml.
 // Suppress a deliberate keep (public API, dynamic dispatch the scan can't see) with a
-// `-- deadcode-allow: name1, name2` comment anywhere in the relevant file.
+// `-- hag-lint-disable deadcode: name1, name2` comment anywhere in the relevant file.
 
 import { readdirSync, readFileSync, statSync } from "node:fs";
 import { join, relative, dirname } from "node:path";
@@ -57,7 +57,7 @@ const TEST_FILES = luaFiles(join(ROOT, "Test"));  // count test usage as "alive"
 
 // Global allow set (a name kept on purpose, declared anywhere). The dead-code check is
 // codebase-wide (a public method unused across ALL files), so the allow-names union across every
-// file -- via the shared annotation parser (`-- deadcode-allow: X` or `-- hag-lint-disable deadcode: X`).
+// file -- via the shared annotation parser (`-- hag-lint-disable deadcode: X`).
 const ALLOW = new Set();
 for (const p of FILES) {
   for (const name of parseAnnotations(readFileSync(p, "utf8")).fileArgs("deadcode")) ALLOW.add(name);
@@ -136,7 +136,7 @@ if (deadPrivate.length) {
 }
 if (unusedPublic.length) {
   console.log("\ndeadcode advisory: public methods never called internally or in tests");
-  console.log("(unused API -- review/remove or '-- deadcode-allow: <name>' to silence):\n");
+  console.log("(unused API -- review/remove or '-- hag-lint-disable deadcode: <name>' to silence):\n");
   unusedPublic.sort((a, b) => a.name.localeCompare(b.name));
   for (const f of unusedPublic) console.log(`  ${f.name}  (${f.locs.join(", ")})`);
 }
@@ -145,5 +145,5 @@ if (errors === 0) {
   console.log(`\ndeadcode: OK -- no dead locals/private methods.${unusedPublic.length ? ` (${unusedPublic.length} unused public API, advisory)` : ""}`);
   process.exit(0);
 }
-console.log(`\n${errors} dead-code error${errors === 1 ? "" : "s"}. Remove them, or add "-- deadcode-allow: <name>" if intentional.`);
+console.log(`\n${errors} dead-code error${errors === 1 ? "" : "s"}. Remove them, or add "-- hag-lint-disable deadcode: <name>" if intentional.`);
 process.exit(1);

@@ -22,7 +22,7 @@ ns.DB = ns.DB or {}
 local DB = ns.DB
 
 -- SQL synonyms / full clause surface kept on purpose even if a given caller doesn't use them.
--- deadcode-allow: LeftOuterJoin, RightOuterJoin, FullOuterJoin, OrGroup, WhereGroup
+-- hag-lint-disable deadcode: LeftOuterJoin, RightOuterJoin, FullOuterJoin, OrGroup, WhereGroup
 
 local QueryBuilder = Class.new("DBQueryBuilder")
 

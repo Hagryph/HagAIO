@@ -164,7 +164,7 @@ end
 -- ===========================================================================
 -- Monk behaviour (methods on the shared ClassModule)
 -- ===========================================================================
--- depcheck-allow: Secrets, Range, ActionBars, Scheduler  -- used by the host methods below;
+-- hag-lint-disable depcheck: Secrets, Range, ActionBars, Scheduler  -- used by the host methods below;
 -- the per-spec submodules that actually drive them declare them (Base.lua: Secrets;
 -- Brewmaster.lua: Secrets/Range/ActionBars/Scheduler), which is what enforces the load ordering.
 

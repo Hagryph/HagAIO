@@ -8,7 +8,7 @@
 // as a parent { module|submodule = "X" }, or as the owner's own :New("X") name. So if a
 // file ACCESSES ns.<Dep> (or ns.UI.<Dep>, ns.ModuleManager:GetModule("Dep"), or a known
 // published alias) but never quotes "<Dep>", that dependency is undeclared.
-// A "-- depcheck-allow: A, B" comment waives intentional/cyclic references.
+// A "-- hag-lint-disable depcheck: A, B" comment waives intentional/cyclic references.
 //
 // SCOPE: only files that REGISTER a service / module / submodule are checked for undeclared
 // deps — those are the things with a dependency surface and a place in the init-order graph.
@@ -154,7 +154,7 @@ for (const path of ALL_FILES) {
   if (EXEMPT.has(rel) || rel.startsWith(EXEMPT_PREFIX)) continue;
   const raw = readFileSync(path, "utf8");
   // Waived names (a dep reference or the `noregister` token) via the shared annotation parser:
-  // `-- depcheck-allow: X` or `-- hag-lint-disable depcheck: X`.
+  // `-- hag-lint-disable depcheck: X`.
   const allow = parseAnnotations(raw).fileArgs("depcheck");
   const code = stripComments(raw);
 
@@ -162,7 +162,7 @@ for (const path of ALL_FILES) {
   // REGISTER it in the same file, or it loads silently and never starts (the ordered
   // StartAll can't see an unregistered instance). Keyed on the parent class so inner
   // helper classes (e.g. Class.new("CacheStore")) are ignored. Waive intentional cases
-  // with a `-- depcheck-allow: noregister` comment.
+  // with a `-- hag-lint-disable depcheck: noregister` comment.
   if (!allow.has("noregister")) {
     if (/Class\.new\(\s*["']\w+["']\s*,\s*ns\.Service\b/.test(code) && !/ServiceManager:Register\(/.test(code))
       unregistered.push([rel, "service", "ServiceManager:Register"]);

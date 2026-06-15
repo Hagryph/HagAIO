@@ -1,19 +1,18 @@
 // tools/lib/annotations.mjs — ONE parser for the lint-suppression comments every gate honours,
-// so each tool stops re-implementing its own `matchAll(/<rule>-allow:/)`. Think ESLint's
+// so each tool stops re-implementing its own suppression regex. Think ESLint's
 // `// eslint-disable-*` directives, in Lua `--` comments. Two scopes:
 //
 //   FILE-SCOPED (the whole file), optionally carrying arguments (names the rule allows):
 //     -- hag-lint-disable <rule>[: arg, arg]      e.g.  -- hag-lint-disable deadcode: Run, Names
-//     -- <rule>-allow: arg, arg                   LEGACY alias, still honoured (deadcode/depcheck)
 //
-//   LINE-SCOPED (VSCode-style — the gap the old file-only allows couldn't express):
+//   LINE-SCOPED (VSCode-style — the gap a file-only allow couldn't express):
 //     -- hag-lint-disable-next-line <rule>        suppress the rule on the NEXT source line
 //     -- hag-lint-disable-line <rule>             suppress the rule on THIS line (trailing comment)
 //
 // `<rule>` is a lint's rule id (deadcode, depcheck, raw-frame, raw-texture, widget-call-form,
 // mini-event-bus, worker-loop) or `*` / `all` to match every rule. Args are word-character names
 // (commas/spaces separate them); any trailing prose after the names is ignored, so
-// `-- deadcode-allow: Run  (public API)` parses to just { Run }.
+// `-- hag-lint-disable deadcode: Run  (public API)` parses to just { Run }.
 //
 // A lint calls parseAnnotations(rawSource) ONCE per file and queries the result:
 //   ann.fileArgs(rule)        -> Set of file-scoped allow-names for `rule` (+ any under `*`)
@@ -49,9 +48,7 @@ function splitArgs(s) {
 const ALL = "*";
 const norm = (rule) => (rule === "all" ? ALL : rule);
 
-// Legacy file-scoped: `<rule>-allow: names`  (args are word-chars only, stopping at any prose).
-const LEGACY = /\b([a-z][a-z0-9]*)-allow:\s*([\w,\s]*)/g;
-// Unified: `hag-lint-disable[-next-line|-line] <rule>[: names]`.
+// `hag-lint-disable[-next-line|-line] <rule>[: names]`  (args are word-chars only, stopping at prose).
 const DIRECTIVE = /\bhag-lint-(disable-next-line|disable-line|disable)\s+([*\w][\w-]*)(?:\s*:\s*([\w,\s]*))?/g;
 
 export function parseAnnotations(source) {
@@ -76,14 +73,6 @@ export function parseAnnotations(source) {
     const ci = commentStart(text);
     if (ci < 0) return;
     const comment = text.slice(ci);
-
-    LEGACY.lastIndex = 0;
-    for (const m of comment.matchAll(LEGACY)) {
-      const rule = norm(m[1]);
-      const args = splitArgs(m[2]);
-      addFileArgs(rule, args);
-      all.push({ kind: "file", rule, args, line: lineNo });
-    }
 
     DIRECTIVE.lastIndex = 0;
     for (const m of comment.matchAll(DIRECTIVE)) {

@@ -59,8 +59,7 @@ deliberate exceptions. All of them are parsed by **one** shared parser
 ESLint-style:
 
 - **File-scoped, with allow-names** — `-- hag-lint-disable <rule>: name1, name2` (placed
-  anywhere in the file). The legacy spellings **`-- deadcode-allow: name1, name2`** and
-  **`-- depcheck-allow: A, B`** are equivalent aliases and still work. Used by:
+  anywhere in the file). Used by:
   - `deadcode` — keep a public method/local the scan thinks is unused (public API, dynamic
     dispatch it can't see).
   - `depcheck` — waive specific undeclared-dependency references; the special name

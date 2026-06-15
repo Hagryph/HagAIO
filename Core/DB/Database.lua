@@ -19,7 +19,7 @@ ns.DB = ns.DB or {}
 local DB = ns.DB
 
 -- Public engine API kept for callers even when the current addon doesn't exercise every method.
--- deadcode-allow: InsertAll, Names, Slot, HasTable
+-- hag-lint-disable deadcode: InsertAll, Names, Slot, HasTable
 
 local Database = Class.new("Database")
 

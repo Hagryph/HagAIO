@@ -12,7 +12,7 @@ local Compartment = Class.new("Compartment", ns.Service)
 
 -- The Dashboard module IFF enabled: then LEFT-click opens it and settings move to MIDDLE-click;
 -- otherwise the icon keeps LEFT-click = settings and middle does nothing. Lazy lookup so the
--- service never hard-depends on the optional module. depcheck-allow: Dashboard
+-- service never hard-depends on the optional module. hag-lint-disable depcheck: Dashboard
 local function activeDashboard()
     local m = ns.ModuleManager and ns.ModuleManager:GetModule("Dashboard")
     return (m and m:IsEnabled()) and m or nil

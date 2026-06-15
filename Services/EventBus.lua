@@ -150,7 +150,7 @@ end
 
 -- Register a callback fired when `message` is DELETED. "Everyone" can register -- the callbacks
 -- stack -- and each gets the message. They're dropped with the message (no manual cleanup).
--- deadcode-allow: OnDelete  (public delete-hook API, companion to Delete; exercised by eventbus_spec)
+-- hag-lint-disable deadcode: OnDelete  (public delete-hook API, companion to Delete; exercised by eventbus_spec)
 function EventBus:OnDelete(message, fn)
     local e = bucket(self:_p().messages, message)
     e.onDelete = e.onDelete or {}

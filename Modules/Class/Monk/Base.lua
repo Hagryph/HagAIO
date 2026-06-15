@@ -7,7 +7,7 @@ local Monk = ns.Monk   -- shared Monk surface (constants + registerSpec), set in
 -- marker every Monk has, regardless of spec. An ns.ClassSpec subclass whose Load/Unload
 -- configure the HOST (self:Host(), the Class module instance). Other Monk specs extend it.
 
--- depcheck-allow: Class  -- ns.ClassSpec is the spec base class from the Class module (a
+-- hag-lint-disable depcheck: Class  -- ns.ClassSpec is the spec base class from the Class module (a
 -- load-order dep satisfied by the toc; this spec's parent chain is Monk -> Class), not a
 -- service/module-instance dependency.
 

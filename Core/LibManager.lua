@@ -22,7 +22,7 @@ function LibManager:Register(lib)
     return lib
 end
 
--- deadcode-allow: RegisterValue  (every caller lives in Lib/, which the deadcode scan skips)
+-- hag-lint-disable deadcode: RegisterValue  (every caller lives in Lib/, which the deadcode scan skips)
 -- Register + publish a VALUE lib: a plain static table (ns.Format, ns.Helpers) or a value
 -- type (ns.Vector2D) that is published as-is rather than instantiated. Same discovery
 -- anchor as Register, so the tooling (depcheck / NamespaceSlots) finds every lib here
