@@ -73,10 +73,10 @@ function QueryBuilder:_Join(kind, table, opts)
     if kind == DB.JoinKind.CROSS then
         join.on = nil
     elseif kind == DB.JoinKind.SELF then
-        if not opts.as then error("DB: :SelfJoin requires an `as` alias", 0) end
-        if not opts.on then error("DB: :SelfJoin requires an `on` condition", 0) end
+        if not opts.as then DB.fail("QueryBuilder:SelfJoin", "requires an `as` alias") end
+        if not opts.on then DB.fail("QueryBuilder:SelfJoin", "requires an `on` condition") end
     elseif not opts.on then
-        error(("DB: %s join of '%s' requires an `on` condition"):format(kind, tostring(table)), 0)
+        DB.fail("QueryBuilder:Join", ("a %s join of '%s' requires an `on` condition"):format(kind, tostring(table)))
     end
     self:_p().joins[#self:_p().joins + 1] = join
     return self
@@ -118,18 +118,18 @@ end
 
 function QueryBuilder:OrderBy(ref, dir)
     dir = (tostring(dir or "asc")):lower()
-    assert(dir == "asc" or dir == "desc", "DB: OrderBy direction must be asc or desc")
+    if dir ~= "asc" and dir ~= "desc" then DB.fail("QueryBuilder:OrderBy", "direction must be asc or desc") end
     self:_p().orderBy[#self:_p().orderBy + 1] = { ref = ref, dir = dir }
     return self
 end
 
 function QueryBuilder:Limit(n)
-    assert(type(n) == "number" and n >= 0, "DB: Limit needs a number >= 0")
+    if type(n) ~= "number" or n < 0 then DB.fail("QueryBuilder:Limit", "needs a number >= 0") end
     self:_p().limit = n
     return self
 end
 function QueryBuilder:Offset(n)
-    assert(type(n) == "number" and n >= 0, "DB: Offset needs a number >= 0")
+    if type(n) ~= "number" or n < 0 then DB.fail("QueryBuilder:Offset", "needs a number >= 0") end
     self:_p().offset = n
     return self
 end
@@ -138,7 +138,7 @@ end
 -- DB.NULL for SQL NULLs).
 function QueryBuilder:Plan()
     local p = self:_p()
-    assert(p.from, "DB: a query needs :From(table)")
+    if not p.from then DB.fail("QueryBuilder:Plan", "a query needs :From(table)") end
     return DB.QueryPlan.new({
         projection = p.projection, distinct = p.distinct, from = p.from, joins = p.joins,
         where = p.where, groupBy = p.groupBy, having = p.having, orderBy = p.orderBy,

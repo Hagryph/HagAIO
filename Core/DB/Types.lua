@@ -20,11 +20,26 @@ ns.DB = ns.DB or {}
 local DB = ns.DB
 local Enum = ns.Enum
 
+-- ---- the one error raise for the DB layer ---------------------------------
+-- Every validation / usage / constraint error in Core/DB goes through this, instead of the old
+-- per-file mix of error() / assert() / local fail() that diverged on prefix and level.
+--   prefix : the "<Owner>:<Fn>" surface that rejected the input -- e.g. "QueryBuilder:SelfJoin",
+--            "Schema.new", "ConstraintEnforcer:BuildRow" -- so the raised string is self-describing.
+--   msg    : what is wrong (it may carry its own row/column context, e.g. "table 'x'.col: ...").
+--   level  : forwarded to error(); DEFAULTS TO 0 -- the DB layer's ONE rule. The "<Owner>:<Fn>:"
+--            prefix already names the culprit, so the Lua "file:line:" that error() would otherwise
+--            prepend is noise (internal engine frames) and brittle (the schema validators nest deeply
+--            inside construction, so no fixed level points at the spec author). Pass a non-zero level
+--            only to deliberately blame a specific caller frame.
+function DB.fail(prefix, msg, level)
+    error(prefix .. ": " .. msg, level or 0)
+end
+
 -- ---- the NULL sentinel ----------------------------------------------------
 -- A unique, frozen, single-instance table. Identity comparison (== NULL) is the nullness test.
 DB.NULL = setmetatable({}, {
     __tostring   = function() return "NULL" end,
-    __newindex   = function() error("ns.DB.NULL is read-only", 2) end,
+    __newindex   = function() DB.fail("DB.NULL", "read-only") end,
     __metatable  = false,
 })
 
