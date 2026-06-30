@@ -522,9 +522,13 @@ function SettingsWindow:_RenderSchema(content, host, width, y)
     end
     local ok, issues = graph:Validate()
     if not ok then
-        local log = host.GetLog and host:GetLog()
+        -- A malformed dependsOn graph is a schema bug -- warn through the host's own channel (so it
+        -- lands in that module's Log), or the Core channel if the host has none (a Submodule logging
+        -- through its host). Hoisted: the host's channel doesn't change across the issue list.
+        local hosted = host.LogWarn and host:GetLog()
         for _, msg in ipairs(issues) do
-            if log then log:Warn("settings dependency: " .. msg) else ns.Logger:Core():Warn("settings dependency: " .. msg) end
+            local line = "settings dependency: " .. msg
+            if hosted then host:LogWarn(line) else ns.Logger:Core():Warn(line) end
         end
     end
 

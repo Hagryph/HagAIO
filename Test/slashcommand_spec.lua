@@ -86,4 +86,16 @@ describe("SlashCommand", function()
         assert.is_true(ran)                         -- routed on a developer character
         ns.IsDevChar = nil
     end)
+
+    -- Replies go through the service's OWN Logger channel (recorded in the Log page + governed by
+    -- "Echo to Chat"), not the boot-only ns.Log print surface that bypasses both.
+    it("help/listing replies route through the owner channel, not raw ns.Log", function()
+        local sc, ns = setup()
+        local recorded = {}
+        sc:_p().log = { EchoInfo = function(_, msg) recorded[#recorded + 1] = msg end }
+        ns.Log = { Print = function() error("a slash reply leaked to ns.Log.Print") end }
+        sc:_Dispatch("nope")                        -- unknown -> _PrintHelp
+        assert.is_true(#recorded >= 1)              -- the command listing went to the channel
+        assert.are.equal("commands:", recorded[1])
+    end)
 end)

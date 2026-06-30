@@ -103,3 +103,33 @@ describe("Component:_WireContributions", function()
         assert.is_nil(sc.reg.cvar)                    -- the whole group is withdrawn
     end)
 end)
+
+-- The validator must accept ONLY the control types the Settings page can actually draw, so a schema
+-- bug fails loudly at construction instead of rendering a blank control (the one silent-failure mode).
+describe("Contributions.ValidateSettings", function()
+    local ns = S.newNs()
+    local V = ns.Contributions.ValidateSettings
+
+    it("accepts the five rendered types (header/note/toggle/select/color)", function()
+        assert.is_true(pcall(V, {
+            { type = "header", text = "H" },
+            { type = "note",   text = "N" },
+            { type = "toggle", key = "t", label = "T" },
+            { type = "select", key = "s", label = "S", options = { "a", "b" } },
+            { type = "color",  key = "c", label = "C", default = { 1, 1, 1 } },
+        }, "owner"))
+    end)
+
+    it("rejects a control type the renderer can't draw -- fail fast, no silent blank", function()
+        for _, t in ipairs({ "slider", "number", "input", "range", "bogus" }) do
+            local ok, err = pcall(V, { { type = t, key = "k", label = "L" } }, "owner")
+            assert.is_false(ok, t .. " should be rejected")
+            assert.is_true(tostring(err):find("no renderer", 1, true) ~= nil)
+        end
+    end)
+
+    it("still enforces key + label on a keyed control", function()
+        assert.is_false(pcall(V, { { type = "toggle", label = "no key" } }, "owner"))
+        assert.is_false(pcall(V, { { type = "toggle", key = "k" } }, "owner"))   -- no label
+    end)
+end)

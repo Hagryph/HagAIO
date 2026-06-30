@@ -60,15 +60,15 @@ end
 function Dev:_DumpCVars()
     local names = self:AllCVarNames()
     if not names then
-        ns.Log.Warn("the developer console isn't active. Make sure -console is in your launch args,")
-        ns.Log.Warn("then FULLY QUIT and relaunch WoW -- a /reload doesn't pick up launch arguments.")
+        self:LogWarnAlways("the developer console isn't active. Make sure -console is in your launch args,")
+        self:LogWarnAlways("then FULLY QUIT and relaunch WoW -- a /reload doesn't pick up launch arguments.")
         return
     end
     local text = self:_BuildCVarText(names)
     if ns.UI and ns.UI.CopyWindow then
         ns.UI.CopyWindow:Show(("CVars (%d)"):format(#names), text)
     else
-        ns.Log.Warn("copy window unavailable")
+        self:LogWarnAlways("copy window unavailable")
     end
 end
 
