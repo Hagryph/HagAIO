@@ -87,6 +87,11 @@ end
 -- Logger: a small static table so prints stay consistent and namespaced. Colours come
 -- from the shared Theme (one palette), built at CALL time -- Theme.lua loads AFTER this
 -- file, so we can't capture it at load. (A nil-guard keeps the very-early path safe.)
+--
+-- BOOT-ONLY. This is the pre-Logger surface -- a bare print() for the early load window before
+-- ns.Logger and its channels exist (and for the headless test/gen-schema stubs). Anything that owns
+-- a channel must log through it (self:Log* on a Component/Service) so the line is recorded in the Log
+-- page and governed by the "Echo to Chat" setting; ns.Log bypasses BOTH. Do not reach for it at runtime.
 local Log = {}
 local function paint(key, text)
     return ns.Theme and ns.Theme.Colorize(key, text) or text

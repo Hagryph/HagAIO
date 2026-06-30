@@ -13,21 +13,27 @@ local addonName, ns = ...
 
 local Contributions = {}
 
-local KEYED_SETTING = {
-    toggle = true, select = true, color = true, number = true, input = true, slider = true, range = true,
-}
+-- The control types the Settings page can actually RENDER (UI/SettingsWindow.lua:_RenderSchema).
+-- A schema entry of any other type would validate clean here yet draw NOTHING -- the one silent
+-- failure mode -- so an unknown type (e.g. a premature `slider`) is rejected loudly below rather than
+-- shipping a blank control. Keep this set in lockstep with the renderer's branches. `header`/`note`
+-- are structural; KEYED_SETTING is the rendered subset that binds to a saved value (needs key + label).
+local RENDERED_TYPE = { header = true, note = true, toggle = true, select = true, color = true }
+local KEYED_SETTING = { toggle = true, select = true, color = true }
 
 -- Validate a settings schema at CONSTRUCTION so a malformed entry fails loudly here (at
 -- file load) instead of silently breaking later when the page renders. Rules:
---   * every entry is a table with a string `type`;
+--   * every entry is a table with a string `type` the renderer can draw;
 --   * "header"/"note" need `text`;
---   * a control entry (toggle/select/color/number/...) needs a non-empty string `key` + `label`;
+--   * a keyed control (toggle/select/color) needs a non-empty string `key` + `label`;
 --   * "select" needs an `options` list; a "color" default must be a { r, g, b } number array.
 function Contributions.ValidateSettings(settings, owner)
     for i, s in ipairs(settings or {}) do
         local where = ("%s settings[%d]"):format(tostring(owner), i)
         assert(type(s) == "table", where .. ": entry must be a table")
         assert(type(s.type) == "string", where .. ": missing string 'type'")
+        assert(RENDERED_TYPE[s.type],
+            where .. (": control type '%s' has no renderer (the page draws only header/note/toggle/select/color)"):format(s.type))
         if s.type == "header" or s.type == "note" then
             assert(type(s.text) == "string", where .. " (" .. s.type .. "): needs 'text'")
         end

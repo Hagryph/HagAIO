@@ -88,7 +88,7 @@ function SlashCommand:_DispatchSub(name, entry, rest)
 end
 
 function SlashCommand:_PrintHelp()
-    ns.Log.Print("commands:")
+    self:LogEchoInfo("commands:")
     local handlers = self:_p().handlers
     local subs = {}
     for sub in pairs(handlers) do subs[#subs + 1] = sub end
@@ -96,7 +96,7 @@ function SlashCommand:_PrintHelp()
     for _, sub in ipairs(subs) do
         local help = handlers[sub].help
         if type(help) == "function" then help = help() end   -- live help (e.g. dev-gated hints)
-        ns.Log.Print(("  |cffffff00/hag %s|r %s"):format(
+        self:LogEchoInfo(("  |cffffff00/hag %s|r %s"):format(
             sub, help and ("- " .. help) or ""))
     end
 end
@@ -111,7 +111,7 @@ function SlashCommand:_PrintGroupHelp(name, entry)
     table.sort(subs)
     for _, sub in ipairs(subs) do
         local help = entry.subs[sub].help
-        ns.Log.Print(("  |cffffff00/hag %s %s|r %s"):format(name, sub, help and ("- " .. help) or ""))
+        self:LogEchoInfo(("  |cffffff00/hag %s %s|r %s"):format(name, sub, help and ("- " .. help) or ""))
     end
 end
 
@@ -133,12 +133,12 @@ function SlashCommand:Activate()
     self:Register("modules", function()
         local mm = ns.ModuleManager
         if mm:Count() == 0 then
-            ns.Log.Print("no feature modules registered yet.")
+            self:LogEchoInfo("no feature modules registered yet.")
             return
         end
-        ns.Log.Print("modules:")
+        self:LogEchoInfo("modules:")
         for m in mm:Iterate() do
-            ns.Log.Print(("  %s - %s"):format(
+            self:LogEchoInfo(("  %s - %s"):format(
                 m:GetName(),
                 m:IsEnabled() and Theme.Colorize("green", "on") or Theme.Colorize("red", "off")))
         end
