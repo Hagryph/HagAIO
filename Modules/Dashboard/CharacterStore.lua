@@ -8,9 +8,9 @@ local Ledger = ns.ResetLedger
 -- style): built with CharacterStore:New(owner) where `owner` is the Dashboard module. The owner is
 -- used only for a LIVE owner:DB() (the shared database is nil until built on PLAYER_LOGIN, and this
 -- collaborator is constructed at OnInitialize while it is still nil -- so the handle is fetched per
--- call, NEVER cached) and for the two catalog lookups the self-curating lockout path needs
--- (owner:_IdForName / owner:_InstRecord -- those still live on the Dashboard module until the
--- ExpansionCatalog split lands).
+-- call, NEVER cached). The self-curating lockout path also needs two catalog lookups (id-for-name +
+-- instance record); those live on the sibling ExpansionCatalog collaborator, wired in via SetCatalog
+-- (Dashboard builds both at OnInitialize, then hands this one the catalog).
 --
 -- It fronts five flat tables (the full doc is in the Dashboard module header):
 --   dashboard_char     one row per character (scalars + the flattened keystone)
@@ -27,6 +27,10 @@ local CharacterStore = Class.new("CharacterStore")
 function CharacterStore:Initialize(owner)
     self:_p().owner = owner
 end
+
+-- Wire the ExpansionCatalog collaborator (built after this one in Dashboard:OnInitialize). The
+-- self-curating lockout path resolves an unseeded lock's journal id + record through it.
+function CharacterStore:SetCatalog(catalog) self:_p().catalog = catalog end
 
 -- The single shared Database, fetched LIVE through the owner on every call (nil until built; never
 -- cached -- this collaborator is constructed pre-login while DB() is still nil).
@@ -241,7 +245,7 @@ end
 
 function CharacterStore:CollectLockouts()
     self:_SetSelf({})   -- ensure the char row (FK target) + last_seen, as the old _SelfEntry() did
-    local owner = self:_p().owner
+    local cat = self:_p().catalog
     local key2 = self:_LockKeyMap()
     local n = (GetNumSavedInstances and GetNumSavedInstances()) or 0
     local locks, seen = {}, {}
@@ -253,9 +257,9 @@ function CharacterStore:CollectLockouts()
                 -- SELF-CURATE: a lock for an instance/difficulty the seeded catalog doesn't cover (e.g. a
                 -- dungeon at a non-M0 difficulty, or one outside the current expansion / season). Register
                 -- it under its journal id so the lock still has a row and is gathered as you play. The
-                -- catalog lookups (id-for-name + instance record) live on the Dashboard module via `owner`.
-                local id = owner:_IdForName(name)
-                local rec = id and owner:_InstRecord(id)
+                -- catalog lookups (id-for-name + instance record) live on the ExpansionCatalog collaborator.
+                local id = cat:_IdForName(name)
+                local rec = id and cat:_InstRecord(id)
                 local diffName = GetDifficultyInfo and GetDifficultyInfo(diffID)
                 if rec and diffName then
                     instKey = id .. "|" .. diffID

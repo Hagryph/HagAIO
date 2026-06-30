@@ -202,6 +202,7 @@ Modules/
   Class\Monk\Base.lua      The no-specialisation Monk spec (CurrentSpecKey "none"): the Expel Harm heal-threshold
   Class\Monk\Brewmaster.lua The Brewmaster Monk spec (CurrentSpecKey 1): extends MonkBase (Base.lua) with a Tiger
   Dashboard\CharacterStore.lua The Dashboard's per-character DATA layer, extracted out of the 2.5k-line module so the module
+  Dashboard\ExpansionCatalog.lua The Dashboard's instance + zone CATALOG layer, extracted out of the module so the module itself
 Dev/                       Scratch space (excluded from deploy)
 deploy.ps1                 Mirror the addon into the live WoW AddOns folder + generate the .toc
 ```
