@@ -23,7 +23,10 @@ local function rig()
     S.load(ns, "Services/Hooks.lua");     ns._captured["Hooks"]:OnInitialize()
     local C = ns.Class.new("C", ns.Component)
     function C:_SettingsNamespace() return "test" end
-    return C:New(), ns, frames, clock
+    -- Give it a NAME like every real module: ReleaseScope's teardown-error log does
+    -- ("%s..."):format(self:_DisplayName()), and string.format("%s", nil) throws under Lua 5.1 (CI),
+    -- though LuaJIT (local) tolerates it -- a nameless component would only fail in CI.
+    return C:New("DisableSim"), ns, frames, clock
 end
 
 -- Count the LIVE teardown nodes in a scope (the linked list) -- 0 means nothing piled up.
