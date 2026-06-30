@@ -16,16 +16,15 @@ local Class = ns.Class
 -- singleton" and "pure math library", and trims the boot-time dependency graph to the
 -- things that actually have ordering constraints.
 
-local Lib = Class.new("Lib")
+-- ns.Publishable supplies _Publish (publish ns.<Name>), called by the LibManager at register time.
+local Lib = Class.new("Lib", nil, { mixins = { ns.Publishable } })
 
 function Lib:Initialize(name)
-    self:_p().name = name
+    local p = self:_p()
+    p.name = name
+    p.publishAs = name      -- a lib always publishes under its name (ns.<name>); no StartAll pass needed
 end
 
 function Lib:GetName() return self:_p().name end
-
--- Publish into the namespace so call sites reach it as ns.<Name>. Called by the
--- LibManager at register time (file load) -- no StartAll pass needed.
-function Lib:_Publish() ns[self:_p().name] = self end
 
 ns.Lib = Lib

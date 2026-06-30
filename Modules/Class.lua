@@ -64,6 +64,13 @@ function ClassModule:_ActiveSpec()
     return p.activeSub or (p.specs and p.specs[self:CurrentSpecKey()])
 end
 
+-- Protected setter for the currently-loaded spec submodule (nil clears it). A spec's onLoad/onUnload
+-- runs against this host but is NOT a ClassModule method, so it sets the active spec through here
+-- instead of reaching into the host's private table (host:_p().activeSub) from outside.
+function ClassModule:_SetActiveSpec(spec)
+    self:_p().activeSub = spec
+end
+
 -- (Re)build the settings schema from the active spec. Defaults come from the per-spec settings
 -- view (see _SettingsNamespace) via the cascade -- no manual seeding.
 function ClassModule:_BuildSettings()
@@ -91,15 +98,15 @@ function ClassModule:_SettingsNamespace()
     return "module_Class#" .. (p.class or "?") .. ":" .. tostring(self:CurrentSpecKey())
 end
 
--- Contribute a settings-table pair (override + per-profile layers) for EVERY registered spec bucket,
--- so the active spec's namespace always has its tables. Schemas are known at file load (the spec
--- classes' `settings`); only the current character's class specs register, so a profile's per-spec
--- columns never collide across classes. Runs in the ADDON_LOADED build sweep, before OnInitialize, so
--- the class token is read here directly rather than from p.class.
-function ClassModule:_ContributeTables()
+-- Override the ns.DatabaseOwner hook (NOT _ContributeTables): build a settings-table pair (override
+-- + per-profile layers) for EVERY registered spec bucket, so the active spec's namespace always has
+-- its tables. The base mixin owns the once-only latch + the Contribute call -- this just RETURNS the
+-- collected tables, so renaming the latch can't silently break a hand-copied guard. Schemas are
+-- known at file load (the spec classes' `settings`); only the current character's class specs
+-- register, so a profile's per-spec columns never collide across classes. Runs in the ADDON_LOADED
+-- build sweep, before OnInitialize, so the class token is fixed here rather than read from p.class.
+function ClassModule:_CollectTables()
     local p = self:_p()
-    if p._dbContributed then return end
-    p._dbContributed = true
     p.class = p.class or (select(2, UnitClass("player")))   -- fix the class token now; OnInitialize reuses it
     local class = p.class or "?"
     local tables = {}
@@ -108,7 +115,7 @@ function ClassModule:_ContributeTables()
         ns.SettingsTables:Register(nsKey, spec:GetSettings())
         for tn, tspec in pairs(ns.SettingsTables:DeriveTables(nsKey, spec:GetSettings())) do tables[tn] = tspec end
     end
-    if next(tables) and ns.DatabaseManager then ns.DatabaseManager:Contribute(tables) end
+    return tables
 end
 
 -- Run the inherited declarative settingsWatch, then forward the change to the active spec
@@ -131,7 +138,11 @@ ns.ModuleManager:Register(ClassModule:New("Class", {
     -- Per character: settings are bucketed by class+spec (see _SettingsNamespace) into their own
     -- cascade namespaces, so each spec keeps its own config and they're captured by profiles.
     color = ns.Theme.hex.purple,
-    deps = { "DatabaseManager" },  -- per-spec settings tables live in the shared database
+    -- Per-spec settings tables live in the shared database. The actual Contribute happens via the
+    -- inherited ns.DatabaseOwner mixin (the base _ContributeTables, fed by our _CollectTables), so
+    -- there's no direct ns.DatabaseManager access here -- but the load-order dep is still required.
+    -- hag-lint-disable depcheck: DatabaseManager
+    deps = { "DatabaseManager" },
     -- Event subscriptions go through self:On (ns.Component); each spec submodule declares the
     -- services ITS features use.
     settings = {},   -- built per spec from the active spec submodule

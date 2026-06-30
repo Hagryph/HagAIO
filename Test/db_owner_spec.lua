@@ -62,6 +62,25 @@ describe("DatabaseOwner mixin: table contribution", function()
         assert.are.equal("foo", owned[2])
     end)
 
+    it("an owner overriding _CollectTables contributes the dynamic set; the latch stays in the base", function()
+        local ns, mgr = setup()
+        -- The Class module pattern: build the table set dynamically by overriding ONLY the hook,
+        -- never re-copying the once-only latch (which now lives solely in the base _ContributeTables).
+        local Dyn = ns.Class.new("Dyn", ns.Service)
+        local calls = 0
+        function Dyn:_CollectTables()
+            calls = calls + 1
+            return { gamma = FOO }   -- not from opts.tables / _DeclareTables -- computed here
+        end
+        local s = Dyn:New("Dyn")
+        s:_ContributeTables()
+        s:_ContributeTables()                    -- idempotent: the base latch blocks a second contribution
+        assert.are.equal(1, calls)               -- the hook ran exactly once
+        local db = mgr:Build()
+        db:Insert("gamma", { v = 1 })
+        assert.are.equal(1, db:Store():Count("gamma"))
+    end)
+
     it("multiple owners contribute into the one shared schema", function()
         local ns, mgr = setup()
         local A = ns.Class.new("OwnA", ns.Service):New("OwnA", { tables = { alpha = FOO } })

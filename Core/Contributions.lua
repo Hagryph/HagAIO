@@ -2,10 +2,11 @@ local addonName, ns = ...
 
 -- Core/Contributions.lua
 -- ns.Contributions -- the shared, PURE machinery for a feature's declarative cross-cutting
--- integrations (slash commands + General-page toggles) plus settings-schema validation. A
--- static table (no instances) so BOTH ns.Component (Modules/Submodules) and ns.Service --
--- which deliberately do NOT share a base -- build them identically, rather than one class
--- reaching into the other's statics.
+-- integrations (slash commands + General-page toggles) plus settings-schema validation, AND the
+-- wiring (Contributions.Wire) + namespace publishing (ns.Publishable) both owner kinds use. A
+-- static table (no instances) so BOTH ns.Component (Modules/Submodules) and ns.Service -- which
+-- deliberately do NOT share a base -- build/wire/publish them identically, rather than one class
+-- reaching into the other's statics or copy-pasting the loop.
 --
 -- handler / get / set in a spec are each a METHOD NAME (string) or a function; both are
 -- called bound to the owner -- handler(rest), get() -> bool, set(on) -> bool|nil.
@@ -84,4 +85,35 @@ function Contributions.BuildGeneralToggle(owner, spec)
     }
 end
 
+-- Register an owner's declarative `commands` + `generalToggles` (identical for a Component and a
+-- Service). The owner passes its OWN tables (it owns the private read), so this stays pure. For each
+-- registration, `onTeardown(undo)` is invoked with the undo thunk when given -- a Component passes
+-- `function(fn) self:OnTeardown(fn) end` so they're removed on disable; a Service passes nil (it
+-- never tears down). Replaces the two near-identical _WireContributions loops.
+function Contributions.Wire(owner, commands, generalToggles, onTeardown)
+    for sub, spec in pairs(commands or {}) do
+        local fn, help = Contributions.BuildCommand(owner, spec)
+        ns.SlashCommand:Register(sub, fn, help)
+        if onTeardown then onTeardown(function() ns.SlashCommand:Unregister(sub) end) end
+    end
+    for _, spec in ipairs(generalToggles or {}) do
+        local handle = ns.UI.SettingsWindow:RegisterGeneralToggle(Contributions.BuildGeneralToggle(owner, spec))
+        if onTeardown then onTeardown(function() ns.UI.SettingsWindow:UnregisterGeneralToggle(handle) end) end
+    end
+end
+
 ns.Contributions = Contributions
+
+-- ns.Publishable -- the single _Publish, mixed into the three owners that publish into the namespace
+-- (Module, Service, Lib). p.publishAs is the key to publish under (nil = don't publish: a Submodule,
+-- or a Module with no alias); p.ui routes into ns.UI.<alias> instead of ns.<alias> (UI services).
+-- Collapses the three identical-in-spirit _Publish copies into one. ns.Mixin is loaded before this
+-- file (see the load-order manifest), and Component/Service/Lib all load after it.
+ns.Publishable = ns.Mixin.new("Publishable", {
+    _Publish = function(self)
+        local p = self:_p()
+        local alias = p.publishAs
+        if not alias then return end
+        if p.ui then ns.UI[alias] = self else ns[alias] = self end
+    end,
+})

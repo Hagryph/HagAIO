@@ -1,10 +1,13 @@
 local S = dofile("Test/support.lua")
 
 -- The Lib tier (Core/Lib.lua + Core/LibManager.lua): a pure-logic helper published at
--- ns.<Name>, with no Logger/lifecycle/graph. Load the real Registry + Lib + LibManager.
+-- ns.<Name>, with no Logger/lifecycle/graph. Load the real Registry + Lib + LibManager, plus
+-- Mixin + Contributions (Lib mixes in ns.Publishable for the shared _Publish).
 local function realLibNs()
     local ns = { UI = {} }
     assert(loadfile("Core/Class.lua"))("HagAIO", ns)
+    assert(loadfile("Core/Mixin.lua"))("HagAIO", ns)
+    assert(loadfile("Core/Contributions.lua"))("HagAIO", ns)   -- defines ns.Publishable
     assert(loadfile("Core/Registry.lua"))("HagAIO", ns)
     assert(loadfile("Core/Lib.lua"))("HagAIO", ns)
     assert(loadfile("Core/LibManager.lua"))("HagAIO", ns)

@@ -82,12 +82,55 @@ describe("DB.Schema", function()
 
         local hops = s:Table("route_hops")
         assert.are.equal(2, #hops:PrimaryKey())                        -- composite PK
-        assert.is_false(hops:Column("route_id"):IsNullable())          -- composite-PK member forced NOT NULL
+        assert.is_false(hops:Column("route_id"):IsNullable())          -- composite-PK member is NOT NULL...
+        assert.is_false(hops:Column("route_id"):IsUnique())            -- ...but NOT individually unique (only the pair)
+        assert.is_false(hops:Column("route_id"):IsPrimaryKey())        -- nor a single-column PK
         local fk = hops:ForeignKeys()[1]
         assert.are.equal("route_id", fk.column)
         assert.are.equal("routes", fk.table)
         assert.are.equal("id", fk.refColumn)
         assert.are.equal("cascade", fk.onDelete)
+    end)
+
+    it("a composite-PK member is NOT NULL at construction (no post-construction mutation)", function()
+        local ns = newSchemaNs()
+        -- A composite-PK member with NO explicit nullable flag must still come out NOT NULL -- the
+        -- membership is resolved before the column is built, so it's never mutated afterwards.
+        local s = ns.DB.Schema.new("CK", {
+            tables = { pair = {
+                columns = {
+                    { name = "a", type = "integer" },   -- no nullable flag, no primaryKey flag
+                    { name = "b", type = "integer" },
+                    { name = "v", type = "integer" },   -- a non-PK column stays nullable by default
+                },
+                primaryKey = { "a", "b" },
+            } },
+        })
+        local pair = s:Table("pair")
+        assert.is_false(pair:Column("a"):IsNullable())   -- composite member -> NOT NULL
+        assert.is_false(pair:Column("b"):IsNullable())
+        assert.is_true(pair:Column("v"):IsNullable())    -- ordinary column unaffected
+    end)
+
+    it("a SET_NULL FK on a composite-PK member now fails loudly at construction", function()
+        local ns = newSchemaNs()
+        -- The member is NOT NULL from construction, so a SET_NULL reference on it is caught immediately
+        -- (previously the column was nullable at construction and silently forced NOT NULL afterwards).
+        local ok = pcall(function()
+            ns.DB.Schema.new("Bad", {
+                tables = {
+                    parent = { columns = { { name = "id", type = "integer", primaryKey = true } } },
+                    child = {
+                        columns = {
+                            { name = "pid", type = "integer", references = { table = "parent", onDelete = "set_null" } },
+                            { name = "ord", type = "integer" },
+                        },
+                        primaryKey = { "pid", "ord" },
+                    },
+                },
+            })
+        end)
+        assert.is_false(ok)
     end)
 
     it("defaults an FK column reference to the target's primary key", function()

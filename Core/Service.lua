@@ -20,8 +20,9 @@ local Class = ns.Class
 --   function Foo:OnShutdown()  ... end         -- optional cleanup (reverse order)
 --   ns.ServiceManager:Register(Foo:New("Foo", { deps = { "EventBus" } }))
 
--- ns.DatabaseOwner adds the declarative `databases` surface (self:DB(name) + private DAOs).
-local Service = Class.new("Service", ns.Loggable, { mixins = { ns.DatabaseOwner } })
+-- ns.DatabaseOwner adds the declarative `databases` surface (self:DB(name) + private DAOs);
+-- ns.Publishable supplies the shared _Publish (publish ns.<name> / ns.UI.<name>).
+local Service = Class.new("Service", ns.Loggable, { mixins = { ns.DatabaseOwner, ns.Publishable } })
 
 -- opts = { deps = { "OtherService", ... }, ui = bool, color = "RRGGBB",
 --          commands = { ... }, generalToggles = { ... } }
@@ -37,6 +38,7 @@ function Service:Initialize(name, opts)
     local p = self:_p()
     p.deps           = opts.deps or {}
     p.ui             = opts.ui and true or false
+    p.publishAs      = name      -- a service ALWAYS publishes under its name (ns.<name> / ns.UI.<name>)
     p.commands       = opts.commands
     p.generalToggles = opts.generalToggles
     p.log            = nil
@@ -77,21 +79,11 @@ function Service:IsEnabled() return true end
 -- those targets are initialised before this runs.
 function Service:_WireContributions()
     local p = self:_p()
-    for sub, spec in pairs(p.commands or {}) do
-        local fn, help = ns.Contributions.BuildCommand(self, spec)
-        ns.SlashCommand:Register(sub, fn, help)
-    end
-    for _, spec in ipairs(p.generalToggles or {}) do
-        ns.UI.SettingsWindow:RegisterGeneralToggle(ns.Contributions.BuildGeneralToggle(self, spec))
-    end
+    ns.Contributions.Wire(self, p.commands, p.generalToggles)   -- no teardown: a service never disables
 end
 
--- Publish this instance into the namespace so call sites reach it as ns.<Name>
--- (or ns.UI.<Name> for UI services). Called by Service:_Init at load.
-function Service:_Publish()
-    local p = self:_p()
-    if p.ui then ns.UI[p.name] = self else ns[p.name] = self end
-end
+-- _Publish (publish ns.<Name> / ns.UI.<Name>, called by Service:_Init at load) is the shared
+-- ns.Publishable mixin (Core/Contributions.lua), driven by p.publishAs (= name) + p.ui.
 
 -- Lifecycle hooks (no-ops by default):
 --   OnInitialize() : set up, with every declared dependency already loaded.

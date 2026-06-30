@@ -49,7 +49,9 @@ local function fail(msg) error("DB schema: " .. msg, 3) end
 local Column = Class.new("DBColumn")
 
 -- spec = { name, type, nullable, unique, default, autoIncrement, primaryKey, references }
-function Column:Initialize(spec, tableName)
+-- `compositePKMember` (resolved by the Table BEFORE construction) is true when this column belongs
+-- to a table-level composite primary key, so the column is built already NOT NULL and never mutated.
+function Column:Initialize(spec, tableName, compositePKMember)
     assert(type(spec) == "table", "column spec must be a table")
     local p = self:_p()
     local where = ("table '%s'"):format(tostring(tableName))
@@ -61,12 +63,13 @@ function Column:Initialize(spec, tableName)
     if not p.type then fail(("%s.%s: unknown column type %s"):format(where, p.name, tostring(spec.type))) end
 
     p.primaryKey = spec.primaryKey and true or false
-    -- A primary-key column is implicitly NOT NULL and UNIQUE.
+    -- A single-column primary key is implicitly NOT NULL and UNIQUE; a COMPOSITE-PK member is
+    -- implicitly NOT NULL (but not individually unique -- only the combination is).
     if p.primaryKey then
         p.nullable = false
         p.unique = true
     else
-        p.nullable = (spec.nullable ~= false)        -- nullable unless explicitly nullable = false
+        p.nullable = (spec.nullable ~= false) and not compositePKMember   -- NOT NULL if explicit, or a composite-PK member
         p.unique = spec.unique and true or false
     end
 
@@ -134,8 +137,15 @@ function Table:Initialize(name, spec)
     assert(type(spec.columns) == "table" and #spec.columns > 0,
         ("table '%s' needs a non-empty columns list"):format(tostring(name)))
 
+    -- Resolve composite-PK membership BEFORE constructing any column, so a member is built already
+    -- NOT NULL -- a column is validated once, at construction, and never mutated afterwards.
+    local compositePK = {}
+    if spec.primaryKey then
+        for _, cn in ipairs(asNameList(spec.primaryKey)) do compositePK[cn] = true end
+    end
+
     for _, cspec in ipairs(spec.columns) do
-        local col = Column:New(cspec, name)
+        local col = Column:New(cspec, name, compositePK[cspec.name] == true)
         local cn = col:Name()
         if p.cols[cn] then fail(("table '%s': duplicate column '%s'"):format(name, cn)) end
         p.cols[cn] = col
@@ -149,13 +159,12 @@ function Table:Initialize(name, spec)
     end
 
     -- Composite primary key (table-level). Mutually exclusive with single-column primaryKey shorthand.
+    -- NOT NULL was already applied at construction (compositePK above); here we just record the PK list.
     if spec.primaryKey then
         if #p.pk > 0 then fail(("table '%s': declare the primary key once (column flag OR table list)"):format(name)) end
         for _, cn in ipairs(asNameList(spec.primaryKey)) do
             if not p.cols[cn] then fail(("table '%s': primary key column '%s' does not exist"):format(name, cn)) end
             p.pk[#p.pk + 1] = cn
-            -- a composite-PK member is implicitly NOT NULL
-            self:_ForceNotNull(cn)
         end
     end
 
@@ -176,12 +185,6 @@ function Table:Initialize(name, spec)
         end
         p.indices[#p.indices + 1] = { name = idx.name or (name .. "_idx" .. i), columns = cols, unique = idx.unique and true or false }
     end
-end
-
--- Used when a column becomes part of a composite PK after its own construction.
-function Table:_ForceNotNull(colName)
-    local col = self:_p().cols[colName]
-    if col then col:_p().nullable = false end
 end
 
 function Table:Name()         return self:_p().name end

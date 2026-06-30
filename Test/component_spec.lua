@@ -23,6 +23,26 @@ describe("Component settings (no database yet)", function()
         -- self:DB() is nil (no DatabaseManager) -> the code default, no namespace needed
         assert.are.equal(true, C:New():GetSetting("k"))
     end)
+
+    it("GetSettings is abstract -- a subclass that reads settings but forgot it gets the named error", function()
+        local ns = withComponent()
+        local Bad = ns.Class.new("Bad", ns.Component)
+        function Bad:_SettingsNamespace() return "bad" end   -- names its namespace but NOT GetSettings
+        local ok, err = pcall(function() return Bad:New():GetSetting("k") end)
+        assert.is_false(ok)
+        assert.is_true(tostring(err):find("GetSettings") ~= nil)   -- the named abstract error, not "nil value"
+    end)
+
+    it("_DeclareSettingsBackedTables with EMPTY settings never evaluates the (maybe dynamic) namespace", function()
+        local ns = withComponent()
+        -- Mirrors the Class module: empty settings + a _SettingsNamespace computed from live state
+        -- that doesn't exist at construction. The helper must skip the namespace entirely, not throw.
+        local C = ns.Class.new("C", ns.Component)
+        function C:_SettingsNamespace() error("namespace must NOT be evaluated for empty settings") end
+        function C:GetSettings() return {} end
+        local c = C:New()                                  -- p.settings is empty here
+        assert.is_true(pcall(function() c:_DeclareSettingsBackedTables() end))
+    end)
 end)
 
 describe("Component teardown", function()

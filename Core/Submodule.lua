@@ -52,13 +52,9 @@ function Submodule:Initialize(name, opts)
     p.dbSchema  = opts.dbSchema          -- structural nested tables to seed in the namespace
     p.enabled = false                    -- "loaded" IS this Component's enabled state (ns.Component)
 
-    -- A submodule's settings are ordinary database rows like a module's: contribute the two settings
-    -- tables auto-derived from its schema (override + per-profile layers; see Lib/SettingsTables.lua).
-    local nsKey = "submodule_" .. name
-    local derived = ns.SettingsTables:DeriveTables(nsKey, p.settings)
-    ns.SettingsTables:Register(nsKey, p.settings)
-    self:_DeclareTables(derived)
-    if next(derived) then p.serviceDeps = ns.AddDep(p.serviceDeps, "DatabaseManager") end
+    -- A submodule's settings are ordinary database rows like a module's; the derive/register/declare/
+    -- AddDep dance lives on ns.Component (shared with Module). A submodule contributes no extra tables.
+    p.serviceDeps = self:_DeclareSettingsBackedTables()
 end
 
 -- GetName is inherited from ns.Loggable (shared identity).

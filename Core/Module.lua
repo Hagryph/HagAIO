@@ -11,8 +11,9 @@ local Class = ns.Class
 -- enable/disable, dependency gating, saved-var binding and logging.
 
 -- The declarative `databases` surface (self:DB(name) + private DAOs) is inherited from ns.Component
--- (via the ns.DatabaseOwner mixin applied there), shared with Submodule.
-local Module = Class.new("Module", ns.Component)
+-- (via the ns.DatabaseOwner mixin applied there), shared with Submodule. ns.Publishable supplies the
+-- shared _Publish (publish ns.<alias> when opts.publishAs is set).
+local Module = Class.new("Module", ns.Component, { mixins = { ns.Publishable } })
 
 -- Constructor. Subclasses that need their own constructor should override
 -- Initialize and call Module.Initialize(self, name, opts) first.
@@ -79,14 +80,9 @@ function Module:Initialize(name, opts)
     -- (self:DB() + DAOs) PLUS the two settings tables auto-derived from its settings schema -- the
     -- per-character override layer and the per-profile layer of the cascade (see Lib/SettingsTables.lua).
     -- A module's settings are therefore ordinary database rows; its enable-state lives in the central
-    -- module_enable tables. A module that contributes any table depends on the DatabaseManager.
-    local nsKey = "module_" .. name
-    local tables = {}
-    for tn, spec in pairs(opts.tables or {}) do tables[tn] = spec end
-    for tn, spec in pairs(ns.SettingsTables:DeriveTables(nsKey, p.settings)) do tables[tn] = spec end
-    ns.SettingsTables:Register(nsKey, p.settings)
-    self:_DeclareTables(tables)
-    if next(tables) then p.serviceDeps = ns.AddDep(p.serviceDeps, "DatabaseManager") end
+    -- module_enable tables. A module that contributes any table depends on the DatabaseManager. The
+    -- whole derive/register/declare/AddDep dance lives on ns.Component (shared with Submodule).
+    p.serviceDeps = self:_DeclareSettingsBackedTables(opts.tables)
 
     p.enabled = false
     p.log = nil
@@ -166,14 +162,10 @@ function Module:_Init()
     self:OnInitialize()
 end
 
--- Optional public alias: publish this module instance at ns.<opts.publishAs> so other code
--- can reach it directly (e.g. ns.<Alias> -> the module). Mirrors
--- Service:_Publish; replaces hand-written `ns.X = self` in OnInitialize. The alias is
--- declared in the module's New opts and documented in the generated Namespace.lua slot block.
-function Module:_Publish()
-    local alias = self:_p().publishAs
-    if alias then ns[alias] = self end
-end
+-- Optional public alias: publish this module instance at ns.<opts.publishAs> so other code can reach
+-- it directly (e.g. ns.<Alias> -> the module). _Publish itself is the shared ns.Publishable mixin
+-- (Core/Contributions.lua), driven by p.publishAs (set in Initialize); a module with no alias is a
+-- no-op. The alias is documented in the generated Namespace.lua slot block.
 
 -- The concrete enable lifecycle (implements ns.Component's abstract Enable). The state flip + the
 -- HagAIO_OwnerState broadcast are the shared contract (self:_SetEnabled); HagAIO_ModuleState is the

@@ -29,16 +29,27 @@ ns.DatabaseOwner = ns.Mixin.new("DatabaseOwner", {
         self:_p().dbTables = tables or {}
     end,
 
-    -- Hand the declared tables to the manager to aggregate into the shared schema. Idempotent:
-    -- it's called both in the ADDON_LOADED pre-build sweep and again from the owner's _Init, but the
-    -- tables are contributed exactly once (before the database is built).
+    -- Hand the contributed tables to the manager to aggregate into the shared schema. Idempotent
+    -- (the latch): called both in the ADDON_LOADED pre-build sweep and again from the owner's _Init,
+    -- but the tables are contributed exactly once (before the database is built). A TEMPLATE METHOD:
+    -- the tables come from the overridable _CollectTables hook, so an owner that builds them
+    -- dynamically (the Class module's per-spec settings tables) overrides ONLY that hook and never
+    -- re-copies this latch (renaming the latch field can't silently break a copy that no longer exists).
     _ContributeTables = function(self)
         local p = self:_p()
         if p._dbContributed then return end
         p._dbContributed = true
-        if p.dbTables and next(p.dbTables) and ns.DatabaseManager then
-            ns.DatabaseManager:Contribute(p.dbTables)
+        local tables = self:_CollectTables()
+        if tables and next(tables) and ns.DatabaseManager then
+            ns.DatabaseManager:Contribute(tables)
         end
+    end,
+
+    -- Overridable hook: the tables this owner contributes. Default = its declared `dbTables` (the
+    -- `tables` opt captured by _DeclareTables). Override THIS (not _ContributeTables) to compute a
+    -- table set dynamically.
+    _CollectTables = function(self)
+        return self:_p().dbTables
     end,
 
     -- The single shared Database (nil until built).

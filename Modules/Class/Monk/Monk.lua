@@ -149,14 +149,14 @@ function ns.Monk.registerSpec(name, SpecClass, specKey, serviceDeps)
         condition = function() return classMod:CurrentSpecKey() == specKey end,
         events = { "PLAYER_SPECIALIZATION_CHANGED", "PLAYER_ENTERING_WORLD" },
         onLoad = function(host)
-            host:_p().activeSub = spec
+            host:_SetActiveSpec(spec)   -- protected setter, not a cross-object host:_p() write
             host:_BuildSettings()
             spec:Load()
             if ns.UI and ns.UI.SettingsWindow then ns.UI.SettingsWindow:InvalidateModule(host:GetName()) end
         end,
         onUnload = function(host)
             spec:Unload()
-            host:_p().activeSub = nil
+            host:_SetActiveSpec(nil)
         end,
     }))
 end

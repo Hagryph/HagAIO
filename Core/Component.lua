@@ -220,8 +220,39 @@ end
 -- Submodule -> "submodule_<name>", the Class module -> a per-spec bucket). A subclass that uses
 -- settings but forgot to override this hits a clear error rather than silently storing nothing.
 Component._SettingsNamespace = ns.Class.abstract("_SettingsNamespace")
+-- ABSTRACT too: GetSetting/SetSetting below call self:GetSettings() (the option schema). A subclass
+-- that uses settings but forgot to define it hits the framework's named abstract error instead of a
+-- cryptic "attempt to call a nil value". Module/Submodule/ClassModule all define it.
+Component.GetSettings = ns.Class.abstract("GetSettings")
 -- These have sensible defaults and are optional overrides (NOT abstract).
 function Component:_SettingsOwnerId() return self:_p().name end
+
+-- Derive + register + declare the two settings-backed tables for this component's namespace (the
+-- per-character override + per-profile layers; see Lib/SettingsTables.lua), merged with any `extra`
+-- tables the subclass owns (a Module's `tables` opt). The single home for the derive/register/
+-- declare/AddDep dance Module and Submodule used to copy -- and the namespace prefix lives ONLY in
+-- _SettingsNamespace (no second copy). Reads the raw schema (p.settings, set before this runs), not
+-- GetSettings(), so a dynamic override (ClassModule) isn't triggered at construction. Returns this
+-- component's service-dep list (p.serviceDeps) with "DatabaseManager" appended when any table was
+-- declared, so the constructor assigns it back in one line.
+function Component:_DeclareSettingsBackedTables(extra)
+    local p = self:_p()
+    local schema = p.settings or {}
+    local tables = {}
+    for tn, spec in pairs(extra or {}) do tables[tn] = spec end
+    -- Only touch the namespace when there's actually a schema to derive from. An empty schema
+    -- derives nothing and registers nothing, so we must NOT evaluate _SettingsNamespace() -- a
+    -- dynamic subclass (the Class module) computes it from live spec state that doesn't exist at
+    -- construction, and the Class module's real per-spec tables come from its own _CollectTables.
+    if next(schema) then
+        local nsKey = self:_SettingsNamespace()
+        for tn, spec in pairs(ns.SettingsTables:DeriveTables(nsKey, schema)) do tables[tn] = spec end
+        ns.SettingsTables:Register(nsKey, schema)
+    end
+    self:_DeclareTables(tables)
+    if next(tables) then return ns.AddDep(p.serviceDeps, "DatabaseManager") end
+    return p.serviceDeps
+end
 
 -- Default settings reaction: dispatch the declarative `settingsWatch` map a subclass
 -- passed in its opts. Each entry maps a setting key to a handler (a method NAME or a
@@ -279,15 +310,9 @@ end
 -- submodule unload). Called by Module:Enable via _WireDeclared.
 function Component:_WireContributions()
     local p = self:_p()
-    for sub, spec in pairs(p.commands or {}) do
-        local fn, help = ns.Contributions.BuildCommand(self, spec)
-        ns.SlashCommand:Register(sub, fn, help)
-        self:OnTeardown(function() ns.SlashCommand:Unregister(sub) end)
-    end
-    for _, spec in ipairs(p.generalToggles or {}) do
-        local handle = ns.UI.SettingsWindow:RegisterGeneralToggle(ns.Contributions.BuildGeneralToggle(self, spec))
-        self:OnTeardown(function() ns.UI.SettingsWindow:UnregisterGeneralToggle(handle) end)
-    end
+    -- Component's registrations are torn down on disable, so each undo is queued via OnTeardown
+    -- (a Service passes no teardown -- see Core/Contributions.lua's Wire).
+    ns.Contributions.Wire(self, p.commands, p.generalToggles, function(fn) self:OnTeardown(fn) end)
 end
 
 ns.Component = Component
