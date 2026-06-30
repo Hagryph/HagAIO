@@ -92,8 +92,18 @@ end
 -- never tears down). Replaces the two near-identical _WireContributions loops.
 function Contributions.Wire(owner, commands, generalToggles, onTeardown)
     for sub, spec in pairs(commands or {}) do
-        local fn, help = Contributions.BuildCommand(owner, spec)
-        ns.SlashCommand:Register(sub, fn, help)
+        if spec.subcommands then
+            -- A GROUP: each `subcommands` entry { handler, help, dev } becomes a bound sub-handler;
+            -- the router owns the `/hag <sub> <name>` routing, dev-gating and usage (see RegisterGroup).
+            local subs = {}
+            for name, sspec in pairs(spec.subcommands) do
+                subs[name:lower()] = { fn = Contributions.BuildCommand(owner, sspec), help = sspec.help, dev = sspec.dev }
+            end
+            ns.SlashCommand:RegisterGroup(sub, spec.help, subs)
+        else
+            local fn, help = Contributions.BuildCommand(owner, spec)
+            ns.SlashCommand:Register(sub, fn, help)
+        end
         if onTeardown then onTeardown(function() ns.SlashCommand:Unregister(sub) end) end
     end
     for _, spec in ipairs(generalToggles or {}) do

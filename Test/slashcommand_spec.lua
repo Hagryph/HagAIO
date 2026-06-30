@@ -4,7 +4,7 @@ local function setup()
     local ns = S.newNs()
     S.load(ns, "Services/SlashCommand.lua")
     local sc = ns._captured["SlashCommand"]; sc:OnInitialize()
-    return sc
+    return sc, ns
 end
 
 describe("SlashCommand", function()
@@ -54,5 +54,36 @@ describe("SlashCommand", function()
         sc:_Dispatch("config")  -- gone -> help, handler not called again
         assert.are.equal(1, hit)
         assert.is_true(pcall(function() sc:Unregister("never") end))  -- unknown -> no-op
+    end)
+
+    -- ---- sub-command groups (RegisterGroup auto-routing) ------------------------------------------
+    it("RegisterGroup routes the second word to the sub-handler, passing the remaining args", function()
+        local sc = setup()
+        local got
+        sc:RegisterGroup("cvar", "console variables", { set = { fn = function(rest) got = rest end } })
+        sc:_Dispatch("cvar set foo bar")
+        assert.are.equal("foo bar", got)            -- /hag cvar set <rest> -> the set sub-handler
+    end)
+
+    it("a bare or unknown sub of a group prints usage (no error), never a handler", function()
+        local sc = setup()
+        local ran = false
+        sc:RegisterGroup("cvar", "h", { set = { fn = function() ran = true end } })
+        assert.is_true(pcall(function() sc:_Dispatch("cvar") end))      -- bare -> usage list
+        assert.is_true(pcall(function() sc:_Dispatch("cvar nope") end)) -- unknown sub -> usage list
+        assert.is_false(ran)
+    end)
+
+    it("dev-only sub-commands are refused off a developer character and routed on one", function()
+        local sc, ns = setup()
+        local ran = false
+        sc:RegisterGroup("cvar", "h", { dump = { fn = function() ran = true end, dev = true } })
+        ns.IsDevChar = function() return false end
+        sc:_Dispatch("cvar dump")
+        assert.is_false(ran)                        -- hidden + refused off-whitelist
+        ns.IsDevChar = function() return true end
+        sc:_Dispatch("cvar dump")
+        assert.is_true(ran)                         -- routed on a developer character
+        ns.IsDevChar = nil
     end)
 end)

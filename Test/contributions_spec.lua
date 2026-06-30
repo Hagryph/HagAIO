@@ -8,6 +8,7 @@ local function rig()
     -- Stub the two contribution targets the base talks to.
     local sc = { reg = {} }
     function sc:Register(sub, fn, help) self.reg[sub] = { fn = fn, help = help } end
+    function sc:RegisterGroup(name, help, subs) self.reg[name] = { help = help, subs = subs } end
     function sc:Unregister(sub) self.reg[sub] = nil end
     ns.SlashCommand = sc
     local sw = { toggles = {} }
@@ -80,5 +81,25 @@ describe("Component:_WireContributions", function()
         c:_WireContributions()
         assert.is_nil(next(sc.reg))
         assert.are.equal(0, #sw.toggles)
+    end)
+
+    it("wires a command with `subcommands` as a router GROUP, binding each sub-handler to the owner", function()
+        local c, sc = rig()
+        local p = c:_p()
+        p.commands = { cvar = { help = "console vars", subcommands = {
+            set = { handler = "_RunFoo", help = "set it", dev = true },
+        } } }
+
+        c:_WireContributions()
+        local grp = sc.reg.cvar
+        assert(grp ~= nil and grp.subs ~= nil)        -- registered as a group, not a leaf
+        assert.are.equal("console vars", grp.help)
+        assert.are.equal("set it", grp.subs.set.help)
+        assert.is_true(grp.subs.set.dev)              -- the dev flag is carried through to the router
+        grp.subs.set.fn("hi")
+        assert.are.equal("hi", c.lastRest)            -- sub-handler bound to the owner
+
+        c:_ReleaseAll()                               -- simulate module disable
+        assert.is_nil(sc.reg.cvar)                    -- the whole group is withdrawn
     end)
 end)

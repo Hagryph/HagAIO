@@ -54,23 +54,21 @@ function Dev:_BuildCVarText(names)
     return table.concat(lines, "\n")
 end
 
-function Dev:_Slash(rest)
-    local cmd = ((rest or ""):match("^(%S*)") or ""):lower()
-    if cmd == "cvars" or cmd == "cvardump" then
-        local names = self:AllCVarNames()
-        if not names then
-            ns.Log.Warn("the developer console isn't active. Make sure -console is in your launch args,")
-            ns.Log.Warn("then FULLY QUIT and relaunch WoW -- a /reload doesn't pick up launch arguments.")
-            return
-        end
-        local text = self:_BuildCVarText(names)
-        if ns.UI and ns.UI.CopyWindow then
-            ns.UI.CopyWindow:Show(("CVars (%d)"):format(#names), text)
-        else
-            ns.Log.Warn("copy window unavailable")
-        end
+-- /hag dev cvars -- the SlashCommand router routes the "cvars" sub-command here (see the declarative
+-- `subcommands` table below); a bare /hag dev lists it. The whole `dev` group is developer-only --
+-- the service registers only on a whitelisted character (registerDev), so no per-sub dev flag is needed.
+function Dev:_DumpCVars()
+    local names = self:AllCVarNames()
+    if not names then
+        ns.Log.Warn("the developer console isn't active. Make sure -console is in your launch args,")
+        ns.Log.Warn("then FULLY QUIT and relaunch WoW -- a /reload doesn't pick up launch arguments.")
+        return
+    end
+    local text = self:_BuildCVarText(names)
+    if ns.UI and ns.UI.CopyWindow then
+        ns.UI.CopyWindow:Show(("CVars (%d)"):format(#names), text)
     else
-        ns.Log.Print("|cffffff00/hag dev cvars|r  -  open a copy window with every CVar (needs -console)")
+        ns.Log.Warn("copy window unavailable")
     end
 end
 
@@ -84,7 +82,12 @@ end
 local function registerDev()
     ns.ServiceManager:Register(Dev:New("Dev", {
         deps = { "SlashCommand", "CopyWindow" },
-        commands = { dev = { handler = "_Slash", help = "developer tools" } },
+        commands = { dev = {
+            help = "developer tools",
+            subcommands = {
+                cvars = { handler = "_DumpCVars", help = "copy every console variable to a window (needs -console)" },
+            },
+        } },
     }))
 end
 if not ns.WhenDevCharKnown then registerDev()

@@ -556,30 +556,14 @@ function CVars:_PlaceRow(box, def, y, width)
     return descY - 4
 end
 
--- ---- slash ----------------------------------------------------------------
-function CVars:_Slash(rest)
-    local cmd, arg = ns.SlashParse:Split(rest)   -- pure tokeniser (Lib/SlashParse.lua)
-    -- "dump" (enumerate every CVar) is a developer-only command: available only on a whitelisted dev
-    -- character. Off-whitelist it isn't handled or advertised; the rest of /hag cvar works for everyone.
-    local devChar = ns.IsDevChar and ns.IsDevChar()
-    if cmd == "dump" and devChar then
-        self:_Dump(arg)
-    elseif cmd == "set" then
-        local name, value = ns.SlashParse:Pair(arg)
-        if name and value then
-            if self:_ApplyCVar(name, value) then
-                self:LogSuccess(("globalising %s = %s"):format(name, value))
-            end
-        else self:LogInfo("usage: /hag cvar set <name> <value>") end
-    elseif cmd == "get" then
-        if arg ~= "" then self:_Get(arg) else self:LogInfo("usage: /hag cvar get <name>") end
-    elseif cmd == "clear" then
-        if arg ~= "" then self:_Clear(arg) else self:LogInfo("usage: /hag cvar clear <name>") end
-    elseif cmd == "list" then
-        self:_List()
-    else
-        local dumpHint = devChar and "dump [filter] | " or ""
-        self:LogInfo("|cffffff00/hag cvar|r " .. dumpHint .. "set <name> <value> | get <name> | clear <name> | list")
+-- ---- slash sub-commands (the SlashCommand router routes /hag cvar <sub> here, from the
+-- declarative `subcommands` table below). "dump" is developer-only -- the spec flags it dev = true,
+-- so the router hides + refuses it off a whitelisted character; the rest works for everyone.
+function CVars:_Set(arg)
+    local name, value = ns.SlashParse:Pair(arg)   -- "<name> <value>" (value keeps inner spaces)
+    if not (name and value) then self:LogInfo("usage: /hag cvar set <name> <value>"); return end
+    if self:_ApplyCVar(name, value) then
+        self:LogSuccess(("globalising %s = %s"):format(name, value))
     end
 end
 
@@ -607,6 +591,7 @@ function CVars:_Dump(filter)
 end
 
 function CVars:_Get(name)
+    if not name or name == "" then self:LogInfo("usage: /hag cvar get <name>"); return end
     if not (C_CVar and C_CVar.GetCVarInfo) then self:LogWarn("CVar API unavailable"); return end
     local v, d, acct, char, locked, secure, ro = C_CVar.GetCVarInfo(name)
     if v == nil then self:LogWarn("unknown CVar: " .. name); return end
@@ -623,6 +608,7 @@ function CVars:_Get(name)
 end
 
 function CVars:_Clear(name)
+    if not name or name == "" then self:LogInfo("usage: /hag cvar clear <name>"); return end
     if not self:_IsManaged(name) then self:LogInfo("not globalising: " .. name); return end
     self:_ClearManaged(name)
     self:LogSuccess("stopped globalising " .. name .. " (current value kept)")
@@ -645,12 +631,19 @@ ns.ModuleManager:Register(CVars:New("CVars", {
     color = ns.Theme.hex.red,
     deps = { "SlashCommand", "SettingsWindow", "Scheduler" },  -- routing + page refresh + the deferred apply/sync timers (type inference is a pure Lib: ns.CVarHelper, always available)
     optionalDeps = { "Dev" },  -- the full-dump enumeration (ns.Dev) is dev-only (registered behind ns.IsDevChar) and reached through a guard, so it must NOT be a hard dep -- else CVars wouldn't load for normal players
-    -- "dump" is dev-only (see _Slash); don't advertise it to normal users in /hag help. The help is a
-    -- function so it's decided when /hag help prints (matching the runtime gate), not baked at load.
-    commands = { cvar = { handler = "_Slash", help = function()
-        return "console variables: " .. ((ns.IsDevChar and ns.IsDevChar()) and "dump [filter] / " or "")
-            .. "set <name> <value> / get <name> / clear <name> / list"
-    end } },
+    -- /hag cvar is a sub-command GROUP: each verb is a declarative sub-command the SlashCommand router
+    -- routes, lists and (for "dump") dev-gates -- so the dev-only verb is hidden off a whitelisted
+    -- character via the `dev` flag, with no hand-rolled gate or function-help.
+    commands = { cvar = {
+        help = "console variables",
+        subcommands = {
+            dump  = { handler = "_Dump",  help = "copy every console variable to a window (needs -console)", dev = true },
+            set   = { handler = "_Set",   help = "globalise <name> <value> on every character" },
+            get   = { handler = "_Get",   help = "inspect <name> (value, default, scope)" },
+            clear = { handler = "_Clear", help = "stop globalising <name>" },
+            list  = { handler = "_List",  help = "list globalised CVars" },
+        },
+    } },
     -- Account-wide CVar data in the shared database.
     tables = {
         cvar_managed = { scope = "global", columns = {   -- forced CVars, re-applied each login
