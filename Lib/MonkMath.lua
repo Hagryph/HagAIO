@@ -1,5 +1,4 @@
 local addonName, ns = ...
-local Class = ns.Class
 
 -- Lib/MonkMath.lua
 -- Pure combat arithmetic for the Monk module -- no WoW API, no state. Extracted from
@@ -10,14 +9,14 @@ local Class = ns.Class
 --   * SumEnergyCosts-- combined non-secret energy cost across spells (Tiger Palm + Keg Smash).
 --   * CostPoint     -- the cost point in pixels from a bar's left edge.
 
-local MonkMath = Class.new("MonkMath", ns.Lib)
+local MonkMath = {}
 
 local floor, max = math.floor, math.max
 
 -- Smallest target count N where Spinning Crane Kick (hits all N) out-damages Tiger Palm by
 -- the bias factor: sck*N > tp*bias  ->  N = floor(tp*bias / sck) + 1. Returns nil when the
 -- damages aren't both known (caller falls back to the conventional 3).
-function MonkMath:AoEThreshold(tp, sck, bias)
+function MonkMath.AoEThreshold(tp, sck, bias)
     if not (tp and sck and sck > 0) then return nil end
     return max(1, floor((tp * bias) / sck) + 1)
 end
@@ -28,7 +27,7 @@ end
 -- fraction (count - min)/(max - min) equals the true heal fraction
 -- (baseHeal + count*orbHeal)/(baseHeal + orbMax*orbHeal), and spanPx is the full-span width
 -- in pixels. The 1e-9 floor guards a divide-by-zero if orbHeal is ever 0.
-function MonkMath:OrbFill(baseHeal, orbHeal, orbMax, maxHP, width)
+function MonkMath.OrbFill(baseHeal, orbHeal, orbMax, maxHP, width)
     local min  = -baseHeal / max(orbHeal, 1e-9)
     local span = (baseHeal + orbMax * orbHeal) / maxHP * width
     return min, orbMax, span
@@ -38,7 +37,7 @@ end
 -- cost-entry arrays C_Spell.GetSpellPowerCost returns (one per spell); each entry is
 -- { type = powerType, cost = n }. Skips other power types and any secret cost (isSecret(v),
 -- optional). Pure: the caller does the API reads and hands the raw data in.
-function MonkMath:SumEnergyCosts(costsPerSpell, energyType, isSecret)
+function MonkMath.SumEnergyCosts(costsPerSpell, energyType, isSecret)
     local total = 0
     for _, costs in ipairs(costsPerSpell or {}) do
         for _, c in ipairs(costs or {}) do
@@ -52,8 +51,8 @@ end
 
 -- The cost point in pixels from a bar's left edge: where `cost` sits on a `maxE`-wide bar
 -- rendered `barW` pixels wide.
-function MonkMath:CostPoint(cost, maxE, barW)
+function MonkMath.CostPoint(cost, maxE, barW)
     return (cost / maxE) * barW
 end
 
-ns.LibManager:Register(MonkMath:New("MonkMath"))
+ns.LibManager:RegisterValue("MonkMath", MonkMath)

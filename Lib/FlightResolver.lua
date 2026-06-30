@@ -31,8 +31,8 @@ end
 -- Returns seconds, or nil if the leg is entirely unknown.
 function FlightResolver:LegTime(legs, a, b)
     local Q = self.Quality
-    local fwd = ns.FlightGraph:Get(legs, a, b)
-    local rev = ns.FlightGraph:Get(legs, b, a)
+    local fwd = ns.FlightGraph.Get(legs, a, b)
+    local rev = ns.FlightGraph.Get(legs, b, a)
     if fwd and not fwd.derived and fwd.q == Q.DIRECT then return fwd.t end   -- 1
     if rev and not rev.derived and rev.q == Q.DIRECT then return rev.t end   -- 2
     if fwd and not fwd.derived and fwd.q == Q.FLY    then return fwd.t end   -- 3

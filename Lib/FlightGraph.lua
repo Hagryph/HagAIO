@@ -1,5 +1,4 @@
 local addonName, ns = ...
-local Class = ns.Class
 
 -- Lib/FlightGraph.lua
 -- Pure solver for ATOMIC FLIGHT-LEG times -- no WoW API. The flight recorder stores each
@@ -12,7 +11,7 @@ local Class = ns.Class
 -- atomic leg X->Y is the same physical hop on every trip -- so summing a route's atomic
 -- legs never mixes two different ways of reaching the same node.
 
-local FlightGraph = Class.new("FlightGraph", ns.Lib)
+local FlightGraph = {}
 
 local SEP = "\31"  -- unit-separator: never appears in a flight-point name
 local function legKey(a, b) return a .. SEP .. b end
@@ -21,7 +20,7 @@ local function legKey(a, b) return a .. SEP .. b end
 --   { seq = { n1, ..., nk }, t = seconds, q = quality }   (higher q = better measurement)
 -- Returns a map legKey(a,b) -> { t = seconds, q = quality, derived = bool } for every
 -- atomic leg known directly (derived=false) or recovered by subtraction (derived=true).
-function FlightGraph:Solve(records)
+function FlightGraph.Solve(records)
     local legs = {}
     -- Seed: a 2-node record IS an atomic leg; keep the best-quality measurement per leg.
     for _, r in ipairs(records or {}) do
@@ -58,8 +57,8 @@ function FlightGraph:Solve(records)
 end
 
 -- Look up a solved atomic leg a -> b (nil if unknown). `legs` is a Solve() result.
-function FlightGraph:Get(legs, a, b)
+function FlightGraph.Get(legs, a, b)
     return legs and legs[legKey(a, b)]
 end
 
-ns.LibManager:Register(FlightGraph:New("FlightGraph"))
+ns.LibManager:RegisterValue("FlightGraph", FlightGraph)

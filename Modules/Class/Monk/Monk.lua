@@ -71,14 +71,14 @@ local ORB_MAX_COUNT = 5
 local function healingTakenMultiplier()
     if not (IsPlayerSpell and IsPlayerSpell(Spell.GRACE_OF_CRANE)) then return 1 end
     local desc = C_Spell and C_Spell.GetSpellDescription and C_Spell.GetSpellDescription(Spell.GRACE_OF_CRANE)
-    local pct = ns.SpellTooltipParser:Percent(desc) or 4
+    local pct = ns.SpellTooltipParser.Percent(desc) or 4
     return 1 + pct / 100
 end
 
 -- Parse "healing for N" out of the spell description (enUS) + the talent bonus.
 local function readExpelHarmHeal()
     local desc = C_Spell and C_Spell.GetSpellDescription and C_Spell.GetSpellDescription(Spell.EXPEL_HARM)
-    local heal = ns.SpellTooltipParser:Heal(desc)
+    local heal = ns.SpellTooltipParser.Heal(desc)
     if not heal then return nil end
     return math.floor(heal * healingTakenMultiplier() + 0.5)
 end
@@ -95,7 +95,7 @@ local function orbHealAmount()
         or (IsPlayerSpell(Spell.SPIRIT_OF_THE_OX) and Spell.SPIRIT_OF_THE_OX)
     if not id then return 0 end
     local desc = C_Spell and C_Spell.GetSpellDescription and C_Spell.GetSpellDescription(id)
-    local n = ns.SpellTooltipParser:HealsYouFor(desc)
+    local n = ns.SpellTooltipParser.HealsYouFor(desc)
     if not n then return 0 end
     return math.floor(n * healingTakenMultiplier() + 0.5)
 end
@@ -106,7 +106,7 @@ end
 -- compute the Tiger Palm vs Spinning Crane Kick breakpoint live from your gear.
 local function spellHitDamage(spellID)
     local desc = C_Spell and C_Spell.GetSpellDescription and C_Spell.GetSpellDescription(spellID)
-    local v = ns.SpellTooltipParser:Damage(desc)
+    local v = ns.SpellTooltipParser.Damage(desc)
     if not v or v <= 0 or (issecretvalue and issecretvalue(v)) then return nil end
     return v
 end
@@ -337,7 +337,7 @@ function ClassModule:_DrawOrbFill(fill, maxHP, width)
         return false
     end
     -- min/max bake the base heal into the secret-count fill; span is the full bar width (px).
-    local minV, maxV, span = MonkMath:OrbFill(p.baseHeal, p.orbHeal, ORB_MAX_COUNT, maxHP, width)
+    local minV, maxV, span = MonkMath.OrbFill(p.baseHeal, p.orbHeal, ORB_MAX_COUNT, maxHP, width)
     local c = self:_ExpelColor()
 
     local sb = self:_EnsureOrbBar()
@@ -491,7 +491,7 @@ function ClassModule:_RefreshAoEThreshold()
     local p = self:_p()
     local tp  = spellHitDamage(Spell.TIGER_PALM)
     local sck = spellHitDamage(Spell.SPINNING_CRANE_KICK)
-    p.aoeThreshold = MonkMath:AoEThreshold(tp, sck, SCK_BIAS) or 3   -- 3 = conventional fallback
+    p.aoeThreshold = MonkMath.AoEThreshold(tp, sck, SCK_BIAS) or 3   -- 3 = conventional fallback
 end
 
 function ClassModule:_UnloadAoE()
@@ -544,7 +544,7 @@ function ClassModule:_TigerCost()
         costsPerSpell[#costsPerSpell + 1] =
             C_Spell and C_Spell.GetSpellPowerCost and C_Spell.GetSpellPowerCost(id)
     end
-    local total = MonkMath:SumEnergyCosts(costsPerSpell, energy, issecretvalue)
+    local total = MonkMath.SumEnergyCosts(costsPerSpell, energy, issecretvalue)
     p.tigerCost = total
     return total
 end
@@ -603,7 +603,7 @@ function ClassModule:_UpdateTiger()
     if liveW and not ns.Secrets:Is(liveW) and liveW > 0 then p.powerWidthSnap = liveW end
     local barW = p.powerWidthSnap
     if not barW or barW <= 0 then if p.tigerMarker then p.tigerMarker:Hide() end return end
-    local costX = MonkMath:CostPoint(cost, maxE, barW)  -- the cost point, from the bar's left edge
+    local costX = MonkMath.CostPoint(cost, maxE, barW)  -- the cost point, from the bar's left edge
     m:ClearAllPoints()
     -- left edge tracks current energy (the fill's right edge); right edge is the cost point.
     -- once current >= cost the left passes the right -> zero/negative width -> invisible.

@@ -707,13 +707,13 @@ function FlightTimers:_HookFlightPins()
 end
 
 -- Solve every recorded segment under the CURRENT faction into atomic-leg times (cached
--- until the next recording clears it). Each DB entry is one record for ns.FlightGraph:Solve
+-- until the next recording clears it). Each DB entry is one record for ns.FlightGraph.Solve
 -- -- an ordered node sequence (src, via..., dst) with its total time + quality; the solver
 -- seeds atomic legs directly and derives the rest by subtraction.
 function FlightTimers:_AtomicLegs()
     local p = self:_p()
     if p.legsCache then return p.legsCache end
-    p.legsCache = ns.FlightGraph:Solve(self:_FlightRecords(self:_Faction()))
+    p.legsCache = ns.FlightGraph.Solve(self:_FlightRecords(self:_Faction()))
     return p.legsCache
 end
 

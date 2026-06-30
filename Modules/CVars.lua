@@ -560,7 +560,7 @@ end
 -- declarative `subcommands` table below). "dump" is developer-only -- the spec flags it dev = true,
 -- so the router hides + refuses it off a whitelisted character; the rest works for everyone.
 function CVars:_Set(arg)
-    local name, value = ns.SlashParse:Pair(arg)   -- "<name> <value>" (value keeps inner spaces)
+    local name, value = ns.SlashParse.Pair(arg)   -- "<name> <value>" (value keeps inner spaces)
     if not (name and value) then self:LogInfo("usage: /hag cvar set <name> <value>"); return end
     if self:_ApplyCVar(name, value) then
         self:LogSuccess(("globalising %s = %s"):format(name, value))
