@@ -361,11 +361,16 @@ end
 
 function QueryExecutor:_Distinct(outputs)
     local seen, kept = {}, {}
+    -- Every output row carries the SAME projected columns, so derive the sorted key list ONCE (from
+    -- the first row) rather than rebuilding + sorting it per row.
+    local keys
     for oi, o in ipairs(outputs) do
         offerYield(oi)
-        local keys = {}
-        for k in pairs(o.row) do keys[#keys + 1] = k end
-        table.sort(keys)
+        if not keys then
+            keys = {}
+            for k in pairs(o.row) do keys[#keys + 1] = k end
+            table.sort(keys)
+        end
         local parts = {}
         for _, k in ipairs(keys) do parts[#parts + 1] = k .. "=" .. vkey(o.row[k]) end
         local sig = table.concat(parts, SEP)

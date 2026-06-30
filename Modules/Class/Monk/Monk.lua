@@ -9,8 +9,15 @@ local addonName, ns = ...
 
 local ClassModule = ns.ClassModule
 
--- Upvalue the globals the combat tickers hit each tick.
-local InCombatLockdown = InCombatLockdown
+-- Upvalue the globals the combat tickers + per-event paints hit each tick: a local beats a
+-- global-table lookup on every fire (the Services/Range.lua pattern). Guarded so a missing API on an
+-- old client is captured as nil (not an index error), exactly as the call sites already tolerate.
+local InCombatLockdown  = InCombatLockdown
+local C_Timer_After      = C_Timer and C_Timer.After
+local GetSpellCastCount  = C_Spell and C_Spell.GetSpellCastCount
+local UnitHealthMax       = UnitHealthMax
+local UnitPowerMax        = UnitPowerMax
+local POWER_ENERGY        = Enum and Enum.PowerType and Enum.PowerType.Energy
 
 -- Pure combat arithmetic (breakpoint, orb-fill geometry, energy cost) -- unit-tested.
 local MonkMath = ns.MonkMath
@@ -176,7 +183,7 @@ function ClassModule:_ScheduleUpdate()
     local p = self:_p()
     if p.updateScheduled then return end
     p.updateScheduled = true
-    C_Timer.After(0, function()
+    C_Timer_After(0, function()
         p.updateScheduled = false
         self:_UpdateMarker()
     end)
@@ -210,15 +217,15 @@ function ClassModule:_StartOrbPoll()
         if pp.orbPollGen ~= gen then return end        -- superseded / unloaded
         if pp.orbTalented then self:_ScheduleUpdate() end
         if InCombatLockdown() then
-            C_Timer.After(0.1, poll)                   -- combat: orbs change fast
+            C_Timer_After(0.1, poll)                   -- combat: orbs change fast
             return
         end
         -- Out of combat: the count is readable in the open world; stop once it hits 0.
         -- In restricted content it stays secret (Number -> nil), so keep the slow poll.
         local n = ns.Secrets and ns.Secrets:Number(
-            C_Spell and C_Spell.GetSpellCastCount and C_Spell.GetSpellCastCount(Spell.EXPEL_HARM))
+            GetSpellCastCount and GetSpellCastCount(Spell.EXPEL_HARM))
         if n == 0 then return end                      -- no orbs left -> stop until next combat
-        C_Timer.After(0.5, poll)
+        C_Timer_After(0.5, poll)
     end
     poll()
 end
@@ -248,7 +255,7 @@ function ClassModule:_RefreshHealNow()
     self:_SnapshotMaxHP()
     if not p.baseHeal then
         -- description may not be loaded yet; retry shortly
-        C_Timer.After(1, function()
+        C_Timer_After(1, function()
             if p.expelActive and not p.baseHeal then
                 p.baseHeal = readExpelHarmHeal()
                 self:_ScheduleUpdate()
@@ -327,7 +334,7 @@ end
 function ClassModule:_DrawOrbFill(fill, maxHP, width)
     local p = self:_p()
     if not (p.orbTalented and p.orbHeal and p.orbHeal > 0
-            and C_Spell and C_Spell.GetSpellCastCount) then
+            and GetSpellCastCount) then
         return false
     end
     -- min/max bake the base heal into the secret-count fill; span is the full bar width (px).
@@ -341,7 +348,7 @@ function ClassModule:_DrawOrbFill(fill, maxHP, width)
     sb:SetPoint("TOPLEFT",    fill, "TOPRIGHT",    0, 0)    -- start AT current health
     sb:SetPoint("BOTTOMLEFT", fill, "BOTTOMRIGHT", 0, 0)
     sb:SetWidth(span)
-    sb:SetValue(C_Spell.GetSpellCastCount(Spell.EXPEL_HARM))     -- SECRET value -> engine fills it
+    sb:SetValue(GetSpellCastCount(Spell.EXPEL_HARM))     -- SECRET value -> engine fills it
     sb:Show()
     return true
 end
@@ -532,7 +539,7 @@ end
 function ClassModule:_TigerCost()
     local p = self:_p()
     if p.tigerCost ~= nil then return p.tigerCost end
-    local energy = Enum and Enum.PowerType and Enum.PowerType.Energy
+    local energy = POWER_ENERGY
     local costsPerSpell = {}
     for _, id in ipairs(TIGER_COST_SPELLS) do
         costsPerSpell[#costsPerSpell + 1] =
@@ -547,7 +554,7 @@ function ClassModule:_ScheduleTiger()
     local p = self:_p()
     if p.tigerScheduled then return end
     p.tigerScheduled = true
-    C_Timer.After(0, function() p.tigerScheduled = false; self:_UpdateTiger() end)
+    C_Timer_After(0, function() p.tigerScheduled = false; self:_UpdateTiger() end)
 end
 
 -- A reverse-filling bar on the energy bar showing the MISSING energy until you can afford
@@ -567,7 +574,7 @@ function ClassModule:_UpdateTiger()
         return
     end
 
-    local energy = Enum and Enum.PowerType and Enum.PowerType.Energy
+    local energy = POWER_ENERGY
     local maxE = UnitPowerMax("player", energy)
     if (issecretvalue and issecretvalue(maxE)) or not maxE or maxE <= 0 then
         if p.tigerMarker then p.tigerMarker:Hide() end

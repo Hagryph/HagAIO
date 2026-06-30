@@ -702,7 +702,7 @@ end
 function SettingsWindow:_RefreshLog()
     local p = self:_p()
     if not p.logSel then return end
-    local h = ns.Logger:GetHistory()
+    local h = ns.Logger:GetHistory(200)   -- only the window we render -- no need to copy the full history
     local content = p.logSF:Content()
     local width = content:GetWidth()
     if not width or width < 1 then width = 380 end
@@ -721,12 +721,13 @@ function SettingsWindow:_RefreshLog()
         fs:SetPoint("TOPLEFT", content, "TOPLEFT", 0, y)
         -- SINGLE-ROW lines (no wrap): the selection's per-character maths has no row model
         fs:SetWidth(width); fs:SetJustifyH("LEFT"); fs:SetWordWrap(false)
-        fs:SetText(e.line)
+        local line = ns.Logger:Line(e)   -- lazily formatted on first view
+        fs:SetText(line)
         fs:Show()
         y = y - (fs:GetStringHeight() or 12) - 3
         -- the selection's plain text = EXACTLY the visible characters (escapes stripped), so the
         -- per-character hit maths lines up with the coloured display glyph for glyph
-        lines[n] = { region = fs, text = e.line:gsub("|c%x%x%x%x%x%x%x%x", ""):gsub("|r", "") }
+        lines[n] = { region = fs, text = line:gsub("|c%x%x%x%x%x%x%x%x", ""):gsub("|r", "") }
     end
     if n == 0 then
         n = 1

@@ -144,6 +144,18 @@ describe("DB generation counter", function()
         db:Delete("routes", { t = 6 })
         assert(store:Generation("routes") > g2, "delete must bump the generation")
     end)
+
+    it("a NO-OP update (candidate equals the row) still counts as matched but does NOT bump the generation", function()
+        local db = seeded(newDbNs())
+        local store = db:Store()
+        local g0 = store:Generation("routes")
+        -- row id=1 is { faction = "Horde", t = 30 }; re-Update it to the SAME values
+        assert.are.equal(1, db:Update("routes", { faction = "Horde", t = 30 }, { id = 1 }))  -- the row MATCHED
+        assert.are.equal(g0, store:Generation("routes"))     -- ...but nothing changed -> no churn, no restart
+        assert.are.equal(30, db:Select("t"):From("routes"):Where("id", "=", 1):Run()[1].t)
+        db:Update("routes", { t = 31 }, { id = 1 })          -- a real change DOES bump
+        assert(store:Generation("routes") > g0, "a real update must still bump the generation")
+    end)
 end)
 
 -- End-to-end: a query running INSIDE a Worker job yields at a chunk boundary (the budget is forced

@@ -204,15 +204,26 @@ function Database:_Targets(tname, predicate)
 end
 
 -- ---- UPDATE ---------------------------------------------------------------
+-- True if `a` and `b` hold the same value for every column of `tbl` (the no-op-Update check). Values
+-- are scalars or the DB.NULL singleton, so == suffices -- and it derives NO keys, unlike the index.
+local function rowsEqual(tbl, a, b)
+    for _, col in ipairs(tbl:Columns()) do
+        local n = col:Name()
+        if a[n] ~= b[n] then return false end
+    end
+    return true
+end
+
 -- Apply `changes` ({ col = value | DB.NULL }) to every row matching `predicate` (nil = all rows; a
 -- function(row), or an index-accelerated { col = value } map -- see _Targets). Returns the number
--- of rows changed. Note: referential ON UPDATE actions are out of scope -- a PK edit that children
--- reference is the caller's responsibility (rare; flagged if it breaks FKs).
+-- of rows matched (a row whose candidate equals its current value still counts). Note: referential
+-- ON UPDATE actions are out of scope -- a PK edit that children reference is the caller's
+-- responsibility (rare; flagged if it breaks FKs).
 function Database:Update(tname, changes, predicate)
     local p = self:_p()
     local tbl = p.schema:Table(tname)
     assert(tbl, ("unknown table '%s'"):format(tostring(tname)))
-    local count = 0
+    local count, changed = 0, 0
     self:_FireStmt(DB.TriggerTime.BEFORE, DB.TriggerEvent.UPDATE, tname)
     -- resolve the matching rows first (we mutate the array's contents, not its membership)
     local targets = self:_Targets(tname, predicate)
@@ -227,16 +238,25 @@ function Database:Update(tname, changes, predicate)
         local proceed, replaced = self:_FireRow(DB.TriggerTime.BEFORE, DB.TriggerEvent.UPDATE, tname, candidate, old)
         if proceed and not replaced then
             p.enforcer:RecheckTypes(tname, candidate)       -- guard a BEFORE trigger's edits
-            p.enforcer:CheckUnique(tname, candidate, row)
-            p.enforcer:CheckForeignKeys(tname, candidate)
-            p.index:OnDelete(tname, row)
-            for _, col in ipairs(tbl:Columns()) do row[col:Name()] = candidate[col:Name()] end
-            p.index:OnInsert(tname, row)
             count = count + 1
-            self:_FireRow(DB.TriggerTime.AFTER, DB.TriggerEvent.UPDATE, tname, row, old)
+            -- NO-OP fast path: when the candidate matches the live row column-for-column, nothing
+            -- actually changes -- so skip the index churn (OnDelete/OnInsert re-derive every PK / unique /
+            -- column key), the unique/FK rechecks (the unchanged row already satisfies them), the row
+            -- copy, the AFTER-UPDATE trigger, and the generation bump that would needlessly restart any
+            -- chunked query in flight. A hot caller is a collector re-Updating an identical row on every
+            -- game event. The compare is O(columns); the index work it avoids is far heavier.
+            if not rowsEqual(tbl, row, candidate) then
+                p.enforcer:CheckUnique(tname, candidate, row)
+                p.enforcer:CheckForeignKeys(tname, candidate)
+                p.index:OnDelete(tname, row)
+                for _, col in ipairs(tbl:Columns()) do row[col:Name()] = candidate[col:Name()] end
+                p.index:OnInsert(tname, row)
+                changed = changed + 1
+                self:_FireRow(DB.TriggerTime.AFTER, DB.TriggerEvent.UPDATE, tname, row, old)
+            end
         end
     end
-    if count > 0 then p.store:Touch(tname) end   -- rows mutated in place: bump the generation guard
+    if changed > 0 then p.store:Touch(tname) end   -- rows mutated in place: bump the generation guard
     self:_FireStmt(DB.TriggerTime.AFTER, DB.TriggerEvent.UPDATE, tname)
     return count
 end

@@ -160,12 +160,14 @@ function Logger:SetMinLevel(order)
 end
 function Logger:GetMinLevel() return self:_p().minLevel end
 
--- A fresh array of the live entries, oldest -> newest (the storage itself is
--- head/tail-indexed and may carry niled-out slots, so never expose it directly).
-function Logger:GetHistory()
+-- A fresh array of the live entries, oldest -> newest (the storage itself is head/tail-indexed and
+-- may carry niled-out slots, so never expose it directly). `tail` (optional) returns only the last N
+-- -- the Log view renders a fixed window, so it needn't copy the whole 500-entry history each refresh.
+function Logger:GetHistory(tail)
     local p = self:_p()
     local h, out, j = p.history, {}, 0
-    for i = p.start, p.last do j = j + 1; out[j] = h[i] end
+    local first = tail and math.max(p.start, p.last - tail + 1) or p.start
+    for i = first, p.last do j = j + 1; out[j] = h[i] end
     return out
 end
 
@@ -185,6 +187,15 @@ local function formatLine(e)
     return PREFIX .. "  " .. time .. "  " .. mod .. "  " .. glyph .. msg
 end
 
+-- Format + CACHE an entry's coloured display line on FIRST access (an echo, or the Log page render).
+-- Public (Logger:Line) so the view pulls it lazily -- a line never echoed nor viewed is never
+-- formatted, so a combat burst of debug lines skips the 8-way colour-escape concat entirely.
+local function entryLine(e)
+    if not e.line then e.line = formatLine(e) end
+    return e.line
+end
+function Logger:Line(entry) return entryLine(entry) end
+
 -- The core entry point: record (always) + echo (per the line's echo policy) +
 -- notify any live view. `echo` defaults to NEVER, so a line only reaches chat if it
 -- explicitly opts in (NORMAL, gated by the "Echo to Chat" setting + level threshold)
@@ -201,7 +212,7 @@ function Logger:Record(channel, level, text, echo)
         glyph    = level.glyph,
         text     = text,
     }
-    entry.line = formatLine(entry)
+    -- entry.line is formatted LAZILY via entryLine() -- only on echo or when the Log page renders it.
 
     local h = p.history
     p.last = p.last + 1
@@ -221,7 +232,7 @@ function Logger:Record(channel, level, text, echo)
     local doEcho = (echo == ECHO.ALWAYS)
         or (echo == ECHO.NORMAL and p.echo and level.order >= p.minLevel)
     if doEcho then
-        p.frame:AddMessage(entry.line)
+        p.frame:AddMessage(entryLine(entry))
     end
 
     if ns.EventBus then
