@@ -27,7 +27,7 @@ ns.UI.Widget = Widget
 
 -- Resolve a value that MIGHT be a Widget to the underlying WoW region; pass anything else through.
 local function unwrap(x)
-    if type(x) == "table" and x.IsInstanceOf and x:IsInstanceOf(Widget) then return x:_frame() end
+    if type(x) == "table" and x.IsInstanceOf and x:IsInstanceOf(Widget) then return x:_Frame() end
     return x
 end
 
@@ -36,12 +36,12 @@ end
 local widgetOf = setmetatable({}, { __mode = "kv" })
 
 -- Subclasses call this once, from :Initialize, with the region they created (after unwrapping their
--- own parent via `unwrap`). Stores it privately; everything below drives it through :_frame().
-function Widget:_attach(frame) self:_p().frame = frame; widgetOf[frame] = self; return frame end
+-- own parent via `unwrap`). Stores it privately; everything below drives it through :_Frame().
+function Widget:_Attach(frame) self:_p().frame = frame; widgetOf[frame] = self; return frame end
 
 -- PROTECTED: the private region, for subclasses building their own exposing methods. Not for callers
--- (the lint forbids :_frame() outside this module) -- it is the single seam other widgets unwrap through.
-function Widget:_frame() return self:_p().frame end
+-- (the lint forbids :_Frame() outside this module) -- it is the single seam other widgets unwrap through.
+function Widget:_Frame() return self:_p().frame end
 
 -- ---- general layout / sizing / visibility (every widget) -------------------------------------------
 function Widget:SetPoint(point, a, b, c, d)
@@ -75,13 +75,13 @@ function Widget:SetAlpha(a)        self:_p().frame:SetAlpha(a);             retu
 -- CHANGEABLE mixin: makes an interactive widget an OBSERVABLE change source -- through ns.EventBus, NOT
 -- a hand-rolled callback list. The widget OBJECT ITSELF is its EventBus message (its private event), so
 -- a subscriber watches exactly that widget and gets it back as the argument (plus its new value) -- no
--- string identity to decode. :OnChange(fn) subscribes (fn gets (self, value)); :_fireChange(value)
+-- string identity to decode. :OnChange(fn) subscribes (fn gets (self, value)); :_FireChange(value)
 -- Emits after a user OR programmatic change. The subscription is cleaned up by the BUS when the widget
 -- retires its event on :Dispose (EventBus:Delete) -- nobody unsubscribes by hand. Mixed into
 -- Toggle/Segmented/Input/Slider/ColorSwatch.
 local Changeable = ns.Mixin.new("Changeable", {
     OnChange = function(self, fn) return ns.EventBus and ns.EventBus:Subscribe(self, fn) end,
-    _fireChange = function(self, value) if ns.EventBus then ns.EventBus:Emit(self, value) end end,
+    _FireChange = function(self, value) if ns.EventBus then ns.EventBus:Emit(self, value) end end,
 })
 
 -- REGISTRABLE mixin: lets a widget register ITSELF with EditMode (which then positions/moves it). The
@@ -94,7 +94,7 @@ local Registrable = ns.Mixin.new("Registrable", {
     RegisterEditMode = function(self, opts)
         local p = self:_p()
         if ns.EditMode and not p._editRegistered then
-            ns.EditMode:Register(self:_frame(), opts)
+            ns.EditMode:Register(self:_Frame(), opts)
             p._editRegistered = true
         end
         return self
@@ -102,7 +102,7 @@ local Registrable = ns.Mixin.new("Registrable", {
     UnregisterEditMode = function(self)
         local p = self:_p()
         if ns.EditMode and p._editRegistered then
-            ns.EditMode:Unregister(self:_frame())
+            ns.EditMode:Unregister(self:_Frame())
             p._editRegistered = false
         end
         return self
@@ -125,7 +125,7 @@ function Widget:EnableWhen(sources, predicate)
         if on ~= last then
             last = on
             self:SetEnabled(on)
-            if self._fireChange then self:_fireChange() end   -- cascade to widgets depending on me
+            if self._FireChange then self:_FireChange() end   -- cascade to widgets depending on me
         end
     end
     for _, src in ipairs(list) do
@@ -209,8 +209,8 @@ function TextureWidget:SetDesaturated(b)    self:_p().frame:SetDesaturated(b);  
 -- parent to create one under it, or an existing raw region (template = "__adopt__") to wrap in place.
 local ContainerW = ns.Class.new("Container", FrameWidget, { mixins = { Registrable } })
 function ContainerW:Initialize(parent, template)
-    if template == "__adopt__" then self:_attach(parent)   -- internal: wrap an already-created region
-    else self:_attach(CreateFrame("Frame", nil, unwrap(parent))) end
+    if template == "__adopt__" then self:_Attach(parent)   -- internal: wrap an already-created region
+    else self:_Attach(CreateFrame("Frame", nil, unwrap(parent))) end
 end
 Widgets.Container = ContainerW
 local function adopt(region) return ContainerW:New(region, "__adopt__") end   -- wrap an existing raw region

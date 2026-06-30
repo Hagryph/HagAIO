@@ -12,9 +12,9 @@ local unwrap, style, claimLevel, adopt = _wb.unwrap, _wb.style, _wb.claimLevel, 
 -- SINGLETON instance Widgets.Tooltip; :Show(owner, lines) populates it, :Hide() (from the base) hides
 -- it. lines = { { text, key }, ... } coloured from the Theme palette (key defaults to "textDim").
 local TooltipW = ns.Class.new("Tooltip", FrameWidget)
-function TooltipW:Initialize() self:_attach(GameTooltip) end   -- adopt the shared Blizzard tooltip
+function TooltipW:Initialize() self:_Attach(GameTooltip) end   -- adopt the shared Blizzard tooltip
 function TooltipW:Show(owner, lines)
-    local tt = self:_frame()
+    local tt = self:_Frame()
     tt:SetOwner(unwrap(owner), "ANCHOR_LEFT")
     tt:AddLine(Theme.Colorize("accent", "HagAIO"))
     for _, ln in ipairs(lines or {}) do

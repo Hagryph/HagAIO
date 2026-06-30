@@ -12,6 +12,6 @@ function DividerW:Initialize(parent)
     local t = unwrap(parent):CreateTexture(nil, "ARTWORK")
     t:SetColorTexture(Theme.Unpack("border"))
     t:SetHeight(1)
-    self:_attach(t)
+    self:_Attach(t)
 end
 Widgets.Divider = DividerW

@@ -24,12 +24,12 @@ function MultilineEditW:Initialize(parent, name)
     eb:SetScript("OnTextChanged", function() sf:UpdateScrollChildRect() end)
     sf:SetScrollChild(eb)
     sf:SetScript("OnSizeChanged", function(_, w) eb:SetWidth(w) end)
-    self:_attach(sf)
+    self:_Attach(sf)
     self:_p().eb = eb
 end
 function MultilineEditW:SetText(s)     self:_p().eb:SetText(s or ""); return self end
 function MultilineEditW:GetText()      return self:_p().eb:GetText() end
-function MultilineEditW:ScrollTop()    self:_frame():SetVerticalScroll(0); return self end
+function MultilineEditW:ScrollTop()    self:_Frame():SetVerticalScroll(0); return self end
 function MultilineEditW:Focus()        self:_p().eb:SetFocus(); return self end
 function MultilineEditW:SelectAll()
     local eb = self:_p().eb

@@ -13,8 +13,8 @@ local PanelW = ns.Class.new("Panel", FrameWidget, { mixins = { Registrable } })
 function PanelW:Initialize(parent, bgKey, borderKey)
     local f = CreateFrame("Frame", nil, unwrap(parent), "BackdropTemplate")
     style(f, bgKey or "panel", borderKey or "border")
-    self:_attach(f)
+    self:_Attach(f)
 end
-function PanelW:SetBackdropColor(...)       self:_frame():SetBackdropColor(...);       return self end
-function PanelW:SetBackdropBorderColor(...) self:_frame():SetBackdropBorderColor(...); return self end
+function PanelW:SetBackdropColor(...)       self:_Frame():SetBackdropColor(...);       return self end
+function PanelW:SetBackdropBorderColor(...) self:_Frame():SetBackdropBorderColor(...); return self end
 Widgets.Panel = PanelW   -- construct with Widgets.Panel:New(parent, ...)

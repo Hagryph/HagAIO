@@ -48,7 +48,7 @@ function SegmentedW:Initialize(parent, options)
             if not p.enabled then return end
             p.value = opt.value; render()
             if p.onChange then p.onChange(p.value) end
-            self:_fireChange(p.value)   -- dependents re-evaluate their EnableWhen condition
+            self:_FireChange(p.value)   -- dependents re-evaluate their EnableWhen condition
         end)
         b:SetScript("OnEnter", function() if p.enabled and opt.value ~= p.value then fs:SetTextColor(Theme.Unpack("text")) end end)
         b:SetScript("OnLeave", render)
@@ -56,14 +56,14 @@ function SegmentedW:Initialize(parent, options)
     end
     c:SetWidth(x)
 
-    self:_attach(c)
+    self:_Attach(c)
     render()
 end
-function SegmentedW:SetValue(v)     local p = self:_p(); p.value = v; p.render(); self:_fireChange(p.value); return self end
+function SegmentedW:SetValue(v)     local p = self:_p(); p.value = v; p.render(); self:_FireChange(p.value); return self end
 function SegmentedW:GetValue()      return self:_p().value end
 function SegmentedW:SetOnChange(fn) self:_p().onChange = fn; return self end
 function SegmentedW:SetEnabled(on)
     local p = self:_p(); p.enabled = on and true or false
-    self:_frame():SetAlpha(p.enabled and 1 or 0.4); p.render(); return self
+    self:_Frame():SetAlpha(p.enabled and 1 or 0.4); p.render(); return self
 end
 Widgets.Segmented = SegmentedW

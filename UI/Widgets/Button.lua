@@ -24,14 +24,14 @@ function ButtonW:Initialize(parent, text, opts)
     b:SetScript("OnEnter", function() if p.enabled then b:SetBackdropBorderColor(Theme.Unpack("accent")) end end)
     b:SetScript("OnLeave", function() b:SetBackdropBorderColor(Theme.Unpack("borderStrong")) end)
     b:SetScript("OnClick", function() if p.enabled and p.onClick then p.onClick() end end)
-    self:_attach(b)
+    self:_Attach(b)
 end
 function ButtonW:SetText(s)     local p = self:_p(); p.label:SetText(s); p.fit(); return self end
 function ButtonW:SetOnClick(fn) self:_p().onClick = fn; return self end
 function ButtonW:SetEnabled(on)
     local p = self:_p(); p.enabled = on and true or false
     p.label:SetTextColor(Theme.Unpack(p.enabled and "text" or "textFaint"))
-    self:_frame():SetAlpha(p.enabled and 1 or 0.6)
+    self:_Frame():SetAlpha(p.enabled and 1 or 0.6)
     return self
 end
 Widgets.Button = ButtonW

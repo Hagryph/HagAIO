@@ -24,9 +24,9 @@ function NavW:Initialize(parent, opts)
     p.items = opts.items or {}
     p.onSelect = opts.onSelect
     p.onReselect = opts.onReselect   -- fired when the user CLICKS the already-active item (optional)
-    self:_rebuild()
+    self:_Rebuild()
 end
-function NavW:_rebuild()
+function NavW:_Rebuild()
     local p = self:_p()
     local rows = {}
     for _, it in ipairs(p.items) do
@@ -48,14 +48,14 @@ function NavW:_rebuild()
     end
     self:SetRows(rows)
 end
-function NavW:SetItems(items) self:_p().items = items or {}; self:_rebuild(); return self end
+function NavW:SetItems(items) self:_p().items = items or {}; self:_Rebuild(); return self end
 function NavW:GetSelected()   return self:_p().selected end
 -- Select a key: re-highlight and (unless silent) fire onSelect. No-op styling for an
 -- unknown key, so callers can clear the selection with nil.
 function NavW:Select(key, silent)
     local p = self:_p()
     p.selected = key
-    self:_rebuild()
+    self:_Rebuild()
     if not silent and p.onSelect then p.onSelect(key) end
     return self
 end

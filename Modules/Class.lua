@@ -49,7 +49,7 @@ end
 
 -- Specs register themselves here (keyed by specKey) so the module can resolve the CURRENT spec's
 -- settings for display even while the module is disabled and its spec submodule isn't loaded --
--- only the per-character class's specs register (the registerSpec hook gates on class), so a
+-- only the per-character class's specs register (the RegisterSpec hook gates on class), so a
 -- spec index never collides across classes.
 function ClassModule:_RegisterSpec(specKey, spec)
     local p = self:_p()

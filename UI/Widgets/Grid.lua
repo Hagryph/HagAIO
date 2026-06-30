@@ -274,7 +274,7 @@ function GridW:Initialize(parent, opts)
         if p.scrollArea then p.scrollArea:Update() end   -- resize/position the custom scrollbar
     end
     p.refresh = refresh
-    self:_attach(g)
+    self:_Attach(g)
 end
 function GridW:SetColumns(cols) local p = self:_p(); p.columns = cols or {}; p.refresh(); return self end
 function GridW:SetRows(data)    local p = self:_p(); p._data = data; p.refresh(); return self end

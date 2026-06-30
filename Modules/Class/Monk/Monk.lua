@@ -5,7 +5,7 @@ local addonName, ns = ...
 -- as methods on ns.ClassModule, the Monk submodule registration (loads on Monk characters,
 -- parent = the Class module), and the ns.Monk surface the spec files build on. The specs
 -- themselves are ns.ClassSpec subclasses in Base.lua / Brewmaster.lua, each registered via
--- ns.Monk.registerSpec.
+-- ns.Monk.RegisterSpec.
 
 local ClassModule = ns.ClassModule
 
@@ -117,7 +117,7 @@ end
 
 -- Register the Monk submodule under the Class module (it loads on Monk characters). The
 -- per-spec files (Base.lua, Brewmaster.lua) load after this one and register their spec
--- submodules under it via ns.Monk.registerSpec.
+-- submodules under it via ns.Monk.RegisterSpec.
 local classMod = ns.ModuleManager:GetModule("Class")
 assert(classMod, "Monk submodule requires the Class module (load Modules/Class.lua first)")
 local function isMonk() return (select(2, UnitClass("player"))) == "MONK" end
@@ -128,8 +128,8 @@ ns.SubmoduleManager:Register(ns.Submodule:New("Monk", {
 }))
 
 -- Shared surface for the per-spec files: the few constants their settings/Load need, plus
--- registerSpec. A spec file defines its ns.ClassSpec subclass, sets ns.Monk.<Name> so a
--- deeper spec can extend it, then calls ns.Monk.registerSpec to wire it as a submodule.
+-- RegisterSpec. A spec file defines its ns.ClassSpec subclass, sets ns.Monk.<Name> so a
+-- deeper spec can extend it, then calls ns.Monk.RegisterSpec to wire it as a submodule.
 ns.Monk = {
     EXPEL_HARM           = Spell.EXPEL_HARM,
     EXPEL_READY_COLOR    = EXPEL_READY_COLOR,
@@ -140,7 +140,7 @@ ns.Monk = {
 -- instance (bound to the Class module host) drives its load/unload. specKey is what
 -- CurrentSpecKey() returns for this spec ("none" or a spec index). serviceDeps are the
 -- services the spec uses; SettingsWindow (the shared settings refresh) is prepended.
-function ns.Monk.registerSpec(name, SpecClass, specKey, serviceDeps)
+function ns.Monk.RegisterSpec(name, SpecClass, specKey, serviceDeps)
     local spec = SpecClass:New(classMod)
     -- Make the spec resolvable for the settings page even while the Class module is disabled
     -- (so spec options show without enabling first). Only on Monk chars, so its spec indices

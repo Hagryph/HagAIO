@@ -20,8 +20,8 @@ function ProgressBarW:Initialize(parent, opts)
     local bg = bar:CreateTexture(nil, "BACKGROUND")
     bg:SetAllPoints()
     bg:SetColorTexture(Theme.Unpack(opts.bgKey or "panel2"))
-    self:_attach(bar)
+    self:_Attach(bar)
 end
-function ProgressBarW:SetValue(frac) self:_frame():SetValue(math.max(0, math.min(1, frac or 0))); return self end
-function ProgressBarW:SetColor(key)  self:_frame():GetStatusBarTexture():SetVertexColor(Theme.Unpack(key or "accent")); return self end
+function ProgressBarW:SetValue(frac) self:_Frame():SetValue(math.max(0, math.min(1, frac or 0))); return self end
+function ProgressBarW:SetColor(key)  self:_Frame():GetStatusBarTexture():SetVertexColor(Theme.Unpack(key or "accent")); return self end
 Widgets.ProgressBar = ProgressBarW

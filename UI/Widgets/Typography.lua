@@ -31,13 +31,13 @@ function TypographyW:Initialize(parent, opts)
     p.rule = f:CreateTexture(nil, "OVERLAY")
     p.rule:SetHeight(1)
     p.rule:SetPoint("TOP", p.fs, "BOTTOM", 0, -5)
-    self:_attach(f)
+    self:_Attach(f)
 end
 
 function TypographyW:Render(frame, w, h, spec)
     spec = spec or {}
     local p = self:_p()
-    local f = self:_frame()
+    local f = self:_Frame()
     if not spec.text or not w or not h then self:Hide(); return self end
     f:ClearAllPoints()
     f:SetPoint("TOPLEFT", unwrap(frame), "TOPLEFT", 0, 0)

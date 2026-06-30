@@ -31,24 +31,24 @@ function InputW:Initialize(parent, width)
         if v == p.value then return end
         p.value = v
         if p.onChange then p.onChange(v) end
-        self:_fireChange(p.value)   -- dependents re-evaluate their EnableWhen condition
+        self:_FireChange(p.value)   -- dependents re-evaluate their EnableWhen condition
     end
     box:SetScript("OnEnterPressed",    function(s) s:ClearFocus() end)  -- triggers focus-lost commit
     box:SetScript("OnEscapePressed",   function(s) s:SetText(p.value); s:ClearFocus() end)
     box:SetScript("OnEditFocusGained", function() box:SetBackdropBorderColor(Theme.Unpack("accent")); self:_UpdateHint() end)
     box:SetScript("OnEditFocusLost",   function() box:SetBackdropBorderColor(Theme.Unpack("borderStrong")); commit(); self:_UpdateHint() end)
     box:SetScript("OnTextChanged",     function() self:_UpdateHint() end)
-    self:_attach(box)
+    self:_Attach(box)
 end
-function InputW:SetValue(v)     local p = self:_p(); p.value = tostring(v == nil and "" or v); self:_frame():SetText(p.value); self:_fireChange(p.value); self:_UpdateHint(); return self end
-function InputW:GetValue()      return self:_frame():GetText() end
+function InputW:SetValue(v)     local p = self:_p(); p.value = tostring(v == nil and "" or v); self:_Frame():SetText(p.value); self:_FireChange(p.value); self:_UpdateHint(); return self end
+function InputW:GetValue()      return self:_Frame():GetText() end
 function InputW:SetOnChange(fn) self:_p().onChange = fn; return self end
 
 -- A faint placeholder shown ONLY while the box is empty and not being edited (cleared the moment the
 -- player types or focuses in), styled with the theme's faint text colour and the input's own font so
 -- it reads as a prompt, not a value. Created lazily on first SetHint.
 function InputW:SetHint(text)
-    local p, box = self:_p(), self:_frame()
+    local p, box = self:_p(), self:_Frame()
     if not p.hint then
         local fs = box:CreateFontString(nil, "ARTWORK", "GameFontHighlightSmall")
         fs:SetPoint("LEFT", box, "LEFT", 8, 0)     -- match the 6px text inset (+ a hair)
@@ -65,12 +65,12 @@ end
 
 -- Show the hint only when the field is empty and unfocused.
 function InputW:_UpdateHint()
-    local p, box = self:_p(), self:_frame()
+    local p, box = self:_p(), self:_Frame()
     if not p.hint then return end
     p.hint:SetShown((box:GetText() or "") == "" and not box:HasFocus())
 end
 function InputW:SetEnabled(on)
-    local p, box = self:_p(), self:_frame()
+    local p, box = self:_p(), self:_Frame()
     p.enabled = on and true or false
     box:EnableMouse(p.enabled); box:EnableKeyboard(p.enabled); box:SetAlpha(p.enabled and 1 or 0.4)
     return self

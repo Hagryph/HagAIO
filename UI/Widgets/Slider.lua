@@ -63,17 +63,17 @@ function SliderW:Initialize(parent, opts)
     slider:SetScript("OnValueChanged", function(_, v)
         render(v)
         if p.onChange and p.enabled and not p.suppress then p.onChange(v) end
-        if not p.suppress then self:_fireChange(v) end   -- emit a change (skip programmatic SetValue)
+        if not p.suppress then self:_FireChange(v) end   -- emit a change (skip programmatic SetValue)
     end)
-    self:_attach(f)
+    self:_Attach(f)
     render(minV)
 end
-function SliderW:SetValue(v)    local p = self:_p(); p.suppress = true; p.slider:SetValue(v); p.suppress = false; p.render(p.slider:GetValue()); self:_fireChange(p.slider:GetValue()); return self end
+function SliderW:SetValue(v)    local p = self:_p(); p.suppress = true; p.slider:SetValue(v); p.suppress = false; p.render(p.slider:GetValue()); self:_FireChange(p.slider:GetValue()); return self end
 function SliderW:GetValue()     return self:_p().slider:GetValue() end
 function SliderW:SetOnChange(fn) self:_p().onChange = fn; return self end
 function SliderW:SetEnabled(on)
     local p = self:_p(); p.enabled = on and true or false
-    p.slider:EnableMouse(p.enabled); self:_frame():SetAlpha(p.enabled and 1 or 0.5)
+    p.slider:EnableMouse(p.enabled); self:_Frame():SetAlpha(p.enabled and 1 or 0.5)
     return self
 end
 Widgets.Slider = SliderW

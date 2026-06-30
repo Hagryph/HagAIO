@@ -41,11 +41,11 @@ function TextureW:Initialize(parent, opts)
     local tex = unwrap(parent):CreateTexture(nil, opts.layer or "ARTWORK", nil, opts.sublevel or 0)
     if tex.SetSnapToPixelGrid then tex:SetSnapToPixelGrid(false) end      -- WeakAuras texel-crisp fix
     if tex.SetTexelSnappingBias then tex:SetTexelSnappingBias(0) end
-    self:_attach(tex)
+    self:_Attach(tex)
 end
 function TextureW:Render(frame, w, h, spec)
     spec = spec or {}
-    local tex = self:_frame()
+    local tex = self:_Frame()
     if not spec.texture then return self:Hide() end
     frame = unwrap(frame)
     local base

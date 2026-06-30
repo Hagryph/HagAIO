@@ -144,7 +144,7 @@ Component.Disable = ns.Class.abstract("Disable")
 
 -- Owner-stamp Worker opts with this component so the Worker gates the work on this owner's
 -- enabled state (and auto-listens to its enable/disable). Copies so the caller's table is untouched.
-function Component:_workerOpts(opts)
+function Component:_WorkerOpts(opts)
     local o = {}
     if opts then for k, v in pairs(opts) do o[k] = v end end
     o.owner = self
@@ -156,7 +156,7 @@ end
 -- long jobs, call ns.Worker:Yield() (or the `yield` passed to fn) at chunk points. Returns the job
 -- HANDLE (handle:Cancel(); nil when this component is disabled).
 function Component:Queue(fn, opts, scope)
-    local handle = ns.Worker:Queue(fn, self:_workerOpts(opts))
+    local handle = ns.Worker:Queue(fn, self:_WorkerOpts(opts))
     if handle then self:OnTeardown(function() handle:Cancel() end, scope) end
     return handle
 end
@@ -165,7 +165,7 @@ end
 -- opts.message=true), BOUND to this component; auto-unregistered on scope release. Fires are coalesced
 -- and only run while this component is enabled (see Worker:Register).
 function Component:WorkOn(event, fn, opts, scope)
-    local handle = ns.Worker:Register(event, fn, self:_workerOpts(opts))
+    local handle = ns.Worker:Register(event, fn, self:_WorkerOpts(opts))
     self:OnTeardown(handle.Unregister, scope)
     return handle
 end
@@ -173,7 +173,7 @@ end
 -- Run `fn` through the Worker every `interval` seconds via a timer reminder (no polling), BOUND to
 -- this component (paused while disabled); auto-unregistered on scope release.
 function Component:WorkEvery(interval, fn, opts, scope)
-    local handle = ns.Worker:Every(interval, fn, self:_workerOpts(opts))
+    local handle = ns.Worker:Every(interval, fn, self:_WorkerOpts(opts))
     self:OnTeardown(handle.Unregister, scope)
     return handle
 end

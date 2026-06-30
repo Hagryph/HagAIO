@@ -74,7 +74,7 @@ function ScrollAreaW:Initialize(parent, name)
 
     local p = self:_p()
     p.sf, p.content, p.contentW, p.update, p.set = sf, content, adopt(content), update, set
-    self:_attach(sa)
+    self:_Attach(sa)
 end
 function ScrollAreaW:Update()    self:_p().update(); return self end
 function ScrollAreaW:ScrollTop() local p = self:_p(); p.sf:SetVerticalScroll(0); p.update(); return self end

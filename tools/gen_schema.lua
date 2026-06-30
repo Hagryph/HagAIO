@@ -37,8 +37,8 @@ local function listLua(dir)
     if p then for line in p:lines() do out[#out + 1] = line end p:close() end
     -- Match the in-game .toc load order (tools/autogen/Common.ps1): sort by folder, and within a folder
     -- the ENTRY file (Foo/Foo.lua) loads FIRST -- so a split feature like Class/Monk loads Monk.lua (which
-    -- defines ns.Monk.registerSpec) before its Base/Brewmaster siblings call it. Plain alpha order would
-    -- load Base/Brewmaster first, when registerSpec is still an inert sandbox stub -> specs never register.
+    -- defines ns.Monk.RegisterSpec) before its Base/Brewmaster siblings call it. Plain alpha order would
+    -- load Base/Brewmaster first, when RegisterSpec is still an inert sandbox stub -> specs never register.
     local function norm(s) return (s:gsub("\\", "/")) end
     local function parent(s) return (norm(s):gsub("/[^/]*$", "")) end
     local function leaf(s) return norm(s):match("[^/]+$") end

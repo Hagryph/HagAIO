@@ -20,9 +20,9 @@ function StatusBarW:Initialize(parent, opts)
         local tex = sb:GetStatusBarTexture()
         if tex and tex.SetDesaturated then tex:SetDesaturated(true) end
     end
-    self:_attach(sb)
+    self:_Attach(sb)
 end
-function StatusBarW:SetValue(v)            self:_frame():SetValue(v);             return self end   -- RAW: secret-safe
-function StatusBarW:SetMinMaxValues(a, b)  self:_frame():SetMinMaxValues(a, b);   return self end
-function StatusBarW:SetStatusBarColor(...) self:_frame():SetStatusBarColor(...);  return self end
+function StatusBarW:SetValue(v)            self:_Frame():SetValue(v);             return self end   -- RAW: secret-safe
+function StatusBarW:SetMinMaxValues(a, b)  self:_Frame():SetMinMaxValues(a, b);   return self end
+function StatusBarW:SetStatusBarColor(...) self:_Frame():SetStatusBarColor(...);  return self end
 Widgets.StatusBar = StatusBarW

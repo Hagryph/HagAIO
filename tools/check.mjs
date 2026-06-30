@@ -30,6 +30,7 @@ const LINT = [
   ["savedvars", ["tools/savedvarscheck.mjs"]],
   ["worker", ["tools/check-worker.mjs"]],
   ["scheduler", ["tools/check-scheduler.mjs"]],
+  ["casing", ["tools/check-casing.mjs"]],
   ["annotations", ["tools/check-annotations.mjs"]],
 ];
 

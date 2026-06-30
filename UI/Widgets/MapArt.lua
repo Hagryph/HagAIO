@@ -23,12 +23,12 @@ function MapArtW:Initialize(parent, opts)
     p.texes = {}
     p.layer = opts.layer or "ARTWORK"
     p.sublevel = opts.sublevel or 0
-    self:_attach(f)
+    self:_Attach(f)
 end
 
 function MapArtW:Render(frame, w, h, mapID, zoom)
     local p = self:_p()
-    local f = self:_frame()
+    local f = self:_Frame()
     if not (mapID and w and h and w > 0 and h > 0
             and C_Map and C_Map.GetMapArtLayers and C_Map.GetMapArtLayerTextures) then
         self:Hide(); return self
@@ -73,7 +73,7 @@ function MapArtW:Render(frame, w, h, mapID, zoom)
 end
 -- Dim the whole composition (e.g. behind a typography plate). 1 = full.
 function MapArtW:SetAlpha(a)
-    self:_frame():SetAlpha(a or 1)
+    self:_Frame():SetAlpha(a or 1)
     return self
 end
 Widgets.MapArt = MapArtW

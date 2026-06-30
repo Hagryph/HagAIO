@@ -54,7 +54,7 @@ function CollapsibleSectionW:Initialize(parent, titleText)
         if p.onToggle then p.onToggle(p.expanded) end
     end)
     p.label = label
-    self:_attach(sec)
+    self:_Attach(sec)
     apply()
 end
 function CollapsibleSectionW:GetContent()        return self:_p().content end

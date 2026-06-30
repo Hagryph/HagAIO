@@ -19,7 +19,7 @@ function AvatarW:Initialize(parent, size)
     tex:SetPoint("TOPLEFT", 2, -2)
     tex:SetPoint("BOTTOMRIGHT", -2, 2)
     tex:SetTexCoord(0.08, 0.92, 0.08, 0.92)        -- trim the portrait's baked-in ring
-    self:_attach(f)
+    self:_Attach(f)
     self:_p().tex = tex
 end
 function AvatarW:SetPortrait(unit) if SetPortraitTexture then SetPortraitTexture(self:_p().tex, unit) end; return self end

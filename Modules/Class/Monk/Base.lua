@@ -1,6 +1,6 @@
 local addonName, ns = ...
 local Class = ns.Class
-local Monk = ns.Monk   -- shared Monk surface (constants + registerSpec), set in Monk.lua
+local Monk = ns.Monk   -- shared Monk surface (constants + RegisterSpec), set in Monk.lua
 
 -- Modules/Class/Monk/Base.lua
 -- The no-specialisation Monk spec (CurrentSpecKey "none"): the Expel Harm heal-threshold
@@ -85,4 +85,4 @@ end
 
 -- Expel Harm marker (event subs, Cooldowns watch, secret-safe paint).
 -- ns.SpellTooltipParser is a pure Lib (always available) -- not a service dep.
-ns.Monk.registerSpec("Monk-Base", MonkBase, "none", { "EventBus", "Cooldowns", "Secrets" })
+ns.Monk.RegisterSpec("Monk-Base", MonkBase, "none", { "EventBus", "Cooldowns", "Secrets" })

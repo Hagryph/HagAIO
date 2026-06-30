@@ -50,7 +50,7 @@ function NavItemW:Initialize(parent, text)
     end)
     b:SetScript("OnLeave", render)
 
-    self:_attach(b)
+    self:_Attach(b)
     render()
 end
 function NavItemW:SetActive(v) local p = self:_p(); p.active = v and true or false; p.render(); return self end

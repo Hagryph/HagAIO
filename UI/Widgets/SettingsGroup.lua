@@ -44,7 +44,7 @@ function SettingsGroupW:Initialize(parent, title)
         p.expanded = not p.expanded; apply()
         if p.onToggle then p.onToggle(p.expanded) end
     end)
-    self:_attach(g)
+    self:_Attach(g)
     apply()
 end
 function SettingsGroupW:GetContent()        return self:_p().content end

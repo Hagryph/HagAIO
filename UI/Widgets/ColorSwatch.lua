@@ -22,7 +22,7 @@ function ColorSwatchW:Initialize(parent)
 
     local p = self:_p()
     p.r, p.g, p.b, p.enabled = 1, 1, 1, true
-    local function set(r, g, b) p.r, p.g, p.b = r, g, b; sw:SetColorTexture(r, g, b); self:_fireChange({ r, g, b }) end
+    local function set(r, g, b) p.r, p.g, p.b = r, g, b; sw:SetColorTexture(r, g, b); self:_FireChange({ r, g, b }) end
     p.set = set
 
     btn:SetScript("OnEnter", function() if p.enabled then btn:SetBackdropBorderColor(Theme.Unpack("accent")) end end)
@@ -65,7 +65,7 @@ function ColorSwatchW:Initialize(parent)
         if p.onChange then p.onChange(p.dr, p.dg, p.db) end
     end)
     p.reset = reset
-    self:_attach(btn)
+    self:_Attach(btn)
 end
 function ColorSwatchW:SetColor(r, g, b) self:_p().set(r, g, b); return self end
 function ColorSwatchW:GetColor()        local p = self:_p(); return p.r, p.g, p.b end
@@ -76,7 +76,7 @@ function ColorSwatchW:SetDefault(r, g, b)
 end
 function ColorSwatchW:SetEnabled(on)
     local p = self:_p(); p.enabled = on and true or false
-    self:_frame():SetAlpha(p.enabled and 1 or 0.4)     -- dims the swatch + its Reset child
+    self:_Frame():SetAlpha(p.enabled and 1 or 0.4)     -- dims the swatch + its Reset child
     p.reset:SetShown(p.enabled and p.dr ~= nil)        -- and hides Reset while greyed out
     return self
 end

@@ -13,6 +13,6 @@ function SectionLabelW:Initialize(parent, text)
     fs:SetText(string.upper(text or ""))
     fs:SetTextColor(Theme.Unpack("textFaint"))
     fs:SetSpacing(2)
-    self:_attach(fs)
+    self:_Attach(fs)
 end
 Widgets.SectionLabel = SectionLabelW

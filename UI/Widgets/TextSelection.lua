@@ -183,7 +183,7 @@ function TextSelectionW:Initialize(parent, opts)
         paint()
         if eb:HasFocus() then eb:ClearFocus() end
     end)
-    self:_attach(f)
+    self:_Attach(f)
 end
 
 -- Register the selectable lines: { region = <Text widget | fontstring>, text = "plain line text" }

@@ -11,6 +11,6 @@ function TextW:Initialize(parent, text, key, template)
     local fs = unwrap(parent):CreateFontString(nil, "ARTWORK", template or "GameFontHighlight")
     fs:SetText(text or "")
     fs:SetTextColor(Theme.Unpack(key or "text"))
-    self:_attach(fs)
+    self:_Attach(fs)
 end
 Widgets.Text = TextW

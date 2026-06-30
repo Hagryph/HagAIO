@@ -64,13 +64,13 @@ function ToggleW:Initialize(parent, labelText)
         p.state = not p.state
         render()
         if p.onToggle then p.onToggle(p.state) end
-        self:_fireChange(p.state)   -- let dependent widgets re-evaluate their EnableWhen condition
+        self:_FireChange(p.state)   -- let dependent widgets re-evaluate their EnableWhen condition
     end)
 
-    self:_attach(btn)
+    self:_Attach(btn)
     render()
 end
-function ToggleW:SetChecked(v)   local p = self:_p(); p.state = v and true or false; p.render(); self:_fireChange(p.state); return self end
+function ToggleW:SetChecked(v)   local p = self:_p(); p.state = v and true or false; p.render(); self:_FireChange(p.state); return self end
 function ToggleW:GetChecked()    return self:_p().state end
 function ToggleW:SetOnToggle(fn) self:_p().onToggle = fn; return self end
 function ToggleW:SetEnabled(on)  local p = self:_p(); p.enabled = on and true or false; p.render(); return self end

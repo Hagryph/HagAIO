@@ -42,7 +42,7 @@ function WindowW:Initialize(level, opts)
     f:SetClampedToScreen(true)
     f:Hide()
     if opts.name then tinsert(UISpecialFrames, opts.name) end  -- ESC closes
-    self:_attach(f)
+    self:_Attach(f)
     local p = self:_p()
 
     local H = opts.barHeight or 38

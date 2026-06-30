@@ -76,7 +76,7 @@ function IconGridW:Initialize(parent, opts)
     -- may carry an optional `key`; ops take either a 1-based index (number) or that key (string).
     -- Removing shrinks the list, so the freed trailing tile's texture is released by refresh.
     local function indexOf(ref)
-        local list = p._tiles
+        local list = p.tiles
         if not list then return nil end
         if type(ref) == "number" then return list[ref] and ref or nil end
         for i, t in ipairs(list) do if t.key == ref then return i end end
@@ -85,18 +85,18 @@ function IconGridW:Initialize(parent, opts)
 
     local function refresh()
         local w = content:GetWidth(); if not w or w < 1 then w = g:GetWidth() or 400 end
-        local cols = p._perRow or PER_ROW
+        local cols = p.perRow or PER_ROW
         local tw = math.floor((w - (cols - 1) * GAP) / cols)   -- auto-sized tile width
         if tw < 1 then tw = 1 end
         local ih = math.floor(tw * ASPECT)                     -- image height
         local th = ih + TITLE_H                                 -- full tile height
-        local data = p._tiles or {}
+        local data = p.tiles or {}
         -- expand-in-place: the first tile flagged `expanded` opens a full-width detail frame right
         -- after its ROW; every row below shifts down by the detail's height so nothing overlaps.
         local exRow
         for i, d in ipairs(data) do if d.expanded then exRow = math.floor((i - 1) / cols); break end end
-        local dh = (exRow ~= nil and p._detailFrame and p._detailHeight and p._detailHeight > 0)
-            and p._detailHeight or 0
+        local dh = (exRow ~= nil and p.detailFrame and p.detailHeight and p.detailHeight > 0)
+            and p.detailHeight or 0
         if dh == 0 then exRow = nil end
         for i, d in ipairs(data) do
             local t = getTile(i)
@@ -147,15 +147,15 @@ function IconGridW:Initialize(parent, opts)
         -- its texture too, so WoW frees that VRAM; the tile + image widget are kept for reuse.
         for i = #data + 1, #tiles do tiles[i]:Hide() end
         -- the inline detail frame, anchored full-width directly under the expanded tile's row
-        if p._detailFrame then
+        if p.detailFrame then
             if exRow ~= nil then
-                p._detailFrame:ClearAllPoints()
-                p._detailFrame:SetPoint("TOPLEFT", content, "TOPLEFT", 0, -((exRow + 1) * (th + GAP)))
-                p._detailFrame:SetWidth(w)
-                p._detailFrame:SetHeight(dh)
-                p._detailFrame:Show()
+                p.detailFrame:ClearAllPoints()
+                p.detailFrame:SetPoint("TOPLEFT", content, "TOPLEFT", 0, -((exRow + 1) * (th + GAP)))
+                p.detailFrame:SetWidth(w)
+                p.detailFrame:SetHeight(dh)
+                p.detailFrame:Show()
             else
-                p._detailFrame:Hide()
+                p.detailFrame:Hide()
             end
         end
         local rows = math.max(1, math.ceil(#data / cols))
@@ -163,10 +163,10 @@ function IconGridW:Initialize(parent, opts)
         sa:Update()
     end
 
-    p.tiles, p.indexOf, p.refresh = tiles, indexOf, refresh
-    self:_attach(g)
+    p.tileFrames, p.indexOf, p.refresh = tiles, indexOf, refresh   -- the reusable Button-frame pool
+    self:_Attach(g)
 end
-function IconGridW:SetTiles(list) local p = self:_p(); p._tiles = list or {}; p.refresh(); return self end
+function IconGridW:SetTiles(list) local p = self:_p(); p.tiles = list or {}; p.refresh(); return self end
 function IconGridW:ScrollTop()    self:_p().scrollArea:ScrollTop(); return self end
 -- The scroll content -- parent the inline detail frame here so it scrolls with the tiles.
 function IconGridW:DetailParent()  return self:_p().scrollContent end
@@ -175,27 +175,27 @@ function IconGridW:DetailParent()  return self:_p().scrollContent end
 function IconGridW:SetDetail(frame, height)
     local p = self:_p()
     local f = frame and unwrap(frame) or nil
-    if p._detailFrame and p._detailFrame ~= f then p._detailFrame:Hide() end   -- a replaced/cleared panel stays hidden
-    p._detailFrame = f
-    p._detailHeight = height or 0
+    if p.detailFrame and p.detailFrame ~= f then p.detailFrame:Hide() end   -- a replaced/cleared panel stays hidden
+    p.detailFrame = f
+    p.detailHeight = height or 0
     if f then f:SetParent(p.scrollContent) end
     return self
 end
 -- Override how many tiles per row (re-lays out on the next Refresh; nil restores the default).
-function IconGridW:SetPerRow(n)   self:_p()._perRow = (n and n >= 1) and math.floor(n) or nil; return self end
+function IconGridW:SetPerRow(n)   self:_p().perRow = (n and n >= 1) and math.floor(n) or nil; return self end
 function IconGridW:Refresh()      self:_p().refresh(); return self end
-function IconGridW:GetTiles() return self:_p()._tiles or {} end
-function IconGridW:GetTile(ref) local p = self:_p(); local i = p.indexOf(ref); return i and p._tiles[i] or nil, i end
+function IconGridW:GetTiles() return self:_p().tiles or {} end
+function IconGridW:GetTile(ref) local p = self:_p(); local i = p.indexOf(ref); return i and p.tiles[i] or nil, i end
 function IconGridW:AddTile(tile)
-    local p = self:_p(); p._tiles = p._tiles or {}
-    p._tiles[#p._tiles + 1] = tile; p.refresh(); return tile
+    local p = self:_p(); p.tiles = p.tiles or {}
+    p.tiles[#p.tiles + 1] = tile; p.refresh(); return tile
 end
 function IconGridW:RemoveTile(ref)
     local p = self:_p(); local i = p.indexOf(ref); if not i then return nil end
-    local removed = table.remove(p._tiles, i); p.refresh(); return removed
+    local removed = table.remove(p.tiles, i); p.refresh(); return removed
 end
 function IconGridW:ReplaceTile(ref, tile)
     local p = self:_p(); local i = p.indexOf(ref); if not i then return nil end
-    p._tiles[i] = tile; p.refresh(); return tile
+    p.tiles[i] = tile; p.refresh(); return tile
 end
 Widgets.IconGrid = IconGridW

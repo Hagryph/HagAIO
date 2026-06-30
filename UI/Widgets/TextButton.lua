@@ -16,10 +16,10 @@ function TextButtonW:Initialize(parent, text)
     b:SetSize(math.max(40, fs:GetStringWidth() + 12), 20)
     b:SetScript("OnEnter", function() fs:SetTextColor(Theme.Unpack("text")) end)
     b:SetScript("OnLeave", function() fs:SetTextColor(Theme.Unpack("accent")) end)
-    self:_attach(b)
+    self:_Attach(b)
     self:_p().label = fs
 end
 function TextButtonW:SetText(s)        self:_p().label:SetText(s);        return self end
 function TextButtonW:SetTextColor(...) self:_p().label:SetTextColor(...); return self end
-function TextButtonW:SetOnClick(fn)    self:_frame():SetScript("OnClick", fn); return self end
+function TextButtonW:SetOnClick(fn)    self:_Frame():SetScript("OnClick", fn); return self end
 Widgets.TextButton = TextButtonW

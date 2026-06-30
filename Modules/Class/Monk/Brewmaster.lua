@@ -1,6 +1,6 @@
 local addonName, ns = ...
 local Class = ns.Class
-local Monk = ns.Monk   -- shared Monk surface (constants + registerSpec + Base), set in Monk.lua
+local Monk = ns.Monk   -- shared Monk surface (constants + RegisterSpec + Base), set in Monk.lua
 
 -- Modules/Class/Monk/Brewmaster.lua
 -- The Brewmaster Monk spec (CurrentSpecKey 1): extends MonkBase (Base.lua) with a Tiger
@@ -83,4 +83,4 @@ function MonkBrewmaster:Unload()
 end
 
 -- All of Base + the AoE helper (Range counts, ActionBars greying, Scheduler ticker).
-ns.Monk.registerSpec("Monk-Brewmaster", MonkBrewmaster, 1, { "EventBus", "Cooldowns", "Secrets", "Range", "ActionBars", "Scheduler" })
+ns.Monk.RegisterSpec("Monk-Brewmaster", MonkBrewmaster, 1, { "EventBus", "Cooldowns", "Secrets", "Range", "ActionBars", "Scheduler" })

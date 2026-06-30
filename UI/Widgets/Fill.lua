@@ -13,11 +13,11 @@ local unwrap, style, claimLevel, adopt = _wb.unwrap, _wb.style, _wb.claimLevel, 
 local FillW = ns.Class.new("Fill", TextureWidget)
 function FillW:Initialize(parent, opts)
     opts = opts or {}
-    self:_attach(unwrap(parent):CreateTexture(nil, opts.layer or "ARTWORK", nil, opts.sublevel or 0))
+    self:_Attach(unwrap(parent):CreateTexture(nil, opts.layer or "ARTWORK", nil, opts.sublevel or 0))
 end
 function FillW:SetColor(r, g, b, a)
-    if type(r) == "string" then self:_frame():SetColorTexture(Theme.Unpack(r, g))   -- (paletteKey [, alpha])
-    else self:_frame():SetColorTexture(r, g, b, a) end
+    if type(r) == "string" then self:_Frame():SetColorTexture(Theme.Unpack(r, g))   -- (paletteKey [, alpha])
+    else self:_Frame():SetColorTexture(r, g, b, a) end
     return self
 end
 Widgets.Fill = FillW
