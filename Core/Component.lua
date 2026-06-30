@@ -36,18 +36,29 @@ function Component:_DisplayName() return self:_p().name end
 
 local function scopes(self)
     local p = self:_p()
-    p._scopes = p._scopes or {}   -- scope name -> { teardown thunks }
+    p._scopes = p._scopes or {}   -- scope name -> { head = node }: a LIFO doubly-linked list of teardown nodes
     return p._scopes
 end
 
 -- ---- auto-released resources ----------------------------------------------
--- Queue a cleanup callback in `scope`. Run (LIFO) by ReleaseScope / _ReleaseAll.
+-- Queue a cleanup callback in `scope`. Run (LIFO) by ReleaseScope / _ReleaseAll. Returns a REMOVER
+-- that unlinks this thunk in O(1) -- a fired self:After uses it, so a frequently-scheduled defer never
+-- piles up spent thunks. The scope is a doubly-linked list (head = most-recent), so both removal and
+-- release are O(1) per node and the scope never grows with dead entries.
 function Component:OnTeardown(fn, scope)
     local s = scopes(self)
     scope = scope or DEFAULT
-    local list = s[scope]
-    if not list then list = {}; s[scope] = list end
-    list[#list + 1] = fn
+    local sc = s[scope]
+    if not sc then sc = {}; s[scope] = sc end
+    local node = { fn = fn, next = sc.head }
+    if sc.head then sc.head.prev = node end
+    sc.head = node
+    return function()
+        if node.removed then return end
+        node.removed = true
+        if node.prev then node.prev.next = node.next else sc.head = node.next end
+        if node.next then node.next.prev = node.prev end
+    end
 end
 
 -- Subscribe to a game event; auto-Off on scope release. Returns the token (nil if
@@ -95,8 +106,9 @@ function Component:Every(interval, fn, iterations, scope)
 end
 
 function Component:After(delay, fn, scope)
-    local h = ns.Scheduler:After(delay, fn)
-    self:OnTeardown(function() if not h:IsCancelled() then h:Cancel() end end, scope)
+    local remove
+    local h = ns.Scheduler:After(delay, function() if remove then remove() end; fn() end)   -- drop the spent thunk on fire
+    remove = self:OnTeardown(function() if not h:IsCancelled() then h:Cancel() end end, scope)
     return h
 end
 
@@ -178,20 +190,25 @@ function Component:WorkEvery(interval, fn, opts, scope)
     return handle
 end
 
--- Run + clear one scope's teardown thunks (LIFO). No-op on an unknown/empty scope.
+-- Run + clear one scope's teardown thunks (LIFO: head = most-recent). No-op on an unknown/empty scope.
+-- Detach the scope FIRST so a teardown that registers a NEW thunk here lands in a fresh list (drained
+-- by _ReleaseAll's loop), not the one being traversed.
 function Component:ReleaseScope(scope)
     local p = self:_p()
     local s = p._scopes
-    local list = s and s[scope or DEFAULT]
-    if not list then return end
-    for i = #list, 1, -1 do
-        local fn = list[i]; list[i] = nil
-        local ok, err = pcall(fn)
+    local sc = s and s[scope or DEFAULT]
+    if not sc then return end
+    s[scope or DEFAULT] = nil
+    local node = sc.head
+    while node do
+        local nxt = node.next
+        node.removed = true   -- a stale remover (e.g. its self:After firing later) becomes a no-op
+        local ok, err = pcall(node.fn)
         if not ok then
             ns.Logger:Core():Warn(("%s teardown error: %s"):format(self:_DisplayName(), tostring(err)))
         end
+        node = nxt
     end
-    s[scope or DEFAULT] = nil
 end
 
 -- Release every scope (full teardown) and drop any owner-tracked hooks. Drains the

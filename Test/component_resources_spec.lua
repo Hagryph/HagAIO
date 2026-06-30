@@ -51,6 +51,21 @@ describe("Component resources", function()
         assert.are.equal(0, once)  -- one-shot cancelled before it fired
     end)
 
+    it("a fired self:After unlinks its own teardown, so repeated defers never accumulate", function()
+        local c, _, _, clock = rig()
+        local fired = 0
+        for _ = 1, 50 do c:After(0, function() fired = fired + 1 end) end
+        clock.advance(1)                          -- fire all 50 one-shots
+        assert.are.equal(50, fired)
+        local sc = c:_p()._scopes._default
+        assert(sc == nil or sc.head == nil, "spent self:After thunks piled up instead of self-removing")
+        -- and a still-pending one is STILL cancelled on teardown (the unlink doesn't break cancellation)
+        local late = 0
+        c:After(5, function() late = late + 1 end)
+        c:_ReleaseAll(); clock.advance(10)
+        assert.are.equal(0, late)
+    end)
+
     it("Hook installs and is removed via UnhookAll on teardown", function()
         local c = rig()
         local obj = { go = function() end }
