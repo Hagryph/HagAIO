@@ -66,13 +66,20 @@ local function rig()
     S.load(ns, "Lib/FlightGraph.lua")
     S.load(ns, "Lib/FlightResolver.lua")
     S.load(ns, "Core/Module.lua")
-    ns.ModuleManager = {     -- capture stub (the taxi hook resolves the live module through it)
+    S.load(ns, "Core/Submodule.lua")
+    ns.ModuleManager = {     -- capture stub (the thin parent module contributes the flight tables)
         Register  = function(_, m) ns._captured[m:GetName()] = m; return m end,
         GetModule = function(_, n) return ns._captured[n] end,
     }
+    ns.SubmoduleManager = {  -- capture stub (the taxi hook resolves the live FlightTimers sub via Get)
+        Register = function(_, s) ns._captured[s:GetName()] = s; return s end,
+        Get      = function(_, n) return ns._captured[n] end,
+    }
     S.load(ns, "Modules/Misc.lua")
     local misc = ns._captured["Misc"]
-    misc:_Init()                                   -- logger + table contribution + OnInitialize
+    misc:_Init()                                   -- parent: logger + flight-table contribution
+    local flight = ns._captured["FlightTimers"]
+    flight:_Init()                                 -- submodule: OnInitialize installs the always-on recorder
     local db = mgr:Build()
     db:Insert("zone", { name = "Z" })
 
@@ -89,8 +96,8 @@ local function rig()
     -- _HookFlightPins would have scraped in-game (names/positions/map) is filled in.
     function sim.openTaxi(name)
         sim.current = name
-        misc:_OnTaxiMap()
-        local p = misc:_p()
+        flight:_OnTaxiMap()
+        local p = flight:_p()
         p.flightMapID = 1
         p.nodeNames, p.nodePos = {}, {}
         for slot, n in pairs(sim.slots) do
@@ -107,7 +114,7 @@ local function rig()
         for i, n in ipairs(stops) do r[i] = sim.nodes[n].slot end
         sim.route[destSlot] = r
         sim.px, sim.py = sim.nodes[stops[1]].x, sim.nodes[stops[1]].y
-        misc:_OnTakeTaxi(destSlot)
+        flight:_OnTakeTaxi(destSlot)
         sim.onTaxi = true
         clock.advance(0.1)
     end
@@ -155,7 +162,7 @@ local function rig()
         return false
     end
 
-    return sim, misc, db, ns
+    return sim, flight, db, ns
 end
 
 local function near(got, want, tol)
@@ -164,7 +171,7 @@ end
 
 describe("flight simulation: simple constellations", function()
     it("a 2-node hop records one DIRECT atomic leg with no hops", function()
-        local sim, misc = rig()
+        local sim, flight = rig()
         sim.addNode("A", 0, 0); sim.addNode("B", 1000, 0)
         sim.openTaxi("A")
         sim.takeOff({ "A" }, "B")
@@ -178,7 +185,7 @@ describe("flight simulation: simple constellations", function()
     end)
 
     it("a 3-node line records the span as DIRECT and each through-flyover leg as FLY", function()
-        local sim, misc, _, ns = rig()
+        local sim, flight, _, ns = rig()
         sim.addNode("A", 0, 0); sim.addNode("B", 1000, 0); sim.addNode("C", 2000, 0)
         sim.openTaxi("A")
         sim.takeOff({ "A", "B" }, "C")
@@ -192,13 +199,13 @@ describe("flight simulation: simple constellations", function()
         assert.are.equal(FLY, ab.quality); assert.is_true(near(ab.t, 10))   -- closest-approach legs
         assert.are.equal(FLY, bc.quality); assert.is_true(near(bc.t, 10))
         -- the solver reassembles the whole route from the atomic legs the flight measured
-        assert.is_true(near(ns.FlightResolver:SumLegs(misc:_AtomicLegs(), { "A", "B", "C" }), 20, 1.5))
+        assert.is_true(near(ns.FlightResolver:SumLegs(flight:_AtomicLegs(), { "A", "B", "C" }), 20, 1.5))
     end)
 end)
 
 describe("flight simulation: partial fly-over", function()
     it("a node the flight never comes near is skipped; spans bridge it as a hop", function()
-        local sim, misc = rig()
+        local sim, flight = rig()
         sim.addNode("A", 0, 0); sim.addNode("B", 1000, 0)
         sim.addNode("C", 2000, 0); sim.addNode("D", 3000, 0)
         sim.openTaxi("A")
@@ -221,15 +228,15 @@ end)
 
 describe("flight simulation: Request-Stop early landing", function()
     it("an early stop lands at the next node and records the partial route", function()
-        local sim, misc = rig()
+        local sim, flight = rig()
         sim.addNode("A", 0, 0); sim.addNode("B", 1000, 0); sim.addNode("C", 2000, 0)
         sim.addNode("D", 3000, 0); sim.addNode("E", 4000, 0)
         sim.openTaxi("A")
         sim.takeOff({ "A", "B", "C", "D" }, "E")
         sim.flyVia({ "B" })
         sim.flyTo(1300, 0)                       -- well past B, heading for C
-        misc:_OnEarlyLanding()                    -- the player clicks Request Stop
-        assert.are.equal("C", misc:_p().dst)      -- the display retargets the next node
+        flight:_OnEarlyLanding()                  -- the player clicks Request Stop
+        assert.are.equal("C", flight:_p().dst)      -- the display retargets the next node
         sim.flyVia({ "C" })
         sim.land()                                -- the taxi drops us at C
         local r = sim.routeRow("A", "C")
@@ -240,18 +247,18 @@ describe("flight simulation: Request-Stop early landing", function()
     end)
 
     it("a stop the flight carries past retargets the following node", function()
-        local sim, misc = rig()
+        local sim, flight = rig()
         sim.addNode("A", 0, 0); sim.addNode("B", 1000, 0); sim.addNode("C", 2000, 0)
         sim.addNode("D", 3000, 0); sim.addNode("E", 4000, 0)
         sim.openTaxi("A")
         sim.takeOff({ "A", "B", "C", "D" }, "E")
         sim.flyVia({ "B" })
         sim.flyTo(1300, 0)
-        misc:_OnEarlyLanding()
-        assert.are.equal("C", misc:_p().dst)      -- requested: stop at C...
+        flight:_OnEarlyLanding()
+        assert.are.equal("C", flight:_p().dst)      -- requested: stop at C...
         sim.flyVia({ "C" })                       -- ...but the flight flies on through C
         sim.flyTo(2300, 0)
-        assert.are.equal("D", misc:_p().dst)      -- target bumped to the next node
+        assert.are.equal("D", flight:_p().dst)      -- target bumped to the next node
         sim.flyVia({ "D" })
         sim.land()                                -- and we land there
         local r = sim.routeRow("A", "D")
@@ -273,7 +280,7 @@ describe("flight simulation: a 10-node constellation", function()
     end
 
     it("the same target gets DIFFERENT intermediates depending on the origin", function()
-        local sim, misc, db, ns = rig()
+        local sim, flight, db, ns = rig()
         constellation(sim)
 
         -- Flight 1: A -> G routed over B, C, F.
@@ -305,7 +312,7 @@ describe("flight simulation: a 10-node constellation", function()
         -- The atomic legs each flight measured compose route times -- including for pairs
         -- that were NEVER booked: D -> G is derivable from flight 2's D->F + F->G legs.
         local F = ns.FlightResolver
-        local legs = misc:_AtomicLegs()
+        local legs = flight:_AtomicLegs()
         assert.is_true(near(F:SumLegs(legs, { "A", "B", "C", "F", "G" }), 40, 2))
         assert.is_true(near(F:SumLegs(legs, { "C", "F", "G" }), 20, 1.5))
         assert.is_true(near(F:SumLegs(legs, { "D", "F", "G" }), 24.1, 1.5))   -- unflown as a booking

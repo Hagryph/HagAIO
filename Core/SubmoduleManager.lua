@@ -25,9 +25,10 @@ function SubmoduleManager:Initialize()
     p.dirty = false
 end
 
--- A submodule registered after StartAll: subscribe its events, then re-evaluate.
+-- A submodule registered after StartAll: subscribe its events, run its always-on init, re-evaluate.
 function SubmoduleManager:_OnLateRegister(sub)
     self:_SubscribeEvents(sub)
+    sub:_Init()
     self:Reevaluate()
 end
 
@@ -149,12 +150,16 @@ function SubmoduleManager:_SubscribeEvents(sub)
     end
 end
 
--- Start after modules are running (PLAYER_LOGIN). Subscribes each submodule's
--- events, reacts to module enable/disable, and does the first evaluation.
+-- Start after modules are running (PLAYER_LOGIN). Subscribes each submodule's events, runs each
+-- submodule's ALWAYS-ON init (recorders -- once, regardless of whether it loads), reacts to module
+-- enable/disable, and does the first load evaluation.
 function SubmoduleManager:StartAll()
     if not self:_BeginStart() then return end
     local p = self:_p()
-    for s in self:Iterate() do self:_SubscribeEvents(s) end
+    for s in self:Iterate() do
+        self:_SubscribeEvents(s)
+        s:_Init()   -- always-on init (recorders) before any load evaluation
+    end
     p.msgToken = ns.EventBus:Subscribe("HagAIO_ModuleState", function() self:Reevaluate() end)
     self:Reevaluate()
 end

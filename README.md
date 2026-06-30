@@ -195,7 +195,7 @@ Modules/
   CVars.lua                Force chosen console variables on every character
   Dashboard.lua            Account-wide, cross-character RESET dashboard
   Dev.lua                  Developer settings module
-  Misc.lua                 Miscellaneous helpers:
+  Misc.lua                 Miscellaneous helpers, each split into its own submodule of a thin "Misc" module
   Questing.lua             Everything around levelling through quests, in one module:
   UnitFrames.lua           Colours the player & target health bars by remaining health: green at full,
   Class\Monk\Monk.lua      Monk module entry point (loads before its per-spec siblings): the shared Monk behaviour

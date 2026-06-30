@@ -56,6 +56,27 @@ describe("SubmoduleManager", function()
         assert.are.equal(1, count)   -- loaded once, not on every sweep
     end)
 
+    it("runs each submodule's always-on OnInitialize ONCE at StartAll, even if it never loads", function()
+        local ns = setup()
+        ns.EventBus = { On = function() end, Subscribe = function() return 1 end }   -- StartAll subscribes
+        local inits = 0
+        -- subclass form (OnInitialize override) that DOES load; closure form (onInitialize opt) that does NOT
+        local Sub = ns.Class.new("WithInit", ns.Submodule)
+        function Sub:OnInitialize() inits = inits + 1 end
+        local a = Sub:New("A", { condition = function() return true end })
+        local b = ns.Submodule:New("B", { condition = function() return false end,
+                                          onInitialize = function() inits = inits + 1 end })
+        ns.SubmoduleManager:Register(a); ns.SubmoduleManager:Register(b)
+
+        ns.SubmoduleManager:StartAll()
+        assert.are.equal(2, inits)          -- BOTH initialized -- the never-loading one too (always-on recorder)
+        assert.is_true(a:IsLoaded())        -- A's condition held -> loaded
+        assert.is_false(b:IsLoaded())       -- B never loaded, but was still initialized
+
+        ns.SubmoduleManager:StartAll()      -- idempotent (StartAll's start latch + _Init's per-sub latch)
+        assert.are.equal(2, inits)
+    end)
+
     it("is a Worker OWNER: load/unload flips IsEnabled and broadcasts HagAIO_OwnerState", function()
         local ns = setup()
         -- Capture HagAIO_OwnerState (the message the Worker binds to). The submodule's enabled-state

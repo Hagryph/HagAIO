@@ -12,6 +12,9 @@ local Class = ns.Class
 --   condition   : a plain Lua function -> bool (nil = always true)
 --   events      : game events that re-evaluate the condition (nil = never)
 --   onLoad/onUnload(host, self) : run when it becomes / stops being loaded
+--   onInitialize(host, self)    : ALWAYS-ON setup, run ONCE at boot whether or not it loads --
+--                                 the place for a RECORDER (engine machinery that must run even
+--                                 while the submodule is unloaded). Mirrors Module:OnInitialize.
 --
 -- The SubmoduleManager resolves "is this loaded?" purely through the core
 -- DependencyGraph: a submodule node is ONLINE when its condition() is true AND
@@ -43,6 +46,7 @@ function Submodule:Initialize(name, opts)
     p.events    = opts.events            -- list of game events, or nil
     p.onLoad    = opts.onLoad
     p.onUnload  = opts.onUnload
+    p.onInitialize = opts.onInitialize   -- always-on setup; run once at boot, survives unload
     p.host      = opts.host              -- context passed to onLoad/onUnload
     p.title     = opts.title             -- shown as the section label on the parent's page
     p.settings  = opts.settings or {}    -- option schema (rendered while loaded)
@@ -130,5 +134,22 @@ end
 -- The SubmoduleManager speaks load/unload; they ARE enable/disable for a submodule.
 function Submodule:_Load()   self:Enable()  end
 function Submodule:_Unload() self:Disable() end
+
+-- ALWAYS-ON init, run ONCE at boot for EVERY registered submodule regardless of whether it ever
+-- loads (the SubmoduleManager calls it at StartAll / on late registration). The place to install a
+-- RECORDER -- engine machinery that must run even while the submodule is unloaded (e.g. a flight
+-- recorder building its DB whether or not its display is shown). Mirrors Module:OnInitialize; a
+-- subclass overrides OnInitialize, or pass an `onInitialize(host, self)` opt. Install always-on
+-- machinery via ns.EventBus:On / raw C_Timer (NOT self:On, which is auto-released on unload).
+function Submodule:_Init()
+    local p = self:_p()
+    if p._initialized then return end
+    p._initialized = true
+    if p.onInitialize then p.onInitialize(p.host, self) end
+    self:OnInitialize()
+end
+
+-- Base no-op (run once by _Init); a submodule SUBCLASS overrides it for always-on setup.
+function Submodule:OnInitialize() end
 
 ns.Submodule = Submodule
