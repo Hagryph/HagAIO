@@ -27,7 +27,7 @@ end
 function Interface.assertClass(class, iface)
     for _, m in ipairs(iface) do
         if type(class[m]) ~= "function" then
-            error(("class '%s' is missing method '%s' required by interface '%s'"):format(
+            error(("Interface.assertClass: class '%s' is missing method '%s' required by interface '%s'"):format(
                 (class and class.__name) or "?", m, iface.__name or "?"), 2)
         end
     end

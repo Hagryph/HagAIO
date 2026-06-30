@@ -16,8 +16,6 @@ local Class = ns.Class
 ns.DB = ns.DB or {}
 local DB = ns.DB
 
-local function fail(msg) error("DB: " .. msg, 0) end
-
 local ConstraintEnforcer = Class.new("DBConstraintEnforcer")
 
 function ConstraintEnforcer:Initialize(schema, index, store)
@@ -50,11 +48,11 @@ function ConstraintEnforcer:ChildRefs(parentTable) return self:_p().childrenOf[p
 function ConstraintEnforcer:BuildRow(tname, values, nextId)
     local p = self:_p()
     local tbl = p.schema:Table(tname)
-    assert(tbl, ("unknown table '%s'"):format(tostring(tname)))
+    if not tbl then DB.fail("ConstraintEnforcer:BuildRow", ("unknown table '%s'"):format(tostring(tname))) end
     values = values or {}
 
     for k in pairs(values) do
-        if not tbl:HasColumn(k) then fail(("table '%s' has no column '%s'"):format(tname, tostring(k))) end
+        if not tbl:HasColumn(k) then DB.fail("ConstraintEnforcer:BuildRow", ("table '%s' has no column '%s'"):format(tname, tostring(k))) end
     end
 
     local row = {}
@@ -68,12 +66,12 @@ function ConstraintEnforcer:BuildRow(tname, values, nextId)
             elseif col:HasDefault() then
                 v = col:Default()
             elseif not col:IsNullable() then
-                fail(("NOT NULL constraint failed: %s.%s"):format(tname, cn))
+                DB.fail("ConstraintEnforcer:BuildRow", ("NOT NULL constraint failed: %s.%s"):format(tname, cn))
             end
         end
         if v ~= nil then
             if not DB.checkType(col:Type(), v) then
-                fail(("type error: %s.%s expects %s, got %s (%s)")
+                DB.fail("ConstraintEnforcer:BuildRow", ("type error: %s.%s expects %s, got %s (%s)")
                     :format(tname, cn, col:Type(), type(v), tostring(v)))
             end
             row[cn] = v
@@ -90,9 +88,9 @@ function ConstraintEnforcer:RecheckTypes(tname, row)
     for _, col in ipairs(tbl:Columns()) do
         local cn, v = col:Name(), row[col:Name()]
         if v == nil then
-            if not col:IsNullable() then fail(("NOT NULL constraint failed: %s.%s"):format(tname, cn)) end
+            if not col:IsNullable() then DB.fail("ConstraintEnforcer:RecheckTypes", ("NOT NULL constraint failed: %s.%s"):format(tname, cn)) end
         elseif not DB.checkType(col:Type(), v) then
-            fail(("type error: %s.%s expects %s, got %s"):format(tname, cn, col:Type(), type(v)))
+            DB.fail("ConstraintEnforcer:RecheckTypes", ("type error: %s.%s expects %s, got %s"):format(tname, cn, col:Type(), type(v)))
         end
     end
 end
@@ -108,7 +106,7 @@ function ConstraintEnforcer:CheckUnique(tname, row, exceptRow)
             isPK = true
             for i = 1, #pk do if pk[i] ~= cols[i] then isPK = false; break end end
         end
-        fail(("%s constraint failed: %s(%s)"):format(isPK and "PRIMARY KEY" or "UNIQUE", tname, table.concat(cols, ", ")))
+        DB.fail("ConstraintEnforcer:CheckUnique", ("%s constraint failed: %s(%s)"):format(isPK and "PRIMARY KEY" or "UNIQUE", tname, table.concat(cols, ", ")))
     end
 end
 
@@ -119,7 +117,7 @@ function ConstraintEnforcer:CheckForeignKeys(tname, row)
         local v = row[fk.column]
         if v ~= nil then                                       -- a NULL FK is allowed (optional link)
             if not self:_ParentExists(fk, v) then
-                fail(("FOREIGN KEY constraint failed: %s.%s -> %s.%s (%s)")
+                DB.fail("ConstraintEnforcer:CheckForeignKeys", ("FOREIGN KEY constraint failed: %s.%s -> %s.%s (%s)")
                     :format(tname, fk.column, fk.table, fk.refColumn, tostring(v)))
             end
         end

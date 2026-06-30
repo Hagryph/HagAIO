@@ -34,7 +34,7 @@ function LibManager:RegisterValue(name, value)
     assert(type(value) == "table", "LibManager:RegisterValue needs the lib's value table")
     local p = self:_p()
     p.values = p.values or {}                 -- name -> value (duplicate check + Iterate-free registry)
-    assert(not p.values[name], ("duplicate value lib '%s'"):format(name))
+    assert(not p.values[name], ("LibManager:RegisterValue: duplicate value lib '%s'"):format(name))
     p.values[name] = value
     ns[name] = value
     return value

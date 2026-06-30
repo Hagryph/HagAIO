@@ -102,7 +102,7 @@ local function computeAgg(agg, rows, resolver)
         local s = {}; for i, v in ipairs(vals) do s[i] = tostring(v) end
         return table.concat(s, agg:Sep())
     end
-    error("DB: unknown aggregate '" .. tostring(fn) .. "'", 0)
+    DB.fail("QueryExecutor:computeAgg", "unknown aggregate '" .. tostring(fn) .. "'")
 end
 
 -- ---- join ------------------------------------------------------------------
@@ -174,11 +174,13 @@ function QueryExecutor:Run(db, plan)
     local schema = db:Schema()
 
     -- sources (FROM + joins) -> resolver
-    local sources = { { alias = plan.from.alias, table = assert(schema:Table(plan.from.table),
-        ("DB: unknown table '%s'"):format(tostring(plan.from.table))) } }
+    local fromTable = schema:Table(plan.from.table)
+    if not fromTable then DB.fail("QueryExecutor:Run", ("unknown table '%s'"):format(tostring(plan.from.table))) end
+    local sources = { { alias = plan.from.alias, table = fromTable } }
     for _, j in ipairs(plan.joins) do
-        sources[#sources + 1] = { alias = j.alias, table = assert(schema:Table(j.table),
-            ("DB: unknown table '%s'"):format(tostring(j.table))) }
+        local joinTable = schema:Table(j.table)
+        if not joinTable then DB.fail("QueryExecutor:Run", ("unknown table '%s'"):format(tostring(j.table))) end
+        sources[#sources + 1] = { alias = j.alias, table = joinTable }
     end
     local resolver = DB.ColumnResolver:New(sources)
 
@@ -299,7 +301,7 @@ function QueryExecutor:_ProjectRow(projection, comp, resolver)
         elseif e.kind == "star" then
             for _, x in ipairs(resolver:ExpandStar(e.ref)) do row[x.out] = resolver:Value(comp, x.ref) end
         else
-            error("DB: aggregate in a non-grouped projection (add GROUP BY or remove the column)", 0)
+            DB.fail("QueryExecutor:_ProjectRow", "aggregate in a non-grouped projection (add GROUP BY or remove the column)")
         end
     end
     return row

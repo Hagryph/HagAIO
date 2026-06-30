@@ -31,10 +31,10 @@ end
 
 function DatabaseManager:_Add(name, spec)
     local p = self:_p()
-    assert(not p.built, ("DatabaseManager: cannot add table '%s' after the database is built"):format(tostring(name)))
+    if p.built then DB.fail("DatabaseManager:_Add", ("cannot add table '%s' after the database is built"):format(tostring(name))) end
     if p.contrib[name] then
-        error(("DatabaseManager: table '%s' is already defined (table names are shared across the one database)")
-            :format(tostring(name)), 0)
+        DB.fail("DatabaseManager:_Add", ("table '%s' is already defined (table names are shared across the one database)")
+            :format(tostring(name)))
     end
     p.contrib[name] = spec
 end
@@ -57,7 +57,7 @@ end
 function DatabaseManager:Build()
     local p = self:_p()
     if p.built then return p.shared end
-    assert(ns.SavedVars and ns.SavedVars:IsLoaded(), "DatabaseManager:Build before SavedVars are loaded")
+    if not (ns.SavedVars and ns.SavedVars:IsLoaded()) then DB.fail("DatabaseManager:Build", "Build before SavedVars are loaded") end
     local schema = DB.Schema.new("HagAIO", { version = SCHEMA_VERSION, tables = p.contrib })
     p.shared = DB.Database:New("HagAIO", schema, {
         [DB.Scope.GLOBAL] = ns.SavedVars:DataSlot("db_global", false),

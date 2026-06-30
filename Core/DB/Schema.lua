@@ -41,7 +41,7 @@ local Class = ns.Class
 ns.DB = ns.DB or {}
 local DB = ns.DB
 
-local function fail(msg) error("DB schema: " .. msg, 3) end
+local function fail(msg) DB.fail("Schema.new", msg) end
 
 -- ===========================================================================
 -- Column
@@ -52,7 +52,7 @@ local Column = Class.new("DBColumn")
 -- `compositePKMember` (resolved by the Table BEFORE construction) is true when this column belongs
 -- to a table-level composite primary key, so the column is built already NOT NULL and never mutated.
 function Column:Initialize(spec, tableName, compositePKMember)
-    assert(type(spec) == "table", "column spec must be a table")
+    if type(spec) ~= "table" then fail("column spec must be a table") end
     local p = self:_p()
     local where = ("table '%s'"):format(tostring(tableName))
 
@@ -85,7 +85,7 @@ function Column:Initialize(spec, tableName, compositePKMember)
     -- Foreign-key reference (resolved against the target table at Schema build).
     if spec.references then
         local r = spec.references
-        assert(type(r) == "table", ("%s.%s: references must be a table"):format(where, p.name))
+        if type(r) ~= "table" then fail(("%s.%s: references must be a table"):format(where, p.name)) end
         local onDelete = r.onDelete or DB.OnDelete.NO_ACTION
         if not ns.Enum.has(DB.OnDelete, onDelete) then
             fail(("%s.%s: unknown onDelete '%s'"):format(where, p.name, tostring(onDelete)))
@@ -98,7 +98,7 @@ function Column:Initialize(spec, tableName, compositePKMember)
             column   = r.column,                      -- nil = the referenced table's primary key
             onDelete = onDelete,
         }
-        assert(type(p.ref.table) == "string", ("%s.%s: references.table must be a string"):format(where, p.name))
+        if type(p.ref.table) ~= "string" then fail(("%s.%s: references.table must be a string"):format(where, p.name)) end
     end
 end
 
@@ -120,13 +120,13 @@ local Table = Class.new("DBTable")
 local function asNameList(v) return (type(v) == "table") and v or { v } end
 
 function Table:Initialize(name, spec)
-    assert(type(spec) == "table", ("table '%s' spec must be a table"):format(tostring(name)))
+    if type(spec) ~= "table" then fail(("table '%s' spec must be a table"):format(tostring(name))) end
     local p = self:_p()
     p.name = name
     p.scope = spec.scope or DB.Scope.GLOBAL          -- where rows live (default: account-wide)
     if not ns.Enum.has(DB.Scope, p.scope) then fail(("table '%s': unknown scope '%s'"):format(name, tostring(p.scope))) end
     p.seed = spec.seed                                -- optional seed(db) run once when the table is empty
-    if p.seed ~= nil then assert(type(p.seed) == "function", ("table '%s': seed must be a function"):format(name)) end
+    if p.seed ~= nil and type(p.seed) ~= "function" then fail(("table '%s': seed must be a function"):format(name)) end
     p.order = {}          -- ordered column names
     p.cols = {}           -- name -> Column
     p.fks = {}            -- list of { column, db, table, column=refCol, onDelete }
@@ -134,8 +134,9 @@ function Table:Initialize(name, spec)
     p.indices = {}        -- list of { name, columns = {...}, unique }
     p.pk = {}             -- list of pk column names
 
-    assert(type(spec.columns) == "table" and #spec.columns > 0,
-        ("table '%s' needs a non-empty columns list"):format(tostring(name)))
+    if type(spec.columns) ~= "table" or #spec.columns == 0 then
+        fail(("table '%s' needs a non-empty columns list"):format(tostring(name)))
+    end
 
     -- Resolve composite-PK membership BEFORE constructing any column, so a member is built already
     -- NOT NULL -- a column is validated once, at construction, and never mutated afterwards.
@@ -209,19 +210,19 @@ end
 local Schema = Class.new("DBSchema")
 
 function Schema:Initialize(name, spec)
-    assert(type(name) == "string", "Schema.new: name must be a string")
+    if type(name) ~= "string" then fail("name must be a string") end
     spec = spec or {}
     local p = self:_p()
     p.name = name
     p.version = spec.version or 1
-    assert(type(p.version) == "number" and p.version >= 1, "Schema: version must be a number >= 1")
+    if type(p.version) ~= "number" or p.version < 1 then fail("version must be a number >= 1") end
     p.migrations = spec.migrations or {}
     p.tables = {}         -- name -> Table
     p.tableOrder = {}
     p.views = {}          -- name -> view spec
     p.triggers = {}       -- list of normalized triggers
 
-    assert(type(spec.tables) == "table", ("Schema '%s' needs a tables map"):format(name))
+    if type(spec.tables) ~= "table" then fail(("'%s' needs a tables map"):format(name)) end
     for tname, tspec in pairs(spec.tables) do
         p.tables[tname] = Table:New(tname, tspec)
         p.tableOrder[#p.tableOrder + 1] = tname
@@ -277,7 +278,7 @@ end
 function Schema:_BuildTriggers(list)
     local p = self:_p()
     for _, t in ipairs(list) do
-        assert(type(t) == "table", "trigger spec must be a table")
+        if type(t) ~= "table" then fail("trigger spec must be a table") end
         local time  = t.time  or DB.TriggerTime.AFTER
         local event = t.event
         local level = t.level or DB.TriggerLevel.ROW
@@ -285,7 +286,7 @@ function Schema:_BuildTriggers(list)
         if not ns.Enum.has(DB.TriggerEvent, event) then fail(("trigger: unknown event '%s'"):format(tostring(event))) end
         if not ns.Enum.has(DB.TriggerLevel, level) then fail(("trigger: unknown level '%s'"):format(tostring(level))) end
         if not p.tables[t.table] then fail(("trigger references unknown table '%s'"):format(tostring(t.table))) end
-        assert(type(t.action) == "function", "trigger: action must be a function")
+        if type(t.action) ~= "function" then fail("trigger: action must be a function") end
         p.triggers[#p.triggers + 1] = {
             table = t.table, time = time, event = event, level = level,
             when = t.when, action = t.action, name = t.name,
@@ -296,8 +297,8 @@ end
 function Schema:_BuildViews(views)
     local p = self:_p()
     for vname, v in pairs(views) do
-        assert(type(v) == "table", ("view '%s' spec must be a table"):format(tostring(vname)))
-        assert(type(v.build) == "function", ("view '%s' needs a build(db) function"):format(tostring(vname)))
+        if type(v) ~= "table" then fail(("view '%s' spec must be a table"):format(tostring(vname))) end
+        if type(v.build) ~= "function" then fail(("view '%s' needs a build(db) function"):format(tostring(vname))) end
         if p.tables[vname] then fail(("view '%s' collides with a table of the same name"):format(vname)) end
         p.views[vname] = { name = vname, build = v.build, insteadOf = v.insteadOf }
     end

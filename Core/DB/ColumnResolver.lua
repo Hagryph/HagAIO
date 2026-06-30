@@ -24,7 +24,7 @@ function ColumnResolver:Initialize(sources)
     p.memo = {}               -- ref -> { alias, col }: Resolve runs per row per predicate leaf, and a
                               -- resolver lives for ONE query, so successes can never go stale
     for _, s in ipairs(sources) do
-        if p.byAlias[s.alias] then error(("DB: duplicate source alias '%s'"):format(s.alias), 0) end
+        if p.byAlias[s.alias] then DB.fail("ColumnResolver:Initialize", ("duplicate source alias '%s'"):format(s.alias)) end
         p.byAlias[s.alias] = s.table
         p.aliasOrder[#p.aliasOrder + 1] = s.alias
         for _, c in ipairs(s.table:ColumnNames()) do
@@ -50,12 +50,12 @@ function ColumnResolver:Resolve(ref)
     local alias, col = split(ref)
     if alias then
         local tbl = p.byAlias[alias]
-        if not tbl then error(("DB: unknown source '%s' in '%s'"):format(alias, ref), 0) end
-        if not tbl:HasColumn(col) then error(("DB: '%s' has no column '%s'"):format(alias, col), 0) end
+        if not tbl then DB.fail("ColumnResolver:Resolve", ("unknown source '%s' in '%s'"):format(alias, ref)) end
+        if not tbl:HasColumn(col) then DB.fail("ColumnResolver:Resolve", ("'%s' has no column '%s'"):format(alias, col)) end
     else
         local list = p.colToAliases[col]
-        if not list then error(("DB: unknown column '%s'"):format(col), 0) end
-        if #list > 1 then error(("DB: ambiguous column '%s' (in %s)"):format(col, table.concat(list, ", ")), 0) end
+        if not list then DB.fail("ColumnResolver:Resolve", ("unknown column '%s'"):format(col)) end
+        if #list > 1 then DB.fail("ColumnResolver:Resolve", ("ambiguous column '%s' (in %s)"):format(col, table.concat(list, ", "))) end
         alias = list[1]
     end
     p.memo[ref] = { alias, col }
@@ -82,7 +82,7 @@ function ColumnResolver:ExpandStar(ref)
         end
     else
         local alias = ref:match("^([%w_]+)%.%*$")
-        if not alias or not p.byAlias[alias] then error(("DB: bad star projection '%s'"):format(ref), 0) end
+        if not alias or not p.byAlias[alias] then DB.fail("ColumnResolver:ExpandStar", ("bad star projection '%s'"):format(ref)) end
         for _, c in ipairs(p.byAlias[alias]:ColumnNames()) do out[#out + 1] = { ref = alias .. "." .. c, out = c } end
     end
     return out

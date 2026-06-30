@@ -30,7 +30,7 @@ local function classOf(arg)
         local mt = getmetatable(arg)
         if mt and rawget(mt, "__ancestors") then return mt end   -- arg is an instance
     end
-    error("statics: argument must be a class or an instance", 3)
+    error("Class.statics: argument must be a class or an instance", 3)
 end
 
 local function sharedStatics(arg)
@@ -154,13 +154,13 @@ function Class.new(name, parent, opts)
     if (opts and (opts.abstract or opts.implements or opts.singleton)) or needsCheckedNew then
         function class:New(...)
             if rawget(self, "__abstract") then
-                error(("cannot instantiate abstract class '%s'"):format(self.__name), 2)
+                error(("Class:New: cannot instantiate abstract class '%s'"):format(self.__name), 2)
             end
             -- One-instance singleton: a second :New() raises instead of building a shadow. The
             -- latch is keyed to THIS class (self), so a singleton base yields one instance PER
             -- subclass. __singleton is read inherited (self.__singleton), the latch per exact class.
             if self.__singleton and singletons[self] then
-                error(("class '%s' is a singleton -- it was already constructed (no second :New())"):format(self.__name), 2)
+                error(("Class:New: class '%s' is a singleton -- it was already constructed (no second :New())"):format(self.__name), 2)
             end
             -- Verify every contract in the ancestry ONCE per concrete class, at its first
             -- :New() (when every method is defined). The declarer's __implements is kept --
@@ -172,7 +172,7 @@ function Class.new(name, parent, opts)
                     for _, iface in ipairs(rawget(c, "__implements") or {}) do
                         for _, m in ipairs(iface) do
                             if type(self[m]) ~= "function" then
-                                error(("class '%s' is missing method '%s' required by interface '%s'"):format(
+                                error(("Class:New: class '%s' is missing method '%s' required by interface '%s'"):format(
                                     self.__name, m, iface.__name or "?"), 2)
                             end
                         end

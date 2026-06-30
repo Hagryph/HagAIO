@@ -46,7 +46,7 @@ end
 function Registry:Register(item)
     local p = self:_p()
     local name = item:GetName()
-    assert(not p.items[name], "duplicate " .. p.kind .. ": " .. tostring(name))
+    assert(not p.items[name], ("Registry:Register: duplicate %s '%s'"):format(p.kind, tostring(name)))
     p.items[name] = item
     p.order[#p.order + 1] = name
     p.graph = nil  -- structure changed; rebuild lazily on next query

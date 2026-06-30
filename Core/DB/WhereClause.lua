@@ -58,7 +58,7 @@ local function evalLeaf(leaf, left, right)
         local lo, hi = right[1], right[2]
         return sameOrderableType(left, lo) and sameOrderableType(left, hi) and left >= lo and left <= hi
     end
-    error("DB: unknown operator '" .. tostring(op) .. "'", 0)
+    DB.fail("WhereClause:evalLeaf", "unknown operator '" .. tostring(op) .. "'")
 end
 
 -- Operators that take no value argument.
@@ -70,9 +70,9 @@ local function makeLeaf(col, op, value)
     if op == "like" and type(value) == "string" then leaf._pat = likeToLua(value) end
     if not NULLARY[op] and op ~= "like" then
         -- in/between expect tables; the rest expect a scalar -- light shape checks catch typos early.
-        if op == "in" and type(value) ~= "table" then error("DB: 'in' needs a list value", 0) end
+        if op == "in" and type(value) ~= "table" then DB.fail("WhereClause:makeLeaf", "'in' needs a list value") end
         if op == "between" and (type(value) ~= "table" or value[1] == nil or value[2] == nil) then
-            error("DB: 'between' needs a { lo, hi } value", 0)
+            DB.fail("WhereClause:makeLeaf", "'between' needs a { lo, hi } value")
         end
     end
     return leaf

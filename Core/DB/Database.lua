@@ -222,7 +222,7 @@ end
 function Database:Update(tname, changes, predicate)
     local p = self:_p()
     local tbl = p.schema:Table(tname)
-    assert(tbl, ("unknown table '%s'"):format(tostring(tname)))
+    if not tbl then DB.fail("Database:Update", ("unknown table '%s'"):format(tostring(tname))) end
     local count, changed = 0, 0
     self:_FireStmt(DB.TriggerTime.BEFORE, DB.TriggerEvent.UPDATE, tname)
     -- resolve the matching rows first (we mutate the array's contents, not its membership)
@@ -265,7 +265,7 @@ end
 -- `predicate`: nil (all rows), a function(row), or an index-accelerated { col = value } map.
 function Database:Delete(tname, predicate)
     local p = self:_p()
-    assert(p.schema:Table(tname), ("unknown table '%s'"):format(tostring(tname)))
+    if not p.schema:Table(tname) then DB.fail("Database:Delete", ("unknown table '%s'"):format(tostring(tname))) end
     -- BEFORE-statement trigger first, THEN resolve targets (same order as Update) -- so a
     -- statement trigger that inserts/edits rows still influences which rows match.
     self:_FireStmt(DB.TriggerTime.BEFORE, DB.TriggerEvent.DELETE, tname)
@@ -301,7 +301,7 @@ function Database:_DeleteRow(tname, row)
     -- 1) RESTRICT: block the delete if any restricting child still references this row.
     for _, ref in ipairs(refs) do
         if ref.onDelete == DB.OnDelete.RESTRICT and #self:_ChildRows(ref, row[ref.refCol]) > 0 then
-            error(("DB: RESTRICT: %s row still referenced by %s.%s"):format(tname, ref.childTable, ref.childCol), 0)
+            DB.fail("Database:_DeleteRow", ("RESTRICT: %s row still referenced by %s.%s"):format(tname, ref.childTable, ref.childCol))
         end
     end
 
@@ -349,7 +349,7 @@ end
 -- Run a declared view's query (its build(db) returns a QueryBuilder) and return its rows.
 function Database:View(name)
     local v = self:_p().schema:Views()[name]
-    assert(v, ("DB: unknown view '%s'"):format(tostring(name)))
+    if not v then DB.fail("Database:View", ("unknown view '%s'"):format(tostring(name))) end
     local qb = v.build(self)
     return qb:Run()
 end
