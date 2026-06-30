@@ -220,7 +220,7 @@ function CVars:_ScheduleSync()
     local p = self:_p()
     if p.syncPending or p.synced then return end
     p.syncPending = true
-    ns.Scheduler:After(0, function()
+    self:After(0, function()        -- scope-released: cancelled on disable (the latch is cleared in OnEnable)
         p.syncPending = false
         self:_BackfillTracked()
         self:_PruneTracked()
@@ -229,6 +229,10 @@ function CVars:_ScheduleSync()
 end
 
 function CVars:OnEnable()
+    -- A prior disable left the pending-defer latches set (self:After cancelled the in-flight defer
+    -- without running its body); clear them so _ScheduleApply / _ScheduleSync re-arm on re-enable.
+    local p = self:_p()
+    p.applyPending, p.syncPending = false, false
     self:_ScheduleApply()   -- apply now; the declarative PLAYER_ENTERING_WORLD re-applies past each zone's loading screen
 end
 
@@ -240,9 +244,9 @@ function CVars:_ScheduleApply()
     local p = self:_p()
     if p.applyPending then return end
     p.applyPending = true
-    ns.Scheduler:After(0, function()
+    self:After(0, function()        -- scope-released: cancelled on disable (replaces the manual IsEnabled gate)
         p.applyPending = false
-        if self:IsEnabled() then self:_ApplyAll() end   -- skip if disabled before the frame ran
+        self:_ApplyAll()
     end)
 end
 
@@ -628,7 +632,7 @@ ns.ModuleManager:Register(CVars:New("CVars", {
     description = "Force useful console variables on every character. Grouped, typed controls plus custom CVars.",
     defaultEnabled = false,
     color = ns.Theme.hex.red,
-    deps = { "SlashCommand", "SettingsWindow", "Scheduler" },  -- routing + page refresh + the deferred apply/sync timers (type inference is a pure Lib: ns.CVarHelper, always available)
+    deps = { "SlashCommand", "SettingsWindow" },  -- routing + page refresh (the deferred apply/sync defers go through self:After, a framework helper like self:On -- no explicit Scheduler dep; type inference is the pure ns.CVarHelper lib, always available)
     optionalDeps = { "Dev" },  -- the full-dump enumeration (ns.Dev) is dev-only (registered behind ns.IsDevChar) and reached through a guard, so it must NOT be a hard dep -- else CVars wouldn't load for normal players
     events = { PLAYER_ENTERING_WORLD = "_ScheduleApply" },   -- re-apply DEFERRED past each zone's loading screen (static + unconditional -> declarative)
     -- /hag cvar is a sub-command GROUP: each verb is a declarative sub-command the SlashCommand router

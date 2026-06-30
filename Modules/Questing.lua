@@ -379,7 +379,7 @@ function Questing:_OnQuestAccepted(_, a, b)
     if not questID or not p.pendingAccept[questID] then return end
     p.pendingAccept[questID] = nil
     -- Defer one tick: the log timer isn't always initialised the instant the event fires.
-    ns.Scheduler:After(0.1, function()
+    self:After(0.1, function()   -- scope-released: cancelled if the module disables in the gap
         local secs = self:_LiveSeconds(questID)
         if not secs then return end
         self:_RememberTimed(questID, secs)   -- store the limit for the advanced-info banner
