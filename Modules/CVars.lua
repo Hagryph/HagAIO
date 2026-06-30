@@ -229,8 +229,7 @@ function CVars:_ScheduleSync()
 end
 
 function CVars:OnEnable()
-    self:On("PLAYER_ENTERING_WORLD", function() self:_ScheduleApply() end)  -- auto-released on disable
-    self:_ScheduleApply()
+    self:_ScheduleApply()   -- apply now; the declarative PLAYER_ENTERING_WORLD re-applies past each zone's loading screen
 end
 
 -- Re-apply DEFERRED past the loading screen: a SetCVar over every managed CVar is not free, and a
@@ -631,6 +630,7 @@ ns.ModuleManager:Register(CVars:New("CVars", {
     color = ns.Theme.hex.red,
     deps = { "SlashCommand", "SettingsWindow", "Scheduler" },  -- routing + page refresh + the deferred apply/sync timers (type inference is a pure Lib: ns.CVarHelper, always available)
     optionalDeps = { "Dev" },  -- the full-dump enumeration (ns.Dev) is dev-only (registered behind ns.IsDevChar) and reached through a guard, so it must NOT be a hard dep -- else CVars wouldn't load for normal players
+    events = { PLAYER_ENTERING_WORLD = "_ScheduleApply" },   -- re-apply DEFERRED past each zone's loading screen (static + unconditional -> declarative)
     -- /hag cvar is a sub-command GROUP: each verb is a declarative sub-command the SlashCommand router
     -- routes, lists and (for "dump") dev-gates -- so the dev-only verb is hidden off a whitelisted
     -- character via the `dev` flag, with no hand-rolled gate or function-help.

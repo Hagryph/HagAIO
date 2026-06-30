@@ -120,25 +120,13 @@ function Dashboard:OnInitialize()
 end
 
 function Dashboard:OnEnable()
-    -- Targeted collectors keep each fire cheap (the never-debounce rule): a bag update only
-    -- re-reads the keystone, a quest turn-in only records that quest.
     -- The full catalog build + snapshot scans hundreds of APIs and writes many DB rows, so it runs
-    -- through the frame-budgeted Worker (see _RefreshNow below). The targeted collectors below stay
-    -- inline -- each fire is cheap (the never-debounce rule): a bag update only re-reads the keystone,
-    -- a quest turn-in only records that quest.
-    -- Catalog build + snapshot is the heavy, deferrable work -> it runs THROUGH the frame-budgeted
-    -- Worker (Services/Worker.lua): once at enable, then re-run on each zone change (coalesced by the
-    -- Worker, so rapid PLAYER_ENTERING_WORLD fires don't pile up). The Worker spreads it across frames.
-    local cs = self:_p().charStore   -- per-character data layer (built in OnInitialize); the renders stay on self
-    self:WorkOn("PLAYER_ENTERING_WORLD",  function() self:_RefreshNow() end, { label = "Dashboard refresh" })
-    self:On("PLAYER_LOGOUT",              function() cs:Snapshot(); self:_RenderIfShown() end)   -- inline: must finish before logout
-    self:On("WEEKLY_REWARDS_UPDATE",      function() cs:CollectVault();    self:_RenderIfShown() end)
-    self:On("CHALLENGE_MODE_COMPLETED",   function() cs:CollectKeystone(); self:_RenderIfShown() end)
-    self:On("CHALLENGE_MODE_MAPS_UPDATE", function() cs:CollectKeystone(); self:_RenderIfShown() end)
-    self:On("BAG_UPDATE_DELAYED",         function() cs:CollectKeystone(); self:_RenderIfShown() end)
-    self:On("UPDATE_INSTANCE_INFO",       function() cs:CollectLockouts(); self:_RenderIfShown() end)
-    self:On("BOSS_KILL",                  function() cs:CollectLockouts() end)
-    self:On("QUEST_TURNED_IN",            function(_, questID) cs:RecordQuest(questID); self:_RenderIfShown() end)
+    -- through the frame-budgeted Worker (self:WorkOn / self:Queue -> _RefreshNow): once at enable, then
+    -- re-run on each zone change (the Worker coalesces rapid PLAYER_ENTERING_WORLD fires). The targeted
+    -- per-event collectors are DECLARATIVE (the `events` table on the registration, wired here on enable
+    -- + torn down on disable) -- each fire is cheap (the never-debounce rule): a bag update only
+    -- re-reads the keystone, a quest turn-in only records that quest.
+    self:WorkOn("PLAYER_ENTERING_WORLD", function() self:_RefreshNow() end, { label = "Dashboard refresh" })
     self:Queue(function() self:_RefreshNow() end, { label = "Dashboard initial build" })  -- deferred via Worker
     if RequestRaidInfo then RequestRaidInfo() end   -- async -> UPDATE_INSTANCE_INFO fills lockouts
 end
@@ -1206,6 +1194,19 @@ ns.ModuleManager:Register(Dashboard:New("Dashboard", {
     -- load-order deps are required even though depcheck can't see the use.
     -- hag-lint-disable depcheck: Secrets, Worker
     deps = { "SlashCommand", "Secrets", "Worker", "Versioning", "Scheduler" },   -- Scheduler: the open-window countdown ticker. DatabaseManager is added automatically (see `tables`)
+    -- Static, unconditional per-event collectors: the framework wires these on Enable + tears them down
+    -- on Disable, reusing one bound handler each. Each re-reads only its slice and repaints if the
+    -- window is open (charStore is the per-character data layer, built in OnInitialize).
+    events = {
+        PLAYER_LOGOUT              = function(self) self:_p().charStore:Snapshot();      self:_RenderIfShown() end,   -- save before logout
+        WEEKLY_REWARDS_UPDATE      = function(self) self:_p().charStore:CollectVault();    self:_RenderIfShown() end,
+        CHALLENGE_MODE_COMPLETED   = function(self) self:_p().charStore:CollectKeystone(); self:_RenderIfShown() end,
+        CHALLENGE_MODE_MAPS_UPDATE = function(self) self:_p().charStore:CollectKeystone(); self:_RenderIfShown() end,
+        BAG_UPDATE_DELAYED         = function(self) self:_p().charStore:CollectKeystone(); self:_RenderIfShown() end,
+        UPDATE_INSTANCE_INFO       = function(self) self:_p().charStore:CollectLockouts(); self:_RenderIfShown() end,
+        BOSS_KILL                  = function(self) self:_p().charStore:CollectLockouts() end,
+        QUEST_TURNED_IN            = function(self, _, questID) self:_p().charStore:RecordQuest(questID); self:_RenderIfShown() end,
+    },
     -- Account-wide cross-character snapshots, stored relationally (no nested blobs, no duplicated
     -- reference data). Vault/lockout/quest cascade-delete with their character; a lockout references
     -- the account-wide dashboard_instance registry (its name/difficulty), a quest references the
