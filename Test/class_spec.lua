@@ -42,9 +42,27 @@ describe("class options", function()
         local ns = classNs()
         local Base = ns.Class.new("Base", nil, { abstract = true })
         function Base:Hi() return "hi" end
-        assert.is_false((pcall(function() return Base:New() end)))
+        local ok, err = pcall(function() return Base:New() end)
+        assert.is_false(ok)                                -- abstract base raises on :New()
+        assert.is_true(tostring(err):find("Base") ~= nil)  -- ...naming the class
         local Sub = ns.Class.new("Sub", Base)              -- concrete
         assert.are.equal("hi", Sub:New():Hi())
+    end)
+
+    it("singleton: a second :New() raises, and subclasses latch independently", function()
+        local ns = classNs()
+        local Solo = ns.Class.new("Solo", nil, { singleton = true })
+        assert(Solo:New())                                 -- the one instance
+        local ok, err = pcall(function() return Solo:New() end)
+        assert.is_false(ok)                                -- a second :New() raises
+        assert.is_true(tostring(err):find("singleton") ~= nil)
+
+        -- a singleton BASE makes EACH subclass one-instance, independently (per-class latch).
+        local Base = ns.Class.new("SBase", nil, { singleton = true })
+        local A, B = ns.Class.new("SA", Base), ns.Class.new("SB", Base)
+        assert(A:New())                                    -- A's instance
+        assert(B:New())                                    -- B's instance: a separate latch, fine
+        assert.is_false((pcall(function() return A:New() end)))   -- A already built -> raises
     end)
 
     it("statics: PRIVATE (not on the class table) and shared with the declaring class (C#)", function()

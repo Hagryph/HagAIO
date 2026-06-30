@@ -12,7 +12,7 @@ local Class = ns.Class
 -- The generic registry plumbing lives in ns.Registry; this class adds the
 -- loaded-state tracking and dependency-ordered boot.
 
-local ServiceManager = Class.new("ServiceManager", ns.Registry)
+local ServiceManager = Class.new("ServiceManager", ns.Registry, { singleton = true })
 
 function ServiceManager:Initialize()
     ns.Registry.Initialize(self, "service")
@@ -73,8 +73,9 @@ end
 -- Run each service's OnShutdown in REVERSE dependency order (dependents before the
 -- services they rely on). The iteration + per-item guard live in ns.Registry.
 function ServiceManager:ShutdownAll()
-    local p = self:_p()
-    self:_ShutdownEach("OnShutdown", { order = p.startOrder or p.order, reverse = true })
+    -- Pass only our OWN resolved order; when it's absent (ShutdownAll before StartAll), _ShutdownEach
+    -- falls back to the registry's registration order itself -- we don't read Registry's private p.order.
+    self:_ShutdownEach("OnShutdown", { order = self:_p().startOrder, reverse = true })
 end
 
 ns.ServiceManager = ServiceManager:New()

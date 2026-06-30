@@ -78,7 +78,7 @@ function MonkBase:Unload()
     host:ReleaseScope("spec")   -- drop every spec event sub + the AoE ticker
     p.expelActive = false
     p.onCooldown = false
-    if p.expelWatch then ns.Cooldowns:Unwatch(p.expelWatch); p.expelWatch = nil end
+    if p.expelWatch then p.expelWatch:Cancel(); p.expelWatch = nil end
     if p.marker then p.marker:Hide() end
     host:_HideOrbFill()
 end

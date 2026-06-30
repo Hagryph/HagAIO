@@ -10,10 +10,38 @@ local Class = ns.Class
 --
 --   local h = ns.Hooks:Secure(frame, "OnClicked", fn, owner)   -- a method on an object
 --   local h = ns.Hooks:Secure("SomeGlobalFunc", fn, owner)     -- a global function
---   ns.Hooks:Unhook(h)         -- remove one
+--   h:Unhook()                 -- remove this one
 --   ns.Hooks:UnhookAll(owner)  -- remove every hook an owner installed (use on disable)
 
 local Hooks = Class.new("Hooks", ns.Service)
+
+-- ---- HookHandle: the live handle Secure() returns -----------------------------------------
+-- A small class (private state behind :_p(), a method over a raw record) -- the house style
+-- (Logger -> LogChannel, Cache -> CacheStore). It knows how to drop its own handler from the
+-- shared dispatcher and forget itself from its owner's set.
+local HookHandle = Class.new("HookHandle")
+
+function HookHandle:Initialize(entry, id, ownerSet)
+    local p = self:_p()
+    p.entry = entry        -- the dispatcher entry { handlers = { id -> fn } } this hook lives in
+    p.id = id              -- our handler id within that entry
+    p.ownerSet = ownerSet  -- our owner's handle-set (or nil), so Unhook can forget us
+end
+
+-- Stop this handler firing (drop it from its dispatcher). The internal seam UnhookAll reuses.
+function HookHandle:_Detach()
+    local p = self:_p()
+    p.entry.handlers[p.id] = nil
+end
+
+-- Remove this one hook: stop it firing AND forget it from its owner's set.
+function HookHandle:Unhook()
+    self:_Detach()
+    local p = self:_p()
+    if p.ownerSet then p.ownerSet[self] = nil end
+end
+
+ns.HookHandle = HookHandle
 
 function Hooks:OnInitialize()
     local p = self:_p()
@@ -38,7 +66,7 @@ function Hooks:_Entry(object, method)
 end
 
 -- Secure(object, method, handler[, owner])  OR  Secure("GlobalName", handler[, owner]).
--- Returns a handle to pass to Unhook. `owner` (optional) lets UnhookAll remove
+-- Returns a HookHandle (handle:Unhook()). `owner` (optional) lets UnhookAll remove
 -- every hook a module installed in one call.
 function Hooks:Secure(object, method, handler, owner)
     if type(object) == "string" then
@@ -49,27 +77,22 @@ function Hooks:Secure(object, method, handler, owner)
     local p = self:_p()
     local entry = self:_Entry(object, method)
     p.nextId = p.nextId + 1
-    local handle = { entry = entry, id = p.nextId, owner = owner }
-    entry.handlers[handle.id] = handler
+    local ownerSet
     if owner then
         p.byOwner[owner] = p.byOwner[owner] or {}
-        p.byOwner[owner][handle] = true
+        ownerSet = p.byOwner[owner]
     end
+    local handle = HookHandle:New(entry, p.nextId, ownerSet)
+    entry.handlers[p.nextId] = handler
+    if ownerSet then ownerSet[handle] = true end
     return handle
-end
-
-function Hooks:Unhook(handle)
-    if not (handle and handle.entry) then return end
-    handle.entry.handlers[handle.id] = nil
-    local set = handle.owner and self:_p().byOwner[handle.owner]
-    if set then set[handle] = nil end
 end
 
 function Hooks:UnhookAll(owner)
     local p = self:_p()
     local set = p.byOwner[owner]
     if not set then return end
-    for handle in pairs(set) do handle.entry.handlers[handle.id] = nil end
+    for handle in pairs(set) do handle:_Detach() end
     p.byOwner[owner] = nil
 end
 

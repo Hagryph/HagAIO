@@ -78,7 +78,7 @@ function Channel:Announce(...)    self:_Log(LEVELS.SUCCESS, ECHO.ALWAYS, ...) en
 ns.LogChannel = Channel
 
 -- ---- Logger: the singleton service ----------------------------------------
-local Logger = Class.new("Logger")
+local Logger = Class.new("Logger", nil, { singleton = true })  -- one instance (ns.Logger); a stray Logger:New() raises
 
 local PREFIX = "|cff" .. Theme.hex.accent .. "HagAIO|r"
 local KEEP = 500   -- history capacity (entries). Fixed: a tunable `keep` pref existed but had

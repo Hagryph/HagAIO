@@ -10,8 +10,8 @@ local Class = ns.Class
 -- SPELL_UPDATE_COOLDOWN poll only ever flips OFF early (CDR/reset), never ON.
 --
 --   local w = ns.Cooldowns:Watch(spellID, function(onCooldown) ... end)
---   w:onCooldown   -- current state
---   ns.Cooldowns:Unwatch(w)
+--   w:IsOnCooldown()   -- current state
+--   w:Cancel()         -- stop watching (drops its subscriptions + timer)
 
 local Cooldowns = Class.new("Cooldowns", ns.Service)
 
@@ -27,58 +27,78 @@ local function isActive(spellID)
     return cd and cd.isActive, cd and cd.isOnGCD
 end
 
-function Cooldowns:_Set(w, onCooldown)
-    if w.onCooldown == onCooldown then return end
-    w.onCooldown = onCooldown
-    if w.onChange then w.onChange(onCooldown) end
-end
+-- ---- CooldownWatch: the live handle Watch() returns ----------------------------------------
+-- A small class (private state behind :_p(), methods over a raw record) -- the house style
+-- (Logger -> LogChannel, Cache -> CacheStore). It owns its EventBus subscriptions + the base-
+-- cooldown timer and tears them down on :Cancel().
+local CooldownWatch = Class.new("CooldownWatch")
 
-function Cooldowns:_Start(w)
-    self:_Set(w, true)
-    if w.timer then w.timer:Cancel() end
-    local dur = baseCooldown(w.spellID)
-    if dur then
-        w.timer = C_Timer.NewTimer(dur, function()
-            w.timer = nil
-            self:_Set(w, false)
-        end)
-    end
-end
-
--- Backup flip-OFF only: a plain GCD also reports isActive=true, so we never flip
--- ON from polling.
-function Cooldowns:_Poll(w)
-    if not w.onCooldown then return end
-    if isActive(w.spellID) then return end
-    if w.timer then w.timer:Cancel(); w.timer = nil end
-    self:_Set(w, false)
-end
-
-function Cooldowns:Watch(spellID, onChange)
+function CooldownWatch:Initialize(spellID, onChange)
+    local p = self:_p()
+    p.spellID = spellID
+    p.onChange = onChange
+    p.onCooldown = false
     local bus = ns.EventBus
-    local w = { spellID = spellID, onChange = onChange, onCooldown = false }
     -- Filter to the PLAYER at the engine (RegisterUnitEvent) rather than the shared bus:
     -- UNIT_SPELLCAST_SUCCEEDED fires for every visible unit (hundreds/sec in a raid), and
     -- we only care about the player's casts. The unit is therefore always "player".
-    w.castTok = bus:OnUnit("UNIT_SPELLCAST_SUCCEEDED", function(_, _, _, sid)
-        if sid == spellID then self:_Start(w) end
+    p.castTok = bus:OnUnit("UNIT_SPELLCAST_SUCCEEDED", function(_, _, _, sid)
+        if sid == spellID then self:_Start() end
     end, "player")
-    w.pollTok = bus:On("SPELL_UPDATE_COOLDOWN", function() self:_Poll(w) end)
+    p.pollTok = bus:On("SPELL_UPDATE_COOLDOWN", function() self:_Poll() end)
     -- Reloaded mid-cooldown (not just a GCD): the real remaining is secret, so we
     -- can't run a precise internal timer -- just mark it on cooldown and let the
     -- SPELL_UPDATE_COOLDOWN poll flip it OFF when the cooldown actually ends.
     local active, onGCD = isActive(spellID)
-    if active and not onGCD then self:_Set(w, true) end
-    return w
+    if active and not onGCD then self:_Set(true) end
 end
 
-function Cooldowns:Unwatch(w)
-    if not w then return end
+function CooldownWatch:IsOnCooldown() return self:_p().onCooldown end
+
+function CooldownWatch:_Set(onCooldown)
+    local p = self:_p()
+    if p.onCooldown == onCooldown then return end
+    p.onCooldown = onCooldown
+    if p.onChange then p.onChange(onCooldown) end
+end
+
+function CooldownWatch:_Start()
+    local p = self:_p()
+    self:_Set(true)
+    if p.timer then p.timer:Cancel() end
+    local dur = baseCooldown(p.spellID)
+    if dur then
+        p.timer = C_Timer.NewTimer(dur, function()
+            p.timer = nil
+            self:_Set(false)
+        end)
+    end
+end
+
+-- Backup flip-OFF only: a plain GCD also reports isActive=true, so we never flip ON from polling.
+function CooldownWatch:_Poll()
+    local p = self:_p()
+    if not p.onCooldown then return end
+    if isActive(p.spellID) then return end
+    if p.timer then p.timer:Cancel(); p.timer = nil end
+    self:_Set(false)
+end
+
+function CooldownWatch:Cancel()
+    local p = self:_p()
     local bus = ns.EventBus
-    bus:OffUnit(w.castTok)
-    bus:Off("SPELL_UPDATE_COOLDOWN", w.pollTok)
-    if w.timer then w.timer:Cancel(); w.timer = nil end
-    w.onCooldown = false
+    bus:OffUnit(p.castTok)
+    bus:Off("SPELL_UPDATE_COOLDOWN", p.pollTok)
+    if p.timer then p.timer:Cancel(); p.timer = nil end
+    p.onCooldown = false
+end
+
+ns.CooldownWatch = CooldownWatch
+
+-- ---- the service: a thin factory for watches ----------------------------------------------
+-- The watch owns its own state (watch:IsOnCooldown()) and teardown (watch:Cancel()).
+function Cooldowns:Watch(spellID, onChange)
+    return CooldownWatch:New(spellID, onChange)
 end
 
 ns.ServiceManager:Register(Cooldowns:New("Cooldowns", { deps = { "EventBus" } }))

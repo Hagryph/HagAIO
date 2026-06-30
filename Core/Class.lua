@@ -18,6 +18,12 @@ local private = setmetatable({}, { __mode = "k" })
 -- re-declares gets its own. So lookup resolves UP the parent chain to the nearest declarer.
 local statics = setmetatable({}, { __mode = "k" })
 
+-- class -> true once its single instance was constructed (the `singleton` opt). A DEDICATED weak
+-- table, NOT the statics store: statics resolve UP the parent chain (C#), which would share one
+-- latch across sibling subclasses; a singleton latch must be keyed to the EXACT class. So a
+-- `singleton` base (e.g. ns.Service) makes each subclass independently a one-instance class.
+local singletons = setmetatable({}, { __mode = "k" })
+
 local function classOf(arg)
     if type(arg) == "table" then
         if rawget(arg, "__ancestors") then return arg end       -- arg is a class table
@@ -97,6 +103,9 @@ local Class = {}
 --   mixins   = { M1, M2 }    -- trait method tables (ns.Mixin) merged in; your own methods win
 --   implements = { I1 }      -- interfaces (ns.Interface) verified at each concrete class's
 --                               first :New() -- subclasses inherit (and re-verify) the contract
+--   singleton = true         -- the class is a ONE-INSTANCE singleton: a second :New() raises
+--                               instead of silently building a shadow. Inherited -- a singleton
+--                               base (ns.Service) makes each subclass independently one-instance.
 function Class.new(name, parent, opts)
     parent = parent or Object
     local class = setmetatable({}, { __index = parent })
@@ -124,26 +133,34 @@ function Class.new(name, parent, opts)
         end
         if opts.abstract then class.__abstract = true end
         if opts.implements then class.__implements = opts.implements end
+        if opts.singleton then class.__singleton = true end
     end
 
-    -- True when any class in the parent chain declared `implements` -- a subclass must
-    -- honour every ancestor's interface contracts, so it needs the checking constructor too.
-    local inheritsContracts = false
+    -- A subclass needs the checking constructor when an ANCESTOR declared an interface contract
+    -- (it must re-verify against its own methods) OR a singleton (each subclass is then
+    -- independently one-instance) -- so the fast path stays only for the plain hot value types.
+    local needsCheckedNew = false
     do
         local c = parent
         while c do
-            if rawget(c, "__implements") then inheritsContracts = true; break end
+            if rawget(c, "__implements") or rawget(c, "__singleton") then needsCheckedNew = true; break end
             c = rawget(c, "__parent")
         end
     end
 
-    -- Classes that opt into abstract/implements -- or INHERIT an interface contract -- get a
-    -- checking constructor; every other class keeps the minimal fast path (no per-New
+    -- Classes that opt into abstract/implements/singleton -- or INHERIT a contract/singleton --
+    -- get a checking constructor; every other class keeps the minimal fast path (no per-New
     -- overhead -- protects hot value types).
-    if (opts and (opts.abstract or opts.implements)) or inheritsContracts then
+    if (opts and (opts.abstract or opts.implements or opts.singleton)) or needsCheckedNew then
         function class:New(...)
             if rawget(self, "__abstract") then
                 error(("cannot instantiate abstract class '%s'"):format(self.__name), 2)
+            end
+            -- One-instance singleton: a second :New() raises instead of building a shadow. The
+            -- latch is keyed to THIS class (self), so a singleton base yields one instance PER
+            -- subclass. __singleton is read inherited (self.__singleton), the latch per exact class.
+            if self.__singleton and singletons[self] then
+                error(("class '%s' is a singleton -- it was already constructed (no second :New())"):format(self.__name), 2)
             end
             -- Verify every contract in the ancestry ONCE per concrete class, at its first
             -- :New() (when every method is defined). The declarer's __implements is kept --
@@ -164,7 +181,9 @@ function Class.new(name, parent, opts)
                 end
                 self.__implChecked = true   -- latched only after the contracts verified
             end
-            return makeInstance(self, ...)
+            local instance = makeInstance(self, ...)
+            if self.__singleton then singletons[self] = true end   -- latch AFTER a successful build
+            return instance
         end
     else
         function class:New(...)

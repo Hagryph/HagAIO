@@ -27,13 +27,13 @@ describe("Hooks", function()
         assert.are.equal(2, n)             -- both handlers ran
     end)
 
-    it("Unhook removes a single handler; others still fire", function()
+    it("handle:Unhook() removes a single handler; others still fire", function()
         local h = setup()
         local obj = { go = function() end }
         local a, b = 0, 0
         local hA = h:Secure(obj, "go", function() a = a + 1 end)
         h:Secure(obj, "go", function() b = b + 1 end)
-        h:Unhook(hA)
+        hA:Unhook()
         obj.go()
         assert.are.equal(0, a)
         assert.are.equal(1, b)
@@ -50,12 +50,12 @@ describe("Hooks", function()
         assert.are.equal(0, n)
     end)
 
-    it("handles are unique", function()
+    it("handles are distinct objects", function()
         local h = setup()
         local obj = { go = function() end }
         local hA = h:Secure(obj, "go", function() end)
         local hB = h:Secure(obj, "go", function() end)
-        assert.are_not.equal(hA.id, hB.id)
+        assert.are_not.equal(hA, hB)
     end)
 
     it("the global-function form hooks _G[name]", function()

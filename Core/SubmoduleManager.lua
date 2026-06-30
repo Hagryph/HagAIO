@@ -11,7 +11,7 @@ local Class = ns.Class
 -- The generic registry plumbing lives in ns.Registry; this class adds event
 -- subscription and the load/unload sweep.
 
-local SubmoduleManager = Class.new("SubmoduleManager", ns.Registry)
+local SubmoduleManager = Class.new("SubmoduleManager", ns.Registry, { singleton = true })
 
 local function clearArray(t) for i = #t, 1, -1 do t[i] = nil end end
 

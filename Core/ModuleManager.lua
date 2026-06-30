@@ -11,7 +11,7 @@ local Class = ns.Class
 -- start latch, cached dependency graph) lives in ns.Registry; this class adds only
 -- the module-specific gating.
 
-local ModuleManager = Class.new("ModuleManager", ns.Registry)
+local ModuleManager = Class.new("ModuleManager", ns.Registry, { singleton = true })
 
 function ModuleManager:Initialize()
     ns.Registry.Initialize(self, "module")

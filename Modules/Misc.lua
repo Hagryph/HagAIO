@@ -725,10 +725,13 @@ function Misc:_HookFlightPins()
         local p = module:_p()
         p.nodeNames = {}   -- slotIndex -> flight-map node name
         p.nodePos = {}     -- slotIndex -> { x, y } on the flight map
+        -- Which pins we've hooked, in a WEAK-KEYED set in our OWN private state -- not a field
+        -- stamped onto the pooled Blizzard pin (we don't own it; weak keys let a retired pin GC).
+        p.hoverHooked = p.hoverHooked or setmetatable({}, { __mode = "k" })
         p.flightMapID = FlightMapFrame.GetMapID and FlightMapFrame:GetMapID()
         for pin in pool:EnumerateActive() do
-            if not pin.__hagHoverHooked then
-                pin.__hagHoverHooked = true
+            if not p.hoverHooked[pin] then
+                p.hoverHooked[pin] = true
                 pin:HookScript("OnEnter", function(self2) module:_OnPinEnter(self2) end)
             end
             local d = pin.taxiNodeData

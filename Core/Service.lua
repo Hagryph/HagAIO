@@ -21,8 +21,10 @@ local Class = ns.Class
 --   ns.ServiceManager:Register(Foo:New("Foo", { deps = { "EventBus" } }))
 
 -- ns.DatabaseOwner adds the declarative `databases` surface (self:DB(name) + private DAOs);
--- ns.Publishable supplies the shared _Publish (publish ns.<name> / ns.UI.<name>).
-local Service = Class.new("Service", ns.Loggable, { mixins = { ns.DatabaseOwner, ns.Publishable } })
+-- ns.Publishable supplies the shared _Publish (publish ns.<name> / ns.UI.<name>). singleton =
+-- true is inherited, so each service class is one-instance: a stray second :New() of a service
+-- raises instead of building a shadow that Service:_Publish would overwrite ns.<name> with.
+local Service = Class.new("Service", ns.Loggable, { mixins = { ns.DatabaseOwner, ns.Publishable }, singleton = true })
 
 -- opts = { deps = { "OtherService", ... }, ui = bool, color = "RRGGBB",
 --          commands = { ... }, generalToggles = { ... } }

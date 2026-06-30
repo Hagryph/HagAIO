@@ -111,13 +111,17 @@ end
 -- icon desaturation/range colouring, unlike SetDesaturated).
 function ActionBars:SetGrey(button, on)
     if not button then return end
-    local ov = button.__hagGrey
+    -- Cache the reusable overlay in a WEAK-KEYED map in our OWN private state, keyed by button,
+    -- rather than stamping it onto the Blizzard button (a frame we don't own).
+    local p = self:_p()
+    p.greyOverlay = p.greyOverlay or setmetatable({}, { __mode = "k" })
+    local ov = p.greyOverlay[button]
     if on then
         if not ov then
             ov = ns.UI.Widgets.Fill:New(button, { layer = "OVERLAY", sublevel = 6 })
             ov:SetAllPoints(button.icon or button)
             ov:SetColorTexture(0, 0, 0, 0.55)
-            button.__hagGrey = ov
+            p.greyOverlay[button] = ov
         end
         ov:Show()
     elseif ov then

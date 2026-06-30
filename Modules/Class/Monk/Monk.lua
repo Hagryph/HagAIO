@@ -186,8 +186,13 @@ end
 -- free -- the only non-event input to its geometry is the bar's WIDTH. Watch a bar's resize (once per
 -- bar) so a layout / Edit Mode / scale change re-runs `onResize`; the per-tick value updates do NOT.
 function ClassModule:_WatchBarSize(bar, onResize)
-    if not bar or bar.__hagSizeWatched then return end
-    bar.__hagSizeWatched = true
+    if not bar then return end
+    -- Track which bars we've hooked in a WEAK-KEYED set in our OWN private state, rather than
+    -- stamping a field onto the Blizzard frame (which we don't own and would leak our state into).
+    local p = self:_p()
+    p.sizeWatched = p.sizeWatched or setmetatable({}, { __mode = "k" })
+    if p.sizeWatched[bar] then return end
+    p.sizeWatched[bar] = true
     bar:HookScript("OnSizeChanged", onResize)
 end
 

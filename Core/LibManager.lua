@@ -9,7 +9,7 @@ local Class = ns.Class
 -- discovery anchor for tooling (depcheck / nscheck scan LibManager:Register) without
 -- pulling libs into the dependency-ordered service boot.
 
-local LibManager = Class.new("LibManager", ns.Registry)
+local LibManager = Class.new("LibManager", ns.Registry, { singleton = true })
 
 function LibManager:Initialize()
     ns.Registry.Initialize(self, "lib")
