@@ -626,7 +626,7 @@ end
 -- expansion) -- sourced from the seeded dashboard_instance table. With raids seeded one row per
 -- difficulty, this yields a column per (instance, difficulty); the cell is that character's lock.
 function Dashboard:_CatalogColumns(tierName, isRaid)
-    tierName = tierName or self:_p().currentExpansion
+    tierName = tierName or self:_p().catalog:CurrentExpansion()
     return self:_LockoutColumns(function(r)
         return (r.isRaid and true or false) == isRaid and (r.expansion or "Other") == tierName
     end)
