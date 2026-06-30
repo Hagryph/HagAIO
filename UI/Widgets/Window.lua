@@ -96,7 +96,7 @@ function WindowW:Initialize(level, opts)
             f.__autoReopen = false
             -- defer a frame: on EditMode.Exit the manager can still report active, so a
             -- re-checking show would defer again and never reopen.
-            C_Timer.After(0, function()
+            ns.Scheduler:After(0, function()
                 if opts.onAutoShow then opts.onAutoShow(self) else f:Show() end
             end)
         end

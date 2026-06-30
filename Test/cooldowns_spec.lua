@@ -12,6 +12,7 @@ local function setup(cd)
     local frames = S.stubFrames()
     local ns = S.newNs()
     S.load(ns, "Services/EventBus.lua"); ns._captured["EventBus"]:OnInitialize()
+    S.load(ns, "Services/Scheduler.lua")          -- CooldownWatch's base-cooldown timer goes through ns.Scheduler
     S.load(ns, "Services/Cooldowns.lua")
     local cds = ns._captured["Cooldowns"]; cds:OnInitialize()
     return cds, frames, clock

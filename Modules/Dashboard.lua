@@ -1178,8 +1178,8 @@ function Dashboard:Show()
                                                        -- the catalog is built once at login and the live
                                                        -- character's data is kept current by events
     if p.ticker then p.ticker:Cancel() end
-    p.ticker = C_Timer.NewTicker(1, function() if p.shown then self:_UpdateCountdown() end end)
-    C_Timer.After(0, function() self:_Render() end)   -- re-measure once on screen
+    p.ticker = ns.Scheduler:Every(1, function() if p.shown then self:_UpdateCountdown() end end)
+    ns.Scheduler:After(0, function() self:_Render() end)   -- re-measure once on screen
 end
 
 function Dashboard:Hide()
@@ -1205,7 +1205,7 @@ ns.ModuleManager:Register(Dashboard:New("Dashboard", {
     -- still drives both via self:Queue / self:WorkOn (the Worker-backed Module scheduling API), so the
     -- load-order deps are required even though depcheck can't see the use.
     -- hag-lint-disable depcheck: Secrets, Worker
-    deps = { "SlashCommand", "Secrets", "Worker", "Versioning" },   -- DatabaseManager is added automatically (see `tables`)
+    deps = { "SlashCommand", "Secrets", "Worker", "Versioning", "Scheduler" },   -- Scheduler: the open-window countdown ticker. DatabaseManager is added automatically (see `tables`)
     -- Account-wide cross-character snapshots, stored relationally (no nested blobs, no duplicated
     -- reference data). Vault/lockout/quest cascade-delete with their character; a lockout references
     -- the account-wide dashboard_instance registry (its name/difficulty), a quest references the

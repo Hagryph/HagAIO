@@ -135,14 +135,14 @@ function FlightTimers:_OnTakeTaxi(slot)
 end
 
 -- Poll at 10 Hz, not every rendered frame: take-off / landing detection and the countdown
--- only need ~0.1s granularity, and a C_Timer ticker runs the body 10x/s instead of
--- 60-150x/s. It's a raw C_Timer (NOT self:Every) so it survives the submodule being unloaded
--- -- flight recording is always on (see OnInitialize/_OnUnload).
+-- only need ~0.1s granularity, and a ticker runs the body 10x/s instead of 60-150x/s. We use
+-- ns.Scheduler:Every (NOT self:Every) so it survives the submodule being unloaded -- flight
+-- recording is always on (see OnInitialize/_OnUnload).
 function FlightTimers:_StartTicker()
     local p = self:_p()
     if p.ticker then return end
     local sub = self
-    p.ticker = C_Timer.NewTicker(0.1, function() sub:_Tick() end)
+    p.ticker = ns.Scheduler:Every(0.1, function() sub:_Tick() end)
 end
 
 function FlightTimers:_StopTicker()
@@ -677,7 +677,7 @@ function FlightTimers:_HookFlightPins()
     local pool = FlightMapFrame.pinPools.FlightMap_FlightPointPinTemplate
     if not pool or not pool.EnumerateActive then return end
     -- pins render just after the map opens
-    C_Timer.After(0, function()
+    ns.Scheduler:After(0, function()
         local p = sub:_p()
         p.nodeNames = {}   -- slotIndex -> flight-map node name
         p.nodePos = {}     -- slotIndex -> { x, y } on the flight map
@@ -763,7 +763,7 @@ end
 -- ---- registration ---------------------------------------------------------
 ns.SubmoduleManager:Register(FlightTimers:New("FlightTimers", {
     parent = { module = "Misc" },
-    serviceDeps = { "EventBus" },   -- the always-on recorder installs ns.EventBus:On (TAXIMAP_OPENED) in OnInitialize
+    serviceDeps = { "EventBus", "Scheduler" },   -- EventBus: the recorder's ns.EventBus:On (TAXIMAP_OPENED); Scheduler: the 10 Hz flight ticker. Both wired in OnInitialize.
     title = "Flight timers",
     settingsWatch = { showInFlight = "_SyncEditMode" },
     onLoad   = function(_, sub) sub:_OnLoad() end,

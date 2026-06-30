@@ -13,7 +13,6 @@ local ClassModule = ns.ClassModule
 -- global-table lookup on every fire (the Services/Range.lua pattern). Guarded so a missing API on an
 -- old client is captured as nil (not an index error), exactly as the call sites already tolerate.
 local InCombatLockdown  = InCombatLockdown
-local C_Timer_After      = C_Timer and C_Timer.After
 local GetSpellCastCount  = C_Spell and C_Spell.GetSpellCastCount
 local UnitHealthMax       = UnitHealthMax
 local UnitPowerMax        = UnitPowerMax
@@ -183,7 +182,7 @@ function ClassModule:_ScheduleUpdate()
     local p = self:_p()
     if p.updateScheduled then return end
     p.updateScheduled = true
-    C_Timer_After(0, function()
+    ns.Scheduler:After(0, function()
         p.updateScheduled = false
         self:_UpdateMarker()
     end)
@@ -217,7 +216,7 @@ function ClassModule:_StartOrbPoll()
         if pp.orbPollGen ~= gen then return end        -- superseded / unloaded
         if pp.orbTalented then self:_ScheduleUpdate() end
         if InCombatLockdown() then
-            C_Timer_After(0.1, poll)                   -- combat: orbs change fast
+            ns.Scheduler:After(0.1, poll)                   -- combat: orbs change fast
             return
         end
         -- Out of combat: the count is readable in the open world; stop once it hits 0.
@@ -225,7 +224,7 @@ function ClassModule:_StartOrbPoll()
         local n = ns.Secrets and ns.Secrets:Number(
             GetSpellCastCount and GetSpellCastCount(Spell.EXPEL_HARM))
         if n == 0 then return end                      -- no orbs left -> stop until next combat
-        C_Timer_After(0.5, poll)
+        ns.Scheduler:After(0.5, poll)
     end
     poll()
 end
@@ -255,7 +254,7 @@ function ClassModule:_RefreshHealNow()
     self:_SnapshotMaxHP()
     if not p.baseHeal then
         -- description may not be loaded yet; retry shortly
-        C_Timer_After(1, function()
+        ns.Scheduler:After(1, function()
             if p.expelActive and not p.baseHeal then
                 p.baseHeal = readExpelHarmHeal()
                 self:_ScheduleUpdate()
@@ -554,7 +553,7 @@ function ClassModule:_ScheduleTiger()
     local p = self:_p()
     if p.tigerScheduled then return end
     p.tigerScheduled = true
-    C_Timer_After(0, function() p.tigerScheduled = false; self:_UpdateTiger() end)
+    ns.Scheduler:After(0, function() p.tigerScheduled = false; self:_UpdateTiger() end)
 end
 
 -- A reverse-filling bar on the energy bar showing the MISSING energy until you can afford

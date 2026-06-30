@@ -29,6 +29,7 @@ const LINT = [
   ["widgets", ["tools/check-widgets.mjs"]],
   ["savedvars", ["tools/savedvarscheck.mjs"]],
   ["worker", ["tools/check-worker.mjs"]],
+  ["scheduler", ["tools/check-scheduler.mjs"]],
   ["annotations", ["tools/check-annotations.mjs"]],
 ];
 

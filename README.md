@@ -27,21 +27,18 @@ Everything is a toggleable module on the settings window's **Modules** page (mos
 off). Modules hide when a required addon is missing and grey out when a prerequisite
 module is disabled.
 
-- **Task List** — a movable, see-through objective tracker styled like Blizzard's quest
-  tracker (centered blue-black header bars, grows downward, hides in combat, Edit Mode
-  movable). Tasks are **one-time / daily / weekly** (daily & weekly reset with the server)
-  and complete **manually** (tick them) or **automatically** (a condition re-checked on
-  declared events — e.g. a boss kill). Add/remove tasks in its settings; other modules
-  register tasks through `ns.Tasks`.
-- **Collections** — right-click an **uncollected** mount, pet, toy or heirloom in the
-  Blizzard journals to **Track** it in the Task List (auto-completes when you collect it).
-  The **All The Things** integration is an addon-gated *submodule*: when ATT is installed,
-  Ctrl+Right-Click an item in its window to track it.
+- **Dashboard** — an account-wide, cross-character reset view: each character snapshots its
+  **Great Vault**, **M+ keystone + rating**, **raid/dungeon lockouts** and **weekly/daily
+  quest** turn-ins into a shared table, and a themed window shows every character as a row
+  with the selected category's columns. Cross-character state travels purely through
+  SavedVariables (no addon comms). Open with `/hag dashboard`.
 - **CVars** — force console variables on every character. A curated, typed list grouped in
   collapsible categories (toggles / number / text / pick-one), plus **custom CVars** (type
-  auto-detected) and a per-character **Global** toggle. Also driven by `/hag cvar`.
-- **Questing** — XP-per-hour and session stats on the XP-bar tooltip, with optional
-  auto-accept / auto-turn-in.
+  auto-detected) and a per-character **Global** toggle. Driven by `/hag cvar` — including
+  `/hag cvar dump`, which dumps every console variable into a copy window for capture each
+  patch (needs the `-console` launch flag).
+- **Questing** — XP-per-hour and session stats on the XP-bar tooltip (`/hag xp`), with
+  optional auto-accept / auto-turn-in.
 - **Unit Frames** — tint the player/target health bars by remaining health %.
 - **Class → Monk (Brewmaster)** — an Expel Harm heal-threshold marker on the health bar
   (orb-aware, secret-value safe), a Tiger Palm missing-energy bar, and an AoE helper that
@@ -50,8 +47,9 @@ module is disabled.
 - **Misc** — flight-path timers (learns each leg as you fly, skips nodes you don't pass
   near, and estimates unflown routes by composing learned legs) and a sell-junk button /
   auto-sell at vendors.
-- **Dev** — dump every console variable into a copy window for capture each patch
-  (`/hag dev cvars`; needs the `-console` launch flag).
+- **Dev** *(whitelisted developer characters only — normal users never see it)* —
+  live-tunes the Dashboard's scene art (per-session Zoom + X/Y offset sliders for dungeon /
+  raid tiles) and a memory watch (`/hag mem`).
 
 ## Architecture
 
@@ -288,11 +286,13 @@ ns.SubmoduleManager:Register(ns.Submodule:New("MyBit", {
 | Command | Effect |
 |---|---|
 | `/hag` | Toggle the settings window |
+| `/hag dashboard` | Open the cross-character Dashboard |
 | `/hag log` | Open the activity log |
 | `/hag modules` | List feature modules and their on/off state |
 | `/hag help` | List all commands |
-| `/hag cvar dump\|set\|get\|clear\|list` | Console-variable tools |
-| `/hag dev cvars` | Dump every CVar into the copy window (needs `-console`) |
+| `/hag cvar dump\|set\|get\|clear\|list` | Console-variable tools (`dump` copies every CVar to a window; needs `-console`) |
+| `/hag xp` | Print session XP / hour |
+| `/hag mem` | Toggle the memory watch (developer characters) |
 
 ### Minimap (addon compartment)
 

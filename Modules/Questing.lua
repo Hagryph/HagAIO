@@ -321,7 +321,7 @@ function Questing:_EnsureOverlay()
         p.hovering = true
         self:_ShowTooltip()
         if p.xpTicker then p.xpTicker:Cancel() end
-        p.xpTicker = C_Timer.NewTicker(0.5, function() self:_ShowTooltip() end)
+        p.xpTicker = ns.Scheduler:Every(0.5, function() self:_ShowTooltip() end)
     end)
     overlay:SetScript("OnLeave", function()
         p.hovering = false
@@ -379,7 +379,7 @@ function Questing:_OnQuestAccepted(_, a, b)
     if not questID or not p.pendingAccept[questID] then return end
     p.pendingAccept[questID] = nil
     -- Defer one tick: the log timer isn't always initialised the instant the event fires.
-    C_Timer.After(0.1, function()
+    ns.Scheduler:After(0.1, function()
         local secs = self:_LiveSeconds(questID)
         if not secs then return end
         self:_RememberTimed(questID, secs)   -- store the limit for the advanced-info banner
@@ -481,7 +481,7 @@ ns.ModuleManager:Register(Questing:New("Questing", {
     -- Known-timed quests are learned into the shared `quest` table (Core/DB/CoreTables.lua). The
     -- shared Database is built before any DAO runs, so -- like Misc/LocalTables -- using self:DB()
     -- without owning a table needs no DatabaseManager dep.
-    deps = { "SlashCommand" },  -- for its declarative /hag xp sub-command
+    deps = { "SlashCommand", "Scheduler" },  -- /hag xp sub-command + the XP-tooltip ticker / deferred turn-in
     commands = { xp = { handler = "_PrintSession", help = "session XP / hour" } },
     events = {
         PLAYER_XP_UPDATE      = "_OnXP",

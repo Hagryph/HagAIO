@@ -220,7 +220,7 @@ function CVars:_ScheduleSync()
     local p = self:_p()
     if p.syncPending or p.synced then return end
     p.syncPending = true
-    C_Timer.After(0, function()
+    ns.Scheduler:After(0, function()
         p.syncPending = false
         self:_BackfillTracked()
         self:_PruneTracked()
@@ -241,7 +241,7 @@ function CVars:_ScheduleApply()
     local p = self:_p()
     if p.applyPending then return end
     p.applyPending = true
-    C_Timer.After(0, function()
+    ns.Scheduler:After(0, function()
         p.applyPending = false
         if self:IsEnabled() then self:_ApplyAll() end   -- skip if disabled before the frame ran
     end)
@@ -643,7 +643,7 @@ ns.ModuleManager:Register(CVars:New("CVars", {
     description = "Force useful console variables on every character. Grouped, typed controls plus custom CVars.",
     defaultEnabled = false,
     color = ns.Theme.hex.red,
-    deps = { "SlashCommand", "SettingsWindow" },  -- routing + page refresh (type inference is a pure Lib: ns.CVarHelper, always available)
+    deps = { "SlashCommand", "SettingsWindow", "Scheduler" },  -- routing + page refresh + the deferred apply/sync timers (type inference is a pure Lib: ns.CVarHelper, always available)
     optionalDeps = { "Dev" },  -- the full-dump enumeration (ns.Dev) is dev-only (registered behind ns.IsDevChar) and reached through a guard, so it must NOT be a hard dep -- else CVars wouldn't load for normal players
     -- "dump" is dev-only (see _Slash); don't advertise it to normal users in /hag help. The help is a
     -- function so it's decided when /hag help prints (matching the runtime gate), not baked at load.

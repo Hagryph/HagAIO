@@ -58,6 +58,7 @@ local function rig()
 
     S.load(ns, "Services/EventBus.lua")
     ns._captured["EventBus"]:OnInitialize()
+    S.load(ns, "Services/Scheduler.lua")           -- the 10 Hz flight ticker goes through ns.Scheduler:Every
     for _, f in ipairs(DB_FILES) do S.load(ns, "Core/DB/" .. f .. ".lua") end
     ns.SavedVars = { IsLoaded = function() return true end, DataSlot = function() return {} end }
     local mgr = ns._captured["DatabaseManager"]; mgr:OnInitialize()

@@ -68,7 +68,7 @@ function CooldownWatch:_Start()
     if p.timer then p.timer:Cancel() end
     local dur = baseCooldown(p.spellID)
     if dur then
-        p.timer = C_Timer.NewTimer(dur, function()
+        p.timer = ns.Scheduler:After(dur, function()
             p.timer = nil
             self:_Set(false)
         end)
@@ -101,4 +101,4 @@ function Cooldowns:Watch(spellID, onChange)
     return CooldownWatch:New(spellID, onChange)
 end
 
-ns.ServiceManager:Register(Cooldowns:New("Cooldowns", { deps = { "EventBus" } }))
+ns.ServiceManager:Register(Cooldowns:New("Cooldowns", { deps = { "EventBus", "Scheduler" } }))   -- Scheduler: the base-cooldown timer

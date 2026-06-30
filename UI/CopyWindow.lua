@@ -140,7 +140,7 @@ function CopyWindow:_Goto(index)
         p.title:SetText(p.titleText or "Copy")
     end
 
-    C_Timer.After(0, function() self:_SelectAll() end)
+    ns.Scheduler:After(0, function() self:_SelectAll() end)
 end
 
 -- Re-focus the edit box and select everything in it.
@@ -196,4 +196,4 @@ function CopyWindow:Hide()
     if p.frame then p.frame:Hide() end
 end
 
-ns.ServiceManager:Register(CopyWindow:New("CopyWindow", { ui = true }))
+ns.ServiceManager:Register(CopyWindow:New("CopyWindow", { ui = true, deps = { "Scheduler" } }))   -- Scheduler: the deferred select-all

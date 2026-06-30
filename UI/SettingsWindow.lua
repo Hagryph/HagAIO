@@ -824,7 +824,7 @@ function SettingsWindow:Show(key)
     if key == "log" then
         self:_RefreshLog()
         -- re-measure once the frame has a real width on screen
-        C_Timer.After(0, function() self:_RefreshLog() end)
+        ns.Scheduler:After(0, function() self:_RefreshLog() end)
     end
     p.frame:Show()
 end
@@ -842,7 +842,7 @@ end
 
 ns.ServiceManager:Register(SettingsWindow:New("SettingsWindow", {
     ui = true,
-    deps = { "EventBus", "SlashCommand", "Profiles", "CopyWindow" },
+    deps = { "EventBus", "SlashCommand", "Profiles", "CopyWindow", "Scheduler" },   -- Scheduler: the deferred log re-measure
     commands = {
         config = { handler = function(self) self:Toggle() end, help = "open the settings window" },
         log    = { handler = function(self) self:Show("log") end, help = "open the activity log" },
