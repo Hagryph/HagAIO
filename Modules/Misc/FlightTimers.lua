@@ -763,7 +763,7 @@ end
 -- ---- registration ---------------------------------------------------------
 ns.SubmoduleManager:Register(FlightTimers:New("FlightTimers", {
     parent = { module = "Misc" },
-    serviceDeps = { "EventBus", "Scheduler" },   -- EventBus: the recorder's ns.EventBus:On (TAXIMAP_OPENED); Scheduler: the 10 Hz flight ticker. Both wired in OnInitialize.
+    deps = { "EventBus", "Scheduler" },   -- EventBus: the recorder's ns.EventBus:On (TAXIMAP_OPENED); Scheduler: the 10 Hz flight ticker. Both wired in OnInitialize.
     title = "Flight timers",
     settingsWatch = { showInFlight = "_SyncEditMode" },
     onLoad   = function(_, sub) sub:_OnLoad() end,

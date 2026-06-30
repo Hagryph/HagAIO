@@ -151,9 +151,9 @@ function ns.Monk.RegisterSpec(name, SpecClass, specKey, serviceDeps)
     ns.SubmoduleManager:Register(ns.Submodule:New(name, {
         parent = { submodule = "Monk" },
         host = classMod,
-        serviceDeps = deps,          -- SettingsWindow (shared onLoad) + the services THIS spec uses
+        deps = deps,                 -- SettingsWindow (shared onLoad) + the services THIS spec uses
         condition = function() return classMod:CurrentSpecKey() == specKey end,
-        events = { "PLAYER_SPECIALIZATION_CHANGED", "PLAYER_ENTERING_WORLD" },
+        conditionEvents = { "PLAYER_SPECIALIZATION_CHANGED", "PLAYER_ENTERING_WORLD" },
         onLoad = function(host)
             host:SetActiveSpec(spec)    -- public setter, not a cross-object host:_p() write
             host:_BuildSettings()

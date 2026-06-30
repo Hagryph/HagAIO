@@ -4,13 +4,13 @@ local Class = ns.Class
 -- Core/Submodule.lua
 -- A SUBMODULE is a piece of a Module (or of another submodule -- nesting is
 -- unlimited) that loads only when a CONDITION holds. It declares:
---   parent      : the module/submodule it lives under (a required dependency)
---   serviceDeps : services that must be loaded   (NOT the parent)
---   moduleDeps  : modules that must be enabled    (NOT the parent)
---   submoduleDeps: other submodules that must be loaded
---   addonDeps   : external addons that must be installed (e.g. AllTheThings)
---   condition   : a plain Lua function -> bool (nil = always true)
---   events      : game events that re-evaluate the condition (nil = never)
+--   parent          : the module/submodule it lives under (a required dependency)
+--   deps            : services that must be loaded   (NOT the parent) -- same key as Module/Service
+--   moduleDeps      : modules that must be enabled    (NOT the parent)
+--   submoduleDeps   : other submodules that must be loaded
+--   addonDeps       : external addons that must be installed (e.g. AllTheThings)
+--   condition       : a plain Lua function -> bool (nil = always true)
+--   conditionEvents : game events that re-evaluate the condition (nil = never)
 --   onLoad/onUnload(host, self) : run when it becomes / stops being loaded
 --   onInitialize(host, self)    : ALWAYS-ON setup, run ONCE at boot whether or not it loads --
 --                                 the place for a RECORDER (engine machinery that must run even
@@ -38,12 +38,12 @@ function Submodule:Initialize(name, opts)
     Submodule.super.Initialize(self, name)  -- ns.Loggable: name (submodules have no log colour)
     local p = self:_p()
     p.parent = opts.parent              -- { module = name } or { submodule = name }
-    p.serviceDeps   = opts.serviceDeps   or {}
+    p.serviceDeps   = opts.deps          or {}   -- opt key `deps` (matches Module/Service); stored as serviceDeps internally
     p.moduleDeps    = opts.moduleDeps    or {}
     p.submoduleDeps = opts.submoduleDeps or {}
     p.addonDeps     = opts.addonDeps     or {}
     p.condition = opts.condition         -- function(host) -> bool, or nil
-    p.events    = opts.events            -- list of game events, or nil
+    p.conditionEvents = opts.conditionEvents   -- list of game events that re-evaluate the condition, or nil
     p.onLoad    = opts.onLoad
     p.onUnload  = opts.onUnload
     p.onInitialize = opts.onInitialize   -- always-on setup; run once at boot, survives unload
@@ -78,7 +78,7 @@ function Submodule:OnSettingChanged(key, value)
 end
 
 function Submodule:GetParent() return self:_p().parent end
-function Submodule:GetEvents() return self:_p().events end
+function Submodule:GetConditionEvents() return self:_p().conditionEvents end
 function Submodule:GetServiceDeps() return self:_p().serviceDeps end
 function Submodule:GetModuleDeps() return self:_p().moduleDeps end
 function Submodule:GetSubmoduleDeps() return self:_p().submoduleDeps end

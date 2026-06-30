@@ -143,7 +143,7 @@ end
 
 function SubmoduleManager:_SubscribeEvents(sub)
     local p = self:_p()
-    for _, ev in ipairs(sub:GetEvents() or {}) do
+    for _, ev in ipairs(sub:GetConditionEvents() or {}) do
         if not p.eventTokens[ev] then
             p.eventTokens[ev] = ns.EventBus:On(ev, function() self:Reevaluate() end)
         end
