@@ -62,15 +62,21 @@ function UnitFrames:OnEnable()
     local p = self:_p()
     p.curve = self:_BuildCurve()
 
-    -- Learn the real bar object per unit, and recolour after Blizzard's update.
-    -- The hook is global and can't be removed; install once per session (the latch
-    -- lives on the singleton's private state, so a disable/enable won't re-hook).
+    -- LEARN-ONLY hook: record the real bar object per unit and colour it ONCE when first
+    -- learned (or swapped); the UNIT_HEALTH / UNIT_MAXHEALTH events below drive per-tick
+    -- recolouring. Otherwise this hook fires on the SAME health change the unit event does, so
+    -- every tick painted twice (two GetSetting reads, two curve evals, two paints). The Monk
+    -- module uses the identical learn-only pattern (Base.lua). The hook is global and can't be
+    -- removed; install once per session (the latch lives on the singleton's private state).
     if not p.installed and type(UnitFrameHealthBar_Update) == "function" then
         local module = self
         hooksecurefunc("UnitFrameHealthBar_Update", function(statusbar, unit)
             if unit == "player" or unit == "target" then
-                module:_p().bars[unit] = statusbar
-                module:_Color(unit)
+                local bars = module:_p().bars
+                if bars[unit] ~= statusbar then   -- newly learned / swapped -> colour once
+                    bars[unit] = statusbar
+                    module:_Color(unit)
+                end
             end
         end)
         p.installed = true

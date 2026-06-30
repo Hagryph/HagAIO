@@ -123,6 +123,29 @@ describe("CharacterStore", function()
         assert.are.equal(0, #cs:Chars()["K"].lockouts)
     end)
 
+    it("Chars() is cached and a writer (SetKeystone) invalidates it", function()
+        local cs, db = rig()
+        db:Insert("keystone", { mapid = 5, name = "Old" })
+        db:Insert("dashboard_char", { char_key = "A-R", name = "A", realm = "R", ks_mapid = 5, ks_level = 10 })
+        local first = cs:Chars()
+        assert.are.equal("Old", first["A-R"].keystone.name)
+        assert.are.equal(first, cs:Chars())                 -- cache hit: the SAME table, no rebuild
+        cs:SetKeystone(5, "New")                            -- a writer must invalidate
+        local second = cs:Chars()
+        assert.are_not.equal(first, second)                 -- rebuilt
+        assert.are.equal("New", second["A-R"].keystone.name)
+    end)
+
+    it("InvalidateChars() forces a rebuild (for the catalog/Dev DIRECT writes that bypass the store)", function()
+        local cs, db = rig()
+        db:Insert("dashboard_char", { char_key = "A-R", name = "A", realm = "R" })
+        assert.are.equal("A", cs:Chars()["A-R"].name)       -- populate the cache
+        db:Update("dashboard_char", { name = "Renamed" }, { char_key = "A-R" })   -- a DIRECT write, not via the store
+        assert.are.equal("A", cs:Chars()["A-R"].name)       -- still served stale from the cache
+        cs:InvalidateChars()
+        assert.are.equal("Renamed", cs:Chars()["A-R"].name) -- now rebuilt
+    end)
+
     it("SelfKey() composes the viewing character's Name-Realm key", function()
         local cs = rig()
         _G.UnitName = function() return "Hero" end

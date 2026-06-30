@@ -176,6 +176,8 @@ function FlightTimers:_OnTakeTaxi(slot)
     p.known = (self:_RouteTime(p.src, dst, slot, dst))
     p.path = self:_BuildPath(slot, dst)   -- ordered nodes (+world pos) for timing/landing
     p.earlyLanding = false                -- reset any prior Request-Stop redirect
+    p.earlyComputedIdx = nil              -- _UpdateEarlyTarget recompute latch (per flight)
+    p.lastDestText, p.lastTimeText = nil, nil   -- force the new flight's first display SetText
     p.phase = "boarding"
     p.boardStart = GetTime()
     self:_StartTicker()
@@ -643,17 +645,23 @@ function FlightTimers:_RefreshDisplay()
         if p.frame then p.frame:Hide() end
         return
     end
-    self:_BuildFrame()
-    p.frame.dest:SetText(p.dst or "Flight")
+    local f = self:_BuildFrame()
+    -- The ticker runs at 10 Hz but the texts change at most once per second (M:SS) / per flight
+    -- (destination), so SetText only when the string actually changed -- a redundant SetText forces a
+    -- font-string relayout every tick for nothing. The bar value genuinely moves each tick, so it's
+    -- always set. The caches are reset per flight in _OnTakeTaxi.
+    local destText = p.dst or "Flight"
+    if p.lastDestText ~= destText then p.lastDestText = destText; f.dest:SetText(destText) end
     local elapsed = GetTime() - (p.startTime or GetTime())
+    local timeText, fill
     if p.known and p.known > 0 then
-        p.frame.time:SetText(fmt(p.known - elapsed))
-        p.frame.bar:SetValue(math.min(1, elapsed / p.known))
+        timeText, fill = fmt(p.known - elapsed), math.min(1, elapsed / p.known)
     else
-        p.frame.time:SetText("-:--")
-        p.frame.bar:SetValue(0)
+        timeText, fill = "-:--", 0
     end
-    p.frame:Show()
+    if p.lastTimeText ~= timeText then p.lastTimeText = timeText; f.time:SetText(timeText) end
+    f.bar:SetValue(fill)
+    f:Show()
 end
 
 -- The player clicked Request Stop (TaxiRequestEarlyLanding). Commit the early-stop
@@ -686,6 +694,11 @@ function FlightTimers:_UpdateEarlyTarget()
     -- past our target? (crossIdx is the next-node-ahead tracker) -> move it forward
     local cross = p.crossIdx
     if cross and cross > p.earlyIdx then p.earlyIdx = cross end
+
+    -- The target node only moves when crossIdx passes it; the names array + SumLegs estimate are a
+    -- function of earlyIdx alone, so recompute only when it actually changed -- not on every 10 Hz tick.
+    if p.earlyIdx == p.earlyComputedIdx then return end
+    p.earlyComputedIdx = p.earlyIdx
 
     local landNode = p.path[p.earlyIdx]
     if not landNode then return end

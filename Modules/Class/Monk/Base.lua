@@ -60,7 +60,7 @@ function MonkBase:Load()
     host:On("SPELLS_CHANGED",             function() host:_RefreshHeal() end, "spec")
     host:On("TRAIT_CONFIG_UPDATED",       function() host:_RefreshHeal() end, "spec")
     host:On("ACTIVE_COMBAT_CONFIG_CHANGED", function() host:_RefreshHeal() end, "spec")
-    host:On("UNIT_AURA",                  function(_, u) if u == "player" then host:_RefreshHeal() end end, "spec")
+    host:On("UNIT_AURA",                  function(_, u) if u == "player" then host:_MarkHealDirty() end end, "spec")
     p.onCooldown = false
     p.expelActive = true
     -- recolour the marker (ready <-> on-cooldown) via the secret-safe Cooldowns

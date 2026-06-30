@@ -63,6 +63,7 @@ end
 -- the relational stand-in for the old _SelfEntry() (which lazily created the nested entry + lastSeen).
 function CharacterStore:_SetSelf(changes)
     local db = self:DB(); if not db then return end
+    self:_p().charsCache = nil
     local key = self:SelfKey()
     changes = changes or {}
     changes.last_seen = (GetServerTime and GetServerTime()) or time()
@@ -75,6 +76,7 @@ end
 -- `instance_key`). Delete-then-insert mirrors the old whole-substructure replacement.
 function CharacterStore:_ReplaceSelfChildren(tname, rows)
     local db = self:DB(); if not db then return end
+    self:_p().charsCache = nil
     local key = self:SelfKey()
     db:Delete(tname, { char_key = key })   -- PK-member map: index lookup, no scan
     if #rows == 0 then return end
@@ -87,7 +89,9 @@ end
 -- foreign keys back into the document fields the renderers read (keystone name, lockout instance
 -- name/difficulty, quest title). Mirrors the old chars[key] = { ... nested ... } map exactly.
 function CharacterStore:Chars()
-    local db = self:DB(); if not db then return {} end
+    local p = self:_p()
+    if p.charsCache then return p.charsCache end   -- assembled doc, cached until a writer invalidates it
+    local db = self:DB(); if not db then return {} end   -- don't cache the pre-build empty result
     local ksName, inst = {}, self:Instances()
     for _, k in ipairs(db:Select("*"):From("keystone"):Run()) do ksName[k.mapid] = denull(k.name) end
 
@@ -127,13 +131,22 @@ function CharacterStore:Chars()
             doc.quests[q.freq][q.quest_id] = denull(q.done_at) or 0
         end
     end
+    p.charsCache = chars
     return chars
 end
+
+-- Drop the cached cross-character document so the next Chars() rebuilds it. Called by every writer
+-- below (so a collector write is reflected on the next render). The ExpansionCatalog seeds
+-- dashboard_instance directly, but _RefreshNow always runs Snapshot() -- whose collectors invalidate
+-- here -- right after a catalog build, so a seeded instance is picked up before the render.
+function CharacterStore:InvalidateChars() self:_p().charsCache = nil end
 
 -- Upsert the local keystone name table (map id -> display name); the keystone names are reference
 -- data, rebuilt each session, that dashboard_char's ks_mapid FK points at.
 function CharacterStore:SetKeystone(mapid, name)
     local db = self:DB(); if not (db and mapid) then return end
+    self:_p().charsCache = nil   -- Chars() resolves keystone names from this table
+
     if db:Select("mapid"):From("keystone"):Where("mapid", "=", mapid):Limit(1):Run()[1] then
         db:Update("keystone", { name = name }, { mapid = mapid })
     else db:Insert("keystone", { mapid = mapid, name = name }) end
@@ -172,6 +185,7 @@ end
 -- their stored value -- so a later sighting with a nil diffID/total never clobbers a known one).
 function CharacterStore:SetInstance(key, changes)
     local db = self:DB(); if not db then return end
+    self:_p().charsCache = nil   -- Chars() resolves lockout name/diff from this registry
     local exists = db:Select("key"):From("dashboard_instance"):Where("key", "=", key):Limit(1):Run()[1]
     if exists then db:Update("dashboard_instance", changes, { key = key })
     else changes.key = key; db:Insert("dashboard_instance", changes) end

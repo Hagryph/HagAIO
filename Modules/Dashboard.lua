@@ -611,6 +611,7 @@ function Dashboard:DevSeedTestData()
             end
         end
     end
+    self:_p().charStore:InvalidateChars()   -- these rows were written straight to the DB, not via the collectors
     self:_RenderIfShown()
 end
 
@@ -619,6 +620,7 @@ function Dashboard:DevClearTestData()
     local db = self:DB(); if not db then return end
     db:Delete("dashboard_char", function(r) return r.realm == DEV_REALM end)
     db:Delete("quest", function(r) return (r.quest_id or 0) >= DEV_QUEST_BASE end)
+    self:_p().charStore:InvalidateChars()
     self:_RenderIfShown()
 end
 

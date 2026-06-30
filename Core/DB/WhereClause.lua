@@ -138,29 +138,32 @@ end
 
 -- Evaluate against a composite row using `resolver:Value(compRow, colRef) -> value|DB.NULL`.
 -- Empty clause matches everything. AND binds tighter than OR.
+-- Evaluate one term (a leaf comparison, or a sub-group) against compRow through the resolver.
+-- HOISTED to a file-local: it used to be a closure rebuilt inside Matches on every call, and Matches
+-- runs ONCE PER STORED ROW in _ScanBase -- so a table scan allocated a closure per row. Threading
+-- compRow/resolver as arguments keeps it allocation-free.
+local function evalTerm(term, compRow, resolver)
+    if term.kind == "leaf" then
+        local right = term.right
+        if type(right) == "table" and right.__dbcol then right = resolver:Value(compRow, right.ref) end
+        return evalLeaf(term, resolver:Value(compRow, term.col), right)
+    end
+    return term:Matches(compRow, resolver)         -- a sub-group
+end
+
 function WhereClause:Matches(compRow, resolver)
     local seq = self:_p().seq
     if #seq == 0 then return true end
-
-    local function evalTerm(term)
-        if term.kind == "leaf" then
-            local right = term.right
-            if type(right) == "table" and right.__dbcol then right = resolver:Value(compRow, right.ref) end
-            return evalLeaf(term, resolver:Value(compRow, term.col), right)
-        end
-        return term:Matches(compRow, resolver)         -- a sub-group
-    end
-
     local result = false
-    local curAnd = evalTerm(seq[1])
+    local curAnd = evalTerm(seq[1], compRow, resolver)
     local i = 2
     while i <= #seq do
         local connector, term = seq[i], seq[i + 1]
         if connector == "and" then
-            curAnd = curAnd and evalTerm(term)
+            curAnd = curAnd and evalTerm(term, compRow, resolver)
         else
             result = result or curAnd
-            curAnd = evalTerm(term)
+            curAnd = evalTerm(term, compRow, resolver)
         end
         i = i + 2
     end

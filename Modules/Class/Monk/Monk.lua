@@ -236,9 +236,11 @@ function ClassModule:_SnapshotMaxHP()
     end
 end
 
--- Re-read the (stat-dependent) base Expel Harm heal + whether a sphere-generating
--- talent is learned (gates the orb-count colour ladder; Brewmaster only).
-function ClassModule:_RefreshHeal()
+-- Re-read the (stat-dependent) base Expel Harm heal + whether a sphere-generating talent is learned
+-- (gates the orb-count colour ladder; Brewmaster only). This is the actual TOOLTIP PARSE -- up to
+-- four GetSpellDescription reads + pattern matches -- so callers schedule the repaint, they don't
+-- repaint here.
+function ClassModule:_RefreshHealNow()
     local p = self:_p()
     p.baseHeal = readExpelHarmHeal()
     p.orbHeal = orbHealAmount()
@@ -253,6 +255,21 @@ function ClassModule:_RefreshHeal()
             end
         end)
     end
+end
+
+-- Re-parse now and repaint (for the RARE events -- equipment / level / spells / traits).
+function ClassModule:_RefreshHeal()
+    self:_RefreshHealNow()
+    self:_ScheduleUpdate()
+end
+
+-- A player UNIT_AURA can shift the Expel Harm tooltip heal (a buff that changes AP/SP), but UNIT_AURA
+-- fires on every buff/debuff/stack change -- re-parsing four tooltips per fire is wasteful in combat.
+-- Mark the heal stale and let the one-per-frame marker update parse at most once per frame, so a burst
+-- of aura ticks in a frame costs ONE parse, not N. Per-fire work stays cheap (a flag + the latched
+-- schedule) and no event is dropped -- the recompute is just batched to the next frame like the marker.
+function ClassModule:_MarkHealDirty()
+    self:_p().healDirty = true
     self:_ScheduleUpdate()
 end
 
@@ -336,6 +353,7 @@ end
 
 function ClassModule:_UpdateMarker()
     local p = self:_p()
+    if p.healDirty then p.healDirty = false; self:_RefreshHealNow() end   -- coalesced UNIT_AURA re-parse (once/frame)
     local bar = p.bar  -- the real bar captured from the hook
     if not bar then return end
 
