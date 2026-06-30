@@ -75,7 +75,11 @@ end
 function MonkBase:Unload()
     local host = self:Host()
     local p = host:_p()
-    host:ReleaseScope("spec")   -- drop every spec event sub + the AoE ticker
+    host:ReleaseScope("spec")   -- drop every spec event sub (incl. the AoE regen hooks) + the scheduled marker defers
+    -- The "spec" release cancelled any pending _ScheduleUpdate / _ScheduleTiger defer (a cancelled
+    -- self:After never runs the body that clears its latch), so clear them here -- otherwise a re-Load
+    -- would early-return on a stuck latch and never re-arm the first repaint.
+    p.updateScheduled, p.tigerScheduled = false, false
     p.expelActive = false
     p.onCooldown = false
     if p.expelWatch then p.expelWatch:Cancel(); p.expelWatch = nil end

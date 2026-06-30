@@ -182,10 +182,10 @@ function ClassModule:_ScheduleUpdate()
     local p = self:_p()
     if p.updateScheduled then return end
     p.updateScheduled = true
-    ns.Scheduler:After(0, function()
+    self:After(0, function()        -- "spec" scope: a pending repaint is cancelled on spec swap/unload
         p.updateScheduled = false
         self:_UpdateMarker()
-    end)
+    end, "spec")
 end
 
 -- A marker is SetPoint-anchored to its bar's fill, so it tracks the CURRENT value (health/energy) for
@@ -253,13 +253,13 @@ function ClassModule:_RefreshHealNow()
     p.orbTalented = IsPlayerSpell and (IsPlayerSpell(Spell.GIFT_OF_THE_OX) or IsPlayerSpell(Spell.SPIRIT_OF_THE_OX)) or false
     self:_SnapshotMaxHP()
     if not p.baseHeal then
-        -- description may not be loaded yet; retry shortly
-        ns.Scheduler:After(1, function()
+        -- description may not be loaded yet; retry shortly ("spec" scope: dropped on unload)
+        self:After(1, function()
             if p.expelActive and not p.baseHeal then
                 p.baseHeal = readExpelHarmHeal()
                 self:_ScheduleUpdate()
             end
-        end)
+        end, "spec")
     end
 end
 
@@ -553,7 +553,7 @@ function ClassModule:_ScheduleTiger()
     local p = self:_p()
     if p.tigerScheduled then return end
     p.tigerScheduled = true
-    ns.Scheduler:After(0, function() p.tigerScheduled = false; self:_UpdateTiger() end)
+    self:After(0, function() p.tigerScheduled = false; self:_UpdateTiger() end, "spec")   -- dropped on spec swap/unload
 end
 
 -- A reverse-filling bar on the energy bar showing the MISSING energy until you can afford
