@@ -145,7 +145,7 @@ function ns.Monk.RegisterSpec(name, SpecClass, specKey, serviceDeps)
     -- Make the spec resolvable for the settings page even while the Class module is disabled
     -- (so spec options show without enabling first). Only on Monk chars, so its spec indices
     -- never collide with another class's in the shared registry.
-    if isMonk() then classMod:_RegisterSpec(specKey, spec) end
+    if isMonk() then classMod:RegisterSpec(specKey, spec) end   -- the host's spec registry (not the ns.Monk.RegisterSpec static)
     local deps = { "SettingsWindow" }
     for _, d in ipairs(serviceDeps) do deps[#deps + 1] = d end
     ns.SubmoduleManager:Register(ns.Submodule:New(name, {
@@ -155,14 +155,14 @@ function ns.Monk.RegisterSpec(name, SpecClass, specKey, serviceDeps)
         condition = function() return classMod:CurrentSpecKey() == specKey end,
         events = { "PLAYER_SPECIALIZATION_CHANGED", "PLAYER_ENTERING_WORLD" },
         onLoad = function(host)
-            host:_SetActiveSpec(spec)   -- protected setter, not a cross-object host:_p() write
+            host:SetActiveSpec(spec)    -- public setter, not a cross-object host:_p() write
             host:_BuildSettings()
             spec:Load()
             if ns.UI and ns.UI.SettingsWindow then ns.UI.SettingsWindow:InvalidateModule(host:GetName()) end
         end,
         onUnload = function(host)
             spec:Unload()
-            host:_SetActiveSpec(nil)
+            host:ClearActiveSpec()
         end,
     }))
 end

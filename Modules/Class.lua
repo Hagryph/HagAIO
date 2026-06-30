@@ -47,11 +47,12 @@ function ClassModule:OnInitialize()
     self:_BuildSettings()
 end
 
--- Specs register themselves here (keyed by specKey) so the module can resolve the CURRENT spec's
--- settings for display even while the module is disabled and its spec submodule isn't loaded --
--- only the per-character class's specs register (the RegisterSpec hook gates on class), so a
--- spec index never collides across classes.
-function ClassModule:_RegisterSpec(specKey, spec)
+-- Register a spec object under specKey so the module resolves the CURRENT spec's settings for display
+-- even while it is disabled and its spec submodule isn't loaded. PUBLIC: the per-spec files register
+-- through this from outside -- only the per-character class's specs register (the ns.Monk.RegisterSpec
+-- static gates on class, then calls host:RegisterSpec -- a DIFFERENT thing: that is the Monk surface,
+-- this is the host's registry), so a spec index never collides across classes.
+function ClassModule:RegisterSpec(specKey, spec)
     local p = self:_p()
     p.specs = p.specs or {}
     p.specs[specKey] = spec
@@ -64,11 +65,16 @@ function ClassModule:_ActiveSpec()
     return p.activeSub or (p.specs and p.specs[self:CurrentSpecKey()])
 end
 
--- Protected setter for the currently-loaded spec submodule (nil clears it). A spec's onLoad/onUnload
--- runs against this host but is NOT a ClassModule method, so it sets the active spec through here
--- instead of reaching into the host's private table (host:_p().activeSub) from outside.
-function ClassModule:_SetActiveSpec(spec)
+-- Public setter for the currently-loaded spec submodule (use ClearActiveSpec to clear it). A spec's
+-- onLoad/onUnload runs against this host but is NOT a ClassModule method, so it marks the active spec
+-- through this surface instead of reaching into the host's private table (host:_p().activeSub) from outside.
+function ClassModule:SetActiveSpec(spec)
     self:_p().activeSub = spec
+end
+
+-- Clear the loaded spec (the settings page then falls back to the registered spec for the current spec).
+function ClassModule:ClearActiveSpec()
+    self:SetActiveSpec(nil)
 end
 
 -- (Re)build the settings schema from the active spec. Defaults come from the per-spec settings
