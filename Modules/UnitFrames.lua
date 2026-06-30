@@ -52,23 +52,16 @@ function UnitFrames:OnInitialize()
     local p = self:_p()
     p.curve = nil
     p.bars = {}      -- unit -> the real StatusBar (learned from the hook)
-end
 
-function UnitFrames:OnEnable()
-    if not apiAvailable() then
-        self:LogWarn("health-bar colouring isn't supported on this client build")
-        return
-    end
-    local p = self:_p()
-    p.curve = self:_BuildCurve()
-
-    -- LEARN-ONLY hook: record the real bar object per unit and colour it ONCE when first
-    -- learned (or swapped); the UNIT_HEALTH / UNIT_MAXHEALTH events below drive per-tick
-    -- recolouring. Otherwise this hook fires on the SAME health change the unit event does, so
-    -- every tick painted twice (two GetSetting reads, two curve evals, two paints). The Monk
-    -- module uses the identical learn-only pattern (Base.lua). The hook is global and can't be
-    -- removed; install once per session (the latch lives on the singleton's private state).
-    if not p.installed and type(UnitFrameHealthBar_Update) == "function" then
+    -- LEARN-ONLY hook: record the real bar object per unit (a frame-path resolver returns a hidden
+    -- alias, not the visible bar) and colour it ONCE when first learned / swapped; the UNIT_HEALTH /
+    -- UNIT_MAXHEALTH events (OnEnable) drive per-tick recolouring. Otherwise this would fire on the
+    -- SAME health change the unit event does and paint every tick twice. UnitFrameHealthBar_Update is
+    -- a PERMANENT securehook (can't be removed), so -- like the always-on recorders -- it installs
+    -- ONCE at boot HERE, not in OnEnable (no per-enable `installed` latch needed): _Color self-guards
+    -- on IsEnabled() + the curve, so the hook learns harmlessly while disabled and only paints while
+    -- enabled. (The Monk module uses the identical learn-only pattern.)
+    if apiAvailable() and type(UnitFrameHealthBar_Update) == "function" then
         local module = self
         hooksecurefunc("UnitFrameHealthBar_Update", function(statusbar, unit)
             if unit == "player" or unit == "target" then
@@ -79,8 +72,16 @@ function UnitFrames:OnEnable()
                 end
             end
         end)
-        p.installed = true
     end
+end
+
+function UnitFrames:OnEnable()
+    if not apiAvailable() then
+        self:LogWarn("health-bar colouring isn't supported on this client build")
+        return
+    end
+    local p = self:_p()
+    p.curve = self:_BuildCurve()
 
     -- Drive recolouring on health changes (the example's UNIT_HEALTH approach). Filtered
     -- to player/target at REGISTRATION (RegisterUnitEvent) so these high-churn events
