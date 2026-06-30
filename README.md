@@ -286,6 +286,20 @@ ns.SubmoduleManager:Register(ns.Submodule:New("MyBit", {
 <!-- AUTOGEN:commands — generated from the slash-command router + module command registrations by tools/autogen/Readme.ps1 on deploy; edit the source, not this -->
 | Command | Effect |
 |---|---|
+| `/hag` | Open the settings window |
+| `/hag help` | List commands |
+| `/hag modules` | List feature modules and their state |
+| `/hag config` | Open the settings window |
+| `/hag log` | Open the activity log |
+| `/hag cvar dump` | Copy every console variable to a window (needs -console) (developer characters) |
+| `/hag cvar set` | Globalise `<name>` `<value>` on every character |
+| `/hag cvar get` | Inspect `<name>` (value, default, scope) |
+| `/hag cvar clear` | Stop globalising `<name>` |
+| `/hag cvar list` | List globalised CVars |
+| `/hag dashboard` | Open the cross-character Dashboard |
+| `/hag xp` | Session XP / hour |
+| `/hag dev cvars` | Copy every console variable to a window (needs -console) (developer characters) |
+| `/hag mem` | Toggle the memory watch (one sample per minute) (developer characters) |
 <!-- /AUTOGEN:commands -->
 
 ### Minimap (addon compartment)
