@@ -135,3 +135,65 @@ describe("SettingsTables: profile cascade delete", function()
         assert.are.equal(0, db:Store():Count("p_module_Foo"))
     end)
 end)
+
+describe("SettingsTables: SchemaDefault", function()
+    it("returns the code default for a key, nil for a missing key", function()
+        local _, st = build()
+        assert.are.equal(true,  st.SchemaDefault(SCHEMA, "a"))
+        assert.are.equal("off", st.SchemaDefault(SCHEMA, "m"))
+        assert.is_true(colorEq(st.SchemaDefault(SCHEMA, "c"), 1, 0, 0))
+        assert.is_nil(st.SchemaDefault(SCHEMA, "nope"))        -- key not in the schema -> nil
+    end)
+end)
+
+describe("SettingsTables: Baseline", function()
+    it("is loaded-profile value ?? code default, IGNORING this char's override", function()
+        local db, st = build()
+        db:Insert("profile", { name = "P" })
+        db:Insert("p_module_Foo", { profile = "P", a = false })  -- profile sets 'a', leaves 'm'
+        st:SetLoadedProfile(db, "P")
+        st:Set(db, NS, SCHEMA, "a", true)                        -- this char overrides 'a' = true
+        assert.are.equal(true, st:Get(db, NS, SCHEMA, "a"))      -- override wins for Get
+        assert.are.equal(false, st:Baseline(db, NS, SCHEMA, "a")) -- but Baseline ignores it -> profile
+        assert.are.equal("off", st:Baseline(db, NS, SCHEMA, "m")) -- profile leaves 'm' -> code default
+        assert.is_nil(st:Baseline(db, NS, SCHEMA, "nope"))        -- missing key -> nil
+    end)
+end)
+
+describe("SettingsTables: EffectiveDiffs", function()
+    it("returns only the keys whose effective value differs from the default", function()
+        local db, st = build()
+        assert.is_nil(st:EffectiveDiffs(db, NS, SCHEMA))         -- all default -> nil
+        st:Set(db, NS, SCHEMA, "m", "auto")                      -- 'm' now differs
+        local diffs = st:EffectiveDiffs(db, NS, SCHEMA)
+        assert.are.equal("auto", diffs.m)
+        assert.is_nil(diffs.a)                                   -- 'a' still default -> absent
+        assert.is_nil(diffs.c)                                   -- 'c' still default -> absent
+    end)
+end)
+
+describe("SettingsTables: ReadProfile + WriteProfileValues round trip", function()
+    it("writes a value map into a profile row, then reads it back", function()
+        local db, st = build()
+        db:Insert("profile", { name = "P" })
+        assert.is_nil(st:ReadProfile(db, NS, SCHEMA, "P"))       -- empty profile -> nil
+        st:WriteProfileValues(db, NS, SCHEMA, "P", { a = false, m = "auto", c = { 0, 1, 0 } })
+        local got = st:ReadProfile(db, NS, SCHEMA, "P")
+        assert.are.equal(false, got.a)
+        assert.are.equal("auto", got.m)
+        assert.is_true(colorEq(got.c, 0, 1, 0))
+    end)
+end)
+
+describe("SettingsTables: _EnableBaseline", function()
+    it("is the loaded profile's enable-state ?? the passed default", function()
+        local db, st = build()
+        assert.is_true(st:_EnableBaseline(db, "Foo", true))      -- no profile -> default true
+        assert.is_false(st:_EnableBaseline(db, "Foo", false))    -- no profile -> default false
+        db:Insert("profile", { name = "P" })
+        db:Insert("profile_module_enable", { profile = "P", name = "Foo", enabled = false })
+        st:SetLoadedProfile(db, "P")
+        assert.is_false(st:_EnableBaseline(db, "Foo", true))     -- profile says false, beats default
+        assert.is_true(st:_EnableBaseline(db, "Bar", true))      -- profile silent on 'Bar' -> default
+    end)
+end)

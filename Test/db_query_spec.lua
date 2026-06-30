@@ -188,6 +188,57 @@ describe("DB query: joins", function()
             :Where("routes.id", "=", 1):Run()
         assert.are.equal("A", rows[1].name)                 -- route 1 src=1 -> node A
     end)
+
+    -- The *OuterJoin SQL synonyms are passthroughs to the implemented join kind; prove each builds
+    -- and runs as its base kind (same rows), so the synonym surface is exercised, not just dormant.
+    it("LEFT OUTER JOIN is the same as LEFT JOIN", function()
+        local ns = newQueryNs()
+        local left  = seeded(ns):Select("routes.id", "hops.node"):From("routes")
+            :LeftJoin("hops", { on = { "routes.id", "hops.route_id" } }):OrderBy("routes.id"):Run()
+        local outer = seeded(ns):Select("routes.id", "hops.node"):From("routes")
+            :LeftOuterJoin("hops", { on = { "routes.id", "hops.route_id" } }):OrderBy("routes.id"):Run()
+        assert.are.equal(5, #outer)                         -- 3 matched + routes 3 and 4 unmatched
+        assert.are.equal(#left, #outer)
+        local nullHops = 0
+        for _, r in ipairs(outer) do if ns.DB.isNull(r.node) then nullHops = nullHops + 1 end end
+        assert.are.equal(2, nullHops)
+    end)
+
+    it("RIGHT OUTER JOIN keeps unmatched right rows like RIGHT JOIN", function()
+        local ns = newQueryNs()
+        -- nodes {1,2,3,4,5,9}; routes.src {1,1,3,5}: node1<-routes 1,2; node3<-route3; node5<-route4;
+        -- unmatched nodes 2,4,9 emit one row each -> 2+1+1 + 3 matched = 7 rows.
+        -- (project node-side `name` + route-side `faction`: distinct bare names, no collision)
+        local rows = seeded(ns):Select("nodes.name", "routes.faction"):From("routes")
+            :RightOuterJoin("nodes", { on = { "routes.src", "nodes.id" } }):Run()
+        assert.are.equal(7, #rows)
+        local nullFaction = 0
+        for _, r in ipairs(rows) do if ns.DB.isNull(r.faction) then nullFaction = nullFaction + 1 end end
+        assert.are.equal(3, nullFaction)                    -- nodes 2,4,9 have no route on src
+        -- same shape as the non-synonym RightJoin
+        local base = seeded(ns):Select("nodes.name", "routes.faction"):From("routes")
+            :RightJoin("nodes", { on = { "routes.src", "nodes.id" } }):Run()
+        assert.are.equal(#base, #rows)
+    end)
+
+    it("FULL OUTER JOIN unions unmatched from both sides like FULL JOIN", function()
+        local ns = newQueryNs()
+        -- routes.dst {2,5,9,4}; nodes {1,2,3,4,5,9}: routes 1,3,4 match dst nodes 2,4,9; route 2 dst=5
+        -- matches node 5 -> all 4 routes matched. Unmatched nodes 1,3 emit a route-NULL row each.
+        -- (project route-side `faction` + node-side `name`: distinct bare names, no collision)
+        local rows = seeded(ns):Select("routes.faction", "nodes.name"):From("routes")
+            :FullOuterJoin("nodes", { on = { "routes.dst", "nodes.id" } }):Run()
+        assert.are.equal(6, #rows)                          -- 4 matched routes + nodes 1,3 unmatched
+        local nullFaction = 0
+        for _, r in ipairs(rows) do
+            if ns.DB.isNull(r.faction) then nullFaction = nullFaction + 1 end
+        end
+        -- nodes 1 (A) and 3 (C) are never a dst -> their rows have the routes side unmatched -> NULL faction
+        assert.are.equal(2, nullFaction)
+        local base = seeded(ns):Select("routes.faction", "nodes.name"):From("routes")
+            :FullJoin("nodes", { on = { "routes.dst", "nodes.id" } }):Run()
+        assert.are.equal(#base, #rows)
+    end)
 end)
 
 describe("DB query: group by + aggregates + having", function()

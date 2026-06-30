@@ -207,4 +207,92 @@ describe("Worker", function()
         clock.advance(1); worker:_Pump()                -- timer restarted
         assert.are.equal(2, runs)
     end)
+
+    -- ---- FramePumpMs (Dev's hitch watch reads it) -------------------------------------------------
+    it("FramePumpMs reports the pump time spent in the stamped frame, 0 for any other frame", function()
+        local worker, _, _, profile, clock = newWorker()
+        clock.now = 5                                   -- this frame's GetTime stamp
+        worker:Queue(function() profile.ms = profile.ms + 3 end)   -- the job "costs" 3ms of the frame
+        worker:_Pump()
+        assert.near(3, worker:FramePumpMs(5), 0.0001)   -- the Worker's share of frame 5
+        assert.are.equal(0, worker:FramePumpMs(9))      -- a different frame -> 0, not the stale value
+    end)
+
+    it("FramePumpMs accumulates across multiple pumps within the SAME frame, resets on a new one", function()
+        local worker, _, ns, profile, clock = newWorker()
+        clock.now = 5
+        worker:Queue(function()
+            for _ = 1, 30 do profile.ms = profile.ms + 1; ns.Worker:Yield() end   -- long: many chunk points
+        end)
+        worker:_Pump()                                  -- frame 5: ~2ms before the budget is spent
+        local afterFirst = worker:FramePumpMs(5)
+        worker:_Pump()                                  -- still frame 5 (clock not advanced) -> adds on
+        local afterSecond = worker:FramePumpMs(5)
+        assert.is_true(afterSecond > afterFirst)        -- same frame -> the two pumps' shares sum
+        clock.now = 6                                   -- a new frame begins (job still has work left)
+        profile.ms = 0; worker:_Pump()
+        assert.is_true(worker:FramePumpMs(6) > 0)       -- this frame has its own (fresh) share
+        assert.are.equal(0, worker:FramePumpMs(5))      -- the old frame's accumulation is gone
+    end)
+
+    -- ---- Mark + the drain debug report ------------------------------------------------------------
+    it("Mark names the running phase, and a slow step's drain report reads 'label @ mark'", function()
+        local worker, _, ns, profile = newWorker()
+        ns.Logger.GetDebug = function() return true end -- arm the per-pump profiler (Dev's debug flag)
+        local warns = {}
+        function worker:LogWarn(msg) warns[#warns + 1] = msg end   -- capture the drain report lines
+        worker:Queue(function()
+            ns.Worker:Mark("phaseX")                    -- name the phase before the heavy work
+            profile.ms = profile.ms + 9                 -- one fat step (no chunking) -> worst offender
+        end, { label = "bigjob" })
+        worker:_Pump()                                  -- runs + completes the job -> queue drains
+        worker:_Stop()                                  -- force the report even if the pump didn't drain it
+        local joined = table.concat(warns, "\n")
+        assert.is_true(joined:find("bigjob @ phaseX", 1, true) and true or false)   -- label @ mark
+    end)
+
+    it("with no Mark the drain report attributes the worst step to the bare label", function()
+        local worker, _, ns, profile = newWorker()
+        ns.Logger.GetDebug = function() return true end
+        local warns = {}
+        function worker:LogWarn(msg) warns[#warns + 1] = msg end
+        worker:Queue(function() profile.ms = profile.ms + 9 end, { label = "unmarked" })
+        worker:_Pump()
+        local joined = table.concat(warns, "\n")
+        assert.is_true(joined:find("'unmarked'", 1, true) and true or false)   -- bare label, no " @ "
+        assert.is_false(joined:find(" @ ", 1, true) and true or false)
+    end)
+
+    it("the profiler stays silent (no drain report) while debug is off", function()
+        local worker, _, _, profile = newWorker()  -- rig Logger has no GetDebug -> debugOn() false
+        local warns = {}
+        function worker:LogWarn(msg) warns[#warns + 1] = msg end
+        worker:Queue(function() profile.ms = profile.ms + 9 end, { label = "silent" })
+        worker:_Pump()
+        worker:_Stop()
+        assert.are.equal(0, #warns)                     -- profiling off -> nothing logged
+    end)
+
+    -- ---- cancel a job that has ALREADY started yielding -------------------------------------------
+    it("cancelling a partially-run chunked job mid-flight stops it (no resume, no completion)", function()
+        local worker, bus, ns, profile = newWorker()
+        local steps, done = 0, false
+        bus:Subscribe("HagAIO_WorkerDone", function() done = true end)
+        local handle = worker:Queue(function()
+            for _ = 1, 5 do
+                steps = steps + 1
+                profile.ms = profile.ms + 1            -- each step costs 1ms of the frame
+                ns.Worker:Yield()                      -- yields once the 2ms budget is spent
+            end
+        end)
+        worker:_Pump()                                 -- frame 1: runs a couple of steps, then yields
+        local partial = steps
+        assert.is_true(partial >= 1 and partial < 5)   -- the job got going but did NOT finish
+        assert.is_false(done)
+        handle:Cancel()                                -- cancel it mid-flight (already yielding)
+        profile.ms = 0; worker:_Pump()
+        profile.ms = 0; worker:_Pump()                 -- further pumps must NOT resume the cancelled job
+        assert.are.equal(partial, steps)               -- frozen where it yielded -> never resumed
+        assert.is_false(done)                          -- a cancelled job never completes / emits done
+    end)
 end)

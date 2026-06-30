@@ -182,4 +182,73 @@ describe("Cache", function()
         assert.is_false(select(2, s:Get("a")))   -- expired by ttl
         assert.is_false(select(2, s:Get("c")))
     end)
+
+    -- ---- Cache:Memoize (delegates to the Memoize service; load it into the same ns) ----
+    local function newCacheWithMemoize()
+        local c, clock, ns = newCache()
+        S.load(ns, "Services/Memoize.lua")        -- captureRegister publishes ns.Memoize
+        ns._captured["Memoize"]:OnInitialize()
+        return c, clock, ns
+    end
+
+    it("Memoize computes once per distinct arg, then serves the cached value", function()
+        local c = newCacheWithMemoize()
+        local calls = 0
+        local f = c:Memoize(function(n) calls = calls + 1; return n * 2 end)
+        assert.are.equal(6, f(3))
+        assert.are.equal(6, f(3))                 -- same arg -> cached, fn not re-run
+        assert.are.equal(1, calls)
+        assert.are.equal(8, f(4))                 -- distinct arg -> computed
+        assert.are.equal(2, calls)
+        assert.are.equal(6, f(3))                 -- still cached after the second arg
+        assert.are.equal(2, calls)
+    end)
+
+    it("Memoize with weak=true stores in a GC-reclaimable (weak) cache", function()
+        local c = newCacheWithMemoize()
+        local calls = 0
+        local f = c:Memoize(function(t) calls = calls + 1; return t.x end, "k")
+        local arg = { x = 11 }
+        assert.are.equal(11, f(arg))
+        assert.are.equal(11, f(arg))              -- same key object -> served from the weak cache
+        assert.are.equal(1, calls)                -- proves it cached (weak store still serves a live key)
+    end)
+
+    -- ---- HasStore / GetId / ClearAll across TWO named stores (isolation + bulk clear) ----
+    it("HasStore reports only stores that exist, and GetId echoes the store's name", function()
+        local c = newCache()
+        assert.is_false(c:HasStore("alpha"))
+        local a = c:Store("alpha")
+        assert.is_true(c:HasStore("alpha"))
+        assert.is_false(c:HasStore("beta"))       -- never created
+        assert.are.equal("alpha", a:GetId())
+        local b = c:Store("beta")
+        assert.are.equal("beta", b:GetId())
+    end)
+
+    it("two named stores are isolated: a key in store A is absent from store B", function()
+        local c = newCache()
+        local a = c:Store("alpha")
+        local b = c:Store("beta")
+        a:Set("shared", "from-A")
+        assert.are.equal("from-A", select(1, a:Get("shared")))
+        assert.is_false(select(2, b:Get("shared")))   -- B never saw it
+        b:Set("shared", "from-B")
+        assert.are.equal("from-A", select(1, a:Get("shared")))  -- A unchanged by B's write
+        assert.are.equal("from-B", select(1, b:Get("shared")))
+    end)
+
+    it("ClearAll empties every named store but keeps the handles valid", function()
+        local c = newCache()
+        local a = c:Store("alpha")
+        local b = c:Store("beta")
+        a:Set("k", 1)
+        b:Set("k", 2)
+        c:ClearAll()
+        assert.is_false(select(2, a:Get("k")))    -- both stores drained
+        assert.is_false(select(2, b:Get("k")))
+        assert.is_true(c:HasStore("alpha"))       -- the stores themselves survive
+        a:Set("k", 9)                             -- existing handle still usable
+        assert.are.equal(9, select(1, a:Get("k")))
+    end)
 end)

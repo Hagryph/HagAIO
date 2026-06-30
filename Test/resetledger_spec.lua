@@ -41,6 +41,41 @@ describe("ResetLedger reset rollover", function()
     end)
 end)
 
+describe("ResetLedger last-reset boundary", function()
+    -- The module feeds these from C_DateAndTime.GetSecondsUntil*Reset(); when that WoW API is
+    -- present we get a number, when it's absent (returns nil) the "secsUntilNext or 0" default
+    -- pins the boundary to exactly one period before `now`.
+    it("derives the previous weekly/daily reset from seconds-until-next (API present)", function()
+        local l = rl()
+        _G.C_DateAndTime = {
+            GetSecondsUntilWeeklyReset = function() return 3 * DAY end,
+            GetSecondsUntilDailyReset  = function() return 6 * 60 * 60 end,
+        }
+        local now = 1000000
+        local weekly = _G.C_DateAndTime.GetSecondsUntilWeeklyReset()
+        local daily  = _G.C_DateAndTime.GetSecondsUntilDailyReset()
+        assert.are.equal(now + weekly - WEEK, l:LastWeeklyReset(now, weekly))
+        assert.are.equal(now + daily  - DAY,  l:LastDailyReset(now, daily))
+        _G.C_DateAndTime = nil
+    end)
+    it("defaults secsUntilNext to 0 when the reset API is absent (nil)", function()
+        local l = rl()
+        _G.C_DateAndTime = nil   -- API unavailable -> GetSecondsUntil*Reset() yields nil
+        local now = 1000000
+        assert.are.equal(now - WEEK, l:LastWeeklyReset(now, nil))
+        assert.are.equal(now - DAY,  l:LastDailyReset(now, nil))
+    end)
+    it("the nil default still feeds NeedsWeeklyReset/NeedsDailyReset correctly", function()
+        local l = rl()
+        local now = 1000000
+        -- With secsUntilNext nil the boundary is now - WEEK; a char seen before that is stale.
+        assert.is_true(l:NeedsWeeklyReset(now - WEEK - 1, now, nil))
+        assert.is_false(l:NeedsWeeklyReset(now - WEEK + 1, now, nil))
+        assert.is_true(l:NeedsDailyReset(now - DAY - 1, now, nil))
+        assert.is_false(l:NeedsDailyReset(now - DAY + 1, now, nil))
+    end)
+end)
+
 describe("ResetLedger:Progress", function()
     it("returns fraction + done flag", function()
         local l = rl()
