@@ -252,7 +252,7 @@ describe("Component disable: registry edge cases", function()
 
     it("a teardown that throws is caught, and the rest still run", function()
         local c, ns = rig()
-        ns.Logger = ns.Logger or { Core = function() return { Warn = function() end } end }
+        ns.Logger = { Core = function() return { Warn = function() end } end }  -- known-good sink: ReleaseScope logs the caught error
         local ran = {}
         c:OnTeardown(function() ran[#ran + 1] = "after-boom" end)
         c:OnTeardown(function() error("boom") end)
