@@ -55,4 +55,37 @@ function MonkMath.CostPoint(cost, maxE, barW)
     return (cost / maxE) * barW
 end
 
+-- Grace of the Crane raises all healing taken by a flat % the Expel Harm tooltip doesn't fold
+-- in. Turn the parsed percent (or the 4% default when it can't be read) into a multiplier:
+-- 1 + pct/100. The caller does the talent gate + description read and hands the parsed pct in
+-- (nil -> the 4% default).
+function MonkMath.HealingTakenMultiplier(pct)
+    pct = pct or 4
+    return 1 + pct / 100
+end
+
+-- Round a parsed tooltip heal by the healing-taken multiplier: floor(heal * mult + 0.5).
+-- Returns nil when the heal wasn't parsed, so the caller falls back. (Used for the base
+-- Expel Harm heal.)
+function MonkMath.RoundHeal(heal, mult)
+    if not heal then return nil end
+    return floor(heal * mult + 0.5)
+end
+
+-- Round a parsed per-sphere heal by the healing-taken multiplier: floor(n * mult + 0.5).
+-- Returns 0 when the heal wasn't parsed (no sphere talent / unreadable), matching the
+-- orb-heal "0 otherwise" contract.
+function MonkMath.RoundOrbHeal(n, mult)
+    if not n then return 0 end
+    return floor(n * mult + 0.5)
+end
+
+-- Accept a parsed tooltip hit damage only if it's a usable, NON-SECRET positive number:
+-- reject nil, <= 0, and any secret value (isSecret(v), optional) -- a secret must NOT be
+-- parsed into the breakpoint math. Returns the value, or nil for the caller to fall back.
+function MonkMath.AcceptHitDamage(v, isSecret)
+    if not v or v <= 0 or (isSecret and isSecret(v)) then return nil end
+    return v
+end
+
 ns.LibManager:RegisterValue("MonkMath", MonkMath)

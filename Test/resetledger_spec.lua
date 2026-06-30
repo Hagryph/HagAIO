@@ -97,6 +97,47 @@ describe("ResetLedger:Progress", function()
     end)
 end)
 
+describe("ResetLedger:InCurrentWindow", function()
+    -- The module reads GetServerTime + C_DateAndTime.GetSecondsUntil*Reset() and hands the
+    -- numbers in; this is the pure window test. now + untilNext - period is the LAST reset.
+    it("counts a turn-in inside the current daily/weekly window, not before it", function()
+        local l = rl()
+        local now, untilDaily = 1000000, 6 * 60 * 60      -- last daily reset = now + 6h - 1d
+        local lastDaily = now + untilDaily - DAY
+        assert.is_true(l:InCurrentWindow(lastDaily + 1, "daily", now, untilDaily))   -- after reset
+        assert.is_false(l:InCurrentWindow(lastDaily - 1, "daily", now, untilDaily))  -- before reset
+        local untilWeekly = 3 * DAY
+        local lastWeekly = now + untilWeekly - WEEK
+        assert.is_true(l:InCurrentWindow(lastWeekly + 1, "weekly", now, untilWeekly))
+        assert.is_false(l:InCurrentWindow(lastWeekly - 1, "weekly", now, untilWeekly))
+    end)
+    it("is inclusive at the exact reset boundary (>=)", function()
+        local l = rl()
+        local now, untilDaily = 1000000, 6 * 60 * 60
+        local lastDaily = now + untilDaily - DAY
+        assert.is_true(l:InCurrentWindow(lastDaily, "daily", now, untilDaily))   -- exactly at boundary
+    end)
+    it("treats a missing/legacy done_at (nil or 0) as never done", function()
+        local l = rl()
+        assert.is_false(l:InCurrentWindow(nil, "weekly", 1000000, 3 * DAY))
+        assert.is_false(l:InCurrentWindow(0, "weekly", 1000000, 3 * DAY))   -- legacy zero row
+        assert.is_false(l:InCurrentWindow(0, "daily", 1000000, nil))        -- zero wins over missing-info
+    end)
+    it("trusts the recorded state (true) when there is no reset info (nil untilNext)", function()
+        local l = rl()
+        assert.is_true(l:InCurrentWindow(1, "weekly", 1000000, nil))   -- any non-zero done_at -> true
+        assert.is_true(l:InCurrentWindow(999, "daily", 1000000, nil))
+    end)
+    it("uses the right period per frequency (daily 1d vs weekly 7d)", function()
+        local l = rl()
+        local now, untilNext = 1000000, 0   -- last reset is exactly `now` for either frequency
+        -- A done_at one period-minus-a-bit before now: inside the DAY window only as weekly.
+        local doneAt = now - DAY - 1        -- before the daily reset, after the weekly reset
+        assert.is_false(l:InCurrentWindow(doneAt, "daily", now, untilNext))
+        assert.is_true(l:InCurrentWindow(doneAt, "weekly", now, untilNext))
+    end)
+end)
+
 describe("ResetLedger:KeystoneText", function()
     it("formats a held keystone", function()
         assert.are.equal("Ara-Kara +12", (rl()):KeystoneText("Ara-Kara", 12))

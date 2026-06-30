@@ -71,16 +71,15 @@ local ORB_MAX_COUNT = 5
 local function healingTakenMultiplier()
     if not (IsPlayerSpell and IsPlayerSpell(Spell.GRACE_OF_CRANE)) then return 1 end
     local desc = C_Spell and C_Spell.GetSpellDescription and C_Spell.GetSpellDescription(Spell.GRACE_OF_CRANE)
-    local pct = ns.SpellTooltipParser.Percent(desc) or 4
-    return 1 + pct / 100
+    local pct = ns.SpellTooltipParser.Percent(desc)
+    return MonkMath.HealingTakenMultiplier(pct)
 end
 
 -- Parse "healing for N" out of the spell description (enUS) + the talent bonus.
 local function readExpelHarmHeal()
     local desc = C_Spell and C_Spell.GetSpellDescription and C_Spell.GetSpellDescription(Spell.EXPEL_HARM)
     local heal = ns.SpellTooltipParser.Heal(desc)
-    if not heal then return nil end
-    return math.floor(heal * healingTakenMultiplier() + 0.5)
+    return MonkMath.RoundHeal(heal, healingTakenMultiplier())
 end
 
 -- Per-sphere heal of a Healing Sphere (Expel Harm absorbs them). Only when a sphere
@@ -96,8 +95,7 @@ local function orbHealAmount()
     if not id then return 0 end
     local desc = C_Spell and C_Spell.GetSpellDescription and C_Spell.GetSpellDescription(id)
     local n = ns.SpellTooltipParser.HealsYouFor(desc)
-    if not n then return 0 end
-    return math.floor(n * healingTakenMultiplier() + 0.5)
+    return MonkMath.RoundOrbHeal(n, healingTakenMultiplier())
 end
 
 -- The (current-stat) hit damage parsed from a spell's tooltip description: the
@@ -107,8 +105,7 @@ end
 local function spellHitDamage(spellID)
     local desc = C_Spell and C_Spell.GetSpellDescription and C_Spell.GetSpellDescription(spellID)
     local v = ns.SpellTooltipParser.Damage(desc)
-    if not v or v <= 0 or (issecretvalue and issecretvalue(v)) then return nil end
-    return v
+    return MonkMath.AcceptHitDamage(v, issecretvalue)
 end
 
 -- ===========================================================================

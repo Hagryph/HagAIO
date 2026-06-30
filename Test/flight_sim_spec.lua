@@ -66,6 +66,7 @@ local function rig()
     S.load(ns, "Lib/Vector2D.lua")
     S.load(ns, "Lib/FlightGraph.lua")
     S.load(ns, "Lib/FlightResolver.lua")
+    S.load(ns, "Lib/FlightCrossing.lua")   -- pure crossing arithmetic FlightTimers upvalues
     S.load(ns, "Core/Module.lua")
     S.load(ns, "Core/Submodule.lua")
     ns.ModuleManager = {     -- capture stub (the thin parent module contributes the flight tables)

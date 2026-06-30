@@ -66,4 +66,39 @@ describe("Vector2D", function()
         local best, d = Vec:New(-3, -4):Nearest({ Vec:New(-3, -4), Vec:New(0, 0) })
         assert.are.equal(-3, best:X()); assert.are.equal(0, d)        -- exact origin-coincident
     end)
+
+    it("OnRing places points at the cardinal angles", function()
+        local Vec = V()
+        local x, y = Vec.OnRing(10, 0)                 -- +x axis
+        assert.near(10, x, 1e-9); assert.near(0, y, 1e-9)
+        x, y = Vec.OnRing(10, 90)                      -- +y axis
+        assert.near(0, x, 1e-9); assert.near(10, y, 1e-9)
+        x, y = Vec.OnRing(10, 180)                     -- -x axis
+        assert.near(-10, x, 1e-9); assert.near(0, y, 1e-9)
+        x, y = Vec.OnRing(10, 270)                     -- -y axis
+        assert.near(0, x, 1e-9); assert.near(-10, y, 1e-9)
+    end)
+
+    it("AngleOf recovers the angle from a delta", function()
+        local Vec = V()
+        assert.near(0,   Vec.AngleOf(5, 0),   1e-9)
+        assert.near(90,  Vec.AngleOf(0, 5),   1e-9)
+        assert.near(180, Vec.AngleOf(-5, 0),  1e-9)
+        assert.near(-90, Vec.AngleOf(0, -5),  1e-9)   -- atan2 returns -90, not 270
+        assert.near(45,  Vec.AngleOf(3, 3),   1e-9)
+    end)
+
+    it("round-trips angle -> point -> angle", function()
+        local Vec = V()
+        for _, deg in ipairs({ -135, -90, 0, 30, 45, 135, 179 }) do
+            local x, y = Vec.OnRing(7, deg)
+            assert.near(deg, Vec.AngleOf(x, y), 1e-9)   -- radius drops out of the angle
+        end
+    end)
+
+    it("round-trips the default minimap angle (225 -> -135)", function()
+        local Vec = V()
+        local x, y = Vec.OnRing(63, 225)                -- 225 deg, e.g. Minimap r=63
+        assert.near(-135, Vec.AngleOf(x, y), 1e-9)      -- atan2 wraps 225 to -135
+    end)
 end)

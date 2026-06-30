@@ -121,10 +121,13 @@ Core/
   Init.lua                 The single Core initializer
 Lib/
   Color.lua                ns.Color -- an RGBA colour VALUE TYPE (ns.Type)
+  ColorCurve.lua           Pure colour-curve construction -- no WoW API, no state
   CVarHelper.lua           Pure helpers for reasoning about console-variable VALUES -- no WoW API
+  DashboardData.lua        Pure data-shaping helpers extracted from the Dashboard module + its CharacterStore /
+  FlightCrossing.lua       Pure flight-path crossing arithmetic for the FlightTimers submodule -- no WoW API, no
   FlightGraph.lua          Pure solver for ATOMIC FLIGHT-LEG times -- no WoW API
   FlightResolver.lua       Pure read-side algebra for flight-time queries over a solved atomic-leg table (the
-  Format.lua               Pure time formatters -- no WoW API
+  Format.lua               Pure formatters -- no WoW API
   Helpers.lua              Small pure-logic helpers shared across the addon -- no WoW API, no state
   MonkMath.lua             Pure combat arithmetic for the Monk module -- no WoW API, no state
   ResetLedger.lua          Pure data-shaping for the Dashboard module -- no WoW API

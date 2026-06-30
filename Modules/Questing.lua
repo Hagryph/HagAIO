@@ -21,14 +21,11 @@ local W = ns.UI.Widgets
 
 local Questing = Class.new("Questing", ns.Module)
 
-local clock = ns.Format.Clock   -- pure duration formatter (Lib/Format.lua)
+local clock = ns.Format.Clock       -- pure duration formatter (Lib/Format.lua)
+local commafy = ns.Format.Commafy   -- thousands-separated number formatter (Lib/Format.lua)
 
--- ---- helpers (thousands-separated number wraps the WoW global; the rest wrap
--- spec/quest/frame lookups that only make sense against the live client) --------
-function Questing:_Commafy(n)
-    return BreakUpLargeNumbers(math.floor(n + 0.5))
-end
-
+-- ---- helpers (the rest wrap spec/quest/frame lookups that only make sense against
+-- the live client) --------------------------------------------------------------
 function Questing:_MaxLevel()
     if GetMaxLevelForPlayerExpansion then return GetMaxLevelForPlayerExpansion() end
     if GetMaxPlayerLevel then return GetMaxPlayerLevel() end
@@ -225,7 +222,7 @@ function Questing:_OnLevelUp()
         -- Always announced to chat (even with Echo to Chat off) -- gated only by the
         -- echoLevelUp setting above.
         self:LogAnnounce(("ding! L%d - %s XP/hr this session")
-            :format(UnitLevel("player"), perHour > 0 and self:_Commafy(perHour) or "-"))
+            :format(UnitLevel("player"), perHour > 0 and commafy(perHour) or "-"))
     end
 end
 
@@ -286,15 +283,15 @@ function Questing:_ShowTooltip()
     local cur, max, pct, remaining, rested, sessionXP, perHour, elapsed, ttl = self:_Stats()
 
     self:_StatLine(tt, "Level", UnitLevel("player"), "accent")
-    self:_StatLine(tt, "XP", ("%s / %s  (%.1f%%)"):format(self:_Commafy(cur), self:_Commafy(max), pct))
-    self:_StatLine(tt, "Remaining", self:_Commafy(remaining))
+    self:_StatLine(tt, "XP", ("%s / %s  (%.1f%%)"):format(commafy(cur), commafy(max), pct))
+    self:_StatLine(tt, "Remaining", commafy(remaining))
     if rested and rested > 0 then
-        self:_StatLine(tt, "Rested", ("%s  (%.0f%%)"):format(self:_Commafy(rested), max > 0 and (rested / max * 100) or 0), "gold")
+        self:_StatLine(tt, "Rested", ("%s  (%.0f%%)"):format(commafy(rested), max > 0 and (rested / max * 100) or 0), "gold")
     end
 
     tt:AddLine(" ")
-    self:_StatLine(tt, "Session XP", self:_Commafy(sessionXP))
-    self:_StatLine(tt, "XP / hour", perHour > 0 and self:_Commafy(perHour) or "-", "green")
+    self:_StatLine(tt, "Session XP", commafy(sessionXP))
+    self:_StatLine(tt, "XP / hour", perHour > 0 and commafy(perHour) or "-", "green")
     self:_StatLine(tt, "Time played", clock(elapsed))
     self:_StatLine(tt, "Time to level", clock(ttl), "accent")
 
@@ -339,8 +336,8 @@ function Questing:_PrintSession()
         return
     end
     self:LogInfo(("L%d  %s/%s (%.1f%%)  |  session %s  |  %s/hr  |  to level %s")
-        :format(UnitLevel("player"), self:_Commafy(cur), self:_Commafy(max), pct,
-            self:_Commafy(sessionXP), perHour > 0 and self:_Commafy(perHour) or "-", clock(ttl)))
+        :format(UnitLevel("player"), commafy(cur), commafy(max), pct,
+            commafy(sessionXP), perHour > 0 and commafy(perHour) or "-", clock(ttl)))
 end
 
 -- ======================= QUESTS ============================================

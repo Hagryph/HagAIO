@@ -19,6 +19,7 @@ local sqrt, huge = math.sqrt, math.huge
 local fmt = ns.Format.MMSS   -- pure "M:SS" countdown formatter (Lib/Format.lua)
 local Flight  = ns.FlightResolver
 local Quality = Flight.Quality
+local Crossing = ns.FlightCrossing   -- pure crossing arithmetic (Lib/FlightCrossing.lua)
 
 -- ========================================================================================
 -- FLIGHT TIMERS submodule. The flight feature is one cohesive engine (recorder + timing +
@@ -29,9 +30,10 @@ local FlightTimers = Class.new("FlightTimers", ns.Submodule)
 
 -- ---- tunables (flight-path detection distances, yards) --------------------
 local ARRIVE_YARDS = 40    -- within this of a path node = we landed there
-local CROSS_MARGIN = 75   -- moved this many (linear) yards past the closest approach = passed it
-local FLYOVER_RANGE = 75  -- closest approach must be within this to count as flying OVER a node;
-                          -- farther than this and the node is skipped (never recorded)
+-- CROSS_MARGIN (passed-it hysteresis) and FLYOVER_RANGE (fly-over inclusion) live with the
+-- pure crossing arithmetic they drive, in Lib/FlightCrossing.lua; aliased here for the polls.
+local CROSS_MARGIN  = Crossing.CROSS_MARGIN
+local FLYOVER_RANGE = Crossing.FLYOVER_RANGE
 
 -- DIRECTIONAL route key: a -> b is stored separately from b -> a, because the two
 -- directions don't always take the same time (path asymmetry). New recordings use this;
@@ -228,17 +230,17 @@ function FlightTimers:_FlightStore(faction, a, b, seconds, via)
     local srcId, dstId = self:_MasterId(a, faction), self:_MasterId(b, faction)
     if not srcId or not dstId then return false end
     local row = self:_FlightRow(srcId, dstId)
-    if not row then
+    local action = Crossing.ShouldReplaceDirect(row, seconds, Quality.DIRECT)
+    if action == "insert" then
         local r = db:Insert("flight_route", { src = srcId, dst = dstId, t = seconds, quality = Quality.DIRECT })
         self:_FlightSetHops(r.id, via, faction)
         return true
-    end
-    if row.quality < Quality.DIRECT then
-        db:Update("flight_route", { t = seconds, quality = Quality.DIRECT }, { id = row.id })
-        self:_FlightSetHops(row.id, via, faction)
-        return true
-    elseif math.abs(seconds - row.t) >= 5 then
-        db:Update("flight_route", { t = seconds }, { id = row.id })
+    elseif action == "replace" then
+        if row.quality < Quality.DIRECT then
+            db:Update("flight_route", { t = seconds, quality = Quality.DIRECT }, { id = row.id })
+        else
+            db:Update("flight_route", { t = seconds }, { id = row.id })
+        end
         self:_FlightSetHops(row.id, via, faction)
         return true
     end
@@ -408,52 +410,35 @@ function FlightTimers:_PollCrossing()
     local p = self:_p()
     if not (p.path and p.crossIdx and p.crossIdx <= #p.path - 1) then return end
     local node = p.path[p.crossIdx]
-    if not (node and node.world) then          -- can't time this one; skip past it
+    local px, py, pc = self:_PlayerWorld()
+    -- Pure decision: min-distance tracking + CROSS_MARGIN hysteresis + FLYOVER_RANGE skip.
+    local d = Crossing.PollCrossing(node, px, py, pc, GetTime(), p.crossMinDist, p.crossMinTime,
+        CROSS_MARGIN, FLYOVER_RANGE)
+    if d.action == "skip" then                 -- can't time this one; skip past it
         p.crossIdx = p.crossIdx + 1
         p.crossMinDist = huge
-        return
-    end
-    local px, py, pc = self:_PlayerWorld()
-    if not px or pc ~= node.world.c then return end
-    local dx, dy = px - node.world.x, py - node.world.y
-    local dist = sqrt(dx * dx + dy * dy)   -- LINEAR yards (squared margin fires too early)
-    if dist < (p.crossMinDist or huge) then
-        p.crossMinDist = dist
-        p.crossMinTime = GetTime()
-    elseif p.crossMinTime and dist > p.crossMinDist + CROSS_MARGIN then
-        -- We've clearly moved past this node's closest approach. Record it as a
-        -- fly-over ONLY if we actually came within FLYOVER_RANGE; otherwise skip it
-        -- (the next recorded node's segment then spans from the last node we DID
-        -- fly over, e.g. A -> C when B was never within range).
-        if p.crossMinDist <= FLYOVER_RANGE then
-            self:_RecordCross(p.crossIdx, p.crossMinTime)
-        end
+    elseif d.action == "track" then
+        p.crossMinDist = d.minDist
+        p.crossMinTime = d.minTime
+    elseif d.action == "advance" then
+        if d.record then self:_RecordCross(p.crossIdx, p.crossMinTime) end
         p.crossIdx = p.crossIdx + 1
         p.crossMinDist = huge
         p.crossMinTime = nil
     end
+    -- d.action == "wait" -> no state change.
 end
 
--- Index of a node in the booked path by name (nil if absent).
+-- Index of a node in the booked path by name (nil if absent). Pure logic in FlightCrossing.
 function FlightTimers:_PathIndexOf(name)
-    local p = self:_p()
-    if not p.path then return nil end
-    for i = 1, #p.path do if p.path[i].name == name then return i end end
+    return Crossing.PathIndexOf(self:_p().path, name)
 end
 
 -- Ordered names of the booked nodes strictly BETWEEN path indices i and j (the stops a
 -- span skipped over). nil when there are none, or if any name is missing (so a partial
--- span isn't recorded with a hole that would mis-key the subtraction).
+-- span isn't recorded with a hole that would mis-key the subtraction). Pure in FlightCrossing.
 function FlightTimers:_PathNamesBetween(i, j)
-    local p = self:_p()
-    if not (p.path and i and j and j > i + 1) then return nil end
-    local via = {}
-    for k = i + 1, j - 1 do
-        local n = p.path[k] and p.path[k].name
-        if not n then return nil end
-        via[#via + 1] = n
-    end
-    return (#via > 0) and via or nil
+    return Crossing.PathNamesBetween(self:_p().path, i, j)
 end
 
 -- Stamp node `idx`'s crossing time and store the segment from the previous
@@ -463,15 +448,11 @@ function FlightTimers:_RecordCross(idx, when)
     p.crossTimes = p.crossTimes or {}
     p.crossTimes[idx] = when
     -- Segment from the last node we ACTUALLY flew over (skipped nodes are bypassed),
-    -- so when B was never within range this records A -> C as a span over { B }.
+    -- so when B was never within range this records A -> C as a span over { B }. The pure
+    -- derivation (incl. the seg > 1 floor + skipped-node via) lives in FlightCrossing.
     local prevIdx = p.lastCrossIdx or 1
-    local prevT = p.crossTimes[prevIdx]
-    local a = p.path[prevIdx] and p.path[prevIdx].name
-    local b = p.path[idx] and p.path[idx].name
-    if prevT and a and b and a ~= b then
-        local seg = when - prevT
-        if seg > 1 then self:_StoreIfNew(a, b, seg, self:_PathNamesBetween(prevIdx, idx)) end
-    end
+    local a, b, seg, via = Crossing.RecordCross(p.path, p.crossTimes, prevIdx, idx, when)
+    if a then self:_StoreIfNew(a, b, seg, via) end
     p.lastCrossIdx = idx
 end
 
@@ -482,15 +463,11 @@ function FlightTimers:_RecordFinalLeg(landed, when)
     local p = self:_p()
     if not p.crossTimes then return end
     -- From the last node we ACTUALLY flew over (or the source if none) -- so a
-    -- skipped second-to-last node doesn't break the final leg.
+    -- skipped second-to-last node doesn't break the final leg. The pure derivation
+    -- (incl. the seg > 1 floor + skipped-node via) lives in FlightCrossing.
     local fromIdx = p.lastCrossIdx or 1
-    local fromT = p.crossTimes[fromIdx]
-    local fromName = p.path and p.path[fromIdx] and p.path[fromIdx].name
-    if fromName and fromT and fromName ~= landed then
-        local seg = when - fromT
-        local via = self:_PathNamesBetween(fromIdx, self:_PathIndexOf(landed) or #p.path)
-        if seg > 1 then self:_StoreIfNew(fromName, landed, seg, via) end
-    end
+    local fromName, _landed, seg, via = Crossing.RecordFinalLeg(p.path, p.crossTimes, fromIdx, landed, when)
+    if fromName then self:_StoreIfNew(fromName, _landed, seg, via) end
 end
 
 function FlightTimers:_Tick()

@@ -55,6 +55,7 @@ local function rig()
     for _, f in ipairs(DB_FILES) do S.load(ns, "Core/DB/" .. f .. ".lua") end
     ns.ResetLedger = { CharKey = function(_, n, r) return (n or "?") .. "-" .. (r or "?") end }
     ns.Worker = { Mark = function() end, MaybeYield = function() end }   -- no chunking in the test
+    S.load(ns, "Lib/DashboardData.lua")   -- the denull/plainNum the store now delegates to
     S.load(ns, "Modules/Dashboard/CharacterStore.lua")
     local db = ns.DB.Database:New("Dash", ns.DB.Schema.new("Dash", spec()), {})
     local owner = { DB = function() return db end }   -- the LIVE db handle the collaborator fetches per call
@@ -67,6 +68,7 @@ describe("CharacterStore", function()
         for _, f in ipairs(DB_FILES) do S.load(ns, "Core/DB/" .. f .. ".lua") end
         ns.ResetLedger = { CharKey = function(_, n, r) return n .. "-" .. r end }
         ns.Worker = { Mark = function() end, MaybeYield = function() end }
+        S.load(ns, "Lib/DashboardData.lua")
         S.load(ns, "Modules/Dashboard/CharacterStore.lua")
         local db = nil
         local owner = { DB = function() return db end }   -- nil at construction, set later (mimics pre-login)

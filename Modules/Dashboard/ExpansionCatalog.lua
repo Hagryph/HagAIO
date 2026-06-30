@@ -27,7 +27,7 @@ function ExpansionCatalog:DB() return self:_p().owner:DB() end
 
 -- A projected column is the DB.NULL sentinel (not Lua nil) when absent; collapse it to nil so the
 -- reconstructed documents read exactly like the old plain-Lua snapshots (l.progress or 0, etc.).
-local function denull(v) if v == nil or ns.DB.isNull(v) then return nil end return v end
+local function denull(v) return ns.DashboardData.Denull(v) end
 
 -- Mythic 0 dungeon difficulty (id 23). M0 is the localized NAME (matches a saved M0 lock's difficulty
 -- name); M0_ID is the locale-proof difficulty id (stamped on seeded season-dungeon entries).
@@ -77,9 +77,7 @@ local EJ_LORE_PAN_Y  = -0.23
 -- The CURRENT expansion's level. LE_EXPANSION_LEVEL_CURRENT is deprecated in Midnight, so prefer the
 -- live getters (the displayable client max), falling back through to the old constant.
 local function currentExpacLevel()
-    if GetClientDisplayExpansionLevel then return GetClientDisplayExpansionLevel() end
-    if GetExpansionLevel then return GetExpansionLevel() end
-    return LE_EXPANSION_LEVEL_CURRENT
+    return ns.DashboardData.CurrentExpacLevel(GetClientDisplayExpansionLevel, GetExpansionLevel, LE_EXPANSION_LEVEL_CURRENT)
 end
 
 -- The data-version domain of the ZONE CATALOG (the full uiMapID sweep below): rebuilt once per

@@ -109,10 +109,9 @@ function UnitFrames:_BuildCurve()
     local hi  = self:GetSetting("endColor")   or DEF_END
     local curve = C_CurveUtil.CreateColorCurve()
     curve:SetType(Enum.LuaCurveType.Linear)
-    curve:AddPoint(0.00, CreateColor(lo[1], lo[2], lo[3]))
-    curve:AddPoint(0.30, CreateColor(lo[1], lo[2], lo[3]))
-    curve:AddPoint(0.55, CreateColor(mid[1], mid[2], mid[3]))
-    curve:AddPoint(1.00, CreateColor(hi[1], hi[2], hi[3]))
+    for _, pt in ipairs(ns.ColorCurve.HealthPoints(lo, mid, hi)) do
+        curve:AddPoint(pt.pos, CreateColor(pt[1], pt[2], pt[3]))
+    end
     return curve
 end
 

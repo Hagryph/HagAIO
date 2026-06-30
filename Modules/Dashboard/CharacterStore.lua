@@ -38,14 +38,8 @@ function CharacterStore:DB() return self:_p().owner:DB() end
 
 -- A projected column is the DB.NULL sentinel (not Lua nil) when absent; collapse it to nil so the
 -- reconstructed documents read exactly like the old plain-Lua snapshots (l.progress or 0, etc.).
-local function denull(v) if v == nil or ns.DB.isNull(v) then return nil end return v end
-
--- Only a plain number is allowed into the typed columns: ns.Secrets:Number returns nil for a SECRET
--- value (restricted content), so a secret is stored as NULL rather than smuggled in as a non-scalar.
-local function plainNum(v)
-    if ns.Secrets then return ns.Secrets:Number(v) end   -- nil for a secret
-    return v
-end
+local function denull(v) return ns.DashboardData.Denull(v) end
+local function plainNum(v) return ns.DashboardData.PlainNum(v) end
 
 function CharacterStore:SelfKey()
     local realm = (GetNormalizedRealmName and GetNormalizedRealmName()) or GetRealmName()

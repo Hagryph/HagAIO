@@ -55,10 +55,10 @@ end
 function MinimapIcon:_Reposition()
     local p = self:_p()
     if not (p.button and Minimap) then return end
-    local rad = math.rad(self:_Angle())
     local r = (Minimap:GetWidth() / 2) + 5
+    local x, y = ns.Vector2D.OnRing(r, self:_Angle())
     p.button:ClearAllPoints()
-    p.button:SetPoint("CENTER", Minimap, "CENTER", r * math.cos(rad), r * math.sin(rad))
+    p.button:SetPoint("CENTER", Minimap, "CENTER", x, y)
 end
 
 function MinimapIcon:_Build()
@@ -112,7 +112,7 @@ function MinimapIcon:_DragUpdate()
     local scale = Minimap:GetEffectiveScale()
     local px, py = GetCursorPosition()
     px, py = px / scale, py / scale
-    self:_p().angle = math.deg(math.atan2(py - my, px - mx))   -- cached; persisted on drag stop
+    self:_p().angle = ns.Vector2D.AngleOf(px - mx, py - my)   -- cached; persisted on drag stop
     self:_Reposition()
 end
 

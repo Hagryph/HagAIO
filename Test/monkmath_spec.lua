@@ -71,3 +71,65 @@ describe("MonkMath.CostPoint", function()
         assert.near(0,   (mm()).CostPoint(0, 100, 300))
     end)
 end)
+
+describe("MonkMath.HealingTakenMultiplier", function()
+    it("1 + pct/100 from the parsed percent", function()
+        assert.are.equal(1.06, (mm()).HealingTakenMultiplier(6))
+    end)
+    it("defaults to +4% when the percent is nil (unreadable tooltip)", function()
+        assert.are.equal(1.04, (mm()).HealingTakenMultiplier(nil))
+    end)
+    it("a parsed 0% is honoured (not treated as missing)", function()
+        assert.are.equal(1, (mm()).HealingTakenMultiplier(0))
+    end)
+end)
+
+describe("MonkMath.RoundHeal", function()
+    it("floor(heal*mult + 0.5) -- rounds to nearest", function()
+        -- 1000 * 1.04 = 1040 -> floor(1040.5) = 1040
+        assert.are.equal(1040, (mm()).RoundHeal(1000, 1.04))
+        -- 1001 * 1.04 = 1041.04 -> floor(1041.54) = 1041
+        assert.are.equal(1041, (mm()).RoundHeal(1001, 1.04))
+        -- rounds the .5 boundary UP: 1 * 1.5 = 1.5 -> floor(2.0) = 2
+        assert.are.equal(2, (mm()).RoundHeal(1, 1.5))
+    end)
+    it("returns nil when the heal wasn't parsed (caller falls back)", function()
+        assert.is_nil((mm()).RoundHeal(nil, 1.04))
+    end)
+end)
+
+describe("MonkMath.RoundOrbHeal", function()
+    it("floor(n*mult + 0.5) -- same rounding as RoundHeal", function()
+        assert.are.equal(208, (mm()).RoundOrbHeal(200, 1.04))   -- 200*1.04=208 -> floor(208.5)
+        assert.are.equal(3,   (mm()).RoundOrbHeal(2, 1.4))      -- 2*1.4=2.8 -> floor(3.3)=3
+    end)
+    it("returns 0 when the heal wasn't parsed (no sphere talent / unreadable)", function()
+        assert.are.equal(0, (mm()).RoundOrbHeal(nil, 1.04))
+    end)
+end)
+
+describe("MonkMath.AcceptHitDamage", function()
+    it("returns a usable positive non-secret value", function()
+        assert.are.equal(1234, (mm()).AcceptHitDamage(1234))
+    end)
+    it("rejects nil and non-positive values", function()
+        local m = mm()
+        assert.is_nil(m.AcceptHitDamage(nil))
+        assert.is_nil(m.AcceptHitDamage(0))
+        assert.is_nil(m.AcceptHitDamage(-5))
+    end)
+    it("REJECTS a secret value -- it must not enter the math", function()
+        -- A secret value reads as a positive number here (so it passes the >0 gate),
+        -- but issecretvalue flags it -> AcceptHitDamage must still reject it.
+        local secret = 5000
+        local isSecret = function(v) return v == secret end
+        assert.is_nil((mm()).AcceptHitDamage(secret, isSecret))
+    end)
+    it("accepts a normal value when isSecret says it is not secret", function()
+        local isSecret = function() return false end
+        assert.are.equal(900, (mm()).AcceptHitDamage(900, isSecret))
+    end)
+    it("ignores a missing isSecret predicate (optional)", function()
+        assert.are.equal(50, (mm()).AcceptHitDamage(50, nil))
+    end)
+end)

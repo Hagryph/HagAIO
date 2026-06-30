@@ -56,4 +56,16 @@ function ResetLedger:KeystoneText(dungeonName, level)
     return ("%s +%d"):format(dungeonName, level)
 end
 
+-- Reset-aware doneness: a turn-in only counts while its done_at falls inside the CURRENT reset
+-- window (daily/weekly). A legacy row without done_at (nil or 0) never counts (it re-earns its
+-- check on the next turn-in). `now` is the server clock and `untilNext` the seconds-until-next
+-- reset for this frequency; nil untilNext means no reset info -> trust the recorded state (true).
+-- The caller does the GetServerTime / C_DateAndTime reads and hands the numbers in.
+function ResetLedger:InCurrentWindow(doneAt, freq, now, untilNext)
+    if not doneAt or doneAt == 0 then return false end
+    if not untilNext then return true end                 -- no reset info: trust the recorded state
+    local period = (freq == "daily") and DAY or WEEK
+    return doneAt >= ((now + untilNext) - period)         -- after the LAST reset = inside this window
+end
+
 ns.LibManager:Register(ResetLedger:New("ResetLedger"))

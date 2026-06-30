@@ -59,16 +59,7 @@ local M0 = (GetDifficultyInfo and GetDifficultyInfo(M0_ID)) or "Mythic"
 -- is PURE (reads only a stored snapshot) so it renders the current character and every alt the
 -- same way. `indent` draws it as a sub-item in the tree.
 -- ===========================================================================
-local function vaultDone(e)
-    local v = e.vault
-    if not (v and v.slots and #v.slots > 0) then return "-" end
-    local done = 0
-    for _, s in ipairs(v.slots) do
-        local _, isDone = Ledger:Progress(s.progress, s.threshold)
-        if isDone then done = done + 1 end
-    end
-    return done .. "/" .. #v.slots
-end
+local function vaultDone(e) return ns.DashboardData.VaultDone(e.vault) end
 
 -- The Home nav entry, labelled "Overview". Selecting it shows the overview -- an icon grid of every
 -- category. Re-clicking the already-active category also returns here (see the nav onReselect).
@@ -155,7 +146,7 @@ end
 
 -- A projected column is the DB.NULL sentinel (not Lua nil) when absent; collapse it to nil so the
 -- reconstructed documents read exactly like the old plain-Lua snapshots (l.progress or 0, etc.).
-local function denull(v) if v == nil or ns.DB.isNull(v) then return nil end return v end
+local function denull(v) return ns.DashboardData.Denull(v) end
 
 -- The heavy, deferrable pass: (re)build the instance catalog (once the journal is available) and
 -- snapshot this character. Runs THROUGH the Worker (see OnEnable: self:Queue / self:WorkOn), which
@@ -363,7 +354,6 @@ end
 -- window (daily/weekly), computed from the server clock + the next-reset countdowns. A legacy row
 -- without done_at never counts (it re-earns its check on the next turn-in).
 function Dashboard:_QuestDone(doneAt, freq)
-    if not doneAt or doneAt == 0 then return false end
     local now = (GetServerTime and GetServerTime()) or time()
     local untilNext
     if freq == "daily" then
@@ -371,17 +361,11 @@ function Dashboard:_QuestDone(doneAt, freq)
     else
         untilNext = C_DateAndTime and C_DateAndTime.GetSecondsUntilWeeklyReset and C_DateAndTime.GetSecondsUntilWeeklyReset()
     end
-    if not untilNext then return true end                 -- no reset info: trust the recorded state
-    local period = (freq == "daily") and 86400 or 604800
-    return doneAt >= ((now + untilNext) - period)         -- after the LAST reset = inside this window
+    return Ledger:InCurrentWindow(doneAt, freq, now, untilNext)
 end
 
 -- "x ago" for the detail's Completed column (coarse on purpose: it answers "this reset?").
-local function timeAgo(secs)
-    if secs < 3600 then return "<1h ago" end
-    if secs < 86400 then return math.floor(secs / 3600) .. "h ago" end
-    return math.floor(secs / 86400) .. "d ago"
-end
+local function timeAgo(secs) return ns.Format.TimeAgo(secs) end
 
 -- The per-page inline quest detail Grid (rows = characters), mirroring _InstanceDetailGrid.
 function Dashboard:_QuestDetailGrid(page)

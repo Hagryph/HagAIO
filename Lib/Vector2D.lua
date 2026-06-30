@@ -1,5 +1,7 @@
 local addonName, ns = ...
 local sqrt, huge = math.sqrt, math.huge
+local rad, deg = math.rad, math.deg
+local cos, sin, atan2 = math.cos, math.sin, math.atan2
 
 -- Lib/Vector2D.lua
 -- A pure 2D vector value-TYPE (ns.Type) -- no WoW API. Unlike the singleton libs in this
@@ -48,6 +50,21 @@ function Vector2D:Nearest(vectors, maxDist)
     end
     if not best then return nil end
     return best, sqrt(bestD2), bestI
+end
+
+-- Polar -> Cartesian on a ring. Given a radius and an angle in DEGREES (measured from the
+-- centre, 0 = +x, counter-clockwise), return the (x, y) offset of the point on the ring.
+-- Pure form of the minimap-icon rim placement.
+function Vector2D.OnRing(radius, angleDeg)
+    local a = rad(angleDeg)
+    return radius * cos(a), radius * sin(a)
+end
+
+-- Cartesian delta -> angle in DEGREES. Given a vector (dx, dy) from the centre to a point,
+-- return its angle measured the same way OnRing uses. Pure form of the drag-to-angle math
+-- (keeps math.atan2, which WoW's Lua retains).
+function Vector2D.AngleOf(dx, dy)
+    return deg(atan2(dy, dx))
 end
 
 ns.LibManager:RegisterValue("Vector2D", Vector2D)
