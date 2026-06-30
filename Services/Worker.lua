@@ -160,7 +160,9 @@ end
 -- spent. Checking the budget BETWEEN every step (not just between jobs) caps the overshoot to one unit
 -- and lets several jobs progress together. A job is either a STEPPER (job.step -- called directly,
 -- returns truthy while more remains) or a COROUTINE (job.co -- resumed, a yield = one step). A finished
--- job delivers its result and is removed.
+-- or dropped job is MARKED DEAD (O(1)) and skipped; the queue is COMPACTED once at the END of the pump,
+-- so draining N jobs is O(N) -- not the O(N^2) an in-loop table.remove per job would cost. Between
+-- pumps the queue is always dense (compaction removed every dead job), so #q is the live count.
 function Worker:_Pump()
     local p = self:_p()
     local q = p.queue
@@ -170,14 +172,23 @@ function Worker:_Pump()
     local i = p.rr
     local dbg = debugOn()                             -- profile this pump? (latched once per pump)
     local t0, worst, worstLabel = pumpStart, 0, nil   -- debug: time each step, remember the fattest
-    while #q > 0 and t0 < p.deadline do
-        if i > #q then i = 1 end
+    -- skips = consecutive iterations that stepped no live job; a full round of them (>= #q) means
+    -- every remaining job is dead, so stop. Reset to 0 whenever a live job is stepped. This terminates
+    -- correctly no matter where the round-robin cursor starts (a partial sweep can't false-positive).
+    local anyDead, skips = false, 0
+    while t0 < p.deadline do
+        if i > #q then i = 1 end                      -- round-robin wrap to the top
         local job = q[i]
-        if job.owner and not self:_OwnerEnabled(job.owner) then   -- owner disabled since enqueue -> drop
-            table.remove(q, i)
+        if job.dead then                              -- finished / cancelled this pump -> skip (compacted later)
+            anyDead = true; skips = skips + 1; i = i + 1
+            if skips >= #q then break end
+        elseif job.owner and not self:_OwnerEnabled(job.owner) then   -- owner disabled since enqueue -> drop
+            job.dead = true; anyDead = true; skips = skips + 1
             if job._after then job._after() end
-            -- next job shifted into slot i; don't advance
+            i = i + 1
+            if skips >= #q then break end
         else
+            skips = 0
             local ok, done, result      -- ok = no error; done = job finished this step
             if job.step then
                 ok, result = pcall(job.step)                      -- stepper: result here is "more?" not the value
@@ -191,15 +202,14 @@ function Worker:_Pump()
                 done = ok and coroutine.status(job.co) == "dead"
             end
             if not ok then
-                table.remove(q, i)
+                job.dead = true; anyDead = true
                 self:LogWarn(("job '%s' error: %s"):format(tostring(job.label), tostring(result)))
                 if job._after then job._after() end               -- still release any coalescing guard
             elseif done then
-                table.remove(q, i)
+                job.dead = true; anyDead = true
                 self:_Complete(job, result)
-            else
-                i = i + 1                                         -- still running: round-robin to the next job
             end
+            i = i + 1                                             -- one step done -> round-robin to the next job
         end
         local t1 = debugprofilestop()                             -- doubles as the budget re-check time
         if dbg and t1 - t0 > worst then
@@ -208,7 +218,20 @@ function Worker:_Pump()
         end
         t0 = t1
     end
-    p.rr = i
+    -- Compact out the dead jobs in ONE pass (order preserved) and remap the round-robin cursor to the
+    -- same resume point in the compacted array. Only when something died -- otherwise the queue is dense.
+    if anyDead then
+        local n, w, newRr = #q, 0, nil
+        for r = 1, n do
+            if r == i then newRr = w + 1 end          -- where the cursor resumes among the survivors
+            local job = q[r]
+            if not job.dead then w = w + 1; q[w] = job end
+        end
+        for r = n, w + 1, -1 do q[r] = nil end        -- drop the now-duplicated tail
+        p.rr = (newRr and newRr <= w and newRr) or 1  -- cursor fell past the live tail -> wrap to the top
+    else
+        p.rr = i
+    end
     p.deadline = nil
     local frameT = GetTime and GetTime() or 0                     -- constant within a frame
     p.framePumpMs = (p.framePumpT == frameT and p.framePumpMs or 0) + (t0 - pumpStart)
@@ -284,14 +307,9 @@ end
 -- drop/error/complete), so a runner's coalescing guard is released -- otherwise st.pending
 -- would stay true forever and the runner could never queue again after its owner re-enables.
 function Worker:_CancelJob(job)
-    local q = self:_p().queue
-    for i = #q, 1, -1 do
-        if q[i] == job then
-            table.remove(q, i)
-            if job._after then job._after() end
-            return
-        end
-    end
+    if job.dead then return end   -- already finished / cancelled -> no double _after, no scan
+    job.dead = true               -- O(1): the next pump skips it and compacts it out (no array shift)
+    if job._after then job._after() end
 end
 
 -- Build a coalesced, owner-gated RUNNER for fn. `fire()` queues fn through the Worker -- but only

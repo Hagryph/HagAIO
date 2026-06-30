@@ -105,6 +105,33 @@ describe("Worker", function()
         assert.is_true(otherRan)           -- identity-based: the other job is untouched
     end)
 
+    it("drains many one-shot jobs in queue order, compacting the queue once (no O(n^2) removal)", function()
+        local worker = newWorker()
+        local order = {}
+        for k = 1, 40 do
+            local id = k
+            worker:Run(function() order[#order + 1] = id; return false end)   -- one unit then done
+        end
+        worker:_Pump()                       -- budget unspent (profile.ms stays 0) -> one pump drains all
+        assert.are.equal(40, #order)
+        for k = 1, 40 do assert.are.equal(k, order[k]) end   -- ran in queue order, none lost / duplicated
+        worker:_Pump()                       -- queue was compacted to empty -> a second pump is a no-op
+        assert.are.equal(40, #order)
+    end)
+
+    it("cancelling a job in the MIDDLE of a many-job queue runs only the rest (mark-dead skips it)", function()
+        local worker = newWorker()
+        local order, handles = {}, {}
+        for k = 1, 20 do
+            local id = k
+            handles[k] = worker:Run(function() order[#order + 1] = id; return false end)
+        end
+        handles[10]:Cancel()                 -- drop the 10th (still pending) -- O(1) mark-dead
+        worker:_Pump()
+        assert.are.equal(19, #order)
+        for _, id in ipairs(order) do assert.is_true(id ~= 10) end   -- the cancelled one never ran
+    end)
+
     it("Register coalesces rapid fires into one run, honouring the last fire", function()
         local worker, bus = newWorker()
         local runs = 0
