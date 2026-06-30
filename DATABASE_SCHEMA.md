@@ -43,16 +43,16 @@ Open **[diagram/DB/index.html](diagram/DB/index.html)** in a browser for an inte
 | [`o_module_Dev`](#o_module_Dev) | `char` | 2 | id | `Modules/Dev.lua` |
 | [`o_module_Questing`](#o_module_Questing) | `char` | 10 | id | `Modules/Questing.lua` |
 | [`o_module_UnitFrames`](#o_module_UnitFrames) | `char` | 12 | id | `Modules/UnitFrames.lua` |
-| [`o_submodule_FlightTimers`](#o_submodule_FlightTimers) | `char` | 3 | id | `Modules/Misc.lua` |
-| [`o_submodule_SellJunk`](#o_submodule_SellJunk) | `char` | 2 | id | `Modules/Misc.lua` |
+| [`o_submodule_FlightTimers`](#o_submodule_FlightTimers) | `char` | 3 | id | `Modules/Misc/FlightTimers.lua` |
+| [`o_submodule_SellJunk`](#o_submodule_SellJunk) | `char` | 2 | id | `Modules/Misc/SellJunk.lua` |
 | [`p_module_Class_MONK_1`](#p_module_Class_MONK_1) | `global` | 13 | profile | `Modules/Class.lua` |
 | [`p_module_Class_MONK_none`](#p_module_Class_MONK_none) | `global` | 8 | profile | `Modules/Class.lua` |
 | [`p_module_Dashboard`](#p_module_Dashboard) | `global` | 5 | profile | `Modules/Dashboard.lua` |
 | [`p_module_Dev`](#p_module_Dev) | `global` | 2 | profile | `Modules/Dev.lua` |
 | [`p_module_Questing`](#p_module_Questing) | `global` | 10 | profile | `Modules/Questing.lua` |
 | [`p_module_UnitFrames`](#p_module_UnitFrames) | `global` | 12 | profile | `Modules/UnitFrames.lua` |
-| [`p_submodule_FlightTimers`](#p_submodule_FlightTimers) | `global` | 3 | profile | `Modules/Misc.lua` |
-| [`p_submodule_SellJunk`](#p_submodule_SellJunk) | `global` | 2 | profile | `Modules/Misc.lua` |
+| [`p_submodule_FlightTimers`](#p_submodule_FlightTimers) | `global` | 3 | profile | `Modules/Misc/FlightTimers.lua` |
+| [`p_submodule_SellJunk`](#p_submodule_SellJunk) | `global` | 2 | profile | `Modules/Misc/SellJunk.lua` |
 | [`profile`](#profile) | `global` | 2 | name | `Core/DB/CoreTables.lua` |
 | [`profile_editmode`](#profile_editmode) | `global` | 5 | profile, key | `Core/DB/CoreTables.lua` |
 | [`profile_module_enable`](#profile_module_enable) | `global` | 3 | profile, name | `Core/DB/CoreTables.lua` |
@@ -454,7 +454,7 @@ Open **[diagram/DB/index.html](diagram/DB/index.html)** in a browser for an inte
 
 ### `o_submodule_FlightTimers`  ·  scope `char`
 
-*Defined in `Modules/Misc.lua`.*
+*Defined in `Modules/Misc/FlightTimers.lua`.*
 
 | Column | Type | Null | Key | Default | References |
 |---|---|---|---|---|---|
@@ -466,7 +466,7 @@ Open **[diagram/DB/index.html](diagram/DB/index.html)** in a browser for an inte
 
 ### `o_submodule_SellJunk`  ·  scope `char`
 
-*Defined in `Modules/Misc.lua`.*
+*Defined in `Modules/Misc/SellJunk.lua`.*
 
 | Column | Type | Null | Key | Default | References |
 |---|---|---|---|---|---|
@@ -581,7 +581,7 @@ Open **[diagram/DB/index.html](diagram/DB/index.html)** in a browser for an inte
 
 ### `p_submodule_FlightTimers`  ·  scope `global`
 
-*Defined in `Modules/Misc.lua`.*
+*Defined in `Modules/Misc/FlightTimers.lua`.*
 
 | Column | Type | Null | Key | Default | References |
 |---|---|---|---|---|---|
@@ -593,7 +593,7 @@ Open **[diagram/DB/index.html](diagram/DB/index.html)** in a browser for an inte
 
 ### `p_submodule_SellJunk`  ·  scope `global`
 
-*Defined in `Modules/Misc.lua`.*
+*Defined in `Modules/Misc/SellJunk.lua`.*
 
 | Column | Type | Null | Key | Default | References |
 |---|---|---|---|---|---|

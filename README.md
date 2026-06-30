@@ -195,7 +195,7 @@ Modules/
   CVars.lua                Force chosen console variables on every character
   Dashboard.lua            Account-wide, cross-character RESET dashboard
   Dev.lua                  Developer settings module
-  Misc.lua                 Miscellaneous helpers, each split into its own submodule of a thin "Misc" module
+  Misc.lua                 Miscellaneous helpers, each its own SUBMODULE of this thin parent module -- the codebase's
   Questing.lua             Everything around levelling through quests, in one module:
   UnitFrames.lua           Colours the player & target health bars by remaining health: green at full,
   Class\Monk\Monk.lua      Monk module entry point (loads before its per-spec siblings): the shared Monk behaviour
@@ -203,6 +203,8 @@ Modules/
   Class\Monk\Brewmaster.lua The Brewmaster Monk spec (CurrentSpecKey 1): extends MonkBase (Base.lua) with a Tiger
   Dashboard\CharacterStore.lua The Dashboard's per-character DATA layer, extracted out of the 2.5k-line module so the module
   Dashboard\ExpansionCatalog.lua The Dashboard's instance + zone CATALOG layer, extracted out of the module so the module itself
+  Misc\FlightTimers.lua    The Flight Timers submodule of Misc (registered under the parent "Misc" module)
+  Misc\SellJunk.lua        The Sell Junk submodule of Misc (registered under the parent "Misc" module)
 Dev/                       Scratch space (excluded from deploy)
 deploy.ps1                 Mirror the addon into the live WoW AddOns folder + generate the .toc
 ```

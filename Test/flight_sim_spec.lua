@@ -75,7 +75,8 @@ local function rig()
         Register = function(_, s) ns._captured[s:GetName()] = s; return s end,
         Get      = function(_, n) return ns._captured[n] end,
     }
-    S.load(ns, "Modules/Misc.lua")
+    S.load(ns, "Modules/Misc.lua")                 -- thin parent: registers the Misc module (flight tables)
+    S.load(ns, "Modules/Misc/FlightTimers.lua")    -- the FlightTimers submodule (its own file)
     local misc = ns._captured["Misc"]
     misc:_Init()                                   -- parent: logger + flight-table contribution
     local flight = ns._captured["FlightTimers"]
