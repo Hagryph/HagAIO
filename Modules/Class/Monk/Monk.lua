@@ -115,8 +115,8 @@ end
 -- Register the Monk submodule under the Class module (it loads on Monk characters). The
 -- per-spec files (Base.lua, Brewmaster.lua) load after this one and register their spec
 -- submodules under it via ns.Monk.RegisterSpec.
-local classMod = ns.ModuleManager:GetModule("Class")
-assert(classMod, "Monk submodule requires the Class module (load Modules/Class.lua first)")
+local classMod = assert(ns.ModuleManager:GetModule("Class"),
+    "Monk submodule requires the Class module (load Modules/Class.lua first)")
 local function isMonk() return (select(2, UnitClass("player"))) == "MONK" end
 
 ns.SubmoduleManager:Register(ns.Submodule:New("Monk", {

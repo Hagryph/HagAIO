@@ -96,7 +96,10 @@ local CURATED = {
 --   ORDER[name]     -> its position in code order (sorts a category's rows the way the code lists them)
 --   CAT_ORDER[name] -> a category's position in code order (sorts the category list; non-code last)
 local CATALOG, ORDER, CAT_ORDER = {}, {}, {}
-do
+-- Derive the catalog lookups from CURATED at init (called from OnInitialize) rather than in a naked
+-- top-level do-block. The three tables are module-scoped -- CVars is a singleton module, so every
+-- method reads them directly; _BuildCatalog only fills them, once, before the first read.
+function CVars:_BuildCatalog()
     local i = 0
     for ci, cat in ipairs(CURATED) do
         CAT_ORDER[cat.name] = ci
@@ -117,6 +120,7 @@ local EXAMPLE_CVARS = { "WorldTextScale_v2", "WorldTextScale", "removeChatDelay"
 function CVars:OnInitialize()
     local p = self:_p()
     p.sections = {}
+    self:_BuildCatalog()   -- derive CATALOG / ORDER / CAT_ORDER from CURATED, once, before any read
     -- Forced CVars (cvar_managed: name -> value) and the tracked-CVar catalog (cvar_tracked: every
     -- curated + custom CVar) live in the shared DB; see the DAO below. The tracked catalog is synced
     -- (backfill new code CVars + prune ones the client lost) once per session, off the loading screen,
