@@ -28,7 +28,10 @@ local Class = ns.Class
 
 local Scaling = Class.new("Scaling", ns.Service)
 
-local DEFAULTS = { highPct = 100, lowPct = 0, direction = "missing" }
+-- Ramp direction: which end of the health window carries the max bonus.
+local ScalingDirection = ns.Enum.new("ScalingDirection", { CURRENT = "current", MISSING = "missing" })
+
+local DEFAULTS = { highPct = 100, lowPct = 0, direction = ScalingDirection.MISSING }
 
 local function field(spec, key)
     local v = spec[key]
@@ -46,10 +49,10 @@ end
 function Scaling:Fraction(spec, hp)
     local hi, lo, dir = field(spec, "highPct"), field(spec, "lowPct"), field(spec, "direction")
     if hi == lo then  -- degenerate window -> a hard step at the threshold
-        if dir == "current" then return hp >= hi and 1 or 0 end
+        if dir == ScalingDirection.CURRENT then return hp >= hi and 1 or 0 end
         return hp <= hi and 1 or 0
     end
-    if dir == "current" then
+    if dir == ScalingDirection.CURRENT then
         return clamp01((hp - lo) / (hi - lo))   -- more as health rises
     end
     return clamp01((hi - hp) / (hi - lo))        -- more as health drops (the SimC missing form)

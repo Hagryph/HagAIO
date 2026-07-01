@@ -516,7 +516,7 @@ function SettingsWindow:_RenderSchema(content, host, width, y)
     -- declares its own :EnableWhen condition and the widget layer re-checks it automatically.
     local graph = ns.DependencyGraph:New()
     for _, s in ipairs(schema) do
-        if s.key and (s.type == "toggle" or s.type == "select" or s.type == "color") then
+        if s.key and (s.type == ns.SettingType.TOGGLE or s.type == ns.SettingType.SELECT or s.type == ns.SettingType.COLOR) then
             graph:Add(s.key, function() return host:GetSetting(s.key) and true or false end, s.dependsOn)
         end
     end
@@ -535,19 +535,19 @@ function SettingsWindow:_RenderSchema(content, host, width, y)
     local controls = {}   -- setting key -> its widget, so a dependent can watch its parent widget(s)
     local pending = {}    -- { widget, key } dependents, wired to their parents after every control exists
     for _, s in ipairs(schema) do
-        if s.type == "header" then
+        if s.type == ns.SettingType.HEADER then
             local h = W.SectionLabel:New(content, s.text)
             h:SetPoint("TOPLEFT", 4, y - 6)
             y = y - 28
 
-        elseif s.type == "note" then
+        elseif s.type == ns.SettingType.NOTE then
             local n = W.Text:New(content, s.text, "textDim", "GameFontHighlightSmall")
             n:SetPoint("TOPLEFT", 4, y)
             n:SetWidth(width - 16)
             n:SetJustifyH("LEFT")
             y = y - (n:GetStringHeight() + 12)
 
-        elseif s.type == "toggle" then
+        elseif s.type == ns.SettingType.TOGGLE then
             local t = W.Toggle:New(content, s.reload and W.FlagReload(s.label) or s.label)
             t:SetPoint("TOPLEFT", 6, y)
             t:SetChecked(host:GetSetting(s.key) and true or false)
@@ -565,7 +565,7 @@ function SettingsWindow:_RenderSchema(content, host, width, y)
                 y = y - 6
             end
 
-        elseif s.type == "select" then
+        elseif s.type == ns.SettingType.SELECT then
             local lbl = W.Text:New(content, s.reload and W.FlagReload(s.label) or s.label, "text", "GameFontHighlight")
             lbl:SetPoint("TOPLEFT", 6, y)
             y = y - 20
@@ -577,7 +577,7 @@ function SettingsWindow:_RenderSchema(content, host, width, y)
             if s.dependsOn then pending[#pending + 1] = { w = seg, key = s.key, on = s.dependsOn } end
             y = y - 34
 
-        elseif s.type == "color" then
+        elseif s.type == ns.SettingType.COLOR then
             local lbl = W.Text:New(content, s.label, "text", "GameFontHighlight")
             lbl:SetPoint("TOPLEFT", 6, y)
             local sw = W.ColorSwatch:New(content)
@@ -668,9 +668,9 @@ function SettingsWindow:_BuildLogPage(parent)
     local lvlLabel = W.Text:New(page, "Chat shows", "text", "GameFontHighlight")
     lvlLabel:SetPoint("TOPLEFT", page, "TOPLEFT", 18, -50)
     local lvl = W.Segmented:New(page, {
-        { value = ns.LogLevel.INFO.order, text = "Everything" },
-        { value = ns.LogLevel.WARN.order, text = "Warnings" },
-        { value = ns.LogLevel.ERROR.order, text = "Errors only" },
+        { value = ns.LogLevel.INFO:Order(), text = "Everything" },
+        { value = ns.LogLevel.WARN:Order(), text = "Warnings" },
+        { value = ns.LogLevel.ERROR:Order(), text = "Errors only" },
     })
     lvl:SetPoint("LEFT", lvlLabel, "RIGHT", 12, 0)
     lvl:SetPoint("TOP", lvlLabel, "TOP", 0, 6)

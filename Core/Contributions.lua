@@ -13,13 +13,23 @@ local addonName, ns = ...
 
 local Contributions = {}
 
+-- The settings-control type vocabulary, shared by the schema validator here, the persisted-column
+-- mapping (Lib/SettingsTables.lua) and the renderer (UI/SettingsWindow.lua:_RenderSchema). A member
+-- typo ERRORS loudly instead of yielding nil. Defined here because Core/Contributions.lua is early
+-- (after Core/Enum.lua) and loads before all three consumers.
+ns.SettingType = ns.Enum.new("SettingType", {
+    HEADER = "header", NOTE = "note", TOGGLE = "toggle", SELECT = "select", COLOR = "color",
+})
+
 -- The control types the Settings page can actually RENDER (UI/SettingsWindow.lua:_RenderSchema).
 -- A schema entry of any other type would validate clean here yet draw NOTHING -- the one silent
 -- failure mode -- so an unknown type (e.g. a premature `slider`) is rejected loudly below rather than
 -- shipping a blank control. Keep this set in lockstep with the renderer's branches. `header`/`note`
 -- are structural; KEYED_SETTING is the rendered subset that binds to a saved value (needs key + label).
-local RENDERED_TYPE = { header = true, note = true, toggle = true, select = true, color = true }
-local KEYED_SETTING = { toggle = true, select = true, color = true }
+-- Both sets are DERIVED from ns.SettingType so the vocabulary has one source of truth.
+local ST = ns.SettingType
+local RENDERED_TYPE = { [ST.HEADER] = true, [ST.NOTE] = true, [ST.TOGGLE] = true, [ST.SELECT] = true, [ST.COLOR] = true }
+local KEYED_SETTING = { [ST.TOGGLE] = true, [ST.SELECT] = true, [ST.COLOR] = true }
 
 -- Validate a settings schema at CONSTRUCTION so a malformed entry fails loudly here (at
 -- file load) instead of silently breaking later when the page renders. Rules:
@@ -34,17 +44,17 @@ function Contributions.ValidateSettings(settings, owner)
         assert(type(s.type) == "string", where .. ": missing string 'type'")
         assert(RENDERED_TYPE[s.type],
             where .. (": control type '%s' has no renderer (the page draws only header/note/toggle/select/color)"):format(s.type))
-        if s.type == "header" or s.type == "note" then
+        if s.type == ST.HEADER or s.type == ST.NOTE then
             assert(type(s.text) == "string", where .. " (" .. s.type .. "): needs 'text'")
         end
         if KEYED_SETTING[s.type] then
             assert(type(s.key) == "string" and s.key ~= "", where .. " (" .. s.type .. "): needs a non-empty string 'key'")
             assert(s.label ~= nil, where .. " (" .. s.type .. "): needs a 'label'")
         end
-        if s.type == "select" then
+        if s.type == ST.SELECT then
             assert(type(s.options) == "table", where .. " (select): needs an 'options' list")
         end
-        if s.type == "color" and s.default ~= nil then
+        if s.type == ST.COLOR and s.default ~= nil then
             -- the renderer indexes default[1..3] (SettingsWindow color path), so fail loudly
             -- here rather than silently rendering white from a malformed default.
             assert(type(s.default) == "table" and type(s.default[1]) == "number"

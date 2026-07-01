@@ -6,6 +6,7 @@ local S = dofile("Test/support.lua")
 local function realLibNs()
     local ns = { UI = {} }
     assert(loadfile("Core/Class.lua"))("HagAIO", ns)
+    assert(loadfile("Core/Enum.lua"))("HagAIO", ns)            -- Contributions defines ns.SettingType via ns.Enum
     assert(loadfile("Core/Mixin.lua"))("HagAIO", ns)
     assert(loadfile("Core/Contributions.lua"))("HagAIO", ns)   -- defines ns.Publishable
     assert(loadfile("Core/Registry.lua"))("HagAIO", ns)

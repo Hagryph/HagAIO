@@ -28,6 +28,13 @@ local Crossing = ns.FlightCrossing   -- pure crossing arithmetic (Lib/FlightCros
 -- ========================================================================================
 local FlightTimers = Class.new("FlightTimers", ns.Submodule)
 
+-- The in-flight state machine's non-nil phases (nil = no phase / not in a flight). File-local:
+-- the phase never leaves this submodule. A typo'd member errors loudly instead of yielding nil.
+local FlightPhase = ns.Enum.new("FlightPhase", {
+    BOARDING = "boarding",
+    FLYING   = "flying",
+})
+
 -- ---- tunables (flight-path detection distances, yards) --------------------
 local ARRIVE_YARDS = 40    -- within this of a path node = we landed there
 -- CROSS_MARGIN (passed-it hysteresis) and FLYOVER_RANGE (fly-over inclusion) live with the
@@ -53,7 +60,7 @@ end
 -- parent Misc module; see the _Flight* DAO below).
 function FlightTimers:OnInitialize()
     local p = self:_p()
-    p.phase = nil       -- nil / "boarding" / "flying"
+    p.phase = nil       -- nil / FlightPhase.BOARDING / FlightPhase.FLYING
     p.src = nil
 
     ns.EventBus:On("TAXIMAP_OPENED", function() self:_OnTaxiMap() end)
@@ -131,7 +138,7 @@ function FlightTimers:_OnTakeTaxi(slot)
     p.earlyLanding = false                -- reset any prior Request-Stop redirect
     p.earlyComputedIdx = nil              -- _UpdateEarlyTarget recompute latch (per flight)
     p.lastDestText, p.lastTimeText = nil, nil   -- force the new flight's first display SetText
-    p.phase = "boarding"
+    p.phase = FlightPhase.BOARDING
     p.boardStart = GetTime()
     self:_StartTicker()
 end
@@ -472,9 +479,9 @@ end
 
 function FlightTimers:_Tick()
     local p = self:_p()
-    if p.phase == "boarding" then
+    if p.phase == FlightPhase.BOARDING then
         if UnitOnTaxi("player") then
-            p.phase = "flying"
+            p.phase = FlightPhase.FLYING
             p.startTime = GetTime()
             -- crossing state: we're at the source node (1) on lift-off
             p.crossTimes = { [1] = p.startTime }
@@ -488,7 +495,7 @@ function FlightTimers:_Tick()
             self:_StopTicker()  -- never took off (cancelled)
         end
 
-    elseif p.phase == "flying" then
+    elseif p.phase == FlightPhase.FLYING then
         if not UnitOnTaxi("player") then
             local now = GetTime()
             local dur = now - (p.startTime or now)

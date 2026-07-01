@@ -36,11 +36,11 @@ end
 -- Map a settings-schema entry to its persisted COLUMNS + how to read it from / write it to a row.
 local function fieldFor(e)
     local key, t = e.key, e.type
-    if t == "toggle" then
+    if t == ns.SettingType.TOGGLE then
         return { cols = { { name = key, type = "boolean" } },
                  read  = function(row) local v = row[key]; if isSet(v) then return v end end,
                  write = function(v)   return { [key] = v and true or false } end }
-    elseif t == "select" or t == "input" then
+    elseif t == ns.SettingType.SELECT or t == "input" then
         return { cols = { { name = key, type = "text" } },
                  read  = function(row) local v = row[key]; if isSet(v) then return v end end,
                  write = function(v)   return { [key] = v } end }
@@ -48,7 +48,7 @@ local function fieldFor(e)
         return { cols = { { name = key, type = "number" } },
                  read  = function(row) local v = row[key]; if isSet(v) then return v end end,
                  write = function(v)   return { [key] = v } end }
-    elseif t == "color" then
+    elseif t == ns.SettingType.COLOR then
         local r, g, b = key .. "_r", key .. "_g", key .. "_b"
         return { cols = { { name = r, type = "number" }, { name = g, type = "number" }, { name = b, type = "number" } },
                  read  = function(row) if isSet(row[r]) then return { row[r], row[g], row[b] } end end,

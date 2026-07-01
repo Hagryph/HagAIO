@@ -30,8 +30,10 @@ function ExpansionCatalog:DB() return self:_p().owner:DB() end
 local function denull(v) return ns.DashboardData.Denull(v) end
 
 -- Mythic 0 dungeon difficulty (id 23). M0 is the localized NAME (matches a saved M0 lock's difficulty
--- name); M0_ID is the locale-proof difficulty id (stamped on seeded season-dungeon entries).
-local M0_ID = 23
+-- name); RaidDifficulty.MYTHIC_ZERO is the locale-proof difficulty id (stamped on seeded season-dungeon
+-- entries). The enum is published in Lib/DashboardData.lua (loads before this collaborator).
+local RaidDifficulty = ns.RaidDifficulty
+local M0_ID = RaidDifficulty.MYTHIC_ZERO
 local M0 = (GetDifficultyInfo and GetDifficultyInfo(M0_ID)) or "Mythic"
 
 -- The current M+ season dungeon entry's label. Also used to DEDUPE the dungeon overview: the journal
@@ -42,8 +44,12 @@ local SEASON_LABEL = "Current Season"
 
 -- Raid difficulty ids CHECKED PER RAID against the journal (EJ_IsValidInstanceDifficulty), so a raid
 -- is seeded ONLY the difficulties it actually offers -- not every raid has LFR or Mythic, and legacy
--- raids use 10/25/40-player ids.
-local RAID_DIFF_CANDIDATES = { 7, 17, 3, 4, 9, 148, 14, 5, 6, 15, 16 }
+-- raids use 10/25/40-player ids. Built from the shared enum in this exact probe order.
+local RD = RaidDifficulty
+local RAID_DIFF_CANDIDATES = {
+    RD.LFR, RD.RAID_FINDER, RD.LEGACY_10, RD.LEGACY_25, RD.LEGACY_40, RD.LEGACY_20,
+    RD.NORMAL, RD.LEGACY_10_HEROIC, RD.LEGACY_25_HEROIC, RD.HEROIC, RD.MYTHIC,
+}
 
 -- The raid list's world-boss / world-event meta entries aren't real raids but carry no lockout. The
 -- name==tier check in _ExpansionMap catches the ones named after the expansion; these are named after
@@ -236,7 +242,7 @@ local EXP_STYLE_DEFAULT = { 0.85, 0.80, 0.65 }
 -- The modern flexible RAID difficulties (ids), used to seed one catalog row per raid per difficulty.
 -- Resolved to LOCALE names via GetDifficultyInfo so a row's `diff` matches a lockout's difficulty
 -- name (which is likewise derived from its id in CharacterStore:CollectLockouts).
-local RAID_DIFF_IDS = { 17, 14, 15, 16 }   -- Raid Finder, Normal, Heroic, Mythic
+local RAID_DIFF_IDS = { RD.RAID_FINDER, RD.NORMAL, RD.HEROIC, RD.MYTHIC }   -- Raid Finder, Normal, Heroic, Mythic
 
 -- Populate dashboard_instance with the full catalog the dashboard shows -- every raid (one row per
 -- difficulty) and the latest expansion's + current season's dungeons -- and drop rows whose instance

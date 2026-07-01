@@ -16,6 +16,7 @@ local Class = ns.Class
 
 ns.DB = ns.DB or {}
 local DB = ns.DB
+local Op = DB.Op   -- the operator vocabulary (Types.lua); the strings live there, not here
 
 -- ---- LIKE: SQL pattern ('%','_') -> anchored Lua pattern, escaping Lua magic ----
 local MAGIC = "^$()%.[]*+-?"
@@ -37,8 +38,8 @@ local function sameOrderableType(a, b) return type(a) == type(b) and (type(a) ==
 
 local function evalLeaf(leaf, left, right)
     local op = leaf.op
-    if op == "is null"     then return DB.isNull(left) end
-    if op == "is not null" then return not DB.isNull(left) end
+    if op == Op.IS_NULL     then return DB.isNull(left) end
+    if op == Op.IS_NOT_NULL then return not DB.isNull(left) end
     if DB.isNull(left) then return false end                 -- two-valued: NULL fails every comparison
     if DB.isNull(right) then return false end                -- comparing against a NULL column also fails
     if op == "="  then return left == right end
@@ -47,14 +48,14 @@ local function evalLeaf(leaf, left, right)
     if op == "<=" then return sameOrderableType(left, right) and left <= right end
     if op == ">"  then return sameOrderableType(left, right) and left >  right end
     if op == ">=" then return sameOrderableType(left, right) and left >= right end
-    if op == "in" then
+    if op == Op.IN then
         for _, v in ipairs(right) do if left == v then return true end end
         return false
     end
-    if op == "like" then
+    if op == Op.LIKE then
         return type(left) == "string" and left:find(leaf._pat or likeToLua(right)) ~= nil
     end
-    if op == "between" then
+    if op == Op.BETWEEN then
         local lo, hi = right[1], right[2]
         return sameOrderableType(left, lo) and sameOrderableType(left, hi) and left >= lo and left <= hi
     end
@@ -62,16 +63,16 @@ local function evalLeaf(leaf, left, right)
 end
 
 -- Operators that take no value argument.
-local NULLARY = { ["is null"] = true, ["is not null"] = true }
+local NULLARY = { [Op.IS_NULL] = true, [Op.IS_NOT_NULL] = true }
 
 local function makeLeaf(col, op, value)
     op = tostring(op):lower()
     local leaf = { kind = "leaf", col = col, op = op, right = value }
-    if op == "like" and type(value) == "string" then leaf._pat = likeToLua(value) end
-    if not NULLARY[op] and op ~= "like" then
+    if op == Op.LIKE and type(value) == "string" then leaf._pat = likeToLua(value) end
+    if not NULLARY[op] and op ~= Op.LIKE then
         -- in/between expect tables; the rest expect a scalar -- light shape checks catch typos early.
-        if op == "in" and type(value) ~= "table" then DB.fail("WhereClause:makeLeaf", "'in' needs a list value") end
-        if op == "between" and (type(value) ~= "table" or value[1] == nil or value[2] == nil) then
+        if op == Op.IN and type(value) ~= "table" then DB.fail("WhereClause:makeLeaf", "'in' needs a list value") end
+        if op == Op.BETWEEN and (type(value) ~= "table" or value[1] == nil or value[2] == nil) then
             DB.fail("WhereClause:makeLeaf", "'between' needs a { lo, hi } value")
         end
     end

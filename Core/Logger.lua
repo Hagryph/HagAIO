@@ -1,5 +1,7 @@
 local addonName, ns = ...
 local Class = ns.Class
+local Enum = ns.Enum
+local Type = ns.Type
 local Theme = ns.Theme
 
 -- Core/Logger.lua
@@ -11,21 +13,27 @@ local Theme = ns.Theme
 --   HagAIO  hh:mm:ss  [Module]  message
 --   \accent  \faint    \modclr   \level-tinted (+ glyph for warn/error)
 
--- Level enum (frozen table of constant descriptors).
-local LEVELS = {
-    DEBUG   = { order = 10, tag = "DEBUG",   key = "textFaint", glyph = ""  },
-    INFO    = { order = 20, tag = "INFO",    key = "text",      glyph = ""  },
-    SUCCESS = { order = 25, tag = "OK",      key = "green",     glyph = "+" },
-    WARN    = { order = 30, tag = "WARN",    key = "amber",     glyph = "!" },
-    ERROR   = { order = 40, tag = "ERROR",   key = "red",       glyph = "x" },
-}
+-- One level descriptor: an IMMUTABLE ns.Type value carrying its order/tag/key/glyph. Fields live in
+-- :_p() and are read through the generated accessors (:Order() / :Tag() / :Key() / :Glyph()), so a
+-- level can't be mutated after construction.
+local LogLevelInfo = Type.new("LogLevelInfo", { "order", "tag", "key", "glyph" })
+
+-- Level enum (frozen set of constant descriptors; a typo'd member raises instead of yielding nil).
+local LEVELS = Enum.new("LogLevel", {
+    DEBUG   = LogLevelInfo:New(10, "DEBUG", "textFaint", ""),
+    INFO    = LogLevelInfo:New(20, "INFO",  "text",      ""),
+    SUCCESS = LogLevelInfo:New(25, "OK",    "green",     "+"),
+    WARN    = LogLevelInfo:New(30, "WARN",  "amber",     "!"),
+    ERROR   = LogLevelInfo:New(40, "ERROR", "red",       "x"),
+})
 ns.LogLevel = LEVELS
 
 -- Chat-echo policy per log line (independent of level/threshold):
 --   NEVER  : record to the log only -- the default for EVERY ordinary line.
 --   NORMAL : also echo to chat WHEN the player's "Echo to Chat" setting is on.
 --   ALWAYS : echo to chat even when "Echo to Chat" is off.
-local ECHO = { NEVER = 0, NORMAL = 1, ALWAYS = 2 }
+-- Frozen enum (a typo'd member raises instead of silently yielding nil).
+local ECHO = Enum.new("LogEcho", { NEVER = 0, NORMAL = 1, ALWAYS = 2 })
 ns.LogEcho = ECHO
 
 -- ---- Channel: the per-module handle returned by Logger:Register -----------
@@ -93,7 +101,7 @@ function Logger:Initialize()
     p.history = {}
     p.start = 1       -- index of the oldest live entry
     p.last = 0        -- index of the newest live entry (0 = empty)
-    p.minLevel = LEVELS.INFO.order
+    p.minLevel = LEVELS.INFO:Order()
     p.echo = true
     p.debug = false   -- when on, normally-silent DEBUG lines also surface to chat (dev aid; not persisted)
     p.frame = DEFAULT_CHAT_FRAME
@@ -118,7 +126,7 @@ end
 -- Pull persisted prefs from the shared database (built by the time this runs, on ADDON_LOADED).
 function Logger:LoadSettings()
     local p, r = self:_p(), self:_PrefRow()
-    p.minLevel = val(r and r.min_level, LEVELS.INFO.order)
+    p.minLevel = val(r and r.min_level, LEVELS.INFO:Order())
     p.echo     = val(r and r.echo, true)
 end
 
@@ -206,10 +214,10 @@ function Logger:Record(channel, level, text, echo)
         time     = date("%H:%M:%S"),
         module   = channel:GetName(),
         hex      = channel:GetHex(),
-        level    = level.tag,
-        order    = level.order,
-        levelHex = Theme.hex[level.key] or Theme.hex.text,
-        glyph    = level.glyph,
+        level    = level:Tag(),
+        order    = level:Order(),
+        levelHex = Theme.hex[level:Key()] or Theme.hex.text,
+        glyph    = level:Glyph(),
         text     = text,
     }
     -- entry.line is formatted LAZILY via entryLine() -- only on echo or when the Log page renders it.
@@ -230,7 +238,7 @@ function Logger:Record(channel, level, text, echo)
 
     echo = echo or ECHO.NEVER
     local doEcho = (echo == ECHO.ALWAYS)
-        or (echo == ECHO.NORMAL and p.echo and level.order >= p.minLevel)
+        or (echo == ECHO.NORMAL and p.echo and level:Order() >= p.minLevel)
     if doEcho then
         p.frame:AddMessage(entryLine(entry))
     end

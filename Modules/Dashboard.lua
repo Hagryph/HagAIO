@@ -34,25 +34,18 @@ local DIFF = {
 
 -- Raid difficulty ids CHECKED PER RAID against the journal (EJ_IsValidInstanceDifficulty), so a raid
 -- is seeded ONLY the difficulties it actually offers -- not every raid has LFR or Mythic, and legacy
--- raids use 10/25/40-player ids. DIFF_META (abbr + sort rank for the inline columns) is keyed by ID,
--- so it's locale-proof; an unlisted id falls back to its GetDifficultyInfo name and sorts last.
+-- raids use 10/25/40-player ids. The abbr + sort rank for the inline columns hang off the shared
+-- ns.RaidDifficulty enum via ns.DashboardData.DiffMeta(id) (locale-proof, keyed by ID); an unlisted
+-- id falls back to its GetDifficultyInfo name and sorts last.
 -- The journal catalog -- instances, difficulties, art -- only changes across patches, so both the
 -- per-raid difficulty probe and the whole journal walk are gated on the client build via the shared
 -- ns.Versioning service: a same-build login reconstructs the catalog from the DB instead of re-walking.
 local CATALOG_DOMAIN = "dashboard_catalog"   -- our key in the general data-version registry
-local DIFF_META = {
-    [7]  = { abbr = "LFR", rank = 1 }, [17] = { abbr = "LFR", rank = 1 },
-    [3]  = { abbr = "10",  rank = 2 }, [4]  = { abbr = "25",  rank = 2 }, [9] = { abbr = "40", rank = 2 },
-    [148] = { abbr = "20", rank = 2 }, [14] = { abbr = "N",   rank = 2 },
-    [5]  = { abbr = "10H", rank = 3 }, [6]  = { abbr = "25H", rank = 3 }, [15] = { abbr = "H", rank = 3 },
-    [16] = { abbr = "M",   rank = 4 },
-    [23] = { abbr = "M0",  rank = 5 },   -- dungeon Mythic 0
-}
+local RaidDifficulty = ns.RaidDifficulty
 
 -- Mythic 0 dungeon difficulty (id 23). M0 is the localized NAME (matches a saved M0 lock's difficulty
--- name); M0_ID is the locale-proof difficulty id (stamped on seeded season-dungeon entries).
-local M0_ID = 23
-local M0 = (GetDifficultyInfo and GetDifficultyInfo(M0_ID)) or "Mythic"
+-- name); the enum member is the locale-proof difficulty id (stamped on seeded season-dungeon entries).
+local M0 = (GetDifficultyInfo and GetDifficultyInfo(RaidDifficulty.MYTHIC_ZERO)) or "Mythic"
 
 -- ===========================================================================
 -- Category descriptors. Each yields the COLUMNS for the selected dataset; a column's cell(entry)
@@ -211,9 +204,9 @@ function Dashboard:_InstanceDifficultyColumns(id)
     local cols = {}
     for _, r in pairs(self:_p().charStore:Instances()) do
         if r.id == id then
-            local name, diff, total, meta = r.name, r.diff, r.total, DIFF_META[r.diffID]
-            cols[#cols + 1] = { label = (meta and meta.abbr) or diff or "?",
-                _rank = (meta and meta.rank) or 99, _id = r.diffID or 0, width = 92,
+            local name, diff, total, meta = r.name, r.diff, r.total, ns.DashboardData.DiffMeta(r.diffID)
+            cols[#cols + 1] = { label = (meta and meta:Abbr()) or diff or "?",
+                _rank = (meta and meta:Rank()) or 99, _id = r.diffID or 0, width = 92,
                 cell = function(e)
                     for _, l in ipairs(e.lockouts or {}) do
                         if l.name == name and l.diff == diff then return (l.progress or 0) .. "/" .. (l.total or total or "?") end

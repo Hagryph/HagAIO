@@ -95,7 +95,7 @@ describe("Logger chat echo policy (Warn/Error/EchoInfo vs the *Always / Announce
     end)
     it("NORMAL echo is also gated by the min-level threshold", function()
         local log, chat = setup()         -- echo on, default min level = INFO (20)
-        log:SetMinLevel(ns_LogLevel().WARN.order)   -- raise threshold above INFO
+        log:SetMinLevel(ns_LogLevel().WARN:Order())   -- raise threshold above INFO
         log:Core():EchoInfo("i")          -- INFO (20) < WARN (30): below threshold
         assert.are.equal(0, #chat)
         log:Core():Warn("w")              -- WARN meets the threshold
@@ -147,7 +147,7 @@ describe("Logger SetEcho / SetMinLevel persistence", function()
     end)
     it("SetMinLevel changes filtering AND persists the logger row", function()
         local log, db = setupDB()
-        local warnOrder = ns_LogLevel().WARN.order
+        local warnOrder = ns_LogLevel().WARN:Order()
         log:SetMinLevel(warnOrder)
         assert.are.equal(warnOrder, log:GetMinLevel())   -- runtime threshold raised
         local r = prefRow(db)
@@ -156,7 +156,7 @@ describe("Logger SetEcho / SetMinLevel persistence", function()
     end)
     it("LoadSettings restores a persisted min_level into the runtime threshold", function()
         local log, db = setupDB()
-        local warnOrder = ns_LogLevel().WARN.order
+        local warnOrder = ns_LogLevel().WARN:Order()
         log:SetMinLevel(warnOrder)
         local p = log:_p(); p.minLevel = 0           -- clobber the in-memory state...
         log:LoadSettings()                           -- ...then reload from the persisted row
@@ -167,7 +167,7 @@ describe("Logger SetEcho / SetMinLevel persistence", function()
         local p = log:_p()
         p.minLevel, p.echo = 0, false                -- clobber to non-defaults
         log:LoadSettings()
-        assert.are.equal(ns_LogLevel().INFO.order, log:GetMinLevel())   -- falls back to INFO
+        assert.are.equal(ns_LogLevel().INFO:Order(), log:GetMinLevel())   -- falls back to INFO
         assert.is_true(log:GetEcho())                                   -- and echo defaults on
     end)
 end)
