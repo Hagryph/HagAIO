@@ -14,7 +14,7 @@ local unwrap, style, claimLevel, adopt = _wb.unwrap, _wb.style, _wb.claimLevel, 
 --   * a thin rule in the same light colour.
 --   :Render(frame, w, h, spec) -- anchor into `frame` and paint:
 --     spec.text   the plate's text (required)
---     spec.style  { bg = {r,g,b} top, bg2 = {r,g,b} bottom, fg = {r,g,b} type }
+--     spec.style  a ZoneStyle value type: { bg top, bg2 bottom, fg type }, each an ns.Color
 --     spec.font   font path override (default Morpheus)
 --     spec.scale  type size as a fraction of the box height (default 0.2)
 -- opts: layer ("BACKGROUND"), sublevel (0) -- for the gradient; the type always sits on OVERLAY.
@@ -42,22 +42,29 @@ function TypographyW:Render(frame, w, h, spec)
     f:ClearAllPoints()
     f:SetPoint("TOPLEFT", unwrap(frame), "TOPLEFT", 0, 0)
     f:SetPoint("BOTTOMRIGHT", unwrap(frame), "BOTTOMRIGHT", 0, 0)
-    local s = spec.style or {}
-    local bg, bg2 = s.bg or { 0.08, 0.10, 0.14 }, s.bg2 or s.bg or { 0.04, 0.05, 0.08 }
+    -- spec.style is a ZoneStyle value type (bg/bg2/fg ns.Colors); read each colour via its accessor,
+    -- with ns.Color fallbacks when no style is supplied. Unpack spreads r,g,b(,a) into the WoW setters.
+    local Color = ns.Color
+    local s = spec.style
+    local bg  = s and s:Bg()  or Color:New(0.08, 0.10, 0.14)
+    local bg2 = s and s:Bg2() or (s and s:Bg()) or Color:New(0.04, 0.05, 0.08)
+    local br, bgc, bb = bg:Unpack()
     if p.bg.SetGradient and CreateColor then
+        local b2r, b2g, b2b = bg2:Unpack()
         p.bg:SetTexture("Interface\\Buttons\\WHITE8X8")
         p.bg:SetGradient("VERTICAL",                            -- bottom -> top
-            CreateColor(bg2[1], bg2[2], bg2[3], 1), CreateColor(bg[1], bg[2], bg[3], 1))
+            CreateColor(b2r, b2g, b2b, 1), CreateColor(br, bgc, bb, 1))
     else
-        p.bg:SetColorTexture(bg[1], bg[2], bg[3], 1)
+        p.bg:SetColorTexture(br, bgc, bb, 1)
     end
-    local fg = s.fg or { 0.85, 0.80, 0.65 }
+    local fg = s and s:Fg() or Color:New(0.85, 0.80, 0.65)
+    local fr, fgc, fb = fg:Unpack()
     p.fs:SetFont(spec.font or "Fonts\\MORPHEUS.TTF", math.max(13, math.floor(h * (spec.scale or 0.2))), "")
     p.fs:SetWidth(w - 16)
     p.fs:SetWordWrap(true)
     p.fs:SetText(spec.text)
-    p.fs:SetTextColor(fg[1], fg[2], fg[3])
-    p.rule:SetColorTexture(fg[1], fg[2], fg[3], 0.8)
+    p.fs:SetTextColor(fr, fgc, fb)
+    p.rule:SetColorTexture(fr, fgc, fb, 0.8)
     p.rule:SetWidth(math.floor(w * 0.3))
     f:Show()
     return self

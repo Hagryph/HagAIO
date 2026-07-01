@@ -15,7 +15,7 @@ local unwrap, style, claimLevel, adopt = _wb.unwrap, _wb.style, _wb.claimLevel, 
 --         gap (12), titleHeight (22)
 -- A tile in :SetTiles is { texture=path|fileID, atlas=bool, label=string, labelKey=paletteKey,
 --   mapID=uiMapID (zone map art composed by Widgets.MapArt; overrides texture),
---   typo={ text=string, style={ bg={r,g,b}, bg2={r,g,b}, fg={r,g,b} } } (a TYPOGRAPHY tile,
+--   typo={ text=string, style=<ZoneStyle value: bg/bg2/fg ns.Colors> } (a TYPOGRAPHY tile,
 --     rendered by Widgets.Typography -- used instead of an image),
 --   badge=string, badgeKey=paletteKey, selected=bool, onClick=function(tile),
 --   texCoord={l,r,t,b} (a fixed base crop, e.g. the EJ buttonImage1 banner region),

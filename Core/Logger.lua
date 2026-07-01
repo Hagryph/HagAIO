@@ -210,6 +210,22 @@ function Logger:Line(entry) return entryLine(entry) end
 -- or forces it (ALWAYS).
 function Logger:Record(channel, level, text, echo)
     local p = self:_p()
+    -- FROZEN CONTRACT -- log-entry record shape.
+    -- This plain table is the stable public shape returned (in an array, oldest->newest) by
+    -- Logger:GetHistory(). It is deliberately a raw record, NOT an ns.Type: one value type per log
+    -- line would add a per-entry allocation on this frequently-written hot path and regress the lazy-
+    -- format design below. Callers (the Log view, echoers) MAY READ these fields but MUST NOT mutate
+    -- them. Fields:
+    --   time     (string) -- "HH:MM:SS" wall-clock stamp of when the line was recorded.
+    --   module   (string) -- source channel's display name (channel:GetName()).
+    --   hex      (string) -- channel colour, "rrggbb" hex (no "|cff" prefix).
+    --   level    (string) -- level tag, e.g. "INFO"/"WARN"/"ERROR" (level:Tag()).
+    --   order    (number) -- level severity for threshold comparisons (level:Order()).
+    --   levelHex (string) -- level colour, "rrggbb" hex (no "|cff" prefix).
+    --   glyph    (string) -- level glyph/icon text, "" when the level has none.
+    --   text     (string) -- the raw message text.
+    --   line     (string|nil) -- LAZILY populated coloured display line (see entryLine); nil until
+    --                            first echo/render. Cache field, not input -- do not set it yourself.
     local entry = {
         time     = date("%H:%M:%S"),
         module   = channel:GetName(),

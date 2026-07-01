@@ -36,8 +36,11 @@ local CooldownWatch = Class.new("CooldownWatch")
 function CooldownWatch:Initialize(spellID, onChange)
     local p = self:_p()
     p.spellID = spellID
-    p.onChange = onChange
     p.onCooldown = false
+    -- A per-watch multicast signal: the caller's callback is just the first handler
+    -- connected to it. The poll fires Changed(onCooldown) whenever the state flips.
+    p.changed = ns.Delegate:New()
+    if onChange then p.changed:Connect(onChange) end
     local bus = ns.EventBus
     -- Filter to the PLAYER at the engine (RegisterUnitEvent) rather than the shared bus:
     -- UNIT_SPELLCAST_SUCCEEDED fires for every visible unit (hundreds/sec in a raid), and
@@ -59,7 +62,7 @@ function CooldownWatch:_Set(onCooldown)
     local p = self:_p()
     if p.onCooldown == onCooldown then return end
     p.onCooldown = onCooldown
-    if p.onChange then p.onChange(onCooldown) end
+    p.changed:Fire(onCooldown)
 end
 
 function CooldownWatch:_Start()

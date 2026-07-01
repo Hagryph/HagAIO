@@ -15,11 +15,12 @@ local Class = ns.Class
 -- ALWAYS source the exact bonus / window / plateau from SimulationCraft's class module, not
 -- the tooltip wording (it's ambiguous and locale-dependent). See [[feedback_check-simcraft]].
 --
--- A spec: { bonus = 0.80, highPct = 100, lowPct = 0, direction = "missing" }
+-- A spec is an immutable value type: ns.ScalingSpec:New(bonus, highPct, lowPct, direction).
 --   bonus     : max fractional bonus (0.80 = +80%)
 --   highPct   : health% where the ramp begins (no-bonus side);  default 100
 --   lowPct    : health% where the bonus maxes / plateaus;        default 0
 --   direction : "missing" (more as HP drops, default) | "current" (more as HP rises)
+-- e.g. ns.ScalingSpec:New(0.80) is the pure missing form; nils fall back to the defaults.
 --
 -- Live HP is a SECRET in restricted content, so you usually can't evaluate at the real
 -- health there: use :Band() / :ValueAtFull() / :ValueAtEmpty() for the plain-Lua endpoints
@@ -31,13 +32,11 @@ local Scaling = Class.new("Scaling", ns.Service)
 -- Ramp direction: which end of the health window carries the max bonus.
 local ScalingDirection = ns.Enum.new("ScalingDirection", { CURRENT = "current", MISSING = "missing" })
 
-local DEFAULTS = { highPct = 100, lowPct = 0, direction = ScalingDirection.MISSING }
-
-local function field(spec, key)
-    local v = spec[key]
-    if v == nil then return DEFAULTS[key] end
-    return v
-end
+-- A spec is an immutable value type: nils fall back to the defaults at construction, so the
+-- endpoints read straight off the accessors (bonus stays nil-able -> treated as 0).
+local ScalingSpec = ns.Type.new("ScalingSpec", { "bonus", "highPct", "lowPct", "direction" },
+    { highPct = 100, lowPct = 0, direction = ScalingDirection.MISSING })
+ns.ScalingSpec = ScalingSpec
 
 local function clamp01(t)
     if t < 0 then return 0 elseif t > 1 then return 1 end
@@ -47,7 +46,7 @@ end
 -- Interpolation fraction t in [0,1] at health percent hp (0..100). 0 = no bonus,
 -- 1 = full bonus (the plateau). Direction picks which end of the window is the max.
 function Scaling:Fraction(spec, hp)
-    local hi, lo, dir = field(spec, "highPct"), field(spec, "lowPct"), field(spec, "direction")
+    local hi, lo, dir = spec:HighPct(), spec:LowPct(), spec:Direction()
     if hi == lo then  -- degenerate window -> a hard step at the threshold
         if dir == ScalingDirection.CURRENT then return hp >= hi and 1 or 0 end
         return hp <= hi and 1 or 0
@@ -60,7 +59,7 @@ end
 
 -- Multiplier (1 + bonus*t) at health percent hp.
 function Scaling:Multiplier(spec, hp)
-    return 1 + (spec.bonus or 0) * self:Fraction(spec, hp)
+    return 1 + (spec:Bonus() or 0) * self:Fraction(spec, hp)
 end
 
 -- base * multiplier at health percent hp.
@@ -77,14 +76,14 @@ function Scaling:ValueAtEmpty(spec, base) return self:Value(spec, base, 0) end
 -- base*(1+bonus)). Independent of which end is full -- handy for a heal/damage BAND.
 function Scaling:Band(spec, base)
     base = base or 0
-    local peak = base * (1 + (spec.bonus or 0))
+    local peak = base * (1 + (spec:Bonus() or 0))
     if base <= peak then return base, peak end
     return peak, base
 end
 
 -- The multiplier range: minMult, maxMult (1 and 1+bonus).
 function Scaling:MultiplierBand(spec)
-    local b = spec.bonus or 0
+    local b = spec:Bonus() or 0
     if b >= 0 then return 1, 1 + b end
     return 1 + b, 1
 end

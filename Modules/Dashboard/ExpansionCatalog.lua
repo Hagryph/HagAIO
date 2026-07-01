@@ -80,6 +80,13 @@ local EJ_LORE_ZOOM   = 0.65
 local EJ_LORE_PAN_X  = -0.12
 local EJ_LORE_PAN_Y  = -0.23
 
+-- An instance tile's art descriptor as an immutable VALUE TYPE (ns.Type). _InstanceArt builds one of
+-- two shapes -- a full-bleed SPLASH (cover + aspect + tuned zoom/pan, no texCoord) or the low-def
+-- BANNER fallback (a fixed texCoord crop + fixed zoom, no cover/aspect/pan) -- so the absent fields
+-- of each shape stay nil (no field defaults: defaulting cover/texCoord would flip the tile's fit mode
+-- in IconGrid). applyArt reads it back through the accessors (:Texture()/:Cover()/...).
+local ArtSpec = ns.Type.new("ArtSpec", { "texture", "cover", "texCoord", "zoom", "aspect", "panX", "panY" })
+
 -- The CURRENT expansion's level. LE_EXPANSION_LEVEL_CURRENT is deprecated in Midnight, so prefer the
 -- live getters (the displayable client max), falling back through to the old constant.
 local function currentExpacLevel()
@@ -99,9 +106,17 @@ local ZONE_DOMAIN = "zone_catalog"
 --                      canopy, Durotar's red dust, Crystalsong's violet crystal, ...)
 --   2. BIOME_STYLE  -- keyword inference from the name (Desert/Frost/Marsh/... -> biome palette)
 --   3. expansion tint (EXP_STYLE) on the neutral plate
--- A style is { bg = {r,g,b} top, bg2 = {r,g,b} bottom, fg = {r,g,b} type } -- backgrounds stay
--- dark so tiles sit in the theme; the HUE carries the zone, the type colour carries the light.
-local function zs(bg, bg2, fg) return { bg = bg, bg2 = bg2, fg = fg } end
+-- A style is a ZoneStyle value type (ns.Type): { bg top, bg2 bottom, fg type }, each an ns.Color --
+-- backgrounds stay dark so tiles sit in the theme; the HUE carries the zone, the type colour carries
+-- the light. Read back with :Bg()/:Bg2()/:Fg() -> ns.Color -> :Unpack() into the WoW setters.
+local ZoneStyle = ns.Type.new("ZoneStyle", { "bg", "bg2", "fg" })
+-- Build a ZoneStyle from three {r,g,b} triplets (the curated literals below), each wrapped as an
+-- ns.Color; the raw r/g/b values stay exactly as written.
+local function zs(bg, bg2, fg)
+    return ZoneStyle:New(ns.Color:New(bg[1], bg[2], bg[3]),
+                         ns.Color:New(bg2[1], bg2[2], bg2[3]),
+                         ns.Color:New(fg[1], fg[2], fg[3]))
+end
 
 local ZONE_STYLE = {
     -- Eastern Kingdoms / Kalimdor classics
@@ -218,26 +233,26 @@ local BIOME_WORDS = {
     { "arcane",   { "crystal", "arcane", "moon", "star", "storm", "void", "nether" } },
 }
 
--- The neutral plate the expansion tint colours when neither curation nor biome matches.
-local PLATE_BG, PLATE_BG2 = { 0.08, 0.10, 0.14 }, { 0.04, 0.05, 0.08 }
+-- The neutral plate the expansion tint colours when neither curation nor biome matches (ns.Color).
+local PLATE_BG, PLATE_BG2 = ns.Color:New(0.08, 0.10, 0.14), ns.Color:New(0.04, 0.05, 0.08)
 
--- Typography palette: each expansion's signature colour -- the zone plate's LAST-RESORT tint when
--- neither curation nor biome matches (keyed by expansion level == EJ tier level).
+-- Typography palette: each expansion's signature colour (ns.Color) -- the zone plate's LAST-RESORT
+-- tint when neither curation nor biome matches (keyed by expansion level == EJ tier level).
 local EXP_STYLE = {
-    [0]  = { 0.85, 0.71, 0.38 },   -- Classic: aged gold / parchment
-    [1]  = { 0.55, 0.85, 0.35 },   -- Burning Crusade: fel green
-    [2]  = { 0.55, 0.78, 0.95 },   -- Wrath: glacial blue
-    [3]  = { 0.95, 0.45, 0.15 },   -- Cataclysm: molten orange
-    [4]  = { 0.35, 0.80, 0.55 },   -- Mists: jade
-    [5]  = { 0.80, 0.50, 0.25 },   -- Draenor: savage bronze
-    [6]  = { 0.45, 0.90, 0.30 },   -- Legion: fel
-    [7]  = { 0.30, 0.55, 0.90 },   -- Battle for Azeroth: war-sea navy
-    [8]  = { 0.78, 0.86, 1.00 },   -- Shadowlands: pale anima
-    [9]  = { 0.90, 0.65, 0.30 },   -- Dragonflight: dragon bronze
-    [10] = { 0.95, 0.75, 0.40 },   -- The War Within: earthen gold
-    [11] = { 0.70, 0.45, 0.95 },   -- Midnight: void violet
+    [0]  = ns.Color:New(0.85, 0.71, 0.38),   -- Classic: aged gold / parchment
+    [1]  = ns.Color:New(0.55, 0.85, 0.35),   -- Burning Crusade: fel green
+    [2]  = ns.Color:New(0.55, 0.78, 0.95),   -- Wrath: glacial blue
+    [3]  = ns.Color:New(0.95, 0.45, 0.15),   -- Cataclysm: molten orange
+    [4]  = ns.Color:New(0.35, 0.80, 0.55),   -- Mists: jade
+    [5]  = ns.Color:New(0.80, 0.50, 0.25),   -- Draenor: savage bronze
+    [6]  = ns.Color:New(0.45, 0.90, 0.30),   -- Legion: fel
+    [7]  = ns.Color:New(0.30, 0.55, 0.90),   -- Battle for Azeroth: war-sea navy
+    [8]  = ns.Color:New(0.78, 0.86, 1.00),   -- Shadowlands: pale anima
+    [9]  = ns.Color:New(0.90, 0.65, 0.30),   -- Dragonflight: dragon bronze
+    [10] = ns.Color:New(0.95, 0.75, 0.40),   -- The War Within: earthen gold
+    [11] = ns.Color:New(0.70, 0.45, 0.95),   -- Midnight: void violet
 }
-local EXP_STYLE_DEFAULT = { 0.85, 0.80, 0.65 }
+local EXP_STYLE_DEFAULT = ns.Color:New(0.85, 0.80, 0.65)
 
 -- The modern flexible RAID difficulties (ids), used to seed one catalog row per raid per difficulty.
 -- Resolved to LOCALE names via GetDifficultyInfo so a row's `diff` matches a lockout's difficulty
@@ -594,10 +609,9 @@ function ExpansionCatalog:_InstanceArt(name, kind)
     if not name then return nil end
     if p.ejLore and p.ejLore[name] then
         local t = self:_ArtTune(kind or "dungeon")
-        return { texture = p.ejLore[name], cover = true, aspect = EJ_LORE_ASPECT,
-                 zoom = t.zoom, panX = t.panX, panY = t.panY }
+        return ArtSpec:New(p.ejLore[name], true, nil, t.zoom, EJ_LORE_ASPECT, t.panX, t.panY)
     end
-    if p.ejImage and p.ejImage[name] then return { texture = p.ejImage[name], texCoord = EJ_TILE_TC, zoom = EJ_TILE_ZOOM } end
+    if p.ejImage and p.ejImage[name] then return ArtSpec:New(p.ejImage[name], nil, EJ_TILE_TC, EJ_TILE_ZOOM) end
     return nil
 end
 
@@ -790,7 +804,7 @@ function ExpansionCatalog:_ZoneStyle(name, expId)
             if lower:find(word, 1, true) then return BIOME_STYLE[entry[1]] end
         end
     end
-    return { bg = PLATE_BG, bg2 = PLATE_BG2, fg = EXP_STYLE[expId] or EXP_STYLE_DEFAULT }
+    return ZoneStyle:New(PLATE_BG, PLATE_BG2, EXP_STYLE[expId] or EXP_STYLE_DEFAULT)
 end
 
 -- The newest season raid's splash, for the Current Season overview tile (else nil).

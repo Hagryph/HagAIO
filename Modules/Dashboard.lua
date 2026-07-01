@@ -64,12 +64,12 @@ local HOME_LABEL = "Overview"
 -- the rest of this module's journal labels.)
 local SEASON_LABEL = "Current Season"
 
--- Copy an art descriptor ({texture, cover, texCoord, zoom, aspect, panX, panY} from _InstanceArt)
--- onto a tile.
+-- Copy an art descriptor (the ns.ExpansionCatalog ArtSpec value type -- texture/cover/texCoord/zoom/
+-- aspect/panX/panY from _InstanceArt) onto a tile, reading each field through its accessor.
 local function applyArt(tile, art)
     tile.texture, tile.cover, tile.texCoord, tile.zoom =
-        art.texture, art.cover, art.texCoord, art.zoom
-    tile.aspect, tile.panX, tile.panY = art.aspect, art.panX, art.panY
+        art:Texture(), art:Cover(), art:TexCoord(), art:Zoom()
+    tile.aspect, tile.panX, tile.panY = art:Aspect(), art:PanX(), art:PanY()
 end
 
 local CATEGORIES = {
