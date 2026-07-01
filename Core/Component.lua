@@ -296,13 +296,25 @@ end
 function Component:GetSetting(key)
     local schema = self:GetSettings()
     local db = self:DB()
-    if not db then return ns.SettingsTables.SchemaDefault(schema, key) end
-    return ns.SettingsTables:Get(db, self:_SettingsNamespace(), schema, key)
+    local v
+    if db then v = ns.SettingsTables:Get(db, self:_SettingsNamespace(), schema, key)
+    else      v = ns.SettingsTables.SchemaDefault(schema, key) end
+    -- The store keeps a COLOUR as { r, g, b } scalars; present it to callers as an ns.Color value.
+    if v ~= nil and ns.Color and ns.SettingsTables.IsColor(schema, key) then
+        return ns.Color:New(v[1], v[2], v[3])
+    end
+    return v
 end
 
 function Component:SetSetting(key, value)
     local db = self:DB()
-    if db then ns.SettingsTables:Set(db, self:_SettingsNamespace(), self:GetSettings(), key, value) end
+    if db then
+        -- A COLOUR arrives as an ns.Color; the store never holds a metatable, so decompose to
+        -- { r, g, b } first (Component is the single choke point -- see GetSetting).
+        local stored = value
+        if ns.Color and ns.Color.Is(value) then stored = { value:R(), value:G(), value:B() } end
+        ns.SettingsTables:Set(db, self:_SettingsNamespace(), self:GetSettings(), key, stored)
+    end
     self:OnSettingChanged(key, value)
     -- Broadcast so anything else (other components, the UI) can react without the
     -- changer needing to know about them.

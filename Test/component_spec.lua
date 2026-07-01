@@ -24,6 +24,16 @@ describe("Component settings (no database yet)", function()
         assert.are.equal(true, C:New():GetSetting("k"))
     end)
 
+    it("GetSetting wraps a COLOUR's stored { r, g, b } into an ns.Color value", function()
+        local ns = withComponent()
+        S.load(ns, "Lib/Color.lua")
+        local C = ns.Class.new("C", ns.Component)
+        function C:GetSettings() return { { type = "color", key = "k", default = ns.Color:New(0.1, 0.2, 0.3) } } end
+        local got = C:New():GetSetting("k")            -- pre-DB path -> SchemaDefault, then wrapped
+        assert.is_true(ns.Color.Is(got))               -- an ns.Color value, not a raw triple
+        assert.are.equal(ns.Color:New(0.1, 0.2, 0.3), got)   -- value-equal to the default
+    end)
+
     it("GetSettings is abstract -- a subclass that reads settings but forgot it gets the named error", function()
         local ns = withComponent()
         local Bad = ns.Class.new("Bad", ns.Component)

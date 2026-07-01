@@ -582,10 +582,12 @@ function SettingsWindow:_RenderSchema(content, host, width, y)
             lbl:SetPoint("TOPLEFT", 6, y)
             local sw = W.ColorSwatch:New(content)
             sw:SetPoint("TOPRIGHT", content, "TOPRIGHT", -6, y)
-            local c = host:GetSetting(s.key) or s.default or { 1, 1, 1 }
-            sw:SetColor(c[1] or 1, c[2] or 1, c[3] or 1)
-            sw:SetOnChange(function(r, g, b) host:SetSetting(s.key, { r, g, b }) end)
-            if s.default then sw:SetDefault(s.default[1], s.default[2], s.default[3]) end
+            -- Colours are ns.Color values (override/profile/code default); the swatch keeps its
+            -- r,g,b API, so unpack going in and re-wrap the picked colour going out.
+            local c = host:GetSetting(s.key) or s.default or ns.Color:New(1, 1, 1)
+            sw:SetColor(c:Unpack())
+            sw:SetOnChange(function(r, g, b) host:SetSetting(s.key, ns.Color:New(r, g, b)) end)
+            if s.default then sw:SetDefault(s.default:Unpack()) end
             if s.key then controls[s.key] = sw end
             if s.dependsOn then pending[#pending + 1] = { w = sw, key = s.key, on = s.dependsOn } end
             y = y - 26

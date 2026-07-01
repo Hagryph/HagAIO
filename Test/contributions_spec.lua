@@ -108,6 +108,7 @@ end)
 -- bug fails loudly at construction instead of rendering a blank control (the one silent-failure mode).
 describe("Contributions.ValidateSettings", function()
     local ns = S.newNs()
+    S.load(ns, "Lib/Color.lua")            -- a colour default must be an ns.Color (validated below)
     local V = ns.Contributions.ValidateSettings
 
     it("accepts the five rendered types (header/note/toggle/select/color)", function()
@@ -116,8 +117,16 @@ describe("Contributions.ValidateSettings", function()
             { type = "note",   text = "N" },
             { type = "toggle", key = "t", label = "T" },
             { type = "select", key = "s", label = "S", options = { "a", "b" } },
-            { type = "color",  key = "c", label = "C", default = { 1, 1, 1 } },
+            { type = "color",  key = "c", label = "C", default = ns.Color:New(1, 1, 1) },
         }, "owner"))
+    end)
+
+    it("rejects a raw { r, g, b } colour default -- it must be an ns.Color value", function()
+        local ok, err = pcall(V, {
+            { type = "color", key = "c", label = "C", default = { 1, 1, 1 } },
+        }, "owner")
+        assert.is_false(ok)
+        assert.is_true(tostring(err):find("ns.Color", 1, true) ~= nil)
     end)
 
     it("rejects a control type the renderer can't draw -- fail fast, no silent blank", function()

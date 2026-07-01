@@ -18,6 +18,11 @@ local Class = ns.Class
 -- The DB forbids table cells (Core/DB/Types.lua), so a value maps to typed scalar COLUMNS:
 --   toggle -> <key> boolean   select/input -> <key> text   number/slider/range -> <key> number
 --   color  -> <key>_r, <key>_g, <key>_b number
+-- COLOUR shape: this engine only ever handles a colour as a plain { r, g, b } triple. The rich
+-- ns.Color VALUE type is presented one layer up (Component:GetSetting/SetSetting wrap/unwrap it);
+-- an ns.Color must never travel deeper -- its fields live behind a metatable + private store, so it
+-- would serialise to an EMPTY row/blob (silent data loss). A colour DEFAULT may be authored as an
+-- ns.Color for readability; it is decomposed to a triple at the door (colorTriple, below).
 
 -- Shared row-cell guard (ns.DB.isSet). Bound at CALL time: this lib also loads in headless
 -- rigs that don't bring the DB engine in, where ns.DB doesn't exist yet (it's only ever
@@ -31,6 +36,14 @@ local function deepEqual(a, b)
     for k, v in pairs(a) do if not deepEqual(v, b[k]) then return false end end
     for k in pairs(b) do if a[k] == nil then return false end end
     return true
+end
+
+-- A colour DEFAULT may be authored as an ns.Color; the engine works in plain { r, g, b } scalars,
+-- so decompose it here at the door. Anything already plain (a raw triple from a headless rig that
+-- skips Lib/Color, or ns.Color simply not loaded) passes through untouched.
+local function colorTriple(d)
+    if ns.Color and ns.Color.Is(d) then return { d:R(), d:G(), d:B() } end
+    return d
 end
 
 -- Map a settings-schema entry to its persisted COLUMNS + how to read it from / write it to a row.
@@ -50,7 +63,8 @@ local function fieldFor(e)
                  write = function(v)   return { [key] = v } end }
     elseif t == ns.SettingType.COLOR then
         local r, g, b = key .. "_r", key .. "_g", key .. "_b"
-        return { cols = { { name = r, type = "number" }, { name = g, type = "number" }, { name = b, type = "number" } },
+        return { color = true,
+                 cols = { { name = r, type = "number" }, { name = g, type = "number" }, { name = b, type = "number" } },
                  read  = function(row) if isSet(row[r]) then return { row[r], row[g], row[b] } end end,
                  write = function(v)   return { [r] = v[1], [g] = v[2], [b] = v[3] } end }
     end
@@ -65,7 +79,11 @@ local function schemaFields(schema)
         for _, e in ipairs(schema or {}) do
             if e.key ~= nil then
                 local f = fieldFor(e)
-                if f then f.key = e.key; f.default = e.default; fs[#fs + 1] = f; fs.byKey[e.key] = f end
+                if f then
+                    f.key = e.key
+                    f.default = f.color and colorTriple(e.default) or e.default   -- ns.Color -> { r, g, b }
+                    fs[#fs + 1] = f; fs.byKey[e.key] = f
+                end
             end
         end
         fieldsCache[schema] = fs
@@ -127,6 +145,13 @@ function SettingsTables:ProfileTable(nsKey) return pName(nsKey) end
 function SettingsTables.SchemaDefault(schema, key)
     local f = schemaFields(schema).byKey[key]
     return f and f.default
+end
+
+-- True iff `key` is a COLOUR setting -- Component:GetSetting/SetSetting use this to wrap the stored
+-- { r, g, b } triple into an ns.Color for consumers (and unwrap it again on the way back down).
+function SettingsTables.IsColor(schema, key)
+    local f = schemaFields(schema).byKey[key]
+    return f ~= nil and f.color == true
 end
 
 -- ---- table derivation -----------------------------------------------------

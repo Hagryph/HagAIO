@@ -18,7 +18,7 @@ MonkBrewmaster.settings = {
     { type = "header", text = "Tiger Palm" },
     { type = "toggle", key = "tiger", label = "Show missing-energy bar", default = true,
       desc = "A bar showing how much energy you still need to cast Tiger Palm and Keg Smash. It shrinks as you regenerate and disappears once you can afford both." },
-    { type = "color", key = "tigerColor", label = "Bar colour", default = { 1, 1, 1 }, dependsOn = "tiger" },
+    { type = "color", key = "tigerColor", label = "Bar colour", default = ns.Color:New(1, 1, 1), dependsOn = "tiger" },
     { type = "header", text = "AoE helper" },
     { type = "toggle", key = "aoeHelper", label = "Grey Tiger Palm / Spinning Crane Kick by target count", default = false,
       desc = "In combat: greys Tiger Palm once Spinning Crane Kick does more damage for the enemies in range (use SCK), or greys Spinning Crane Kick below that (use Tiger Palm). The breakpoint is read from their tooltips and adjusts with your gear." },

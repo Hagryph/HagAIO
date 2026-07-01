@@ -31,6 +31,11 @@ function Color.FromHex(hex)
     return Color:New(tonumber(r, 16) / 255, tonumber(g, 16) / 255, tonumber(b, 16) / 255, 1)
 end
 
+-- True iff x is an ns.Color (a metatable-identity check -- safe on ANY value, including nil,
+-- scalars and plain tables, all of which answer false). Lets the settings pipeline tell an
+-- ns.Color default/value apart from a raw { r, g, b } triple at its boundaries.
+function Color.Is(x) return getmetatable(x) == Color end
+
 -- Direct assignment, NOT LibManager:RegisterValue: Color is pinned BEFORE Core/LibManager.lua
 -- in the load order (ns.Theme is built from it), so the manager doesn't exist yet. The
 -- NamespaceSlots generator documents it via its Core-slot map instead.

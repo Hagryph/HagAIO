@@ -55,11 +55,11 @@ function Contributions.ValidateSettings(settings, owner)
             assert(type(s.options) == "table", where .. " (select): needs an 'options' list")
         end
         if s.type == ST.COLOR and s.default ~= nil then
-            -- the renderer indexes default[1..3] (SettingsWindow color path), so fail loudly
-            -- here rather than silently rendering white from a malformed default.
-            assert(type(s.default) == "table" and type(s.default[1]) == "number"
-                and type(s.default[2]) == "number" and type(s.default[3]) == "number",
-                where .. " (color): 'default' must be a { r, g, b } array of three numbers")
+            -- a colour default is an ns.Color value (ns.Color:New(r, g, b)); its r,g,b seed the
+            -- swatch and the persisted columns. Fail loudly here rather than let a raw { r, g, b }
+            -- triple slip through and render white / break the value-type contract downstream.
+            assert(ns.Color and ns.Color.Is(s.default),
+                where .. " (color): 'default' must be an ns.Color (ns.Color:New(r, g, b))")
         end
         if s.dependsOn ~= nil then
             -- a single key (string) or a list of keys (table of strings)

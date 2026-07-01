@@ -20,10 +20,10 @@ local Class = ns.Class
 
 local UnitFrames = Class.new("UnitFrames", ns.Module)
 
--- gradient endpoints (also the settings defaults)
-local DEF_START = { 0.90, 0.15, 0.15 }  -- low health  (red)
-local DEF_MID   = { 0.95, 0.82, 0.15 }  -- mid health  (yellow)
-local DEF_END   = { 0.20, 0.80, 0.20 }  -- full health (green)
+-- gradient endpoints (also the settings defaults) -- ns.Color values
+local DEF_START = ns.Color:New(0.90, 0.15, 0.15)  -- low health  (red)
+local DEF_MID   = ns.Color:New(0.95, 0.82, 0.15)  -- mid health  (yellow)
+local DEF_END   = ns.Color:New(0.20, 0.80, 0.20)  -- full health (green)
 
 local function apiAvailable()
     return C_CurveUtil and C_CurveUtil.CreateColorCurve and UnitHealthPercent and CreateColor
@@ -103,13 +103,16 @@ end
 -- ---- colouring ------------------------------------------------------------
 -- Build the colour curve from the configured colours: low colour at/below 30%,
 -- mid at ~55%, full colour at 100%.
+-- Spread an ns.Color into the plain { r, g, b } table the pure ColorCurve lib consumes.
+local function rgb(c) return { c:R(), c:G(), c:B() } end
+
 function UnitFrames:_BuildCurve()
-    local lo  = self:GetSetting("startColor") or DEF_START
+    local lo  = self:GetSetting("startColor") or DEF_START   -- ns.Color values (override or default)
     local mid = self:GetSetting("midColor")   or DEF_MID
     local hi  = self:GetSetting("endColor")   or DEF_END
     local curve = C_CurveUtil.CreateColorCurve()
     curve:SetType(Enum.LuaCurveType.Linear)
-    for _, pt in ipairs(ns.ColorCurve.HealthPoints(lo, mid, hi)) do
+    for _, pt in ipairs(ns.ColorCurve.HealthPoints(rgb(lo), rgb(mid), rgb(hi))) do
         curve:AddPoint(pt.pos, CreateColor(pt[1], pt[2], pt[3]))
     end
     return curve

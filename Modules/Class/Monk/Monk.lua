@@ -38,8 +38,8 @@ local TIGER_COST_SPELLS = { Spell.TIGER_PALM, Spell.KEG_SMASH }  -- hoisted: no 
 -- Expel Harm bar colours. Ready = cyan accent (stands out against the green->yellow->red
 -- health gradient); on cooldown = white (cool, also off-gradient). Avoid green/yellow/red:
 -- the health bar fades through them, so those would camouflage exactly when health is low.
-local EXPEL_READY_COLOR    = { 0.29, 0.702, 0.902 }  -- #4ab3e6 cyan accent
-local EXPEL_COOLDOWN_COLOR = { 1, 1, 1 }             -- white
+local EXPEL_READY_COLOR    = ns.Color:New(0.29, 0.702, 0.902)  -- #4ab3e6 cyan accent
+local EXPEL_COOLDOWN_COLOR = ns.Color:New(1, 1, 1)             -- white
 
 local SCK_RADIUS = 8                  -- yards; the Range service resolves the checker
 -- SCK must out-damage Tiger Palm by this factor to be "worth it" -- Tiger Palm also
@@ -354,7 +354,7 @@ function ClassModule:_DrawOrbFill(fill, maxHP, width)
     local c = self:_ExpelColor()
 
     local sb = self:_EnsureOrbBar()
-    sb:SetStatusBarColor(c[1], c[2], c[3], 0.55)           -- translucent: predicted-heal band
+    sb:SetStatusBarColor(c:R(), c:G(), c:B(), 0.55)        -- translucent: predicted-heal band
     sb:SetMinMaxValues(minV, maxV)
     sb:ClearAllPoints()
     sb:SetPoint("TOPLEFT",    fill, "TOPRIGHT",    0, 0)    -- start AT current health
@@ -420,7 +420,7 @@ function ClassModule:_UpdateMarker()
     -- texture, the line follows. Reset vertex colour to white (shown = texture x vertex).
     local m = self:_EnsureMarker()
     local c = self:_ExpelColor()
-    m:SetColorTexture(c[1], c[2], c[3], 1)
+    m:SetColorTexture(c:Unpack())          -- r,g,b, a=1 (Expel colours are opaque)
     m:SetVertexColor(1, 1, 1, 1)
     local offset = (p.baseHeal / maxHP) * width
     m:ClearAllPoints()
@@ -608,8 +608,8 @@ function ClassModule:_UpdateTiger()
         p.tigerMarker = ns.UI.Widgets.Fill:New(p.tigerHost, { layer = "OVERLAY", sublevel = 7 })
     end
     local m = p.tigerMarker
-    local c = self:GetSetting("tigerColor") or { 1, 1, 1 }
-    m:SetColorTexture(c[1], c[2], c[3], 0.55)  -- translucent band over the deficit
+    local c = self:GetSetting("tigerColor") or ns.Color:New(1, 1, 1)
+    m:SetColorTexture(c:R(), c:G(), c:B(), 0.55)  -- translucent band over the deficit
 
     -- Bar width can be secret in restricted content -- reuse the last non-secret one.
     local liveW = bar:GetWidth()

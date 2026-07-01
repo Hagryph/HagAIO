@@ -31,6 +31,17 @@ end
 -- A column is "cleared" when the projected cell is absent or the NULL sentinel.
 local function isUnset(ns, v) return v == nil or ns.DB.isNull(v) end
 
+describe("SettingsTables: ns.Color default normalisation", function()
+    it("decomposes an ns.Color default to a plain { r, g, b } (no metatable reaches the store)", function()
+        local ns = S.newNs()
+        S.load(ns, "Lib/Color.lua")
+        local schema = { { type = "color", key = "c", default = ns.Color:New(0.2, 0.4, 0.6) } }
+        local d = ns.SettingsTables.SchemaDefault(schema, "c")
+        assert.is_false(ns.Color.Is(d))            -- normalised at the door, not an ns.Color
+        assert.is_true(colorEq(d, 0.2, 0.4, 0.6))  -- ...and equal to the authored colour
+    end)
+end)
+
 describe("SettingsTables: schema -> tables", function()
     it("derives a CHAR override table and a GLOBAL profile table", function()
         local db, st = build()
