@@ -93,7 +93,7 @@ function SettingsWindow:_Build()
 
     -- shared chrome: movable HIGH-strata frame + draggable bar (title + version) + close X.
     local f = W.Window:New(600, { name = "HagAIOSettingsWindow", width = 620, height = 460,
-        strata = "HIGH", title = "HAGAIO", subtitle = "v" .. tostring(ns.version),
+        strata = "HIGH", title = "HAGAIO", subtitle = "v" .. tostring(ns.Meta.version),
         onClose = function() self:Hide() end,
         autoClose = true,   -- hide in combat / Edit Mode, reopen to the same page after
         onAutoShow = function()
@@ -754,7 +754,7 @@ function SettingsWindow:_BuildAboutPage(parent)
 
     local title = W.Text:New(page, "HagAIO", "text", "GameFontNormalLarge")
     title:SetPoint("TOPLEFT", 18, -18)
-    local ver = W.Text:New(page, "Version " .. tostring(ns.version) .. "   |cff5b6473|||r   Midnight 12.0.x",
+    local ver = W.Text:New(page, "Version " .. tostring(ns.Meta.version) .. "   |cff5b6473|||r   Midnight 12.0.x",
         "accent", "GameFontHighlight")
     ver:SetPoint("TOPLEFT", title, "BOTTOMLEFT", 0, -8)
 

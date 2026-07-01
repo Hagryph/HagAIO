@@ -6,40 +6,68 @@ local addonName, ns = ...
 -- module table (the Lua equivalent of a package-level namespace object); all
 -- other concerns hang off `ns`.
 
-ns.name = addonName
+-- Frozen addon metadata: name, self-read version, and the shared icon path.
+-- This file loads BEFORE Core/Class.lua (pinnedHead #1), so ns.Class isn't
+-- available yet -- Meta is a plain static table, made read-only below.
+ns.Meta = {
+    name = addonName,
 
--- Read our own version through the current (Midnight 12.0+) addon API.
--- GetAddOnMetadata was deprecated in favour of C_AddOns.GetAddOnMetadata.
-ns.version = (C_AddOns and C_AddOns.GetAddOnMetadata
-    and C_AddOns.GetAddOnMetadata(addonName, "Version")) or "0.0.0"
+    -- Read our own version through the current (Midnight 12.0+) addon API.
+    -- GetAddOnMetadata was deprecated in favour of C_AddOns.GetAddOnMetadata.
+    version = (C_AddOns and C_AddOns.GetAddOnMetadata
+        and C_AddOns.GetAddOnMetadata(addonName, "Version")) or "0.0.0",
 
--- Shared icon texture path (Media/icon.tga). Used by the addon-compartment
--- button; also set as ## IconTexture in the .toc for the addon list.
-ns.ICON = "Interface\\AddOns\\HagAIO\\Media\\icon"
+    -- Shared icon texture path (Media/icon.tga). Used by the addon-compartment
+    -- button; also set as ## IconTexture in the .toc for the addon list.
+    ICON = "Interface\\AddOns\\HagAIO\\Media\\icon",
+}
+setmetatable(ns.Meta, {
+    __newindex = function() error("ns.Meta is read-only") end,
+    __metatable = false,
+})
 
--- Developer-character whitelist. Dev-only surfaces (the Dev service's "/hag dev" command, the
+-- Developer-character identity. Dev-only surfaces (the Dev service's "/hag dev" command, the
 -- always-on Dev settings module, and "/hag cvar dump") register/run ONLY on these characters, so
--- they never reach normal users. Keyed "Name-Realm" (realm normalised: spaces stripped).
--- The repo (and any release zip) ships this EMPTY -- entries are personal per-machine config,
--- injected below the marker into the DEPLOYED copy by deploy.ps1 from the git-ignored
--- Dev/devchars.txt (one Name-Realm per line; see tools/autogen/DevChars.ps1).
-ns.DEV_WHITELIST = {}
+-- they never reach normal users. This file loads BEFORE Core/Class.lua (pinnedHead #1), so
+-- ns.Class isn't available yet -- DevIdentity is a plain static table (ns.DevIdentity.IsDevChar /
+-- .IsWhitelisted), backed by the file-local state below.
+--
+-- The whitelist is keyed "Name-Realm" (realm normalised: spaces stripped). The repo (and any
+-- release zip) ships it EMPTY -- entries are personal per-machine config, injected below the
+-- marker into the DEPLOYED copy by deploy.ps1 from the git-ignored Dev/devchars.txt (one
+-- Name-Realm per line; see tools/autogen/DevChars.ps1). It's frozen against runtime writes once
+-- the autogen block has run.
+local DEV_WHITELIST = {}
 -- @AUTOGEN:devchars
+setmetatable(DEV_WHITELIST, {
+    __newindex = function() error("the dev whitelist is read-only") end,
+    __metatable = false,
+})
+
+-- Cached identity answer (nil = unresolved, true/false once known). File-local so it stays
+-- private; the deferral helpers below read/write this same cache.
+local isDevChar = nil
 
 -- True on a whitelisted developer character. Safe to call at file-load time: UnitName/realm are
 -- available once the player unit exists (before PLAYER_LOGIN). The answer is cached once the
 -- identity resolves; while it's still unknown we return false WITHOUT caching, so a later call
 -- (e.g. at PLAYER_LOGIN) can still resolve it.
-function ns.IsDevChar()
-    if ns._isDevChar ~= nil then return ns._isDevChar end
+local function IsDevChar()
+    if isDevChar ~= nil then return isDevChar end
     local name = UnitName and UnitName("player")
     if not name or name == "" then return false end          -- identity not ready yet; don't cache
     local realm = (GetNormalizedRealmName and GetNormalizedRealmName())
         or (GetRealmName and GetRealmName()) or ""
     realm = realm:gsub("%s+", "")
-    ns._isDevChar = ns.DEV_WHITELIST[name .. "-" .. realm] == true
-    return ns._isDevChar
+    isDevChar = DEV_WHITELIST[name .. "-" .. realm] == true
+    return isDevChar
 end
+
+-- Static identity surface. Only these are public -- the raw whitelist stays private.
+ns.DevIdentity = {
+    IsDevChar = IsDevChar,
+    IsWhitelisted = function(key) return DEV_WHITELIST[key] == true end,
+}
 
 -- Run `fn(isDevChar)` once the character identity is KNOWN -- immediately when it already
 -- is, else queued until Core/Init.lua flushes on PLAYER_LOGIN (identity is guaranteed by
@@ -48,8 +76,8 @@ end
 -- (IsDevChar returns false-without-caching while the player unit isn't available yet).
 local pendingIdentity = {}
 function ns.WhenDevCharKnown(fn)
-    ns.IsDevChar()                                            -- try to resolve + cache now
-    if ns._isDevChar ~= nil then return fn(ns._isDevChar) end
+    IsDevChar()                                               -- try to resolve + cache now
+    if isDevChar ~= nil then return fn(isDevChar) end
     pendingIdentity[#pendingIdentity + 1] = fn
 end
 
@@ -59,14 +87,14 @@ end
 -- where the player unit is guaranteed: if it somehow still can't resolve, the answer is
 -- finalised as "not a dev character" rather than left dangling.
 function ns.ResolveDevChar(force)
-    ns.IsDevChar()                                            -- try to resolve + cache
-    if ns._isDevChar == nil then
+    IsDevChar()                                               -- try to resolve + cache
+    if isDevChar == nil then
         if not force then return false end                    -- still unknown: wait for the next flush
-        ns._isDevChar = false                                 -- forced final: identity never appeared
+        isDevChar = false                                     -- forced final: identity never appeared
     end
     local pending = pendingIdentity
     pendingIdentity = {}
-    for _, fn in ipairs(pending) do fn(ns._isDevChar) end
+    for _, fn in ipairs(pending) do fn(isDevChar) end
     return true
 end
 

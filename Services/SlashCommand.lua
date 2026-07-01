@@ -33,10 +33,11 @@ local function firstWord(s)
     return (word or ""):lower(), rest or ""
 end
 
--- A developer character (whitelisted via ns.IsDevChar). `dev`-flagged sub-commands of a GROUP are
--- hidden and refused off-whitelist, so the gate lives in ONE place rather than each handler.
+-- A developer character (whitelisted via ns.DevIdentity.IsDevChar). `dev`-flagged sub-commands of
+-- a GROUP are hidden and refused off-whitelist, so the gate lives in ONE place rather than each
+-- handler.
 local function devOk()
-    return not not (ns.IsDevChar and ns.IsDevChar())
+    return not not (ns.DevIdentity and ns.DevIdentity.IsDevChar())
 end
 
 -- `help` is a string OR a function returning a string (evaluated when help is printed, so it can

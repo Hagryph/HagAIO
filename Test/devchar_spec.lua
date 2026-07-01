@@ -3,15 +3,21 @@
 -- ResolveDevChar flushes Core/Init.lua drives on ADDON_LOADED / PLAYER_LOGIN.
 
 -- Load Core/Namespace.lua against stubbed identity APIs. `name` may be nil (identity not
--- ready yet) and can be changed later via the returned control table.
+-- ready yet) and can be changed later via the returned control table. The dev whitelist is
+-- file-local and frozen after load, so we seed the spec's dev char the same way deploy does:
+-- injecting a `DEV_WHITELIST[...] = true` line at the `-- @AUTOGEN:devchars` marker (before
+-- the freeze) instead of writing a public table at runtime.
 local function freshNs(name)
     local ctl = { name = name }
     local savedUnitName, savedRealm = _G.UnitName, _G.GetNormalizedRealmName
     _G.UnitName = function() return ctl.name end
     _G.GetNormalizedRealmName = function() return "TestRealm" end
+    local f = assert(io.open("Core/Namespace.lua", "rb"))
+    local src = f:read("*a"); f:close()
+    src = src:gsub("(%-%- @AUTOGEN:devchars\r?\n)",
+        '%1DEV_WHITELIST["Dev-TestRealm"] = true\n', 1)   -- seed the spec's dev char
     local ns = {}
-    assert(loadfile("Core/Namespace.lua"))("HagAIO", ns)
-    ns.DEV_WHITELIST["Dev-TestRealm"] = true   -- the whitelist ships empty; seed the spec's dev char
+    assert((loadstring or load)(src, "Core/Namespace.lua"))("HagAIO", ns)
     ctl.restore = function() _G.UnitName, _G.GetNormalizedRealmName = savedUnitName, savedRealm end
     return ns, ctl
 end
@@ -19,9 +25,9 @@ end
 describe("dev-character identity", function()
     it("IsDevChar resolves + caches once the player unit exists", function()
         local ns, ctl = freshNs("Dev")
-        assert.is_true(ns.IsDevChar())
+        assert.is_true(ns.DevIdentity.IsDevChar())
         ctl.name = "SomeoneElse"               -- cached: a later rename changes nothing
-        assert.is_true(ns.IsDevChar())
+        assert.is_true(ns.DevIdentity.IsDevChar())
         ctl.restore()
     end)
 
@@ -52,7 +58,7 @@ describe("dev-character identity", function()
         ns.WhenDevCharKnown(function(isDev) got = isDev end)
         assert.is_true(ns.ResolveDevChar(true))   -- PLAYER_LOGIN: force a final answer
         assert.is_false(got)
-        assert.is_false(ns.IsDevChar())           -- and the answer is now cached
+        assert.is_false(ns.DevIdentity.IsDevChar())  -- and the answer is now cached
         ctl.restore()
     end)
 end)

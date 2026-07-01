@@ -63,7 +63,7 @@ function Compartment:Register()
 
     AddonCompartmentFrame:RegisterAddon({
         text = "HagAIO",
-        icon = ns.ICON,
+        icon = ns.Meta.ICON,
         notCheckable = true,
         registerForAnyClick = true,  -- so right-click also reaches func
         func = function(btn, menuInputData)

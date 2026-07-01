@@ -82,7 +82,7 @@ function Initializer:Run()
         ns.Logger:LoadSettings()
         ns.SlashCommand:Activate()
         ns.Logger:Core():EchoInfo(
-            ("loaded v%s - type /hag to open."):format(tostring(ns.version)))
+            ("loaded v%s - type /hag to open."):format(tostring(ns.Meta.version)))
     end)
 
     bus:On("PLAYER_LOGIN", function()

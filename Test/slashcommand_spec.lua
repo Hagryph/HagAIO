@@ -78,13 +78,13 @@ describe("SlashCommand", function()
         local sc, ns = setup()
         local ran = false
         sc:RegisterGroup("cvar", "h", { dump = { fn = function() ran = true end, dev = true } })
-        ns.IsDevChar = function() return false end
+        ns.DevIdentity = { IsDevChar = function() return false end }
         sc:_Dispatch("cvar dump")
         assert.is_false(ran)                        -- hidden + refused off-whitelist
-        ns.IsDevChar = function() return true end
+        ns.DevIdentity = { IsDevChar = function() return true end }
         sc:_Dispatch("cvar dump")
         assert.is_true(ran)                         -- routed on a developer character
-        ns.IsDevChar = nil
+        ns.DevIdentity = nil
     end)
 
     -- Replies go through the service's OWN Logger channel (recorded in the Log page + governed by

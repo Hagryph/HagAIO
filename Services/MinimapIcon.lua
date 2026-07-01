@@ -74,7 +74,7 @@ function MinimapIcon:_Build()
 
     -- round icon (square art clipped by a circular mask)
     local icon = b:CreateTexture(nil, "BACKGROUND")
-    icon:SetTexture(ns.ICON)
+    icon:SetTexture(ns.Meta.ICON)
     icon:SetSize(19, 19)
     icon:SetPoint("TOPLEFT", 6, -6)
     local mask = b:CreateMaskTexture()

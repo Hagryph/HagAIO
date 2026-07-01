@@ -4,7 +4,7 @@ local W = ns.UI.Widgets
 
 -- Modules/Dev.lua
 -- Developer settings module. ALWAYS ON (mandatory, no enable toggle) and registered ONLY on a
--- whitelisted developer character (ns.IsDevChar) -- normal users never see it.
+-- whitelisted developer character (ns.DevIdentity.IsDevChar) -- normal users never see it.
 --
 -- For now it live-tunes the Dashboard's scene art: a Zoom slider and X/Y offset sliders, separately
 -- for Dungeon and Raid tiles. The values are PER SESSION -- they drive Dashboard:SetArtTune (which

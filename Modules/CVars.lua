@@ -637,7 +637,7 @@ ns.ModuleManager:Register(CVars:New("CVars", {
     defaultEnabled = false,
     color = ns.Theme.hex.red,
     deps = { "SlashCommand", "SettingsWindow" },  -- routing + page refresh (the deferred apply/sync defers go through self:After, a framework helper like self:On -- no explicit Scheduler dep; type inference is the pure ns.CVarHelper lib, always available)
-    optionalDeps = { "Dev" },  -- the full-dump enumeration (ns.Dev) is dev-only (registered behind ns.IsDevChar) and reached through a guard, so it must NOT be a hard dep -- else CVars wouldn't load for normal players
+    optionalDeps = { "Dev" },  -- the full-dump enumeration (ns.Dev) is dev-only (registered behind ns.DevIdentity.IsDevChar) and reached through a guard, so it must NOT be a hard dep -- else CVars wouldn't load for normal players
     events = { PLAYER_ENTERING_WORLD = "_ScheduleApply" },   -- re-apply DEFERRED past each zone's loading screen (static + unconditional -> declarative)
     -- /hag cvar is a sub-command GROUP: each verb is a declarative sub-command the SlashCommand router
     -- routes, lists and (for "dump") dev-gates -- so the dev-only verb is hidden off a whitelisted

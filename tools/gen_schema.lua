@@ -5,8 +5,37 @@
 --     luajit tools/gen_schema.lua        (from the repo root)
 -- It loads the real engine and every Service/Module headless in a permissive sandbox, then builds
 -- the actual schema and renders it -- so the doc is always derived from the code, never by hand.
+--
+-- SHAPE: a SchemaDocGenerator class whose PRIVATE stage methods each own one phase of the pipeline
+-- (framework load -> DB engine -> sandbox scan -> build -> markdown -> interactive diagram), sequenced
+-- by a single SchemaDocGenerator:New():Run() at the tail -- symmetry with Core/Init.lua's Initializer.
+-- Per-run state lives in self:_p(); the logic inside each stage is the original procedural code, moved
+-- verbatim. The generator uses ns.Class, so we first load ONLY Core/Class.lua into a throwaway
+-- bootstrap namespace to obtain the class factory; every stage then builds + fills its OWN working ns.
 
 local WIN = package.config:sub(1, 1) == "\\"
+
+local function loadInto(path, ns)
+    local chunk, err = loadfile(path)
+    if not chunk then return false, err end
+    return pcall(chunk, "HagAIO", ns)
+end
+
+-- Bootstrap: load ONLY Core/Class.lua (self-contained -- it just assigns ns.Class + ns.Object) into a
+-- throwaway namespace, so ns.Class is available to DEFINE the generator class below. The generator's
+-- own working namespace is built fresh inside its stages; this bootstrap ns is used for nothing else.
+local bootstrap = {}
+do
+    local ok, err = loadInto("Core/Class.lua", bootstrap)
+    if not ok then io.stderr:write("gen_schema: bootstrap Core/Class.lua load failed: " .. tostring(err) .. "\n"); os.exit(1) end
+end
+local Class = bootstrap.Class
+
+local SchemaDocGenerator = Class.new("SchemaDocGenerator")
+
+-- ---------------------------------------------------------------------------
+-- shared helpers (file-local pure functions the stages call)
+-- ---------------------------------------------------------------------------
 
 -- Parse tools/load-order.json -- the shared load-order manifest (one source of truth with
 -- tools/autogen/Common.ps1, tools/depcheck.mjs and Test/support.lua). The file is strictly
@@ -17,12 +46,6 @@ local function loadOrderManifest()
     local s = f:read("*a"); f:close()
     s = s:gsub("%[", "{"):gsub("%]", "}"):gsub('("[^"\n]-")%s*:', "[%1]=")
     return assert((loadstring or load)("return " .. s))()
-end
-
-local function loadInto(path, ns)
-    local chunk, err = loadfile(path)
-    if not chunk then return false, err end
-    return pcall(chunk, "HagAIO", ns)
 end
 
 -- repo-relative display path for a Services/Modules/Lib/Core file (dir /b /s gives absolute paths)
@@ -56,236 +79,267 @@ end
 -- ===========================================================================
 -- 1) the framework (loaded for real) + the minimal stubs its constructors touch
 -- ===========================================================================
-local ns = { UI = {} }
-ns.Theme = { hex = setmetatable({}, { __index = function() return "ffffff" end }) }
-ns.Log = { Print = function() end, Warn = function() end, Error = function() end }
-local noop = function() end
-ns.Logger = { Core = function() return { Debug = noop, Info = noop, Success = noop, Warn = noop, Error = noop } end,
-              Register = function() return {} end }
+function SchemaDocGenerator:_LoadFramework()
+    local p = self:_p()
+    local ns = { UI = {} }
+    p.ns = ns
+    ns.Theme = { hex = setmetatable({}, { __index = function() return "ffffff" end }) }
+    ns.Log = { Print = function() end, Warn = function() end, Error = function() end }
+    local noop = function() end
+    ns.Logger = { Core = function() return { Debug = noop, Info = noop, Success = noop, Warn = noop, Error = noop } end,
+                  Register = function() return {} end }
 
-local currentSource = "framework"
--- Contributions are DEFERRED to a single sweep after every file has loaded (mirrors Init.lua's
--- ADDON_LOADED sweep), so a contributor that depends on later-loaded files -- e.g. the Class module
--- deriving a settings table per spec registered by Modules/Class/<Class>/* -- sees them. Each item
--- records the source file it registered under, for table attribution.
-local deferred = {}
-local function reg(_, item)
-    if item then
-        if item._Publish then pcall(function() item:_Publish() end) end
-        if item._ContributeTables then deferred[#deferred + 1] = { item = item, source = currentSource } end
+    p.currentSource = "framework"
+    -- Contributions are DEFERRED to a single sweep after every file has loaded (mirrors Init.lua's
+    -- ADDON_LOADED sweep), so a contributor that depends on later-loaded files -- e.g. the Class module
+    -- deriving a settings table per spec registered by Modules/Class/<Class>/* -- sees them. Each item
+    -- records the source file it registered under, for table attribution.
+    local deferred = {}
+    p.deferred = deferred
+    local function reg(_, item)
+        if item then
+            if item._Publish then pcall(function() item:_Publish() end) end
+            if item._ContributeTables then deferred[#deferred + 1] = { item = item, source = p.currentSource } end
+        end
+        return item
     end
-    return item
-end
--- ModuleManager keeps a real name map so GetModule resolves a registered module. Module entry files
--- assert on it (e.g. a class submodule requires its parent Class module) and would otherwise error +
--- be skipped headless, hiding their tables. Services/Submodules just publish + contribute.
-local registeredModules = {}
-ns.ServiceManager   = { Register = reg, IsLoaded = function() return true end }
-ns.ModuleManager    = {
-    Register  = function(self, item) if item then registeredModules[item:GetName()] = item end; return reg(self, item) end,
-    GetModule = function(_, name) return registeredModules[name] end,
-}
-ns.SubmoduleManager = { Register = reg }
-ns.LibManager       = {
-    Register      = function(_, item) if item and item._Publish then pcall(function() item:_Publish() end) end; return item end,
-    RegisterValue = function(_, name, value) ns[name] = value; return value end,
-}
--- Dev-gated registrations (Services/Dev, Modules/Dev) defer through this in-game; headless we
--- resolve immediately AS a dev character so their contributed tables stay in the documented schema.
-ns.WhenDevCharKnown = function(fn) fn(true) end
+    -- ModuleManager keeps a real name map so GetModule resolves a registered module. Module entry files
+    -- assert on it (e.g. a class submodule requires its parent Class module) and would otherwise error +
+    -- be skipped headless, hiding their tables. Services/Submodules just publish + contribute.
+    local registeredModules = {}
+    ns.ServiceManager   = { Register = reg, IsLoaded = function() return true end }
+    ns.ModuleManager    = {
+        Register  = function(self, item) if item then registeredModules[item:GetName()] = item end; return reg(self, item) end,
+        GetModule = function(_, name) return registeredModules[name] end,
+    }
+    ns.SubmoduleManager = { Register = reg }
+    ns.LibManager       = {
+        Register      = function(_, item) if item and item._Publish then pcall(function() item:_Publish() end) end; return item end,
+        RegisterValue = function(_, name, value) ns[name] = value; return value end,
+    }
+    -- Dev-gated registrations (Services/Dev, Modules/Dev) defer through this in-game; headless we
+    -- resolve immediately AS a dev character so their contributed tables stay in the documented schema.
+    ns.WhenDevCharKnown = function(fn) fn(true) end
 
--- The framework files, in manifest order (tools/load-order.json), minus what this rig
--- stubs above or doesn't need headless -- so a new Core base class added to the manifest
--- is loaded here automatically. Lib/Helpers.lua rides along: pure helpers (DeepCopy)
--- used across the framework, loaded before any feature file.
-local SKIP_FRAMEWORK = {
-    ["Core/Namespace.lua"] = true,        -- WoW-API bound (dev identity); nothing here needs it
-    ["Core/DB/Types.lua"] = true,         -- loaded with the rest of the DB engine (DBFILES below)
-    ["Lib/Color.lua"] = true,             -- loaded with the rest of Lib/ in the sandbox scan
-    ["UI/Theme.lua"] = true,              -- stubbed above
-    ["Core/DependencyGraph.lua"] = true,  -- manager machinery; managers are stubbed
-    ["Core/Logger.lua"] = true,           -- stubbed above
-    ["Core/Registry.lua"] = true,         -- manager base; managers are stubbed
-    ["Core/ServiceManager.lua"] = true,   -- stubbed above
-    ["Core/ModuleManager.lua"] = true,    -- stubbed above
-    ["Core/SubmoduleManager.lua"] = true, -- stubbed above
-    ["Core/LibManager.lua"] = true,       -- stubbed above
-    ["UI/Widgets/Widgets.lua"] = true,    -- UI; the sandbox stub covers widget access
-}
-local FRAMEWORK = {}
-for _, f in ipairs(loadOrderManifest().pinnedHead) do
-    if not SKIP_FRAMEWORK[f] then FRAMEWORK[#FRAMEWORK + 1] = f end
-end
-FRAMEWORK[#FRAMEWORK + 1] = "Lib/Helpers.lua"
-for _, f in ipairs(FRAMEWORK) do
-    local ok, err = loadInto(f, ns)
-    if not ok then io.stderr:write("gen_schema: framework load failed " .. f .. ": " .. tostring(err) .. "\n"); os.exit(1) end
+    -- The framework files, in manifest order (tools/load-order.json), minus what this rig
+    -- stubs above or doesn't need headless -- so a new Core base class added to the manifest
+    -- is loaded here automatically. Lib/Helpers.lua rides along: pure helpers (DeepCopy)
+    -- used across the framework, loaded before any feature file.
+    local SKIP_FRAMEWORK = {
+        ["Core/Namespace.lua"] = true,        -- WoW-API bound (dev identity); nothing here needs it
+        ["Core/DB/Types.lua"] = true,         -- loaded with the rest of the DB engine (DBFILES below)
+        ["Lib/Color.lua"] = true,             -- loaded with the rest of Lib/ in the sandbox scan
+        ["UI/Theme.lua"] = true,              -- stubbed above
+        ["Core/DependencyGraph.lua"] = true,  -- manager machinery; managers are stubbed
+        ["Core/Logger.lua"] = true,           -- stubbed above
+        ["Core/Registry.lua"] = true,         -- manager base; managers are stubbed
+        ["Core/ServiceManager.lua"] = true,   -- stubbed above
+        ["Core/ModuleManager.lua"] = true,    -- stubbed above
+        ["Core/SubmoduleManager.lua"] = true, -- stubbed above
+        ["Core/LibManager.lua"] = true,       -- stubbed above
+        ["UI/Widgets/Widgets.lua"] = true,    -- UI; the sandbox stub covers widget access
+    }
+    local FRAMEWORK = {}
+    for _, f in ipairs(loadOrderManifest().pinnedHead) do
+        if not SKIP_FRAMEWORK[f] then FRAMEWORK[#FRAMEWORK + 1] = f end
+    end
+    FRAMEWORK[#FRAMEWORK + 1] = "Lib/Helpers.lua"
+    for _, f in ipairs(FRAMEWORK) do
+        local ok, err = loadInto(f, ns)
+        if not ok then io.stderr:write("gen_schema: framework load failed " .. f .. ": " .. tostring(err) .. "\n"); os.exit(1) end
+    end
 end
 
 -- ===========================================================================
 -- 2) the DB engine + central tables
 -- ===========================================================================
-local DBFILES = { "Types", "Schema", "RowStore", "IndexManager", "Constraints", "TriggerManager",
-                  "Database", "Aggregate", "WhereClause", "ColumnResolver", "QueryPlan",
-                  "QueryBuilder", "QueryExecutor", "CoreTables", "DatabaseManager" }
-for _, f in ipairs(DBFILES) do
-    local ok, err = loadInto("Core/DB/" .. f .. ".lua", ns)
-    if not ok then io.stderr:write("gen_schema: DB load failed " .. f .. ": " .. tostring(err) .. "\n"); os.exit(1) end
+function SchemaDocGenerator:_LoadDatabaseEngine()
+    local p = self:_p()
+    local ns = p.ns
+    local DBFILES = { "Types", "Schema", "RowStore", "IndexManager", "Constraints", "TriggerManager",
+                      "Database", "Aggregate", "WhereClause", "ColumnResolver", "QueryPlan",
+                      "QueryBuilder", "QueryExecutor", "CoreTables", "DatabaseManager" }
+    for _, f in ipairs(DBFILES) do
+        local ok, err = loadInto("Core/DB/" .. f .. ".lua", ns)
+        if not ok then io.stderr:write("gen_schema: DB load failed " .. f .. ": " .. tostring(err) .. "\n"); os.exit(1) end
+    end
+
+    local mgr = ns.DatabaseManager
+    p.mgr = mgr
+    -- attribute each table to the file that contributed it (wrap the single add choke point)
+    local source = {}
+    p.source = source
+    local origAdd = mgr._Add
+    mgr._Add = function(self, name, spec) source[name] = p.currentSource; return origAdd(self, name, spec) end
+
+    p.currentSource = "Core/DB/CoreTables.lua"
+    mgr:OnInitialize()   -- seeds the central CoreTables
 end
-
-local mgr = ns.DatabaseManager
--- attribute each table to the file that contributed it (wrap the single add choke point)
-local source = {}
-local origAdd = mgr._Add
-mgr._Add = function(self, name, spec) source[name] = currentSource; return origAdd(self, name, spec) end
-
-currentSource = "Core/DB/CoreTables.lua"
-mgr:OnInitialize()   -- seeds the central CoreTables
 
 -- ===========================================================================
 -- 3) permissive sandbox so feature files load headless, then scan Lib + Services + Modules
 -- ===========================================================================
-local stub
-stub = setmetatable({}, { __index = function() return stub end, __call = function() return stub end,
-                          __concat = function() return "" end })
-setmetatable(ns, { __index = function() return stub end })
-setmetatable(_G, { __index = function() return stub end })
+function SchemaDocGenerator:_ScanFeatureFiles()
+    local p = self:_p()
+    local ns = p.ns
+    local stub
+    stub = setmetatable({}, { __index = function() return stub end, __call = function() return stub end,
+                              __concat = function() return "" end })
+    setmetatable(ns, { __index = function() return stub end })
+    setmetatable(_G, { __index = function() return stub end })
 
--- The Class module derives a settings-table pair per registered spec, but a spec registers only for
--- the player's class (Monk's gate is UnitClass=="MONK"). Headless there is no character, so pin a
--- representative class so those per-spec tables are introspected + documented. Extend this as more
--- classes gain spec modules (only the player's class registers specs at runtime, so this can show one
--- class's spec tables at a time).
-_G.UnitClass = function() return "Monk", "MONK" end
+    -- The Class module derives a settings-table pair per registered spec, but a spec registers only for
+    -- the player's class (Monk's gate is UnitClass=="MONK"). Headless there is no character, so pin a
+    -- representative class so those per-spec tables are introspected + documented. Extend this as more
+    -- classes gain spec modules (only the player's class registers specs at runtime, so this can show one
+    -- class's spec tables at a time).
+    _G.UnitClass = function() return "Monk", "MONK" end
 
-for _, path in ipairs(listLua("Lib")) do currentSource = rel(path); loadInto(path, ns) end
+    for _, path in ipairs(listLua("Lib")) do p.currentSource = rel(path); loadInto(path, ns) end
 
-local scanned, skipped = {}, {}
-for _, dir in ipairs({ "Services", "Modules" }) do
-    for _, path in ipairs(listLua(dir)) do
-        currentSource = rel(path)
-        local ok, err = loadInto(path, ns)
-        if ok then scanned[#scanned + 1] = currentSource else skipped[#skipped + 1] = { currentSource, err } end
+    local scanned, skipped = {}, {}
+    p.scanned, p.skipped = scanned, skipped
+    for _, dir in ipairs({ "Services", "Modules" }) do
+        for _, path in ipairs(listLua(dir)) do
+            p.currentSource = rel(path)
+            local ok, err = loadInto(path, ns)
+            if ok then scanned[#scanned + 1] = p.currentSource else skipped[#skipped + 1] = { p.currentSource, err } end
+        end
     end
-end
 
--- Now that every file has loaded, contribute each owner's tables (under its own source), so
--- contributors that depend on later-loaded files (the Class module's per-spec settings tables) are seen.
-for _, d in ipairs(deferred) do
-    currentSource = d.source
-    pcall(function() d.item:_ContributeTables() end)
+    -- Now that every file has loaded, contribute each owner's tables (under its own source), so
+    -- contributors that depend on later-loaded files (the Class module's per-spec settings tables) are seen.
+    for _, d in ipairs(p.deferred) do
+        p.currentSource = d.source
+        pcall(function() d.item:_ContributeTables() end)
+    end
 end
 
 -- ===========================================================================
 -- 4) build the real shared database and introspect its schema
 -- ===========================================================================
-ns.SavedVars = { IsLoaded = function() return true end, DataSlot = function() return {} end }
-local ok, err = pcall(function() mgr:Build() end)
-if not ok then io.stderr:write("gen_schema: build failed: " .. tostring(err) .. "\n"); os.exit(1) end
-local schema = mgr:Shared():Schema()
+function SchemaDocGenerator:_BuildSchema()
+    local p = self:_p()
+    local ns = p.ns
+    local mgr = p.mgr
+    ns.SavedVars = { IsLoaded = function() return true end, DataSlot = function() return {} end }
+    local ok, err = pcall(function() mgr:Build() end)
+    if not ok then io.stderr:write("gen_schema: build failed: " .. tostring(err) .. "\n"); os.exit(1) end
+    p.schema = mgr:Shared():Schema()
+end
 
 -- ===========================================================================
 -- 5) render markdown
 -- ===========================================================================
-local b = {}
-local function w(s) b[#b + 1] = s end
+function SchemaDocGenerator:_RenderMarkdown()
+    local p = self:_p()
+    local schema = p.schema
+    local source = p.source
+    local skipped = p.skipped
+    local b = {}
+    local function w(s) b[#b + 1] = s end
 
-w("# HagAIO Database Schema\n\n")
-w("_Auto-generated by `tools/gen_schema.lua` on deploy — do not edit by hand._\n\n")
-w("The addon uses **one shared database**. Every service or module contributes the tables it needs; ")
-w("common reference tables are defined centrally in `Core/DB/CoreTables.lua`. Each table declares a **scope**:\n\n")
-w("- **local** — in-memory, rebuilt from code each session (reference data; never persisted)\n")
-w("- **global** — account-wide saved variables (shared across characters)\n")
-w("- **char** — this character's saved variables\n")
+    w("# HagAIO Database Schema\n\n")
+    w("_Auto-generated by `tools/gen_schema.lua` on deploy — do not edit by hand._\n\n")
+    w("The addon uses **one shared database**. Every service or module contributes the tables it needs; ")
+    w("common reference tables are defined centrally in `Core/DB/CoreTables.lua`. Each table declares a **scope**:\n\n")
+    w("- **local** — in-memory, rebuilt from code each session (reference data; never persisted)\n")
+    w("- **global** — account-wide saved variables (shared across characters)\n")
+    w("- **char** — this character's saved variables\n")
 
--- Build the Mermaid ER diagram once: every table as an entity (+PK/FK), one edge per foreign key.
--- Reused for the inline GitHub block below AND the standalone interactive diagram/DB/index.html.
-local mer = { "erDiagram\n" }
-local function mw(s) mer[#mer + 1] = s end
-for _, tname in ipairs(schema:TableNames()) do
-    for _, fk in ipairs(schema:Table(tname):ForeignKeys()) do
-        mw(("    %s ||--o{ %s : \"%s\"\n"):format(fk.table, tname, fk.column))   -- parent has-many child
-    end
-end
-for _, tname in ipairs(schema:TableNames()) do
-    local t = schema:Table(tname)
-    local pkset, fkset = {}, {}
-    for _, c in ipairs(t:PrimaryKey()) do pkset[c] = true end
-    for _, fk in ipairs(t:ForeignKeys()) do fkset[fk.column] = true end
-    mw(("    %s {\n"):format(tname))
-    for _, col in ipairs(t:Columns()) do
-        local n = col:Name()
-        local key = pkset[n] and "PK" or (fkset[n] and "FK" or "")
-        mw(("        %s %s%s\n"):format(col:Type(), n, key ~= "" and (" " .. key) or ""))
-    end
-    mw("    }\n")
-end
-local mermaid = table.concat(mer)
-
-w("\n## Entity-relationship diagram\n\n")
-w("Open **[diagram/DB/index.html](diagram/DB/index.html)** in a browser for an interactive (zoom/pan) view.\n")
-
-w("\n## Tables\n\n")
-w("| Table | Scope | Columns | Primary key | Defined in |\n|---|---|---|---|---|\n")
-for _, tname in ipairs(schema:TableNames()) do
-    local t = schema:Table(tname)
-    local pk = table.concat(t:PrimaryKey(), ", ")
-    w(("| [`%s`](#%s) | `%s` | %d | %s | `%s` |\n")
-        :format(tname, tname, t:Scope(), #t:ColumnNames(), pk ~= "" and pk or "—", source[tname] or "—"))
-end
-
-for _, tname in ipairs(schema:TableNames()) do
-    local t = schema:Table(tname)
-    local fkByCol = {}
-    for _, fk in ipairs(t:ForeignKeys()) do fkByCol[fk.column] = fk end
-    local pkset = {}; for _, c in ipairs(t:PrimaryKey()) do pkset[c] = true end
-    local uniqSingle, uniqComposite = {}, {}
-    for _, u in ipairs(t:Uniques()) do
-        if #u == 1 then uniqSingle[u[1]] = true else uniqComposite[#uniqComposite + 1] = u end
-    end
-
-    w(("\n---\n\n### `%s`  ·  scope `%s`\n\n"):format(tname, t:Scope()))
-    if source[tname] then w(("*Defined in `%s`.*\n\n"):format(source[tname])) end
-    w("| Column | Type | Null | Key | Default | References |\n|---|---|---|---|---|---|\n")
-    for _, col in ipairs(t:Columns()) do
-        local name = col:Name()
-        local keys = {}
-        if pkset[name]       then keys[#keys + 1] = col:IsAuto() and "PK auto" or "PK" end
-        if uniqSingle[name]  then keys[#keys + 1] = "unique" end
-        local refs, fk = "", fkByCol[name]
-        if fk then
-            local od = (fk.onDelete and fk.onDelete ~= "no_action") and (" on delete " .. fk.onDelete) or ""
-            refs = ("→ `%s.%s`%s"):format(fk.table, fk.refColumn, od)
+    -- Build the Mermaid ER diagram once: every table as an entity (+PK/FK), one edge per foreign key.
+    -- Reused for the inline GitHub block below AND the standalone interactive diagram/DB/index.html.
+    local mer = { "erDiagram\n" }
+    local function mw(s) mer[#mer + 1] = s end
+    for _, tname in ipairs(schema:TableNames()) do
+        for _, fk in ipairs(schema:Table(tname):ForeignKeys()) do
+            mw(("    %s ||--o{ %s : \"%s\"\n"):format(fk.table, tname, fk.column))   -- parent has-many child
         end
-        local def = col:HasDefault() and ("`" .. tostring(col:Default()) .. "`") or ""
-        w(("| `%s` | %s | %s | %s | %s | %s |\n")
-            :format(name, col:Type(), col:IsNullable() and "yes" or "no", table.concat(keys, ", "), def, refs))
     end
-    if #t:PrimaryKey() > 1 then w(("\n**Primary key:** (%s)\n"):format(table.concat(t:PrimaryKey(), ", "))) end
-    for _, u in ipairs(uniqComposite) do w(("\n**Unique:** (%s)\n"):format(table.concat(u, ", "))) end
-    if #t:Indices() > 0 then
-        local parts = {}
-        for _, ix in ipairs(t:Indices()) do parts[#parts + 1] = "(" .. table.concat(ix.columns, ", ") .. ")" end
-        w(("\n**Indexes:** %s\n"):format(table.concat(parts, ", ")))
+    for _, tname in ipairs(schema:TableNames()) do
+        local t = schema:Table(tname)
+        local pkset, fkset = {}, {}
+        for _, c in ipairs(t:PrimaryKey()) do pkset[c] = true end
+        for _, fk in ipairs(t:ForeignKeys()) do fkset[fk.column] = true end
+        mw(("    %s {\n"):format(tname))
+        for _, col in ipairs(t:Columns()) do
+            local n = col:Name()
+            local key = pkset[n] and "PK" or (fkset[n] and "FK" or "")
+            mw(("        %s %s%s\n"):format(col:Type(), n, key ~= "" and (" " .. key) or ""))
+        end
+        mw("    }\n")
     end
-end
+    local mermaid = table.concat(mer)
+    p.mermaid = mermaid
 
-if #skipped > 0 then
-    w("\n---\n\n_These files could not be introspected headless and were skipped (their tables, if any, are not shown):_\n\n")
-    table.sort(skipped, function(a, b) return a[1] < b[1] end)
-    for _, s in ipairs(skipped) do w(("- `%s`\n"):format(s[1])) end
-end
+    w("\n## Entity-relationship diagram\n\n")
+    w("Open **[diagram/DB/index.html](diagram/DB/index.html)** in a browser for an interactive (zoom/pan) view.\n")
 
-local out = assert(io.open("DATABASE_SCHEMA.md", "w"))
-out:write(table.concat(b))
-out:close()
+    w("\n## Tables\n\n")
+    w("| Table | Scope | Columns | Primary key | Defined in |\n|---|---|---|---|---|\n")
+    for _, tname in ipairs(schema:TableNames()) do
+        local t = schema:Table(tname)
+        local pk = table.concat(t:PrimaryKey(), ", ")
+        w(("| [`%s`](#%s) | `%s` | %d | %s | `%s` |\n")
+            :format(tname, tname, t:Scope(), #t:ColumnNames(), pk ~= "" and pk or "—", source[tname] or "—"))
+    end
+
+    for _, tname in ipairs(schema:TableNames()) do
+        local t = schema:Table(tname)
+        local fkByCol = {}
+        for _, fk in ipairs(t:ForeignKeys()) do fkByCol[fk.column] = fk end
+        local pkset = {}; for _, c in ipairs(t:PrimaryKey()) do pkset[c] = true end
+        local uniqSingle, uniqComposite = {}, {}
+        for _, u in ipairs(t:Uniques()) do
+            if #u == 1 then uniqSingle[u[1]] = true else uniqComposite[#uniqComposite + 1] = u end
+        end
+
+        w(("\n---\n\n### `%s`  ·  scope `%s`\n\n"):format(tname, t:Scope()))
+        if source[tname] then w(("*Defined in `%s`.*\n\n"):format(source[tname])) end
+        w("| Column | Type | Null | Key | Default | References |\n|---|---|---|---|---|---|\n")
+        for _, col in ipairs(t:Columns()) do
+            local name = col:Name()
+            local keys = {}
+            if pkset[name]       then keys[#keys + 1] = col:IsAuto() and "PK auto" or "PK" end
+            if uniqSingle[name]  then keys[#keys + 1] = "unique" end
+            local refs, fk = "", fkByCol[name]
+            if fk then
+                local od = (fk.onDelete and fk.onDelete ~= "no_action") and (" on delete " .. fk.onDelete) or ""
+                refs = ("→ `%s.%s`%s"):format(fk.table, fk.refColumn, od)
+            end
+            local def = col:HasDefault() and ("`" .. tostring(col:Default()) .. "`") or ""
+            w(("| `%s` | %s | %s | %s | %s | %s |\n")
+                :format(name, col:Type(), col:IsNullable() and "yes" or "no", table.concat(keys, ", "), def, refs))
+        end
+        if #t:PrimaryKey() > 1 then w(("\n**Primary key:** (%s)\n"):format(table.concat(t:PrimaryKey(), ", "))) end
+        for _, u in ipairs(uniqComposite) do w(("\n**Unique:** (%s)\n"):format(table.concat(u, ", "))) end
+        if #t:Indices() > 0 then
+            local parts = {}
+            for _, ix in ipairs(t:Indices()) do parts[#parts + 1] = "(" .. table.concat(ix.columns, ", ") .. ")" end
+            w(("\n**Indexes:** %s\n"):format(table.concat(parts, ", ")))
+        end
+    end
+
+    if #skipped > 0 then
+        w("\n---\n\n_These files could not be introspected headless and were skipped (their tables, if any, are not shown):_\n\n")
+        table.sort(skipped, function(a, b) return a[1] < b[1] end)
+        for _, s in ipairs(skipped) do w(("- `%s`\n"):format(s[1])) end
+    end
+
+    local out = assert(io.open("DATABASE_SCHEMA.md", "w"))
+    out:write(table.concat(b))
+    out:close()
+end
 
 -- ===========================================================================
 -- 6) standalone interactive diagram: diagram/DB/index.html (self-contained, renders the same
 --    Mermaid ER diagram via the Mermaid CDN, with dark theme + zoom/pan). Open it in a browser.
 -- ===========================================================================
-os.execute(WIN and 'if not exist "diagram\\DB" mkdir "diagram\\DB"' or 'mkdir -p diagram/DB')
-local HTML = [[<!DOCTYPE html>
+function SchemaDocGenerator:_RenderDiagram()
+    local p = self:_p()
+    local mermaid = p.mermaid
+    os.execute(WIN and 'if not exist "diagram\\DB" mkdir "diagram\\DB"' or 'mkdir -p diagram/DB')
+    local HTML = [[<!DOCTYPE html>
 <html lang="en">
 <head>
 <meta charset="utf-8">
@@ -337,9 +391,28 @@ local HTML = [[<!DOCTYPE html>
 </body>
 </html>
 ]]
-local hf = assert(io.open("diagram/DB/index.html", "w"))
-hf:write((HTML:gsub("__MERMAID__", function() return mermaid end)))   -- function form: no %-escaping of the body
-hf:close()
+    local hf = assert(io.open("diagram/DB/index.html", "w"))
+    hf:write((HTML:gsub("__MERMAID__", function() return mermaid end)))   -- function form: no %-escaping of the body
+    hf:close()
+end
 
-print(("gen_schema: wrote DATABASE_SCHEMA.md + diagram/DB/index.html (%d tables; %d files scanned%s)")
-    :format(#schema:TableNames(), #scanned, #skipped > 0 and (", " .. #skipped .. " skipped") or ""))
+function SchemaDocGenerator:_Report()
+    local p = self:_p()
+    local schema = p.schema
+    local scanned, skipped = p.scanned, p.skipped
+    print(("gen_schema: wrote DATABASE_SCHEMA.md + diagram/DB/index.html (%d tables; %d files scanned%s)")
+        :format(#schema:TableNames(), #scanned, #skipped > 0 and (", " .. #skipped .. " skipped") or ""))
+end
+
+-- Sequence the stages -- the whole pipeline, in order (symmetry with Core/Init.lua's Initializer:Run()).
+function SchemaDocGenerator:Run()
+    self:_LoadFramework()
+    self:_LoadDatabaseEngine()
+    self:_ScanFeatureFiles()
+    self:_BuildSchema()
+    self:_RenderMarkdown()
+    self:_RenderDiagram()
+    self:_Report()
+end
+
+SchemaDocGenerator:New():Run()

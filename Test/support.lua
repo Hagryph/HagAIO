@@ -105,6 +105,7 @@ function M.newNs()
     local channel = { Debug = noop, Info = noop, Success = noop, Warn = noop, Error = noop }
     ns.Logger = { Core = function() return channel end, Register = function() return channel end }
     ns.Log = { Print = noop, Warn = noop, Error = noop }  -- static print helpers (Namespace.lua)
+    ns.Meta = { name = "HagAIO", version = "0.0.0", ICON = "Interface\\AddOns\\HagAIO\\Media\\icon" }  -- frozen addon metadata (Namespace.lua)
     -- The pinned head in manifest order: OOP primitives, then Loggable before Component
     -- before Service (Component and Service both inherit ns.Loggable), then the Lib base.
     for _, f in ipairs(M.loadOrder().pinnedHead) do
