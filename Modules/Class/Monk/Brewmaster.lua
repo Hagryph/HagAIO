@@ -8,13 +8,13 @@ local Monk = ns.Monk   -- shared Monk surface (constants + RegisterSpec + Base),
 -- base behaviour via MonkBrewmaster.super, not by name. Loads after Base.lua, which set
 -- ns.Monk.Base.
 
-local MonkBrewmaster = Class.new("MonkBrewmaster", ns.Monk.Base)
+local MonkBrewmaster = Class.new("MonkBrewmaster", ns.Monk.Base())
 MonkBrewmaster.settings = {
     { type = "header", text = "Expel Harm" },
     { type = "toggle", key = "expelHarm", label = "Show heal bar", default = true,
       desc = "A bar that fills from your current health to where Expel Harm would heal you, including Gift of the Ox orbs." },
-    { type = "color", key = "expelColor", label = "Ready colour", default = Monk.EXPEL_READY_COLOR, dependsOn = "expelHarm" },
-    { type = "color", key = "expelInactiveColor", label = "On-cooldown colour", default = Monk.EXPEL_COOLDOWN_COLOR, dependsOn = "expelHarm" },
+    { type = "color", key = "expelColor", label = "Ready colour", default = Monk.ExpelReadyColor(), dependsOn = "expelHarm" },
+    { type = "color", key = "expelInactiveColor", label = "On-cooldown colour", default = Monk.ExpelCooldownColor(), dependsOn = "expelHarm" },
     { type = "header", text = "Tiger Palm" },
     { type = "toggle", key = "tiger", label = "Show missing-energy bar", default = true,
       desc = "A bar showing how much energy you still need to cast Tiger Palm and Keg Smash. It shrinks as you regenerate and disappears once you can afford both." },

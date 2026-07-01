@@ -12,14 +12,14 @@ local Monk = ns.Monk   -- shared Monk surface (constants + RegisterSpec), set in
 -- service/module-instance dependency.
 
 local MonkBase = Class.new("MonkBase", ns.ClassSpec)
-ns.Monk.Base = MonkBase   -- so Brewmaster.lua (loads after) can extend it
+ns.Monk.SetBase(MonkBase)   -- so Brewmaster.lua (loads after) can extend it
 
 MonkBase.settings = {
     { type = "header", text = "Expel Harm" },
     { type = "toggle", key = "expelHarm", label = "Show heal-threshold marker", default = true,
       desc = "A line on your health bar marking where Expel Harm would heal you to full." },
-    { type = "color", key = "expelColor", label = "Ready colour", default = Monk.EXPEL_READY_COLOR, dependsOn = "expelHarm" },
-    { type = "color", key = "expelInactiveColor", label = "On-cooldown colour", default = Monk.EXPEL_COOLDOWN_COLOR, dependsOn = "expelHarm" },
+    { type = "color", key = "expelColor", label = "Ready colour", default = Monk.ExpelReadyColor(), dependsOn = "expelHarm" },
+    { type = "color", key = "expelInactiveColor", label = "On-cooldown colour", default = Monk.ExpelCooldownColor(), dependsOn = "expelHarm" },
 }
 
 function MonkBase:OnSettingChanged()
@@ -65,7 +65,7 @@ function MonkBase:Load()
     p.expelActive = true
     -- recolour the marker (ready <-> on-cooldown) via the secret-safe Cooldowns
     -- service (cast + non-secret booleans + base-cooldown timer).
-    p.expelWatch = ns.Cooldowns:Watch(Monk.EXPEL_HARM, function(onCD)
+    p.expelWatch = ns.Cooldowns:Watch(Monk.ExpelHarm(), function(onCD)
         p.onCooldown = onCD
         host:_ScheduleUpdate()
     end)

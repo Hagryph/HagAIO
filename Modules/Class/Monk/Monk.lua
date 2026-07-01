@@ -124,20 +124,34 @@ ns.SubmoduleManager:Register(ns.Submodule:New("Monk", {
     condition = isMonk,
 }))
 
--- Shared surface for the per-spec files: the few constants their settings/Load need, plus
--- RegisterSpec. A spec file defines its ns.ClassSpec subclass, sets ns.Monk.<Name> so a
--- deeper spec can extend it, then calls ns.Monk.RegisterSpec to wire it as a submodule.
-ns.Monk = {
-    EXPEL_HARM           = Spell.EXPEL_HARM,
-    EXPEL_READY_COLOR    = EXPEL_READY_COLOR,
-    EXPEL_COOLDOWN_COLOR = EXPEL_COOLDOWN_COLOR,
-}
+-- Shared surface for the per-spec files, modelled as a proper class (type 1) with no instances: its
+-- opts.statics hold the few constants a spec's settings/Load need PLUS the base-spec class, all reached
+-- through accessors, and RegisterSpec is a static (dot) method. A spec file defines its ns.ClassSpec
+-- subclass, registers THE base via ns.Monk.SetBase (or extends ns.Monk.Base()), then calls
+-- ns.Monk.RegisterSpec to wire it as a submodule.
+local Monk = ns.Class.new("Monk", nil, {
+    statics = {
+        expelHarm          = Spell.EXPEL_HARM,
+        expelReadyColor    = EXPEL_READY_COLOR,
+        expelCooldownColor = EXPEL_COOLDOWN_COLOR,
+        -- `base` (the base spec class) starts nil: Base.lua sets it via SetBase, Brewmaster reads Base().
+    },
+})
+local S = ns.Class.statics(Monk)   -- the private static store (constants + the base-spec ref)
+
+-- Constant accessors (the values behind opts.statics).
+function Monk.ExpelHarm()          return S.expelHarm end
+function Monk.ExpelReadyColor()    return S.expelReadyColor end
+function Monk.ExpelCooldownColor() return S.expelCooldownColor end
+-- The base spec class: Base.lua registers it, a deeper spec (Brewmaster) extends Base().
+function Monk.SetBase(cls) S.base = cls end
+function Monk.Base()       return S.base end
 
 -- Wire a spec class as a submodule under Monk. SpecClass is an ns.ClassSpec subclass; one
 -- instance (bound to the Class module host) drives its load/unload. specKey is what
 -- CurrentSpecKey() returns for this spec ("none" or a spec index). serviceDeps are the
 -- services the spec uses; SettingsWindow (the shared settings refresh) is prepended.
-function ns.Monk.RegisterSpec(name, SpecClass, specKey, serviceDeps)
+function Monk.RegisterSpec(name, SpecClass, specKey, serviceDeps)
     local spec = SpecClass:New(classMod)
     -- Make the spec resolvable for the settings page even while the Class module is disabled
     -- (so spec options show without enabling first). Only on Monk chars, so its spec indices
@@ -163,6 +177,8 @@ function ns.Monk.RegisterSpec(name, SpecClass, specKey, serviceDeps)
         end,
     }))
 end
+
+ns.Monk = Monk   -- publish the surface the per-spec files build on
 
 -- ===========================================================================
 -- Monk behaviour (methods on the shared ClassModule)
