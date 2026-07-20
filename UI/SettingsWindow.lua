@@ -545,15 +545,10 @@ function SettingsWindow:_RenderSchema(content, host, width, y)
                 -- them and leave enough air that their labels don't collide.
                 y = y - 10
             elseif groupOpen then
-                -- A new top-level option starts a new group. The hairline plus
-                -- padding makes adjacent toggle+subsetting clusters scannable.
-                y = y - 7
-                local divider = W.Fill:New(content, { layer = "ARTWORK" })
-                divider:SetPoint("TOPLEFT", 10, y)
-                divider:SetPoint("TOPRIGHT", content, "TOPRIGHT", -10, y)
-                divider:SetHeight(1)
-                divider:SetColorTexture(Theme.Unpack("border"))
-                y = y - 15
+                -- Schema dependencies give us hierarchy, but not enough semantic
+                -- information to place dividers reliably. Separate top-level
+                -- option groups with whitespace; dependents remain visibly nested.
+                y = y - 20
             end
             if not s.dependsOn then groupOpen = true end
         elseif s.type == ns.SettingType.HEADER then
