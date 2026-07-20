@@ -67,4 +67,17 @@ describe("Class module spec settings", function()
         mod:_RefreshCurrentSpec()
         assert.are.equal(1, mod:CurrentSpecKey())
     end)
+
+    it("publishes class and spec through the shared player cache", function()
+        local ns, mod = setup()
+        _G.GetSpecialization = function() return 1 end
+        _G.GetNumSpecializations = function() return 3 end
+
+        ns.Player.Refresh()
+        assert.are.equal("MONK", ns.Player.class)
+        assert.are.equal(1, ns.Player.spec)
+        assert.are.equal(ns.Player.spec, mod:CurrentSpecKey())
+        assert.is_nil(mod:_p().currentSpec)
+        assert.is_nil(mod:_p().class)
+    end)
 end)

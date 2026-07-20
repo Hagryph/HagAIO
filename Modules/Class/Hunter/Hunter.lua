@@ -25,7 +25,9 @@ end
 
 local classMod = assert(ns.ModuleManager:GetModule("Class"),
     "Hunter submodule requires the Class module (load Modules/Class.lua first)")
-local function isHunter() return (select(2, UnitClass("player"))) == "HUNTER" end
+local function isHunter()
+    return (ns.Player.class or ns.Player.RefreshClass()) == "HUNTER"
+end
 
 ns.SubmoduleManager:Register(ns.Submodule:New("Hunter", {
     parent = { module = "Class" },

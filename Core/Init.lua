@@ -55,6 +55,9 @@ function Initializer:Run()
 
     bus:On("ADDON_LOADED", function(_, loaded)
         if loaded ~= addonName then return end
+        -- Resolve the shared player cache before database owners derive any
+        -- class/spec-bucketed table names.
+        ns.Player.Refresh()
         -- Soft dev-identity flush FIRST: a dev surface whose registration was deferred at
         -- file load (identity not ready) registers now, BEFORE the table-contribution
         -- sweep + Build below -- so its tables still make the schema.
@@ -86,6 +89,7 @@ function Initializer:Run()
     end)
 
     bus:On("PLAYER_LOGIN", function()
+        ns.Player.Refresh()
         -- Forced dev-identity flush: the player unit is guaranteed now, so any deferred
         -- dev registration that ADDON_LOADED couldn't resolve lands here -- BEFORE
         -- StartAll, so it starts with everything else (late registration also works).
@@ -95,6 +99,13 @@ function Initializer:Run()
         -- (the shared database was already built on ADDON_LOADED, before any owner reads it)
         -- The Compartment / MinimapIcon services apply their own saved state on
         -- PLAYER_LOGIN (they subscribe it themselves) -- Init doesn't manage them.
+    end)
+
+    -- The class cannot change during a character session; only refresh the shared
+    -- specialization value when this character changes spec.
+    bus:On("PLAYER_SPECIALIZATION_CHANGED", function(_, unit)
+        if unit and unit ~= "player" then return end
+        ns.Player.RefreshSpec()
     end)
 
     -- PLAYER_LOGOUT fires on /reload and full exit. Settings now persist immediately to the database

@@ -28,35 +28,22 @@ ClassSpec.Unload = Class.abstract("Unload")
 function ClassSpec:OnSettingChanged() end   -- optional; a spec overrides to react
 ns.ClassSpec = ClassSpec
 
--- "none" when the player has no specialisation, else the spec index (1-4). A spec-less
--- character returns an out-of-range "initial" index, so gate on the in-range index only.
-local function readCurrentSpecKey()
-    local idx = GetSpecialization and GetSpecialization()
-    if not idx then return "none" end
-    local num = (GetNumSpecializations and GetNumSpecializations()) or 0
-    if idx < 1 or idx > num then return "none" end
-    return idx
-end
-
 -- The class is immutable for the lifetime of the character session, while the
--- specialisation changes only on login / PLAYER_SPECIALIZATION_CHANGED. Keep the
--- resolved key instead of repeatedly querying the game API from settings and
--- submodule-condition paths.
+-- specialisation changes only on login / PLAYER_SPECIALIZATION_CHANGED. Both are
+-- cached globally on ns.Player so every feature can consume the same values.
 function ClassModule:CurrentSpecKey()
-    return self:_p().currentSpec or "none"
+    return ns.Player.spec
 end
 
 function ClassModule:_RefreshCurrentSpec()
-    self:_p().currentSpec = readCurrentSpecKey()
+    return ns.Player.RefreshSpec()
 end
 
 -- ---- lifecycle ------------------------------------------------------------
 function ClassModule:OnInitialize()
-    local p = self:_p()
-    local _, classToken = UnitClass("player")
-    p.class = p.class or classToken   -- keep the token _ContributeTables used, so namespaces match the tables
+    ns.Player.RefreshClass()
     self:_RefreshCurrentSpec()
-    p.description = "Helpers tailored to your class and specialisation."
+    self:_p().description = "Helpers tailored to your class and specialisation."
     self:_BuildSettings()
 
     -- Persistent session subscription: Class may be disabled, but its settings
@@ -140,8 +127,7 @@ end
 -- GetSetting/SetSetting (ns.Component) read and write; the namespace's code defaults are the
 -- active spec's own settings defaults, so the cascade resolves them without manual seeding.
 function ClassModule:_SettingsNamespace()
-    local p = self:_p()
-    return "module_Class#" .. (p.class or "?") .. ":" .. tostring(self:CurrentSpecKey())
+    return "module_Class#" .. (ns.Player.class or "?") .. ":" .. tostring(self:CurrentSpecKey())
 end
 
 -- Override the ns.DatabaseOwner hook (NOT _ContributeTables): build a settings-table pair (override
@@ -150,13 +136,11 @@ end
 -- collected tables, so renaming the latch can't silently break a hand-copied guard. Schemas are
 -- known at file load (the spec classes' `settings`); only the current character's class specs
 -- register, so a profile's per-spec columns never collide across classes. Runs in the ADDON_LOADED
--- build sweep, before OnInitialize, so the class token is fixed here rather than read from p.class.
+-- build sweep, before OnInitialize, so it resolves the shared class cache here as well.
 function ClassModule:_CollectTables()
-    local p = self:_p()
-    p.class = p.class or (select(2, UnitClass("player")))   -- fix the class token now; OnInitialize reuses it
-    local class = p.class or "?"
+    local class = ns.Player.RefreshClass() or "?"
     local tables = {}
-    for specKey, spec in pairs(p.specs or {}) do
+    for specKey, spec in pairs(self:_p().specs or {}) do
         local nsKey = "module_Class#" .. class .. ":" .. tostring(specKey)
         ns.SettingsTables:Register(nsKey, spec:GetSettings())
         for tn, tspec in pairs(ns.SettingsTables:DeriveTables(nsKey, spec:GetSettings())) do tables[tn] = tspec end

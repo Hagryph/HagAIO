@@ -117,7 +117,9 @@ end
 -- submodules under it via ns.Monk.RegisterSpec.
 local classMod = assert(ns.ModuleManager:GetModule("Class"),
     "Monk submodule requires the Class module (load Modules/Class.lua first)")
-local function isMonk() return (select(2, UnitClass("player"))) == "MONK" end
+local function isMonk()
+    return (ns.Player.class or ns.Player.RefreshClass()) == "MONK"
+end
 
 ns.SubmoduleManager:Register(ns.Submodule:New("Monk", {
     parent = { module = "Class" },        -- Class is the parent (no separate dependency needed)

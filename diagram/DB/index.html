@@ -47,8 +47,6 @@
     zone ||--o{ flight_master : "zone"
     flight_master ||--o{ flight_route : "src"
     flight_master ||--o{ flight_route : "dst"
-    profile ||--o{ p_module_Class_MONK_1 : "profile"
-    profile ||--o{ p_module_Class_MONK_none : "profile"
     profile ||--o{ p_module_Dashboard : "profile"
     profile ||--o{ p_module_Dev : "profile"
     profile ||--o{ p_module_Questing : "profile"
@@ -183,31 +181,6 @@
         text name PK
         boolean enabled
     }
-    o_module_Class_MONK_1 {
-        integer id PK
-        boolean expelHarm
-        number expelColor_r
-        number expelColor_g
-        number expelColor_b
-        number expelInactiveColor_r
-        number expelInactiveColor_g
-        number expelInactiveColor_b
-        boolean tiger
-        number tigerColor_r
-        number tigerColor_g
-        number tigerColor_b
-        boolean aoeHelper
-    }
-    o_module_Class_MONK_none {
-        integer id PK
-        boolean expelHarm
-        number expelColor_r
-        number expelColor_g
-        number expelColor_b
-        number expelInactiveColor_r
-        number expelInactiveColor_g
-        number expelInactiveColor_b
-    }
     o_module_Dashboard {
         integer id PK
         boolean show_mplus
@@ -253,31 +226,6 @@
     o_submodule_SellJunk {
         integer id PK
         text sellJunk
-    }
-    p_module_Class_MONK_1 {
-        text profile PK
-        boolean expelHarm
-        number expelColor_r
-        number expelColor_g
-        number expelColor_b
-        number expelInactiveColor_r
-        number expelInactiveColor_g
-        number expelInactiveColor_b
-        boolean tiger
-        number tigerColor_r
-        number tigerColor_g
-        number tigerColor_b
-        boolean aoeHelper
-    }
-    p_module_Class_MONK_none {
-        text profile PK
-        boolean expelHarm
-        number expelColor_r
-        number expelColor_g
-        number expelColor_b
-        number expelInactiveColor_r
-        number expelInactiveColor_g
-        number expelInactiveColor_b
     }
     p_module_Dashboard {
         text profile PK

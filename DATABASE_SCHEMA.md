@@ -37,16 +37,12 @@ Open **[diagram/DB/index.html](diagram/DB/index.html)** in a browser for an inte
 | [`logger`](#logger) | `global` | 3 | id | `Core/DB/CoreTables.lua` |
 | [`minimap`](#minimap) | `global` | 3 | id | `Services/MinimapIcon.lua` |
 | [`module_enable`](#module_enable) | `char` | 2 | name | `Core/DB/CoreTables.lua` |
-| [`o_module_Class_MONK_1`](#o_module_Class_MONK_1) | `char` | 13 | id | `Modules/Class.lua` |
-| [`o_module_Class_MONK_none`](#o_module_Class_MONK_none) | `char` | 8 | id | `Modules/Class.lua` |
 | [`o_module_Dashboard`](#o_module_Dashboard) | `char` | 5 | id | `Modules/Dashboard.lua` |
 | [`o_module_Dev`](#o_module_Dev) | `char` | 2 | id | `Modules/Dev.lua` |
 | [`o_module_Questing`](#o_module_Questing) | `char` | 10 | id | `Modules/Questing.lua` |
 | [`o_module_UnitFrames`](#o_module_UnitFrames) | `char` | 12 | id | `Modules/UnitFrames.lua` |
 | [`o_submodule_FlightTimers`](#o_submodule_FlightTimers) | `char` | 3 | id | `Modules/Misc/FlightTimers.lua` |
 | [`o_submodule_SellJunk`](#o_submodule_SellJunk) | `char` | 2 | id | `Modules/Misc/SellJunk.lua` |
-| [`p_module_Class_MONK_1`](#p_module_Class_MONK_1) | `global` | 13 | profile | `Modules/Class.lua` |
-| [`p_module_Class_MONK_none`](#p_module_Class_MONK_none) | `global` | 8 | profile | `Modules/Class.lua` |
 | [`p_module_Dashboard`](#p_module_Dashboard) | `global` | 5 | profile | `Modules/Dashboard.lua` |
 | [`p_module_Dev`](#p_module_Dev) | `global` | 2 | profile | `Modules/Dev.lua` |
 | [`p_module_Questing`](#p_module_Questing) | `global` | 10 | profile | `Modules/Questing.lua` |
@@ -348,45 +344,6 @@ Open **[diagram/DB/index.html](diagram/DB/index.html)** in a browser for an inte
 
 ---
 
-### `o_module_Class_MONK_1`  ·  scope `char`
-
-*Defined in `Modules/Class.lua`.*
-
-| Column | Type | Null | Key | Default | References |
-|---|---|---|---|---|---|
-| `id` | integer | no | PK |  |  |
-| `expelHarm` | boolean | yes |  |  |  |
-| `expelColor_r` | number | yes |  |  |  |
-| `expelColor_g` | number | yes |  |  |  |
-| `expelColor_b` | number | yes |  |  |  |
-| `expelInactiveColor_r` | number | yes |  |  |  |
-| `expelInactiveColor_g` | number | yes |  |  |  |
-| `expelInactiveColor_b` | number | yes |  |  |  |
-| `tiger` | boolean | yes |  |  |  |
-| `tigerColor_r` | number | yes |  |  |  |
-| `tigerColor_g` | number | yes |  |  |  |
-| `tigerColor_b` | number | yes |  |  |  |
-| `aoeHelper` | boolean | yes |  |  |  |
-
----
-
-### `o_module_Class_MONK_none`  ·  scope `char`
-
-*Defined in `Modules/Class.lua`.*
-
-| Column | Type | Null | Key | Default | References |
-|---|---|---|---|---|---|
-| `id` | integer | no | PK |  |  |
-| `expelHarm` | boolean | yes |  |  |  |
-| `expelColor_r` | number | yes |  |  |  |
-| `expelColor_g` | number | yes |  |  |  |
-| `expelColor_b` | number | yes |  |  |  |
-| `expelInactiveColor_r` | number | yes |  |  |  |
-| `expelInactiveColor_g` | number | yes |  |  |  |
-| `expelInactiveColor_b` | number | yes |  |  |  |
-
----
-
 ### `o_module_Dashboard`  ·  scope `char`
 
 *Defined in `Modules/Dashboard.lua`.*
@@ -472,45 +429,6 @@ Open **[diagram/DB/index.html](diagram/DB/index.html)** in a browser for an inte
 |---|---|---|---|---|---|
 | `id` | integer | no | PK |  |  |
 | `sellJunk` | text | yes |  |  |  |
-
----
-
-### `p_module_Class_MONK_1`  ·  scope `global`
-
-*Defined in `Modules/Class.lua`.*
-
-| Column | Type | Null | Key | Default | References |
-|---|---|---|---|---|---|
-| `profile` | text | no | PK |  | → `profile.name` on delete cascade |
-| `expelHarm` | boolean | yes |  |  |  |
-| `expelColor_r` | number | yes |  |  |  |
-| `expelColor_g` | number | yes |  |  |  |
-| `expelColor_b` | number | yes |  |  |  |
-| `expelInactiveColor_r` | number | yes |  |  |  |
-| `expelInactiveColor_g` | number | yes |  |  |  |
-| `expelInactiveColor_b` | number | yes |  |  |  |
-| `tiger` | boolean | yes |  |  |  |
-| `tigerColor_r` | number | yes |  |  |  |
-| `tigerColor_g` | number | yes |  |  |  |
-| `tigerColor_b` | number | yes |  |  |  |
-| `aoeHelper` | boolean | yes |  |  |  |
-
----
-
-### `p_module_Class_MONK_none`  ·  scope `global`
-
-*Defined in `Modules/Class.lua`.*
-
-| Column | Type | Null | Key | Default | References |
-|---|---|---|---|---|---|
-| `profile` | text | no | PK |  | → `profile.name` on delete cascade |
-| `expelHarm` | boolean | yes |  |  |  |
-| `expelColor_r` | number | yes |  |  |  |
-| `expelColor_g` | number | yes |  |  |  |
-| `expelColor_b` | number | yes |  |  |  |
-| `expelInactiveColor_r` | number | yes |  |  |  |
-| `expelInactiveColor_g` | number | yes |  |  |  |
-| `expelInactiveColor_b` | number | yes |  |  |  |
 
 ---
 
