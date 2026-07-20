@@ -546,9 +546,9 @@ function SettingsWindow:_RenderSchema(content, host, width, y)
                 y = y - 10
             elseif groupOpen then
                 -- Schema dependencies give us hierarchy, but not enough semantic
-                -- information to place dividers reliably. Separate top-level
-                -- option groups with whitespace; dependents remain visibly nested.
-                y = y - 20
+                -- information to place dividers reliably. Use a modest gap here;
+                -- features author an explicit divider where a real group ends.
+                y = y - 10
             end
             if not s.dependsOn then groupOpen = true end
         elseif s.type == ns.SettingType.HEADER then
@@ -566,6 +566,16 @@ function SettingsWindow:_RenderSchema(content, host, width, y)
             n:SetWidth(width - 16)
             n:SetJustifyH("LEFT")
             y = y - (n:GetStringHeight() + 12)
+
+        elseif s.type == ns.SettingType.DIVIDER then
+            y = y - 8
+            local divider = W.Fill:New(content, { layer = "ARTWORK" })
+            divider:SetPoint("TOPLEFT", 10, y)
+            divider:SetPoint("TOPRIGHT", content, "TOPRIGHT", -10, y)
+            divider:SetHeight(1)
+            divider:SetColorTexture(Theme.Unpack("border"))
+            y = y - 14
+            groupOpen = false
 
         elseif s.type == ns.SettingType.TOGGLE then
             local t = W.Toggle:New(content, s.reload and W.FlagReload(s.label) or s.label)

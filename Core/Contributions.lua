@@ -18,23 +18,27 @@ local Contributions = {}
 -- typo ERRORS loudly instead of yielding nil. Defined here because Core/Contributions.lua is early
 -- (after Core/Enum.lua) and loads before all three consumers.
 ns.SettingType = ns.Enum.new("SettingType", {
-    HEADER = "header", NOTE = "note", TOGGLE = "toggle", SELECT = "select", COLOR = "color",
+    HEADER = "header", NOTE = "note", DIVIDER = "divider",
+    TOGGLE = "toggle", SELECT = "select", COLOR = "color",
 })
 
 -- The control types the Settings page can actually RENDER (UI/SettingsWindow.lua:_RenderSchema).
 -- A schema entry of any other type would validate clean here yet draw NOTHING -- the one silent
 -- failure mode -- so an unknown type (e.g. a premature `slider`) is rejected loudly below rather than
--- shipping a blank control. Keep this set in lockstep with the renderer's branches. `header`/`note`
--- are structural; KEYED_SETTING is the rendered subset that binds to a saved value (needs key + label).
+-- shipping a blank control. Keep this set in lockstep with the renderer's branches. `header`/`note`/
+-- `divider` are structural; KEYED_SETTING is the rendered subset that binds to a saved value (needs key + label).
 -- Both sets are DERIVED from ns.SettingType so the vocabulary has one source of truth.
 local ST = ns.SettingType
-local RENDERED_TYPE = { [ST.HEADER] = true, [ST.NOTE] = true, [ST.TOGGLE] = true, [ST.SELECT] = true, [ST.COLOR] = true }
+local RENDERED_TYPE = {
+    [ST.HEADER] = true, [ST.NOTE] = true, [ST.DIVIDER] = true,
+    [ST.TOGGLE] = true, [ST.SELECT] = true, [ST.COLOR] = true,
+}
 local KEYED_SETTING = { [ST.TOGGLE] = true, [ST.SELECT] = true, [ST.COLOR] = true }
 
 -- Validate a settings schema at CONSTRUCTION so a malformed entry fails loudly here (at
 -- file load) instead of silently breaking later when the page renders. Rules:
 --   * every entry is a table with a string `type` the renderer can draw;
---   * "header"/"note" need `text`;
+--   * "header"/"note" need `text`; "divider" is a fieldless authored group boundary;
 --   * a keyed control (toggle/select/color) needs a non-empty string `key` + `label`;
 --   * "select" needs an `options` list; a "color" default must be a { r, g, b } number array.
 function Contributions.ValidateSettings(settings, owner)

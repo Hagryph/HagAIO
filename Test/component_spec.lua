@@ -117,7 +117,10 @@ describe("Contributions.ValidateSettings", function()
         return (pcall(ns.Contributions.ValidateSettings, schema, "T"))
     end
     it("accepts a well-formed schema and a nil schema", function()
-        assert.is_true(check({ { type = "header", text = "H" }, { type = "toggle", key = "k", label = "L" } }))
+        assert.is_true(check({
+            { type = "header", text = "H" }, { type = "divider" },
+            { type = "toggle", key = "k", label = "L" },
+        }))
         assert.is_true(check(nil))
     end)
     it("rejects a header/note without text", function()
