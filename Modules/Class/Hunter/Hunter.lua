@@ -92,7 +92,7 @@ function ClassModule:_RefreshSteadyGainNow()
             if p.steadyActive and not p.steadyGain then
                 local retry = readSteadyFocusGain()
                 p.steadyGain = retry and retry > 0 and retry or nil
-                self:_UpdateSteadyBarRange()
+                self:_UpdateSteadyCastFill()
                 self:_ScheduleSteady()
             end
         end, "hunter")
@@ -101,7 +101,7 @@ end
 
 function ClassModule:_RefreshSteadyGain()
     self:_RefreshSteadyGainNow()
-    self:_UpdateSteadyBarRange()
+    self:_UpdateSteadyCastFill()
     self:_ScheduleSteady()
 end
 
@@ -119,7 +119,7 @@ function ClassModule:_StartSteadyCast(castGUID, spellID)
     local p = self:_p()
     p.steadyCasting = spellID == Spell.STEADY_SHOT
     p.steadyCastGUID = p.steadyCasting and castGUID or nil
-    self:_UpdateSteadyBarRange()
+    self:_UpdateSteadyCastFill()
     self:_ScheduleSteady()
 end
 
@@ -131,34 +131,57 @@ function ClassModule:_StopSteadyCast(castGUID, spellID)
     if (castGUID and castGUID == p.steadyCastGUID) or spellID == Spell.STEADY_SHOT then
         p.steadyCasting = false
         p.steadyCastGUID = nil
-        self:_UpdateSteadyBarRange()
+        self:_UpdateSteadyCastFill()
         self:_ScheduleSteady()
     end
 end
 
-function ClassModule:_RestoreSteadyBarRange()
-    local p = self:_p()
-    local bar = p.steadyRangeBar
-    local maxFocus = p.steadyMaxSnap
-    if bar and bar.SetMinMaxValues and maxFocus and maxFocus > 0 then
-        bar:SetMinMaxValues(0, maxFocus)
-    end
-    p.steadyRangeBar = nil
-end
-
--- Extend Blizzard's ACTUAL Focus fill without reading current Focus and without
--- drawing another bar. If Blizzard's current value is F, changing the status-bar
--- range from [0, max] to [-gain, max-gain] makes its own fill render at
--- (F + gain) / max. The UnitFrameManaBar_Update post-hook reapplies this range
--- after Blizzard refreshes it; cast end restores the normal range immediately.
-function ClassModule:_UpdateSteadyBarRange()
+function ClassModule:_SteadyBarVisuals()
     local p = self:_p()
     local bar = p.steadyPowerBar
-    if not (bar and self:IsEnabled() and p.steadyActive and p.steadyCasting
+    if not bar then return nil end
+    local fill = bar.GetStatusBarTexture and bar:GetStatusBarTexture()
+    if not fill then return nil end
+
+    if p.steadyHostBar ~= bar then
+        if p.steadyHost then p.steadyHost:Hide() end
+        local host = ns.UI.Widgets.Container:New(bar)
+        host:SetAllPoints(bar)
+        host:SetClipsChildren(true)
+        p.steadyHost = host
+        p.steadyHostBar = bar
+        p.steadyMarker = nil
+        p.steadyCastFill = nil
+    end
+    return bar, fill
+end
+
+function ClassModule:_SteadyGainWidth(bar, gain, maxFocus)
+    local p = self:_p()
+    local liveWidth = bar:GetWidth()
+    if liveWidth and not ns.Secrets:Is(liveWidth) and liveWidth > 0 then
+        p.steadyWidthSnap = liveWidth
+    end
+    local barWidth = p.steadyWidthSnap
+    if not barWidth or barWidth <= 0 then return nil end
+    return (gain / maxFocus) * barWidth
+end
+
+-- Secret-safe visual continuation of Blizzard's own fill. Mutating the native
+-- StatusBar range taints Blizzard_TextStatusBar when it compares secret values,
+-- so the native bar must remain untouched. This is a texture (not another
+-- StatusBar), copies the native fill texture/tint, and begins exactly at its live
+-- right edge; visually it is one continuous fill extended by the generated Focus.
+function ClassModule:_UpdateSteadyCastFill()
+    local p = self:_p()
+    if not (self:IsEnabled() and p.steadyActive and p.steadyCasting
             and self:GetSetting("steadyCastFill")) then
-        self:_RestoreSteadyBarRange()
+        if p.steadyCastFill then p.steadyCastFill:Hide() end
         return
     end
+
+    local bar, fill = self:_SteadyBarVisuals()
+    if not bar then return end
 
     local gain = p.steadyGain
     local maxFocus = UnitPowerMax("player", POWER_FOCUS)
@@ -168,15 +191,28 @@ function ClassModule:_UpdateSteadyBarRange()
         maxFocus = p.steadyMaxSnap
     end
     if not gain or gain <= 0 or not maxFocus or maxFocus <= 0 then
-        self:_RestoreSteadyBarRange()
+        if p.steadyCastFill then p.steadyCastFill:Hide() end
         return
     end
 
-    if p.steadyRangeBar and p.steadyRangeBar ~= bar then
-        self:_RestoreSteadyBarRange()
+    local width = self:_SteadyGainWidth(bar, gain, maxFocus)
+    if not width then
+        if p.steadyCastFill then p.steadyCastFill:Hide() end
+        return
     end
-    bar:SetMinMaxValues(-gain, maxFocus - gain)
-    p.steadyRangeBar = bar
+    if not p.steadyCastFill then
+        p.steadyCastFill = ns.UI.Widgets.Fill:New(p.steadyHost, { layer = "OVERLAY", sublevel = 8 })
+    end
+    local extension = p.steadyCastFill
+    local texture = fill.GetTexture and fill:GetTexture()
+    if texture then extension:SetTexture(texture) end
+    if fill.GetVertexColor then extension:SetVertexColor(fill:GetVertexColor()) end
+    extension:ClearAllPoints()
+    extension:SetPoint("TOPLEFT", fill, "TOPRIGHT", 0, 0)
+    extension:SetPoint("BOTTOMLEFT", fill, "BOTTOMRIGHT", 0, 0)
+    extension:SetWidth(width)
+    extension:Show()
+    p.steadyHost:Show()
 end
 
 -- Draw a translucent extension from Blizzard's current Focus fill edge. The
@@ -205,31 +241,17 @@ function ClassModule:_UpdateSteady()
         return
     end
 
-    local fill = bar.GetStatusBarTexture and bar:GetStatusBarTexture()
-    if not fill then
+    local visualBar, fill = self:_SteadyBarVisuals()
+    if not visualBar then
         if p.steadyMarker then p.steadyMarker:Hide() end
         return
-    end
-
-    if p.steadyHostBar ~= bar then
-        if p.steadyHost then p.steadyHost:Hide() end
-        local host = ns.UI.Widgets.Container:New(bar)
-        host:SetAllPoints(bar)
-        host:SetClipsChildren(true)
-        p.steadyHost = host
-        p.steadyHostBar = bar
-        p.steadyMarker = nil
     end
     if not p.steadyMarker then
         p.steadyMarker = ns.UI.Widgets.Fill:New(p.steadyHost, { layer = "OVERLAY", sublevel = 7 })
     end
 
-    local liveWidth = bar:GetWidth()
-    if liveWidth and not ns.Secrets:Is(liveWidth) and liveWidth > 0 then
-        p.steadyWidthSnap = liveWidth
-    end
-    local barWidth = p.steadyWidthSnap
-    if not barWidth or barWidth <= 0 then
+    local width = self:_SteadyGainWidth(bar, gain, maxFocus)
+    if not width then
         p.steadyMarker:Hide()
         return
     end
@@ -240,7 +262,7 @@ function ClassModule:_UpdateSteady()
     marker:ClearAllPoints()
     marker:SetPoint("TOPLEFT", fill, "TOPRIGHT", 0, 0)
     marker:SetPoint("BOTTOMLEFT", fill, "BOTTOMRIGHT", 0, 0)
-    marker:SetWidth((gain / maxFocus) * barWidth)
+    marker:SetWidth(width)
     marker:Show()
     p.steadyHost:Show()
 end

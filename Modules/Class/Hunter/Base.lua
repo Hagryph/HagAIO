@@ -16,7 +16,7 @@ local HunterBase = Class.new("HunterBase", ns.ClassSpec, { statics = { settings 
 
 function HunterBase:OnSettingChanged()
     local host = self:Host()
-    host:_UpdateSteadyBarRange()
+    host:_UpdateSteadyCastFill()
     host:_ScheduleSteady()
 end
 
@@ -31,14 +31,11 @@ function HunterBase:Load()
             if unit == "player" and statusbar.unitFrame == PlayerFrame then
                 local hp = host:_p()
                 if hp.steadyPowerBar ~= statusbar then
-                    host:_RestoreSteadyBarRange()
                     hp.steadyPowerBar = statusbar
                     host:_WatchBarSize(statusbar, function() host:_ScheduleSteady() end)
                     host:_ScheduleSteady()
                 end
-                -- Blizzard restores the ordinary [0, max] range during its own
-                -- update; while Steady Shot is casting, reapply our predicted range.
-                host:_UpdateSteadyBarRange()
+                host:_UpdateSteadyCastFill()
             end
         end)
         p.steadyPowerHookInstalled = true
@@ -62,12 +59,12 @@ function HunterBase:Load()
 
     host:On("UNIT_MAXPOWER", function(_, unit)
         if unit == "player" then
-            host:_SnapshotSteadyMax(); host:_UpdateSteadyBarRange(); host:_ScheduleSteady()
+            host:_SnapshotSteadyMax(); host:_UpdateSteadyCastFill(); host:_ScheduleSteady()
         end
     end, "hunter")
     host:On("UNIT_DISPLAYPOWER", function(_, unit)
         if unit == "player" then
-            host:_SnapshotSteadyMax(); host:_UpdateSteadyBarRange(); host:_ScheduleSteady()
+            host:_SnapshotSteadyMax(); host:_UpdateSteadyCastFill(); host:_ScheduleSteady()
         end
     end, "hunter")
     host:On("TRAIT_CONFIG_UPDATED",         function() host:_RefreshSteadyGain() end, "hunter")
@@ -82,12 +79,12 @@ function HunterBase:Unload()
     local host = self:Host()
     local p = host:_p()
     host:ReleaseScope("hunter")
-    host:_RestoreSteadyBarRange()
     p.steadyScheduled = false
     p.steadyActive = false
     p.steadyCasting = false
     p.steadyCastGUID = nil
     if p.steadyMarker then p.steadyMarker:Hide() end
+    if p.steadyCastFill then p.steadyCastFill:Hide() end
 end
 
 Hunter.RegisterBase("Hunter-Base", HunterBase, { "EventBus", "Secrets" })
