@@ -40,16 +40,19 @@ local S = ns.Class.statics(Hunter)
 
 function Hunter.SteadyColor() return S.steadyColor end
 
-function Hunter.RegisterSpec(name, SpecClass, specKey, serviceDeps)
+-- Register behaviour for a Hunter that has not selected a specialisation. This
+-- mirrors Monk-Base: the "none" settings bucket exists while disabled, and the
+-- submodule loads only while CurrentSpecKey() reports "none".
+function Hunter.RegisterBase(name, SpecClass, serviceDeps)
     local spec = SpecClass:New(classMod)
-    if isHunter() then classMod:RegisterSpec(specKey, spec) end
+    if isHunter() then classMod:RegisterSpec("none", spec) end
     local deps = { "SettingsWindow" }
     for _, d in ipairs(serviceDeps) do deps[#deps + 1] = d end
     ns.SubmoduleManager:Register(ns.Submodule:New(name, {
         parent = { submodule = "Hunter" },
         host = classMod,
         deps = deps,
-        condition = function() return classMod:CurrentSpecKey() == specKey end,
+        condition = function() return classMod:CurrentSpecKey() == "none" end,
         conditionEvents = { "PLAYER_SPECIALIZATION_CHANGED", "PLAYER_ENTERING_WORLD" },
         onLoad = function(host)
             host:SetActiveSpec(spec)
@@ -68,7 +71,7 @@ end
 
 ns.Hunter = Hunter
 
--- hag-lint-disable depcheck: Secrets -- the Marksmanship submodule declares it;
+-- hag-lint-disable depcheck: Secrets -- the Hunter base submodule declares it;
 -- these host methods use it only while that submodule is loaded.
 
 function ClassModule:_SnapshotSteadyMax()
@@ -91,7 +94,7 @@ function ClassModule:_RefreshSteadyGainNow()
                 p.steadyGain = retry and retry > 0 and retry or nil
                 self:_ScheduleSteady()
             end
-        end, "spec")
+        end, "hunter")
     end
 end
 
@@ -107,7 +110,7 @@ function ClassModule:_ScheduleSteady()
     self:After(0, function()
         p.steadyScheduled = false
         self:_UpdateSteady()
-    end, "spec")
+    end, "hunter")
 end
 
 -- Draw a translucent extension from Blizzard's current Focus fill edge. The
