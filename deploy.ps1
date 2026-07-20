@@ -17,6 +17,8 @@
       * Readme         — regenerates README.md's file tree + version table IN THE REPO
                          (the README is a committed GitHub doc, not a deployed file).
     Dev/repo artifacts (.git, README, this script, etc.) are excluded from the mirror.
+    After deployment it commits every repository change and pushes the current
+    branch to its configured upstream, publishing the deployment to GitHub.
     Run after any code change.
 
 .PARAMETER AddonsPath
@@ -25,7 +27,7 @@
 
 .PARAMETER CommitMessage
     Message for the automatic post-deploy Git commit. Defaults to
-    "Deploy: update addon". A clean worktree is a successful no-op.
+    "Deploy: update addon". A clean worktree skips the commit but is still pushed.
 #>
 [CmdletBinding()]
 param(
@@ -99,6 +101,31 @@ function Invoke-RepoAutoCommit {
     Write-Host "Autocommit: created $(([string]$commit).Trim()) ($messageText)" -ForegroundColor Green
 }
 
+function Invoke-RepoAutoPush {
+    param(
+        [Parameter(Mandatory = $true)][string]$Root
+    )
+
+    if (-not (Get-Command git -CommandType Application -ErrorAction SilentlyContinue)) {
+        throw "Automatic publish requested, but git was not found on PATH."
+    }
+
+    $branch = & git -C $Root branch --show-current
+    if ($LASTEXITCODE -ne 0) {
+        throw "git could not determine the current branch for automatic publish."
+    }
+    $branchName = ([string]$branch).Trim()
+    if ([string]::IsNullOrWhiteSpace($branchName)) {
+        throw "Automatic publish refused: the deploy source is in detached HEAD state."
+    }
+
+    & git -C $Root push
+    if ($LASTEXITCODE -ne 0) {
+        throw "Automatic publish failed while pushing branch '$branchName' to its configured upstream."
+    }
+    Write-Host "Autopush: published $branchName to its configured upstream." -ForegroundColor Green
+}
+
 # Deploy-time autogen (Common must load first; it defines the shared helpers + the load
 # order from tools/load-order.json). tools/autogen.ps1 owns the repo-doc generation
 # (README regions + DATABASE_SCHEMA.md) and is also runnable standalone — dot-sourcing it
@@ -139,8 +166,9 @@ Update-DeployedDevChars -Root $src -DeployedFile (Join-Path $dest "Core\Namespac
 Update-RepoDocs -Root $src -SchemaOptional
 
 Invoke-RepoAutoCommit -Root $src -Message $CommitMessage
+Invoke-RepoAutoPush -Root $src
 
 Write-Host "Deployed HagAIO -> $dest" -ForegroundColor Green
-Write-Host "Autogen: .toc + namespace slots (deployed), README (repo) regenerated." -ForegroundColor DarkGray
+Write-Host "Autogen: .toc + namespace slots (deployed), README (repo) regenerated; Git changes committed and pushed." -ForegroundColor DarkGray
 Write-Host "In-game: /reload (or relaunch) to load the changes." -ForegroundColor DarkGray
 exit 0

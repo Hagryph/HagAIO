@@ -329,9 +329,9 @@ Regenerate with `python tools/gen_icon.py`.
 
 Mirrors the addon into `…\_retail_\Interface\AddOns\HagAIO`, then `/reload` in-game.
 Override the target with `-AddonsPath` or the `WOW_ADDONS_PATH` environment variable.
-Every successful deploy stages all repository changes and creates a local commit. If
-`-CommitMessage` is omitted, the message is `Deploy: update addon`. A clean worktree is reported
-and skipped without error. Deployment never pushes.
+Every successful deploy stages all repository changes, creates a commit, and pushes the current
+branch to its configured upstream. If `-CommitMessage` is omitted, the message is
+`Deploy: update addon`. A clean worktree skips the commit but still pushes unpublished commits.
 
 The full contributor workflow — lint gates (`npm run check`), what's generated, the
 load-order manifest, and release packaging — lives in [CONTRIBUTING.md](CONTRIBUTING.md).

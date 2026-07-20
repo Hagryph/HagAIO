@@ -127,14 +127,15 @@ deploy mirrors into the live folder (full generated `.toc` + namespace slot bloc
 **manual only** (never run by deploy); the version comes from `HagAIO.toc`'s
 `## Version:` line.
 
-## Before you push
+## Before you deploy and publish
 
 1. `npm run check` — every lint gate + tests green.
 2. `./deploy.ps1` — mirror into the live AddOns folder; this also regenerates the `.toc`,
-   the deployed namespace block, and the repo docs (`README.md`, `DATABASE_SCHEMA.md`).
+   the deployed namespace block and repo docs (`README.md`, `DATABASE_SCHEMA.md`), commits every
+   repository change, and pushes the current branch to its configured upstream.
    Without a WoW install, `./tools/autogen.ps1` refreshes the repo docs on their own.
-3. Commit (`Area: summary` subject) and push to `main`.
 
-`./deploy.ps1` stages all repository changes and creates a local commit after deployment succeeds.
+`./deploy.ps1` stages all repository changes, creates a commit, and publishes it after deployment succeeds.
 Pass `-CommitMessage "Area: summary"` to override its default `Deploy: update addon` message. A
-clean worktree is skipped, and the script never pushes.
+clean worktree skips the commit but still pushes existing unpublished commits. A failed push fails
+the deployment command instead of reporting successful delivery.
