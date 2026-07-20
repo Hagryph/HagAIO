@@ -534,7 +534,32 @@ function SettingsWindow:_RenderSchema(content, host, width, y)
 
     local controls = {}   -- setting key -> its widget, so a dependent can watch its parent widget(s)
     local pending = {}    -- { widget, key } dependents, wired to their parents after every control exists
+    local groupOpen = false
     for _, s in ipairs(schema) do
+        local keyed = s.type == ns.SettingType.TOGGLE
+            or s.type == ns.SettingType.SELECT
+            or s.type == ns.SettingType.COLOR
+        if keyed then
+            if s.dependsOn then
+                -- Subsettings belong visually to the option above them: indent
+                -- them and leave enough air that their labels don't collide.
+                y = y - 10
+            elseif groupOpen then
+                -- A new top-level option starts a new group. The hairline plus
+                -- padding makes adjacent toggle+subsetting clusters scannable.
+                y = y - 7
+                local divider = W.Fill:New(content, { layer = "ARTWORK" })
+                divider:SetPoint("TOPLEFT", 10, y)
+                divider:SetPoint("TOPRIGHT", content, "TOPRIGHT", -10, y)
+                divider:SetHeight(1)
+                divider:SetColorTexture(Theme.Unpack("border"))
+                y = y - 15
+            end
+            if not s.dependsOn then groupOpen = true end
+        elseif s.type == ns.SettingType.HEADER then
+            groupOpen = false
+        end
+
         if s.type == ns.SettingType.HEADER then
             local h = W.SectionLabel:New(content, s.text)
             h:SetPoint("TOPLEFT", 4, y - 6)
@@ -549,7 +574,8 @@ function SettingsWindow:_RenderSchema(content, host, width, y)
 
         elseif s.type == ns.SettingType.TOGGLE then
             local t = W.Toggle:New(content, s.reload and W.FlagReload(s.label) or s.label)
-            t:SetPoint("TOPLEFT", 6, y)
+            local x = s.dependsOn and 30 or 6
+            t:SetPoint("TOPLEFT", x, y)
             t:SetChecked(host:GetSetting(s.key) and true or false)
             t:SetOnToggle(function(on) host:SetSetting(s.key, on) end)
             if s.key then controls[s.key] = t end
@@ -557,8 +583,8 @@ function SettingsWindow:_RenderSchema(content, host, width, y)
             y = y - 26
             if s.desc then
                 local d = W.Text:New(content, s.desc, "textFaint", "GameFontHighlightSmall")
-                d:SetPoint("TOPLEFT", 30, y)
-                d:SetWidth(width - 40)
+                d:SetPoint("TOPLEFT", x + 24, y)
+                d:SetWidth(width - x - 34)
                 d:SetJustifyH("LEFT")
                 y = y - (d:GetStringHeight() + 8)
             else
@@ -567,10 +593,11 @@ function SettingsWindow:_RenderSchema(content, host, width, y)
 
         elseif s.type == ns.SettingType.SELECT then
             local lbl = W.Text:New(content, s.reload and W.FlagReload(s.label) or s.label, "text", "GameFontHighlight")
-            lbl:SetPoint("TOPLEFT", 6, y)
+            local x = s.dependsOn and 30 or 6
+            lbl:SetPoint("TOPLEFT", x, y)
             y = y - 20
             local seg = W.Segmented:New(content, s.options)
-            seg:SetPoint("TOPLEFT", 6, y)
+            seg:SetPoint("TOPLEFT", x, y)
             seg:SetValue(host:GetSetting(s.key))
             seg:SetOnChange(function(v) host:SetSetting(s.key, v) end)
             if s.key then controls[s.key] = seg end
@@ -579,7 +606,10 @@ function SettingsWindow:_RenderSchema(content, host, width, y)
 
         elseif s.type == ns.SettingType.COLOR then
             local lbl = W.Text:New(content, s.label, "text", "GameFontHighlight")
-            lbl:SetPoint("TOPLEFT", 6, y)
+            local x = s.dependsOn and 30 or 6
+            lbl:SetPoint("TOPLEFT", x, y)
+            lbl:SetWidth(width - x - 58)
+            lbl:SetJustifyH("LEFT")
             local sw = W.ColorSwatch:New(content)
             sw:SetPoint("TOPRIGHT", content, "TOPRIGHT", -6, y)
             -- Colours are ns.Color values (override/profile/code default); the swatch keeps its
@@ -590,7 +620,7 @@ function SettingsWindow:_RenderSchema(content, host, width, y)
             if s.default then sw:SetDefault(s.default:Unpack()) end
             if s.key then controls[s.key] = sw end
             if s.dependsOn then pending[#pending + 1] = { w = sw, key = s.key, on = s.dependsOn } end
-            y = y - 26
+            y = y - 30
         end
     end
 
