@@ -6,13 +6,13 @@ local Hunter = ns.Hunter
 -- player chooses a Hunter specialisation.
 local HunterBase = Class.new("HunterBase", ns.ClassSpec, { statics = { settings = {
     { type = "header", text = "Steady Shot" },
-    { type = "toggle", key = "steadyCastFill", label = "Show cast prediction segment", default = true,
-      desc = "While casting Steady Shot, append its generated Focus using Blizzard's native prediction segment." },
-    { type = "color", key = "steadyCastColor", label = "Cast prediction colour",
+    { type = "toggle", key = "steadyCastFill", label = "Steady Shot Focus Gain", default = true,
+      desc = "While casting Steady Shot, show the Focus it will generate." },
+    { type = "color", key = "steadyCastColor", label = "Focus Gain colour",
       default = Hunter.SteadyCastColor(), dependsOn = "steadyCastFill" },
-    { type = "toggle", key = "steadyShot", label = "Show second Focus segment", default = true,
-      desc = "Show another Steady Shot gain segment. During the cast it begins after the cast prediction segment; otherwise it begins at current Focus." },
-    { type = "color", key = "steadyColor", label = "Second segment colour",
+    { type = "toggle", key = "steadyShot", label = "Post-Cast Focus", default = true,
+      desc = "Show your predicted Focus after Steady Shot finishes." },
+    { type = "color", key = "steadyColor", label = "Post-Cast Focus colour",
       default = Hunter.SteadyColor(), dependsOn = "steadyShot" },
 } } })
 
