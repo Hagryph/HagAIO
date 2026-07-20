@@ -43,19 +43,25 @@ local S = ns.Class.statics(Hunter)
 function Hunter.SteadyColor() return S.steadyColor end
 function Hunter.SteadyCastColor() return S.steadyCastColor end
 
--- Register behaviour for a Hunter that has not selected a specialisation. This
--- mirrors Monk-Base: the "none" settings bucket exists while disabled, and the
--- submodule loads only while CurrentSpecKey() reports "none".
-function Hunter.RegisterBase(name, SpecClass, serviceDeps)
+-- Register one shared Hunter behaviour for each requested specialization key.
+-- This lets features that apply to both specless Hunter and a specialization
+-- share one implementation and lifecycle.
+function Hunter.RegisterSpecs(name, SpecClass, specKeys, serviceDeps)
     local spec = SpecClass:New(classMod)
-    if isHunter() then classMod:RegisterSpec("none", spec) end
+    local enabledSpecs = {}
+    for _, specKey in ipairs(specKeys) do
+        enabledSpecs[specKey] = true
+        if isHunter() then classMod:RegisterSpec(specKey, spec) end
+    end
     local deps = { "SettingsWindow" }
     for _, d in ipairs(serviceDeps) do deps[#deps + 1] = d end
     ns.SubmoduleManager:Register(ns.Submodule:New(name, {
         parent = { submodule = "Hunter" },
         host = classMod,
         deps = deps,
-        condition = function() return classMod:CurrentSpecKey() == "none" end,
+        condition = function()
+            return enabledSpecs[classMod:CurrentSpecKey()] == true
+        end,
         conditionEvents = { "PLAYER_SPECIALIZATION_CHANGED", "PLAYER_ENTERING_WORLD" },
         onLoad = function(host)
             host:SetActiveSpec(spec)

@@ -2,8 +2,7 @@ local addonName, ns = ...
 local Class = ns.Class
 local Hunter = ns.Hunter
 
--- Specless Hunter behaviour (CurrentSpecKey "none"): it unloads as soon as the
--- player chooses a Hunter specialisation.
+-- Steady Shot behaviour shared by specless Hunters and Beast Mastery Hunters.
 local HunterBase = Class.new("HunterBase", ns.ClassSpec, { statics = { settings = {
     { type = "header", text = "Steady Shot" },
     { type = "toggle", key = "steadyCastFill", label = "Post-Cast Focus", default = true,
@@ -107,4 +106,7 @@ function HunterBase:Unload()
     p.steadyNativePredictionShown = false
 end
 
-Hunter.RegisterBase("Hunter-Base", HunterBase, { "EventBus", "Secrets" })
+Hunter.RegisterSpecs("Hunter-SteadyShot", HunterBase, { "none", 1 }, {
+    "EventBus",
+    "Secrets",
+})
