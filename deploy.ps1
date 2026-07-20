@@ -23,18 +23,14 @@
     Override the WoW retail AddOns directory. Defaults to the standard install,
     or the WOW_ADDONS_PATH environment variable if set.
 
-.PARAMETER AutoCommit
-    After a successful deploy and repo-doc generation, stage all repository
-    changes and create a Git commit. A clean worktree is a successful no-op.
-
 .PARAMETER CommitMessage
-    Message for -AutoCommit. Defaults to "Deploy: update addon".
+    Message for the automatic post-deploy Git commit. Defaults to
+    "Deploy: update addon". A clean worktree is a successful no-op.
 #>
 [CmdletBinding()]
 param(
     [string]$AddonsPath = $(if ($env:WOW_ADDONS_PATH) { $env:WOW_ADDONS_PATH }
         else { "C:\Program Files (x86)\World of Warcraft\_retail_\Interface\AddOns" }),
-    [switch]$AutoCommit,
     [string]$CommitMessage = "Deploy: update addon"
 )
 
@@ -54,7 +50,7 @@ function Invoke-RepoAutoCommit {
 
     $repoRoot = & git -C $Root rev-parse --show-toplevel
     if ($LASTEXITCODE -ne 0) {
-        throw "Autocommit requested, but the deploy source is not a Git worktree: $Root"
+        throw "Autocommit requires the deploy source to be a Git worktree: $Root"
     }
 
     $expectedRoot = [System.IO.Path]::GetFullPath($Root).TrimEnd('\', '/')
@@ -142,9 +138,7 @@ Update-DeployedDevChars -Root $src -DeployedFile (Join-Path $dest "Core\Namespac
 #    tools/autogen.ps1 (CI checks their freshness). A missing LuaJIT only warns here.
 Update-RepoDocs -Root $src -SchemaOptional
 
-if ($AutoCommit) {
-    Invoke-RepoAutoCommit -Root $src -Message $CommitMessage
-}
+Invoke-RepoAutoCommit -Root $src -Message $CommitMessage
 
 Write-Host "Deployed HagAIO -> $dest" -ForegroundColor Green
 Write-Host "Autogen: .toc + namespace slots (deployed), README (repo) regenerated." -ForegroundColor DarkGray

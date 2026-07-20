@@ -135,6 +135,6 @@ deploy mirrors into the live folder (full generated `.toc` + namespace slot bloc
    Without a WoW install, `./tools/autogen.ps1` refreshes the repo docs on their own.
 3. Commit (`Area: summary` subject) and push to `main`.
 
-For the commit step, `./deploy.ps1 -AutoCommit` stages all repository changes and creates a
-local commit after deployment succeeds. Pass `-CommitMessage "Area: summary"` to override its
-default `Deploy: update addon` message. A clean worktree is skipped, and the script never pushes.
+`./deploy.ps1` stages all repository changes and creates a local commit after deployment succeeds.
+Pass `-CommitMessage "Area: summary"` to override its default `Deploy: update addon` message. A
+clean worktree is skipped, and the script never pushes.
