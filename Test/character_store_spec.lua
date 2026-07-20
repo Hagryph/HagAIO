@@ -6,7 +6,7 @@ local S = dofile("Test/support.lua")
 -- tables, and was previously only covered indirectly. We drive it against a real in-memory DB engine
 -- (the same one dashboard_db_spec builds) with a fake owner whose :DB() returns it.
 
-local DB_FILES = { "Types", "Schema", "RowStore", "IndexManager", "Constraints", "TriggerManager",
+local DB_FILES = { "Schema", "RowStore", "IndexManager", "Constraints", "TriggerManager",
                    "Database", "Aggregate", "WhereClause", "ColumnResolver", "QueryPlan",
                    "QueryBuilder", "QueryExecutor" }
 
@@ -55,7 +55,7 @@ local function rig()
     for _, f in ipairs(DB_FILES) do S.load(ns, "Core/DB/" .. f .. ".lua") end
     ns.ResetLedger = { CharKey = function(_, n, r) return (n or "?") .. "-" .. (r or "?") end }
     ns.Worker = { Mark = function() end, MaybeYield = function() end }   -- no chunking in the test
-    S.load(ns, "Lib/DashboardData.lua")   -- the denull/plainNum the store now delegates to
+    S.load(ns, "Lib/DashboardData.lua")   -- PlainNum remains a dashboard-specific shaping helper
     S.load(ns, "Modules/Dashboard/CharacterStore.lua")
     local db = ns.DB.Database:New("Dash", ns.DB.Schema.new("Dash", spec()), {})
     local owner = { DB = function() return db end }   -- the LIVE db handle the collaborator fetches per call

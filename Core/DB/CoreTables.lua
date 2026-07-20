@@ -14,49 +14,49 @@ local addonName, ns = ...
 --                      module fills it when a taxi map is opened). It JOINS to faction -- a global
 --                      table referencing a local one, which is exactly the shared-reference win.
 
-ns.DB = ns.DB or {}
+local DB = ns.DB
+local ColumnType, Scope, OnDelete = DB.ColumnType, DB.Scope, DB.OnDelete
 
--- Scopes are given as bare strings ("local"/"global"/"char") -- the schema validates them against
--- ns.DB.Scope at build time. Using strings (not the enum) keeps this plain data file free of any
--- load-order dependency on Types.lua (the .toc loads Core/DB/* alphabetically).
-ns.DB.CoreTables = {
+-- Types.lua is pinned first, so schemas use its frozen vocabulary directly. A misspelled member now
+-- fails while this file loads instead of surviving as a string until schema construction.
+DB.CoreTables = {
     -- ---- settings / profiles (plain tables; the cascade lives in Lib/SettingsTables.lua) ----------
     -- The profile REGISTRY: one row per named config profile, account-wide. `is_global` marks the
     -- single exclusive profile auto-applied to a character that has loaded none. Every per-namespace
     -- profile table (p_*, profile_module_enable, profile_editmode) FKs back to `name` with cascade
     -- delete, so removing a profile row removes all of its values.
     profile = {
-        scope = "global",
+        scope = Scope.GLOBAL,
         columns = {
-            { name = "name",      type = "text",    primaryKey = true },
-            { name = "is_global", type = "boolean" },
+            { name = "name",      type = ColumnType.TEXT,    primaryKey = true },
+            { name = "is_global", type = ColumnType.BOOLEAN },
         },
     },
 
     -- This character's loaded-profile pointer (the cascade's middle layer), a single row (id = 1).
     config = {
-        scope = "char",
+        scope = Scope.CHAR,
         columns = {
-            { name = "id",             type = "integer", primaryKey = true },
-            { name = "loaded_profile", type = "text" },     -- nil = no profile loaded
+            { name = "id",             type = ColumnType.INTEGER, primaryKey = true },
+            { name = "loaded_profile", type = ColumnType.TEXT },     -- nil = no profile loaded
         },
     },
 
     -- Module enable-state. `module_enable` is THIS character's overrides (absent = inherit profile/
     -- default); `profile_module_enable` is the enable-state captured inside each profile.
     module_enable = {
-        scope = "char",
+        scope = Scope.CHAR,
         columns = {
-            { name = "name",    type = "text", primaryKey = true },   -- module name
-            { name = "enabled", type = "boolean" },
+            { name = "name",    type = ColumnType.TEXT, primaryKey = true },   -- module name
+            { name = "enabled", type = ColumnType.BOOLEAN },
         },
     },
     profile_module_enable = {
-        scope = "global",
+        scope = Scope.GLOBAL,
         columns = {
-            { name = "profile", type = "text", references = { table = "profile", column = "name", onDelete = "cascade" } },
-            { name = "name",    type = "text" },                       -- module name
-            { name = "enabled", type = "boolean" },
+            { name = "profile", type = ColumnType.TEXT, references = { table = "profile", column = "name", onDelete = OnDelete.CASCADE } },
+            { name = "name",    type = ColumnType.TEXT },                       -- module name
+            { name = "enabled", type = ColumnType.BOOLEAN },
         },
         primaryKey = { "profile", "name" },
     },
@@ -64,22 +64,22 @@ ns.DB.CoreTables = {
     -- EditMode frame layout (per-frame { point, x, y }), cascaded like settings: `editmode` is this
     -- character's overrides; `profile_editmode` is the layout captured inside each profile.
     editmode = {
-        scope = "char",
+        scope = Scope.CHAR,
         columns = {
-            { name = "key",   type = "text", primaryKey = true },      -- frame registration key
-            { name = "point", type = "text" },
-            { name = "x",     type = "number" },
-            { name = "y",     type = "number" },
+            { name = "key",   type = ColumnType.TEXT, primaryKey = true },      -- frame registration key
+            { name = "point", type = ColumnType.TEXT },
+            { name = "x",     type = ColumnType.NUMBER },
+            { name = "y",     type = ColumnType.NUMBER },
         },
     },
     profile_editmode = {
-        scope = "global",
+        scope = Scope.GLOBAL,
         columns = {
-            { name = "profile", type = "text", references = { table = "profile", column = "name", onDelete = "cascade" } },
-            { name = "key",     type = "text" },
-            { name = "point",   type = "text" },
-            { name = "x",       type = "number" },
-            { name = "y",       type = "number" },
+            { name = "profile", type = ColumnType.TEXT, references = { table = "profile", column = "name", onDelete = OnDelete.CASCADE } },
+            { name = "key",     type = ColumnType.TEXT },
+            { name = "point",   type = ColumnType.TEXT },
+            { name = "x",       type = ColumnType.NUMBER },
+            { name = "y",       type = ColumnType.NUMBER },
         },
         primaryKey = { "profile", "key" },
     },
@@ -87,11 +87,11 @@ ns.DB.CoreTables = {
     -- Logger preferences (account-wide), a single row (id = 1). Logger is a core singleton, not a
     -- DatabaseOwner, so it reaches this through ns.DatabaseManager:Shared().
     logger = {
-        scope = "global",
+        scope = Scope.GLOBAL,
         columns = {
-            { name = "id",        type = "integer", primaryKey = true },
-            { name = "min_level", type = "integer" },   -- chat-echo level threshold (Log page "Chat level")
-            { name = "echo",      type = "boolean" },   -- the "Echo to chat" toggle
+            { name = "id",        type = ColumnType.INTEGER, primaryKey = true },
+            { name = "min_level", type = ColumnType.INTEGER },   -- chat-echo level threshold (Log page "Chat level")
+            { name = "echo",      type = ColumnType.BOOLEAN },   -- the "Echo to chat" toggle
             -- `keep` (history capacity) lived here until 2026-06-12: it never had a setter or
             -- UI, so it was removed; old saved rows drop the column automatically on load.
         },
@@ -104,16 +104,16 @@ ns.DB.CoreTables = {
     -- so dashboard_quest can reference quest_id and never duplicate the title, and the timed-quest
     -- registry is simply "the quest rows whose time is set".
     quest = {
-        scope = "global",
+        scope = Scope.GLOBAL,
         columns = {
-            { name = "quest_id",    type = "integer", primaryKey = true },
-            { name = "title",       type = "text" },    -- display title (Dashboard); nil until seen
-            { name = "time",        type = "number" },  -- time limit in seconds (Questing); nil = not timed
+            { name = "quest_id",    type = ColumnType.INTEGER, primaryKey = true },
+            { name = "title",       type = ColumnType.TEXT },    -- display title (Dashboard); nil until seen
+            { name = "time",        type = ColumnType.NUMBER },  -- time limit in seconds (Questing); nil = not timed
             -- AUTO-DISCOVERED at turn-in (Dashboard:_RecordQuest): where the quest lives, so the
             -- dashboard's quest pages can group by expansion -> zone without any curated list.
-            { name = "zone_map_id", type = "integer" }, -- uiMapID (quest's map, or the player's at turn-in)
-            { name = "zone_name",   type = "text" },    -- display zone name for that map
-            { name = "expansion",   type = "text" },    -- expansion display name (EXPANSION_NAME<n>)
+            { name = "zone_map_id", type = ColumnType.INTEGER }, -- uiMapID (quest's map, or the player's at turn-in)
+            { name = "zone_name",   type = ColumnType.TEXT },    -- display zone name for that map
+            { name = "expansion",   type = ColumnType.TEXT },    -- expansion display name (EXPANSION_NAME<n>)
         },
     },
 
@@ -122,19 +122,19 @@ ns.DB.CoreTables = {
     -- dashboard_char.ks_mapid references it. Defined here, not in Dashboard, so the reference table
     -- isn't tied to one module's load -- any feature can join to it.
     keystone = {
-        scope = "local",
+        scope = Scope.LOCAL,
         columns = {
-            { name = "mapid", type = "integer", primaryKey = true },
-            { name = "name",  type = "text" },
+            { name = "mapid", type = ColumnType.INTEGER, primaryKey = true },
+            { name = "name",  type = ColumnType.TEXT },
         },
     },
 
     -- Alliance / Horde / Neutral, fixed by id. In memory only (rebuilt each session from this seed).
     faction = {
-        scope = "local",
+        scope = Scope.LOCAL,
         columns = {
-            { name = "tag",  type = "text", primaryKey = true },   -- UnitFactionGroup value (the PK)
-            { name = "name", type = "text", nullable = false },
+            { name = "tag",  type = ColumnType.TEXT, primaryKey = true },   -- UnitFactionGroup value (the PK)
+            { name = "name", type = ColumnType.TEXT, nullable = false },
         },
         seed = function(db)
             db:InsertAll("faction", {            -- batch insert (one call), not row-by-row
@@ -151,11 +151,11 @@ ns.DB.CoreTables = {
     -- GLOBAL/account-wide; rows are only ever ADDED or UPDATED (never deleted -- flight_master
     -- cascade-FKs into name).
     zone = {
-        scope = "global",
+        scope = Scope.GLOBAL,
         columns = {
-            { name = "name",      type = "text", primaryKey = true },   -- zone name (the PK), e.g. "Elwynn Forest"
-            { name = "ui_map_id", type = "integer" },                   -- C_Map uiMapID (zone-type map)
-            { name = "map_id",    type = "integer" },                   -- world map INSTANCE id
+            { name = "name",      type = ColumnType.TEXT, primaryKey = true },   -- zone name (the PK), e.g. "Elwynn Forest"
+            { name = "ui_map_id", type = ColumnType.INTEGER },                   -- C_Map uiMapID (zone-type map)
+            { name = "map_id",    type = ColumnType.INTEGER },                   -- world map INSTANCE id
         },
         indices = { { columns = { "ui_map_id" } } },   -- point lookups by uiMapID
     },
@@ -167,14 +167,14 @@ ns.DB.CoreTables = {
     -- discovers an existing node its faction is flipped to "Neutral" (see LocalTables._DiscoverMaster).
     -- A master is only created once its zone is known (zone is NOT NULL); recording looks masters up.
     flight_master = {
-        scope = "global",
+        scope = Scope.GLOBAL,
         columns = {
-            { name = "node_id", type = "integer", primaryKey = true },  -- canonical C_TaxiMap nodeID (the PK; unique per point)
-            { name = "faction", type = "text", nullable = false, references = { table = "faction", column = "tag" } },
-            { name = "zone",    type = "text", nullable = false, references = { table = "zone", column = "name", onDelete = "cascade" } },
-            { name = "name",    type = "text", nullable = false },       -- flight master name only (e.g. "Stormwind")
-            { name = "x",       type = "number" },                       -- node position on the continent map
-            { name = "y",       type = "number" },
+            { name = "node_id", type = ColumnType.INTEGER, primaryKey = true },  -- canonical C_TaxiMap nodeID (the PK; unique per point)
+            { name = "faction", type = ColumnType.TEXT, nullable = false, references = { table = "faction", column = "tag" } },
+            { name = "zone",    type = ColumnType.TEXT, nullable = false, references = { table = "zone", column = "name", onDelete = OnDelete.CASCADE } },
+            { name = "name",    type = ColumnType.TEXT, nullable = false },       -- flight master name only (e.g. "Stormwind")
+            { name = "x",       type = ColumnType.NUMBER },                       -- node position on the continent map
+            { name = "y",       type = ColumnType.NUMBER },
         },
         indices = { { columns = { "faction" } }, { columns = { "name" } } },
     },

@@ -3,7 +3,7 @@ local S = dofile("Test/support.lua")
 -- Locks the CVars persistence model (Modules/CVars.lua): cvar_tracked holds every tracked CVar with a
 -- category_id FK into cvar_category, so "what belongs where" lives in the database. A CVar the code
 -- stops managing is REASSIGNED to the Custom category (not dropped), so a configured value survives.
-local DB_FILES = { "Types", "Schema", "RowStore", "IndexManager", "Constraints", "TriggerManager",
+local DB_FILES = { "Schema", "RowStore", "IndexManager", "Constraints", "TriggerManager",
                    "Database", "Aggregate", "WhereClause", "ColumnResolver", "QueryPlan",
                    "QueryBuilder", "QueryExecutor" }
 local function newDbNs()

@@ -1,5 +1,6 @@
 local addonName, ns = ...
 local Class = ns.Class
+local DB = ns.DB
 local Theme = ns.Theme
 local W = ns.UI.Widgets
 
@@ -654,26 +655,26 @@ ns.ModuleManager:Register(CVars:New("CVars", {
     } },
     -- Account-wide CVar data in the shared database.
     tables = {
-        cvar_managed = { scope = "global", columns = {   -- forced CVars, re-applied each login
-            { name = "name",  type = "text", primaryKey = true },
-            { name = "value", type = "text" },
+        cvar_managed = { scope = DB.Scope.GLOBAL, columns = {   -- forced CVars, re-applied each login
+            { name = "name",  type = DB.ColumnType.TEXT, primaryKey = true },
+            { name = "value", type = DB.ColumnType.TEXT },
         } },
         -- The categories CVars are grouped under (Camera, Nameplates, ..., and Custom). Seeded from the
         -- code catalog; the UI category list is derived from this table. Keyed by an auto id that
         -- cvar_tracked references, so category membership is resolved in the database, not at render.
-        cvar_category = { scope = "global",
+        cvar_category = { scope = DB.Scope.GLOBAL,
             columns = {
-                { name = "id",   type = "integer", primaryKey = true, autoIncrement = true },
-                { name = "name", type = "text", nullable = false },
+                { name = "id",   type = DB.ColumnType.INTEGER, primaryKey = true, autoIncrement = true },
+                { name = "name", type = DB.ColumnType.TEXT, nullable = false },
             },
             unique = { { "name" } } },
         -- Every CVar we TRACK -- curated (backfilled from the code catalog) AND user-added -- with the
         -- category it belongs to. When the code stops managing a CVar it is reassigned to Custom in the
         -- DB (see _PruneTracked), so a value the player configured is never lost.
-        cvar_tracked = { scope = "global", columns = {
-            { name = "name",        type = "text", primaryKey = true },
-            { name = "type",        type = "text" },   -- control type (used when not in the code catalog)
-            { name = "category_id", type = "integer", references = { table = "cvar_category", column = "id" } },
+        cvar_tracked = { scope = DB.Scope.GLOBAL, columns = {
+            { name = "name",        type = DB.ColumnType.TEXT, primaryKey = true },
+            { name = "type",        type = DB.ColumnType.TEXT },   -- control type (used when not in the code catalog)
+            { name = "category_id", type = DB.ColumnType.INTEGER, references = { table = "cvar_category", column = "id" } },
         } },
     },
 }))

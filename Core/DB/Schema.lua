@@ -14,22 +14,22 @@ local Class = ns.Class
 --     tables = {
 --       routes = {
 --         columns = {
---           { name = "id",      type = "integer", primaryKey = true, autoIncrement = true },
---           { name = "faction", type = "text",    nullable = false },
---           { name = "src",     type = "integer", nullable = false },
---           { name = "dst",     type = "integer", nullable = false },
---           { name = "t",       type = "number",  nullable = false },
---           { name = "quality", type = "integer" },                       -- nullable by default
+--           { name = "id",      type = ns.DB.ColumnType.INTEGER, primaryKey = true, autoIncrement = true },
+--           { name = "faction", type = ns.DB.ColumnType.TEXT,    nullable = false },
+--           { name = "src",     type = ns.DB.ColumnType.INTEGER, nullable = false },
+--           { name = "dst",     type = ns.DB.ColumnType.INTEGER, nullable = false },
+--           { name = "t",       type = ns.DB.ColumnType.NUMBER,  nullable = false },
+--           { name = "quality", type = ns.DB.ColumnType.INTEGER },                       -- nullable by default
 --         },
 --         unique  = { { "faction", "src", "dst" } },
 --         indices = { { columns = { "faction" } } },
 --       },
 --       route_hops = {
 --         columns = {
---           { name = "route_id", type = "integer",
---             references = { table = "routes", column = "id", onDelete = "cascade" } },
---           { name = "ordinal",  type = "integer" },
---           { name = "node",     type = "integer" },
+--           { name = "route_id", type = ns.DB.ColumnType.INTEGER,
+--             references = { table = "routes", column = "id", onDelete = ns.DB.OnDelete.CASCADE } },
+--           { name = "ordinal",  type = ns.DB.ColumnType.INTEGER },
+--           { name = "node",     type = ns.DB.ColumnType.INTEGER },
 --         },
 --         primaryKey = { "route_id", "ordinal" },                          -- composite PK
 --       },
@@ -38,7 +38,6 @@ local Class = ns.Class
 --     views    = { fast = { build = function(db) return db:Select("*"):From("routes"):Where("t","<",60) end } },
 --   })
 
-ns.DB = ns.DB or {}
 local DB = ns.DB
 
 local function fail(msg) DB.fail("Schema.new", msg) end

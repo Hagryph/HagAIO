@@ -10,7 +10,7 @@ local S = dofile("Test/support.lua")
 -- The module reaches the database through self:DB() -> ns.DatabaseManager:Shared(), so a real
 -- built DB plus the captured Questing instance exercises the actual query/upsert paths.
 
-local DB_FILES = { "Types", "Schema", "RowStore", "IndexManager", "Constraints", "TriggerManager",
+local DB_FILES = { "Schema", "RowStore", "IndexManager", "Constraints", "TriggerManager",
                    "Database", "Aggregate", "WhereClause", "ColumnResolver", "QueryPlan",
                    "QueryBuilder", "QueryExecutor", "CoreTables", "DatabaseManager" }
 

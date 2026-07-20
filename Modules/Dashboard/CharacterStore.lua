@@ -1,6 +1,7 @@
 local addonName, ns = ...
 local Class = ns.Class
 local Ledger = ns.ResetLedger
+local DB = ns.DB
 
 -- Modules/Dashboard/CharacterStore.lua
 -- The Dashboard's per-character DATA layer, extracted out of the 2.5k-line module so the module
@@ -38,7 +39,7 @@ function CharacterStore:DB() return self:_p().owner:DB() end
 
 -- A projected column is the DB.NULL sentinel (not Lua nil) when absent; collapse it to nil so the
 -- reconstructed documents read exactly like the old plain-Lua snapshots (l.progress or 0, etc.).
-local function denull(v) return ns.DashboardData.Denull(v) end
+local denull = DB.denull
 local function plainNum(v) return ns.DashboardData.PlainNum(v) end
 
 function CharacterStore:SelfKey()

@@ -2,7 +2,6 @@ local S = dofile("Test/support.lua")
 
 local function newSchemaNs()
     local ns = S.newNs()
-    S.load(ns, "Core/DB/Types.lua")
     S.load(ns, "Core/DB/Schema.lua")
     return ns
 end
@@ -45,6 +44,20 @@ describe("DB.Types", function()
         assert.is_false(ns.DB.isNull(0))
         local ok = pcall(function() ns.DB.NULL.x = 1 end)
         assert.is_false(ok)
+    end)
+
+    it("shares NULL-aware denull, value and isSet semantics", function()
+        local DB = newSchemaNs().DB
+        assert.is_nil(DB.denull(DB.NULL))
+        assert.is_nil(DB.denull(nil))
+        assert.are.equal(false, DB.denull(false))
+        assert.are.equal(0, DB.denull(0))
+        assert.are.equal("fallback", DB.value(DB.NULL, "fallback"))
+        assert.are.equal("fallback", DB.value(nil, "fallback"))
+        assert.are.equal(false, DB.value(false, true))
+        assert.are.equal(0, DB.value(0, 9))
+        assert.is_true(DB.isSet(false))
+        assert.is_false(DB.isSet(DB.NULL))
     end)
 
     it("checkType enforces each column type", function()

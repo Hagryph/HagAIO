@@ -6,7 +6,7 @@ local S = dofile("Test/support.lua")
 -- intermediate master (ON DELETE CASCADE). Mirrors LocalTables discovery (creates masters by
 -- node_id; flips a node seen by both factions to Neutral) and Misc recording (looks masters up).
 
-local DB_FILES = { "Types", "Schema", "RowStore", "IndexManager", "Constraints", "TriggerManager",
+local DB_FILES = { "Schema", "RowStore", "IndexManager", "Constraints", "TriggerManager",
                    "Database", "Aggregate", "WhereClause", "ColumnResolver", "QueryPlan",
                    "QueryBuilder", "QueryExecutor", "CoreTables", "DatabaseManager" }
 

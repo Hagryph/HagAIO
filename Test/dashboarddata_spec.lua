@@ -5,23 +5,10 @@ local S = dofile("Test/support.lua")
 -- VaultDone's Progress rule) are loaded too, since the lib reaches them at call time.
 local function dd()
     local ns = S.newNs()
-    S.load(ns, "Core/DB/Types.lua")     -- ns.DB.NULL / ns.DB.isNull
     S.load(ns, "Lib/ResetLedger.lua")   -- ns.ResetLedger (Progress)
     S.load(ns, "Lib/DashboardData.lua")
     return ns.DashboardData, ns
 end
-
-describe("DashboardData.Denull", function()
-    it("collapses the DB.NULL sentinel and nil to nil, passes other values through", function()
-        local D, ns = dd()
-        assert.is_nil(D.Denull(ns.DB.NULL))
-        assert.is_nil(D.Denull(nil))
-        assert.are.equal(0, D.Denull(0))        -- a real 0 is NOT null
-        assert.are.equal(false, D.Denull(false))-- false survives (only nil/NULL collapse)
-        assert.are.equal("x", D.Denull("x"))
-        assert.are.equal(42, D.Denull(42))
-    end)
-end)
 
 describe("DashboardData.PlainNum", function()
     it("passes the value through unchanged when no Secrets layer is present", function()

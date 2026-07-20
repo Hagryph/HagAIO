@@ -13,7 +13,6 @@ local Class = ns.Class
 -- It validates only; the Database performs the actual mutation + index maintenance + triggers.
 -- NULL is normalised to an ABSENT key in the stored row (never the sentinel) so it persists safely.
 
-ns.DB = ns.DB or {}
 local DB = ns.DB
 
 local ConstraintEnforcer = Class.new("DBConstraintEnforcer")

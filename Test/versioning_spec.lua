@@ -6,7 +6,7 @@ local S = dofile("Test/support.lua")
 -- (DEBUG_FORCE_STALE) INTENDED behaviour: it forces the rebuild path only while the Logger debug flag is
 -- on (dev characters), and is a no-op for every shipped user (debug off) -- so the cache works as designed.
 
-local DB_FILES = { "Types", "Schema", "RowStore", "IndexManager", "Constraints", "TriggerManager",
+local DB_FILES = { "Schema", "RowStore", "IndexManager", "Constraints", "TriggerManager",
                    "Database", "Aggregate", "WhereClause", "ColumnResolver", "QueryPlan",
                    "QueryBuilder", "QueryExecutor" }
 

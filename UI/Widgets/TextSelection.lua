@@ -3,7 +3,7 @@ local Theme = ns.Theme
 local Widgets = ns.UI.Widgets
 local _wb = ns.UI._wb
 local Widget, FrameWidget, TextWidget, TextureWidget = _wb.Widget, _wb.FrameWidget, _wb.TextWidget, _wb.TextureWidget
-local unwrap, style, claimLevel, adopt = _wb.unwrap, _wb.style, _wb.claimLevel, _wb.adopt
+local unwrap, style, adopt = _wb.unwrap, _wb.style, _wb.adopt
 
 -- UI/Widgets/TextSelection.lua
 -- PER-CHARACTER text selection over plain Text widgets, with NORMAL Ctrl+C -- the behaviour a real

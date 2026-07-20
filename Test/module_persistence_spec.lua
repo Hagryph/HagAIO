@@ -5,7 +5,7 @@ local S = dofile("Test/support.lua")
 -- override -> profile -> default cascade against those tables (see Lib/SettingsTables.lua). Enable-state
 -- lives in the central module_enable tables. A module's account-wide DATA goes through the shared
 -- Database too (declarative `tables` + self:DB()); that path is covered by the db_* specs.
-local DB_FILES = { "Types", "Schema", "RowStore", "IndexManager", "Constraints", "TriggerManager",
+local DB_FILES = { "Schema", "RowStore", "IndexManager", "Constraints", "TriggerManager",
                    "Database", "Aggregate", "WhereClause", "ColumnResolver", "QueryPlan",
                    "QueryBuilder", "QueryExecutor", "CoreTables", "DatabaseManager" }
 

@@ -15,7 +15,6 @@ local Class = ns.Class
 --   BEFORE trigger -> constraint checks + store/index write -> AFTER trigger
 -- (the TriggerManager is attached in Phase 5; until then the trigger hooks are inert pass-throughs).
 
-ns.DB = ns.DB or {}
 local DB = ns.DB
 
 -- Public engine API kept for callers even when the current addon doesn't exercise every method.

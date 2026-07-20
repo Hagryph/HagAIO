@@ -31,7 +31,6 @@ local Class = ns.Class
 -- unmatched side of an outer join, so a join never flattens away which table a column came from.
 -- Stateless: one executor is reused by a Database; all per-query state is local to :Run.
 
-ns.DB = ns.DB or {}
 local DB = ns.DB
 
 local SEP = DB.KEY_SEP

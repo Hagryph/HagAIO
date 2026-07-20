@@ -18,6 +18,27 @@ function Helpers.DeepCopy(v)
     return t
 end
 
+-- Structural equality for plain Lua values. Tables are compared recursively in both directions,
+-- so missing keys and nested settings values (notably colour triples) are handled consistently.
+function Helpers.DeepEqual(a, b)
+    if a == b then return true end
+    if type(a) ~= "table" or type(b) ~= "table" then return false end
+    for k, v in pairs(a) do
+        if not Helpers.DeepEqual(v, b[k]) then return false end
+    end
+    for k in pairs(b) do
+        if a[k] == nil then return false end
+    end
+    return true
+end
+
+-- Clamp a number to the closed unit interval.
+function Helpers.Clamp01(v)
+    if v < 0 then return 0 end
+    if v > 1 then return 1 end
+    return v
+end
+
 -- Capture all return values + their count in one table (handles embedded/trailing nils):
 -- { n = <count>, ... }. Unpack with `unpack(t, 1, t.n)`.
 function Helpers.Pack(...) return { n = select("#", ...), ... } end

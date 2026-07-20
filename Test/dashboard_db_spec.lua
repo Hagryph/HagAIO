@@ -7,7 +7,7 @@ local S = dofile("Test/support.lua")
 -- name table. We exercise the schema guarantees the reconstruct/upsert/replace helpers depend on
 -- (composite PKs, cascading deletes from both parents, NULL-as-sentinel projection) at the engine
 -- level, without loading the WoW-coupled module.
-local DB_FILES = { "Types", "Schema", "RowStore", "IndexManager", "Constraints", "TriggerManager",
+local DB_FILES = { "Schema", "RowStore", "IndexManager", "Constraints", "TriggerManager",
                    "Database", "Aggregate", "WhereClause", "ColumnResolver", "QueryPlan",
                    "QueryBuilder", "QueryExecutor" }
 local function newDbNs()

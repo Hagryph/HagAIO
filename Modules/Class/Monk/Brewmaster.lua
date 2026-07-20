@@ -8,8 +8,7 @@ local Monk = ns.Monk   -- shared Monk surface (constants + RegisterSpec + Base),
 -- base behaviour via MonkBrewmaster.super, not by name. Loads after Base.lua, which set
 -- ns.Monk.Base.
 
-local MonkBrewmaster = Class.new("MonkBrewmaster", ns.Monk.Base())
-MonkBrewmaster.settings = {
+local MonkBrewmaster = Class.new("MonkBrewmaster", ns.Monk.Base(), { statics = { settings = {
     { type = "header", text = "Expel Harm" },
     { type = "toggle", key = "expelHarm", label = "Show heal bar", default = true,
       desc = "A bar that fills from your current health to where Expel Harm would heal you, including Gift of the Ox orbs." },
@@ -22,7 +21,7 @@ MonkBrewmaster.settings = {
     { type = "header", text = "AoE helper" },
     { type = "toggle", key = "aoeHelper", label = "Grey Tiger Palm / Spinning Crane Kick by target count", default = false,
       desc = "In combat: greys Tiger Palm once Spinning Crane Kick does more damage for the enemies in range (use SCK), or greys Spinning Crane Kick below that (use Tiger Palm). The breakpoint is read from their tooltips and adjusts with your gear." },
-}
+} } })
 
 function MonkBrewmaster:OnSettingChanged()
     local host = self:Host()

@@ -14,7 +14,7 @@ local S = dofile("Test/support.lua")
 --   * _ZoneAt seeds the zone lookup row exactly once.
 --   * _DiscoverNodes bails on an unknown faction (no rows written).
 
-local DB_FILES = { "Types", "Schema", "RowStore", "IndexManager", "Constraints", "TriggerManager",
+local DB_FILES = { "Schema", "RowStore", "IndexManager", "Constraints", "TriggerManager",
                    "Database", "Aggregate", "WhereClause", "ColumnResolver", "QueryPlan",
                    "QueryBuilder", "QueryExecutor", "CoreTables", "DatabaseManager" }
 

@@ -2,7 +2,7 @@ local S = dofile("Test/support.lua")
 
 local function newDmlNs()
     local ns = S.newNs()
-    for _, f in ipairs({ "Types", "Schema", "RowStore", "IndexManager", "Constraints", "TriggerManager", "Database" }) do
+for _, f in ipairs({ "Schema", "RowStore", "IndexManager", "Constraints", "TriggerManager", "Database" }) do
         S.load(ns, "Core/DB/" .. f .. ".lua")
     end
     return ns

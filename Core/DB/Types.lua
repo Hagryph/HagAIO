@@ -16,7 +16,9 @@ local addonName, ns = ...
 -- `IS NULL` / `IS NOT NULL` inspect nullness. (SQL is three-valued; two-valued is the pragmatic
 -- choice for an addon and is applied consistently across the engine.)
 
-ns.DB = ns.DB or {}
+-- Types.lua is pinned before every other DB file and is the single namespace owner. A broken
+-- load order must fail at the first consumer instead of silently creating a second partial DB.
+ns.DB = {}
 local DB = ns.DB
 local Enum = ns.Enum
 
@@ -48,6 +50,19 @@ function DB.isNull(v) return v == DB.NULL end
 -- Present and non-NULL? The shared row-cell guard (a read cell is NULL when the key is
 -- absent OR carries the in-memory sentinel -- see the header).
 function DB.isSet(v) return v ~= nil and v ~= DB.NULL end
+
+-- Collapse the in-memory NULL token to ordinary Lua nil at a typed-row boundary.
+function DB.denull(v)
+    if v == DB.NULL then return nil end
+    return v
+end
+
+-- Return a concrete row value, or `default` when it is absent/NULL. Unlike `v or default`,
+-- false and zero are preserved.
+function DB.value(v, default)
+    if DB.isSet(v) then return v end
+    return default
+end
 
 -- ---- value/key encoding -----------------------------------------------------
 -- ONE encoding for every layer that builds keyed lookups over row values (IndexManager's

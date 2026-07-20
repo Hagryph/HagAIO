@@ -1,5 +1,6 @@
 local addonName, ns = ...
 local Class = ns.Class
+local DB = ns.DB
 
 -- Modules/Misc.lua
 -- Miscellaneous helpers, each its own SUBMODULE of this thin parent module -- the codebase's
@@ -22,25 +23,25 @@ local Class = ns.Class
 -- over self:DB() -- the shared database these tables are contributed to.
 local FLIGHT_TABLES = {
     flight_route = {
-        scope = "global",
+        scope = DB.Scope.GLOBAL,
         columns = {
-            { name = "id",  type = "integer", primaryKey = true, autoIncrement = true },
+            { name = "id",  type = DB.ColumnType.INTEGER, primaryKey = true, autoIncrement = true },
             -- src/dst are flight_master node ids; if a master is deleted, its routes go with it.
-            { name = "src", type = "integer", nullable = false, references = { table = "flight_master", onDelete = "cascade" } },
-            { name = "dst", type = "integer", nullable = false, references = { table = "flight_master", onDelete = "cascade" } },
-            { name = "t",       type = "number",  nullable = false },
-            { name = "quality", type = "integer", nullable = false },
+            { name = "src", type = DB.ColumnType.INTEGER, nullable = false, references = { table = "flight_master", onDelete = DB.OnDelete.CASCADE } },
+            { name = "dst", type = DB.ColumnType.INTEGER, nullable = false, references = { table = "flight_master", onDelete = DB.OnDelete.CASCADE } },
+            { name = "t",       type = DB.ColumnType.NUMBER,  nullable = false },
+            { name = "quality", type = DB.ColumnType.INTEGER, nullable = false },
         },
         unique  = { { "src", "dst" } },
         indices = { { columns = { "src" } } },
     },
     flight_hop = {
-        scope = "global",
+        scope = DB.Scope.GLOBAL,
         columns = {
-            { name = "route_id", type = "integer", references = { table = "flight_route", onDelete = "cascade" } },
-            { name = "ordinal",  type = "integer" },
+            { name = "route_id", type = DB.ColumnType.INTEGER, references = { table = "flight_route", onDelete = DB.OnDelete.CASCADE } },
+            { name = "ordinal",  type = DB.ColumnType.INTEGER },
             -- the intermediate flight_master node id; deleting that master removes the hop.
-            { name = "master",   type = "integer", nullable = false, references = { table = "flight_master", onDelete = "cascade" } },
+            { name = "master",   type = DB.ColumnType.INTEGER, nullable = false, references = { table = "flight_master", onDelete = DB.OnDelete.CASCADE } },
         },
         primaryKey = { "route_id", "ordinal" },
     },

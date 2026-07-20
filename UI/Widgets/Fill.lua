@@ -3,7 +3,7 @@ local Theme = ns.Theme
 local Widgets = ns.UI.Widgets
 local _wb = ns.UI._wb
 local Widget, FrameWidget, TextWidget, TextureWidget = _wb.Widget, _wb.FrameWidget, _wb.TextWidget, _wb.TextureWidget
-local unwrap, style, claimLevel, adopt = _wb.unwrap, _wb.style, _wb.claimLevel, _wb.adopt
+local unwrap, style, adopt = _wb.unwrap, _wb.style, _wb.adopt
 
 -- UI/Widgets/Fill.lua
 -- A plain SOLID-COLOUR texture region (a tint/overlay/marker). The generic way an overlay gets a

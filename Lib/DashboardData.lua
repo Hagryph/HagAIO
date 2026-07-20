@@ -9,7 +9,6 @@ local addonName, ns = ...
 -- both available headless.
 --   * VaultDone        -- "done/total" Great Vault slot count (or "-"), via ResetLedger:Progress.
 --   * CurrentExpacLevel-- the current expansion level via a 3-way API fallback chain.
---   * Denull           -- collapse the DB.NULL sentinel to Lua nil (typed-column reader).
 --   * PlainNum         -- launder a value to a plain number, NULLing a secret (typed-column writer).
 
 local DashboardData = {}
@@ -80,13 +79,6 @@ function DashboardData.CurrentExpacLevel(getDisplay, getLevel, fallback)
     if getDisplay then return getDisplay() end
     if getLevel then return getLevel() end
     return fallback
-end
-
--- A projected column is the DB.NULL sentinel (not Lua nil) when absent; collapse it to nil so the
--- reconstructed documents read exactly like the old plain-Lua snapshots (l.progress or 0, etc.).
-function DashboardData.Denull(v)
-    if v == nil or ns.DB.isNull(v) then return nil end
-    return v
 end
 
 -- Only a plain number is allowed into the typed columns: ns.Secrets:Number returns nil for a

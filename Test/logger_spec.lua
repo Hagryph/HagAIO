@@ -106,7 +106,7 @@ end)
 -- A DB-backed Logger so SetEcho / SetMinLevel can be asserted to PERSIST. Mirrors
 -- versioning_spec's rig: load the DB engine, wire an inline `logger` table through a
 -- DatabaseManager stub (the singleton row id = 1 that the Logger upserts into).
-local DB_FILES = { "Types", "Schema", "RowStore", "IndexManager", "Constraints", "TriggerManager",
+local DB_FILES = { "Schema", "RowStore", "IndexManager", "Constraints", "TriggerManager",
                    "Database", "Aggregate", "WhereClause", "ColumnResolver", "QueryPlan",
                    "QueryBuilder", "QueryExecutor" }
 

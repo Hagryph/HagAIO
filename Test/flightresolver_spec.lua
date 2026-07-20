@@ -14,9 +14,9 @@ local function rec(seq, t, q) return { seq = seq, t = t, q = q or 2 } end
 describe("FlightResolver.Quality", function()
     it("DIRECT outranks FLY and the values are the persisted 2/1", function()
         local r = fr()
-        assert.are.equal(2, r.Quality.DIRECT)
-        assert.are.equal(1, r.Quality.FLY)
-        assert.is_true(r.Quality.DIRECT > r.Quality.FLY)
+        assert.are.equal(2, r.Quality().DIRECT)
+        assert.are.equal(1, r.Quality().FLY)
+        assert.is_true(r.Quality().DIRECT > r.Quality().FLY)
     end)
 end)
 

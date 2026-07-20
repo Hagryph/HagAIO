@@ -3,7 +3,7 @@ local Theme = ns.Theme
 local Widgets = ns.UI.Widgets
 local _wb = ns.UI._wb
 local Widget, FrameWidget, TextWidget, TextureWidget = _wb.Widget, _wb.FrameWidget, _wb.TextWidget, _wb.TextureWidget
-local unwrap, style, claimLevel, adopt = _wb.unwrap, _wb.style, _wb.claimLevel, _wb.adopt
+local unwrap, style, adopt = _wb.unwrap, _wb.style, _wb.adopt
 local Registrable = _wb.Registrable
 
 -- UI/Widgets/Window.lua
@@ -26,7 +26,27 @@ local Registrable = _wb.Registrable
 -- Construct with Widgets.Window:New(level, opts). Exposes :Body() / :Bar() / :Title() (widgets) and
 -- :SetWindowTitle(text); the close X and auto-close wiring are internal. onClose / onAutoShow /
 -- onAutoHide callbacks receive the Window widget.
-local WindowW = ns.Class.new("Window", FrameWidget, { mixins = { Registrable } })
+local WindowW = ns.Class.new("Window", FrameWidget, {
+    mixins = { Registrable },
+    statics = { usedLevels = {} },
+})
+
+-- Claim a unique frame level per strata. The ledger belongs to Window as private static state;
+-- windows persist for the session, so claims do not need a release path.
+function WindowW._ClaimLevel(strata, requested)
+    local usedLevels = ns.Class.statics(WindowW).usedLevels
+    local taken = usedLevels[strata]
+    if not taken then taken = {}; usedLevels[strata] = taken end
+    local level = requested
+    while level > 0 and taken[level] do level = level - 1 end
+    if level ~= requested then
+        ns.Logger:Core():Warn(("window level %d (strata %s) is already in use; using %d instead")
+            :format(requested, strata, level))
+    end
+    taken[level] = true
+    return level
+end
+
 function WindowW:Initialize(level, opts)
     opts = opts or {}
     assert(type(level) == "number", "Widgets.Window: a frame level (first argument) is required")
@@ -36,7 +56,7 @@ function WindowW:Initialize(level, opts)
     style(f, "bg1", "borderStrong")
     local strata = opts.strata or "HIGH"
     f:SetFrameStrata(strata)
-    f:SetFrameLevel(claimLevel(strata, level))
+    f:SetFrameLevel(WindowW._ClaimLevel(strata, level))
     f:EnableMouse(true)
     f:SetMovable(true)
     f:SetClampedToScreen(true)

@@ -38,11 +38,6 @@ local ScalingSpec = ns.Type.new("ScalingSpec", { "bonus", "highPct", "lowPct", "
     { highPct = 100, lowPct = 0, direction = ScalingDirection.MISSING })
 ns.ScalingSpec = ScalingSpec
 
-local function clamp01(t)
-    if t < 0 then return 0 elseif t > 1 then return 1 end
-    return t
-end
-
 -- Interpolation fraction t in [0,1] at health percent hp (0..100). 0 = no bonus,
 -- 1 = full bonus (the plateau). Direction picks which end of the window is the max.
 function Scaling:Fraction(spec, hp)
@@ -52,9 +47,9 @@ function Scaling:Fraction(spec, hp)
         return hp <= hi and 1 or 0
     end
     if dir == ScalingDirection.CURRENT then
-        return clamp01((hp - lo) / (hi - lo))   -- more as health rises
+        return ns.Helpers.Clamp01((hp - lo) / (hi - lo))   -- more as health rises
     end
-    return clamp01((hi - hp) / (hi - lo))        -- more as health drops (the SimC missing form)
+    return ns.Helpers.Clamp01((hi - hp) / (hi - lo))        -- more as health drops (the SimC missing form)
 end
 
 -- Multiplier (1 + bonus*t) at health percent hp.

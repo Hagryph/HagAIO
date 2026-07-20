@@ -43,3 +43,26 @@ describe("Helpers.DeepCopy", function()
         assert.is_nil(src.added)
     end)
 end)
+
+describe("Helpers.DeepEqual", function()
+    local H = loadHelpers()
+
+    it("compares nested tables structurally in both directions", function()
+        assert.is_true(H.DeepEqual({ rgb = { 1, 0.5, 0 }, enabled = false },
+                                   { enabled = false, rgb = { 1, 0.5, 0 } }))
+        assert.is_false(H.DeepEqual({ a = 1 }, { a = 1, b = 2 }))
+        assert.is_false(H.DeepEqual({ nested = { x = 1 } }, { nested = { x = 2 } }))
+    end)
+end)
+
+describe("Helpers.Clamp01", function()
+    local H = loadHelpers()
+
+    it("clamps outside values and preserves the unit interval", function()
+        assert.are.equal(0, H.Clamp01(-0.1))
+        assert.are.equal(0, H.Clamp01(0))
+        assert.are.equal(0.4, H.Clamp01(0.4))
+        assert.are.equal(1, H.Clamp01(1))
+        assert.are.equal(1, H.Clamp01(2))
+    end)
+end)

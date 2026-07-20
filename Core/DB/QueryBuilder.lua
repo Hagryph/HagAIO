@@ -18,7 +18,6 @@ local Class = ns.Class
 --     :Having(DB.Fn.Count("*"), ">", 1)
 --     :OrderBy("n", "desc"):Limit(10):Run()
 
-ns.DB = ns.DB or {}
 local DB = ns.DB
 
 -- SQL synonyms / full clause surface kept on purpose even if a given caller doesn't use them.

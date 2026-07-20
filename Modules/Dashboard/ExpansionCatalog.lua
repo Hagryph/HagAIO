@@ -1,5 +1,6 @@
 local addonName, ns = ...
 local Class = ns.Class
+local DB = ns.DB
 
 -- Modules/Dashboard/ExpansionCatalog.lua
 -- The Dashboard's instance + zone CATALOG layer, extracted out of the module so the module itself
@@ -27,7 +28,7 @@ function ExpansionCatalog:DB() return self:_p().owner:DB() end
 
 -- A projected column is the DB.NULL sentinel (not Lua nil) when absent; collapse it to nil so the
 -- reconstructed documents read exactly like the old plain-Lua snapshots (l.progress or 0, etc.).
-local function denull(v) return ns.DashboardData.Denull(v) end
+local denull = DB.denull
 
 -- Mythic 0 dungeon difficulty (id 23). M0 is the localized NAME (matches a saved M0 lock's difficulty
 -- name); RaidDifficulty.MYTHIC_ZERO is the locale-proof difficulty id (stamped on seeded season-dungeon

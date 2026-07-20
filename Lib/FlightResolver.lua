@@ -10,11 +10,14 @@ local Class = ns.Class
 --   * SumLegs    -- sum a route's atomic legs, returning nil if ANY leg is unknown
 --                   (the never-fabricate invariant: a route with a gap has no time).
 
-local FlightResolver = Class.new("FlightResolver", ns.Lib)
-
 -- DIRECT (a real landing) outranks FLY (a mid-flight closest-approach guess). Numeric so a
 -- higher quality wins ties; persisted as a flight_route row's `quality`, so the values stay 2/1.
-FlightResolver.Quality = ns.Enum.new("FlightQuality", { DIRECT = 2, FLY = 1 })
+local FlightResolver = Class.new("FlightResolver", ns.Lib, {
+    statics = { quality = ns.Enum.new("FlightQuality", { DIRECT = 2, FLY = 1 }) },
+})
+
+-- Public read-only accessor; the enum itself lives in the class's private static store.
+function FlightResolver.Quality() return Class.statics(FlightResolver).quality end
 
 -- The flight MASTER name only, stripped of the trailing ", <zone>" the taxi API appends
 -- ("Stormwind, Elwynn" -> "Stormwind"). Discovery and recording both normalise through this so a
@@ -30,7 +33,7 @@ end
 -- A reverse leg substitutes the opposite direction; a derived leg came from subtraction.
 -- Returns seconds, or nil if the leg is entirely unknown.
 function FlightResolver:LegTime(legs, a, b)
-    local Q = self.Quality
+    local Q = FlightResolver.Quality()
     local fwd = ns.FlightGraph.Get(legs, a, b)
     local rev = ns.FlightGraph.Get(legs, b, a)
     if fwd and not fwd.derived and fwd.q == Q.DIRECT then return fwd.t end   -- 1

@@ -18,7 +18,6 @@ local Class = ns.Class
 -- RowStore is "dumb" storage: it does no validation and maintains no indexes -- ConstraintEnforcer
 -- and IndexManager own those. It just keeps the arrays, the auto-id counters, and the backing shape.
 
-ns.DB = ns.DB or {}
 local DB = ns.DB
 
 local RowStore = Class.new("DBRowStore")

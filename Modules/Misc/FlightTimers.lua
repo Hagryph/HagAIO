@@ -18,7 +18,7 @@ local sqrt, huge = math.sqrt, math.huge
 
 local fmt = ns.Format.MMSS   -- pure "M:SS" countdown formatter (Lib/Format.lua)
 local Flight  = ns.FlightResolver
-local Quality = Flight.Quality
+local Quality = Flight.Quality()
 local Crossing = ns.FlightCrossing   -- pure crossing arithmetic (Lib/FlightCrossing.lua)
 
 -- ========================================================================================

@@ -2,7 +2,6 @@ local S = dofile("Test/support.lua")
 
 local function newStorageNs()
     local ns = S.newNs()
-    S.load(ns, "Core/DB/Types.lua")
     S.load(ns, "Core/DB/Schema.lua")
     S.load(ns, "Core/DB/RowStore.lua")
     S.load(ns, "Core/DB/IndexManager.lua")

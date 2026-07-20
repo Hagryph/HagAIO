@@ -4,6 +4,8 @@ local Theme = ns.Theme
 local W = ns.UI.Widgets
 local Ledger = ns.ResetLedger
 local clock = ns.Format.Clock   -- "3h 04m" duration formatter (Lib/Format.lua)
+local DB = ns.DB
+local ColumnType, Scope, OnDelete = DB.ColumnType, DB.Scope, DB.OnDelete
 
 -- Modules/Dashboard.lua
 -- Account-wide, cross-character RESET dashboard. Every character snapshots its own reset-timer
@@ -20,7 +22,29 @@ local clock = ns.Format.Clock   -- "3h 04m" duration formatter (Lib/Format.lua)
 -- instance the character is locked to, incl. legacy raids), and weekly/daily quests are RECORDED
 -- as they're turned in (QUEST_TURNED_IN) and classified by frequency -- no curated ID tables.
 
-local Dashboard = Class.new("Dashboard", ns.Module, { mixins = { ns.VersioningOwner } })
+local function dashboardDevData()
+    local names = { "Aravel", "Borgrim", "Cynthra", "Dorel", "Eryndis", "Fenwick", "Gormak",
+                    "Hesperia", "Ilthane", "Jorvana", "Kaelis", "Lunara" }
+    local classes = { "WARRIOR", "PALADIN", "HUNTER", "ROGUE", "PRIEST", "SHAMAN", "MAGE",
+                      "WARLOCK", "MONK", "DRUID", "DEMONHUNTER", "DEATHKNIGHT", "EVOKER" }
+    local questA = { "Bounty", "Tribute", "Patrol", "Offering", "Harvest", "Errand", "Trial", "Rally", "Procession", "Vigil" }
+    local questB = { "of the Depths", "at Dawn", "for the Flame", "of Renown", "in the Mists",
+                     "of the Vault", "for the Archives", "of Embers", "at the Crossing", "of the Hollow" }
+    return ns.Enum.new("DashboardDevData", {
+        REALM = "DevTest",
+        QUEST_BASE = 900000,
+        NAME = function() return names[math.random(#names)] end,
+        CLASS = function() return classes[math.random(#classes)] end,
+        QUEST_TITLE = function()
+            return questA[math.random(#questA)] .. " " .. questB[math.random(#questB)]
+        end,
+    })
+end
+
+local Dashboard = Class.new("Dashboard", ns.Module, {
+    mixins = { ns.VersioningOwner },
+    statics = { devData = dashboardDevData() },
+})
 
 local RAIL_W = 178            -- left category-tree / character-header rail
 local AVATAR = 46            -- character portrait size
@@ -139,7 +163,7 @@ end
 
 -- A projected column is the DB.NULL sentinel (not Lua nil) when absent; collapse it to nil so the
 -- reconstructed documents read exactly like the old plain-Lua snapshots (l.progress or 0, etc.).
-local function denull(v) return ns.DashboardData.Denull(v) end
+local denull = DB.denull
 
 -- The heavy, deferrable pass: (re)build the instance catalog (once the journal is available) and
 -- snapshot this character. Runs THROUGH the Worker (see OnEnable: self:Queue / self:WorkOn), which
@@ -467,19 +491,10 @@ end
 -- ---- dev tooling: random test data (buttons on the Dev settings page) --------------------------
 -- Fill every dashboard page with RANDOM characters / keystones / vaults / lockouts / quests so the
 -- layouts can be eyeballed fully populated without grinding alts. Test rows are MARKED (characters
--- on realm DEV_REALM, quest ids >= DEV_QUEST_BASE) so DevClearTestData removes exactly them and
+-- on the frozen dev-data realm, quest ids at/above its quest base) so DevClearTestData removes
+-- exactly them and
 -- never touches real data. Lockouts reference the REAL seeded catalog (all expansions) and quest
 -- zones come from REAL zone maps, so tiles render their actual art.
-local DEV_REALM = "DevTest"
-local DEV_QUEST_BASE = 900000
-local DEV_NAMES = { "Aravel", "Borgrim", "Cynthra", "Dorel", "Eryndis", "Fenwick", "Gormak",
-                    "Hesperia", "Ilthane", "Jorvana", "Kaelis", "Lunara" }
-local DEV_CLASSES = { "WARRIOR", "PALADIN", "HUNTER", "ROGUE", "PRIEST", "SHAMAN", "MAGE",
-                      "WARLOCK", "MONK", "DRUID", "DEMONHUNTER", "DEATHKNIGHT", "EVOKER" }
-local DEV_Q1 = { "Bounty", "Tribute", "Patrol", "Offering", "Harvest", "Errand", "Trial", "Rally", "Procession", "Vigil" }
-local DEV_Q2 = { "of the Depths", "at Dawn", "for the Flame", "of Renown", "in the Mists",
-                 "of the Vault", "for the Archives", "of Embers", "at the Crossing", "of the Hollow" }
-
 -- Real zones for test quests: the zone REGISTRY when the catalog has built (every zone, ids +
 -- art resolution included), else a live scan of zone maps with world-map art.
 function Dashboard:_DevZonePool()
@@ -510,6 +525,7 @@ end
 
 function Dashboard:DevSeedTestData()
     local db = self:DB(); if not db then return end
+    local D = self:_statics().devData
     local now = (GetServerTime and GetServerTime()) or time()
     -- expansion pool: the real registry when the catalog has run, else the client's expansion names
     local exps = {}
@@ -522,12 +538,12 @@ function Dashboard:DevSeedTestData()
     -- characters (fresh each seed: cascade-drop, then insert)
     local charKeys = {}
     for i = 1, math.random(6, 10) do
-        local name = DEV_NAMES[math.random(#DEV_NAMES)] .. i
-        local key = name .. "-" .. DEV_REALM
+        local name = D.NAME() .. i
+        local key = name .. "-" .. D.REALM
         charKeys[#charKeys + 1] = key
         db:Delete("dashboard_char", { char_key = key })
-        local fields = { char_key = key, name = name, realm = DEV_REALM,
-            class = DEV_CLASSES[math.random(#DEV_CLASSES)], level = math.random(60, 80),
+        local fields = { char_key = key, name = name, realm = D.REALM,
+            class = D.CLASS(), level = math.random(60, 80),
             ilvl = math.random(380, 680), rating = math.random(0, 3500),
             last_seen = now - math.random(0, 6 * 86400) }
         if #ksIds > 0 and math.random() < 0.8 then
@@ -556,7 +572,7 @@ function Dashboard:DevSeedTestData()
     -- quests: a handful of zones, a few quests each, random expansion/freq; done_at scattered so
     -- the matrix shows a believable mix of checks, dashes, and stale (pre-reset) turn-ins
     local pool = self:_DevZonePool()
-    local qid = DEV_QUEST_BASE
+    local qid = D.QUEST_BASE
     for _ = 1, math.min(8, #pool) do
         local z = pool[math.random(#pool)]
         for _ = 1, math.random(2, 5) do
@@ -564,7 +580,7 @@ function Dashboard:DevSeedTestData()
             local freq = (math.random() < 0.5) and "weekly" or "daily"
             db:Delete("quest", { quest_id = qid })
             db:Insert("quest", { quest_id = qid,
-                title = DEV_Q1[math.random(#DEV_Q1)] .. " " .. DEV_Q2[math.random(#DEV_Q2)],
+                title = D.QUEST_TITLE(),
                 zone_map_id = z.mapID, zone_name = z.name,
                 expansion = exps[math.random(math.max(1, #exps))] })
             local period = (freq == "daily") and 86400 or 604800
@@ -583,8 +599,9 @@ end
 -- Remove exactly the marked test rows (children cascade with their character / quest).
 function Dashboard:DevClearTestData()
     local db = self:DB(); if not db then return end
-    db:Delete("dashboard_char", function(r) return r.realm == DEV_REALM end)
-    db:Delete("quest", function(r) return (r.quest_id or 0) >= DEV_QUEST_BASE end)
+    local D = self:_statics().devData
+    db:Delete("dashboard_char", function(r) return r.realm == D.REALM end)
+    db:Delete("quest", function(r) return (r.quest_id or 0) >= D.QUEST_BASE end)
     self:_p().charStore:InvalidateChars()
     self:_RenderIfShown()
 end
@@ -1193,55 +1210,55 @@ ns.ModuleManager:Register(Dashboard:New("Dashboard", {
         -- at is defined CENTRALLY in Core/DB/CoreTables.lua, alongside faction/quest -- it's plain
         -- account-agnostic reference data, not owned by this module. The CharacterStore still fills it
         -- (CharacterStore:SetKeystone / :SeedKeystones via self:DB()).
-        dashboard_char = { scope = "global", columns = {
-            { name = "char_key",  type = "text",    primaryKey = true },   -- "Name-Realm"
-            { name = "name",      type = "text" },
-            { name = "realm",     type = "text" },
-            { name = "class",     type = "text" },                         -- class file (e.g. "MAGE")
-            { name = "level",     type = "integer" },
-            { name = "ilvl",      type = "integer" },
-            { name = "last_seen", type = "integer" },                      -- server epoch seconds
-            { name = "rating",    type = "number" },                       -- current-season M+ score
-            { name = "ks_mapid",  type = "integer",                        -- owned keystone map (name via keystone)
-                references = { table = "keystone", column = "mapid", onDelete = "cascade" } },
-            { name = "ks_level",  type = "integer" },                      -- this character's keystone level
+        dashboard_char = { scope = Scope.GLOBAL, columns = {
+            { name = "char_key",  type = ColumnType.TEXT,    primaryKey = true },   -- "Name-Realm"
+            { name = "name",      type = ColumnType.TEXT },
+            { name = "realm",     type = ColumnType.TEXT },
+            { name = "class",     type = ColumnType.TEXT },                         -- class file (e.g. "MAGE")
+            { name = "level",     type = ColumnType.INTEGER },
+            { name = "ilvl",      type = ColumnType.INTEGER },
+            { name = "last_seen", type = ColumnType.INTEGER },                      -- server epoch seconds
+            { name = "rating",    type = ColumnType.NUMBER },                       -- current-season M+ score
+            { name = "ks_mapid",  type = ColumnType.INTEGER,                        -- owned keystone map (name via keystone)
+                references = { table = "keystone", column = "mapid", onDelete = OnDelete.CASCADE } },
+            { name = "ks_level",  type = ColumnType.INTEGER },                      -- this character's keystone level
         } },
-        dashboard_vault = { scope = "global",
+        dashboard_vault = { scope = Scope.GLOBAL,
             columns = {
-                { name = "char_key",  type = "text", nullable = false,
-                    references = { table = "dashboard_char", column = "char_key", onDelete = "cascade" } },
-                { name = "ordinal",   type = "integer", nullable = false },   -- slot order within the character
-                { name = "type",      type = "integer" },                     -- activity type
-                { name = "level",     type = "integer" },
-                { name = "progress",  type = "integer" },                     -- plain number only (secrets stored NULL)
-                { name = "threshold", type = "integer" },
+                { name = "char_key",  type = ColumnType.TEXT, nullable = false,
+                    references = { table = "dashboard_char", column = "char_key", onDelete = OnDelete.CASCADE } },
+                { name = "ordinal",   type = ColumnType.INTEGER, nullable = false },   -- slot order within the character
+                { name = "type",      type = ColumnType.INTEGER },                     -- activity type
+                { name = "level",     type = ColumnType.INTEGER },
+                { name = "progress",  type = ColumnType.INTEGER },                     -- plain number only (secrets stored NULL)
+                { name = "threshold", type = ColumnType.INTEGER },
             },
             primaryKey = { "char_key", "ordinal" } },
         -- One row per (character, instance) lock. name/difficulty/is_raid live on dashboard_instance;
         -- this carries only the per-character lock state. Cascades from BOTH the character and the
         -- instance (a pruned instance drops its locks).
-        dashboard_lockout = { scope = "global",
+        dashboard_lockout = { scope = Scope.GLOBAL,
             columns = {
-                { name = "char_key",     type = "text", nullable = false,
-                    references = { table = "dashboard_char", column = "char_key", onDelete = "cascade" } },
-                { name = "instance_key", type = "text", nullable = false,
-                    references = { table = "dashboard_instance", column = "key", onDelete = "cascade" } },
-                { name = "progress",     type = "integer" },                  -- bosses killed (plain number only)
-                { name = "total",        type = "integer" },                  -- boss count
-                { name = "reset",        type = "integer" },                  -- lockout reset epoch
+                { name = "char_key",     type = ColumnType.TEXT, nullable = false,
+                    references = { table = "dashboard_char", column = "char_key", onDelete = OnDelete.CASCADE } },
+                { name = "instance_key", type = ColumnType.TEXT, nullable = false,
+                    references = { table = "dashboard_instance", column = "key", onDelete = OnDelete.CASCADE } },
+                { name = "progress",     type = ColumnType.INTEGER },                  -- bosses killed (plain number only)
+                { name = "total",        type = ColumnType.INTEGER },                  -- boss count
+                { name = "reset",        type = ColumnType.INTEGER },                  -- lockout reset epoch
             },
             primaryKey = { "char_key", "instance_key" } },
         -- One row per (character, freq, quest). The title lives on the shared `quest` table.
         -- `done_at` (server epoch of the LAST turn-in) is what makes "done" reset-aware: a cell only
         -- counts as done while done_at falls inside the current daily/weekly window (_QuestDone).
-        dashboard_quest = { scope = "global",
+        dashboard_quest = { scope = Scope.GLOBAL,
             columns = {
-                { name = "char_key", type = "text", nullable = false,
-                    references = { table = "dashboard_char", column = "char_key", onDelete = "cascade" } },
-                { name = "freq",     type = "text",    nullable = false },    -- "daily" | "weekly"
-                { name = "quest_id", type = "integer", nullable = false,
-                    references = { table = "quest", column = "quest_id", onDelete = "cascade" } },
-                { name = "done_at",  type = "integer" },                      -- server epoch of last turn-in
+                { name = "char_key", type = ColumnType.TEXT, nullable = false,
+                    references = { table = "dashboard_char", column = "char_key", onDelete = OnDelete.CASCADE } },
+                { name = "freq",     type = ColumnType.TEXT,    nullable = false },    -- "daily" | "weekly"
+                { name = "quest_id", type = ColumnType.INTEGER, nullable = false,
+                    references = { table = "quest", column = "quest_id", onDelete = OnDelete.CASCADE } },
+                { name = "done_at",  type = ColumnType.INTEGER },                      -- server epoch of last turn-in
             },
             primaryKey = { "char_key", "freq", "quest_id" } },
         -- Account-wide expansion registry (one row per Encounter Journal tier, e.g. "Midnight",
@@ -1249,29 +1266,29 @@ ns.ModuleManager:Register(Dashboard:New("Dashboard", {
         -- instances (current_season), not a row here. Each row carries the banner logo (a fileID
         -- from GetExpansionDisplayInfo) the tiles display. dashboard_instance.expansion references it
         -- and cascade-deletes with it, so retiring an expansion drops its raids/dungeons.
-        expansion = { scope = "global", columns = {
-            { name = "name",  type = "text", primaryKey = true },             -- journal tier name
-            { name = "level", type = "integer" },                            -- expansion level (logo lookup + ordering)
-            { name = "logo",  type = "integer" },                            -- banner fileID (GetExpansionDisplayInfo)
+        expansion = { scope = Scope.GLOBAL, columns = {
+            { name = "name",  type = ColumnType.TEXT, primaryKey = true },             -- journal tier name
+            { name = "level", type = ColumnType.INTEGER },                            -- expansion level (logo lookup + ordering)
+            { name = "logo",  type = ColumnType.INTEGER },                            -- banner fileID (GetExpansionDisplayInfo)
         } },
         -- The catalog's build/patch stamp is NOT stored here -- it lives in the shared `data_version`
         -- registry owned by ns.Versioning (keyed by domain "dashboard_catalog"). The whole Encounter
         -- Journal catalog is static within a PATCH, so once saved we reconstruct the runtime maps from
         -- dashboard_instance on login and only re-walk the journal when ns.Versioning reports a new build.
-        dashboard_instance = { scope = "global", columns = {
-            { name = "key",         type = "text", primaryKey = true },       -- "instanceID|difficultyID"
-            { name = "instance_id", type = "integer" },                       -- EJ journal instance id (the identity; same name can repeat)
-            { name = "lore_id",     type = "integer" },                       -- EJ loreImage fileID (splash art) -- persisted so the journal need not be re-walked
-            { name = "button_id",   type = "integer" },                       -- EJ buttonImage1 fileID (banner art)
-            { name = "ord",         type = "integer" },                       -- journal order within its tier (tile ordering)
-            { name = "name",      type = "text" },
-            { name = "diff",      type = "text" },
-            { name = "is_raid",   type = "boolean" },
-            { name = "diff_id",   type = "integer" },                         -- locale-proof difficulty id (drives the prune)
-            { name = "total",     type = "integer" },
-            { name = "expansion", type = "text",                              -- home expansion (FK; null until the journal map is known)
-                references = { table = "expansion", column = "name", onDelete = "cascade" } },
-            { name = "current_season", type = "boolean", default = false },   -- in the live raid / M+ season
+        dashboard_instance = { scope = Scope.GLOBAL, columns = {
+            { name = "key",         type = ColumnType.TEXT, primaryKey = true },       -- "instanceID|difficultyID"
+            { name = "instance_id", type = ColumnType.INTEGER },                       -- EJ journal instance id (the identity; same name can repeat)
+            { name = "lore_id",     type = ColumnType.INTEGER },                       -- EJ loreImage fileID (splash art) -- persisted so the journal need not be re-walked
+            { name = "button_id",   type = ColumnType.INTEGER },                       -- EJ buttonImage1 fileID (banner art)
+            { name = "ord",         type = ColumnType.INTEGER },                       -- journal order within its tier (tile ordering)
+            { name = "name",      type = ColumnType.TEXT },
+            { name = "diff",      type = ColumnType.TEXT },
+            { name = "is_raid",   type = ColumnType.BOOLEAN },
+            { name = "diff_id",   type = ColumnType.INTEGER },                         -- locale-proof difficulty id (drives the prune)
+            { name = "total",     type = ColumnType.INTEGER },
+            { name = "expansion", type = ColumnType.TEXT,                              -- home expansion (FK; null until the journal map is known)
+                references = { table = "expansion", column = "name", onDelete = OnDelete.CASCADE } },
+            { name = "current_season", type = ColumnType.BOOLEAN, default = false },   -- in the live raid / M+ season
         } },
     },
     commands = {

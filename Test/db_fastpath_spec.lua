@@ -5,7 +5,7 @@ local S = dofile("Test/support.lua")
 -- per-table generation counter, and the chunked (MaybeYield) executor restarting cleanly when the
 -- table mutates underneath a query that yielded mid-scan.
 
-local DB_FILES = { "Types", "Schema", "RowStore", "IndexManager", "Constraints", "TriggerManager", "Database",
+local DB_FILES = { "Schema", "RowStore", "IndexManager", "Constraints", "TriggerManager", "Database",
                    "Aggregate", "WhereClause", "ColumnResolver", "QueryPlan", "QueryBuilder", "QueryExecutor" }
 
 local function newDbNs()

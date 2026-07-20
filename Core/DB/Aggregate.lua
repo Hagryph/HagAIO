@@ -10,7 +10,6 @@ local Class = ns.Class
 -- The QueryExecutor computes them per group (or once over the whole set when there is no GROUP BY).
 -- Empty / all-NULL results follow SQL: COUNT and TOTAL -> 0; SUM/AVG/MIN/MAX/GROUP_CONCAT -> NULL.
 
-ns.DB = ns.DB or {}
 local DB = ns.DB
 
 local Aggregate = Class.new("DBAggregate")

@@ -1,5 +1,6 @@
 local addonName, ns = ...
 local Class = ns.Class
+local DB = ns.DB
 
 -- Services/Versioning.lua
 -- General data-version registry -- a SHARED facility, not a per-module table. The game CLIENT only
@@ -70,11 +71,11 @@ ns.ServiceManager:Register(Versioning:New("Versioning", {
         -- is the caller's opaque key (e.g. "dashboard_catalog"); `build` is the .toc interface number
         -- the data was saved under, compared against the live client to decide reconstruct-vs-rebuild.
         data_version = {
-            scope = "global",
+            scope = DB.Scope.GLOBAL,
             columns = {
-                { name = "domain", type = "text",   primaryKey = true }, -- caller's dataset key
-                { name = "build",  type = "integer" },                   -- client .toc build it was saved under
-                { name = "patch",  type = "text" },                      -- patch version string, e.g. "12.0.5"
+                { name = "domain", type = DB.ColumnType.TEXT,   primaryKey = true }, -- caller's dataset key
+                { name = "build",  type = DB.ColumnType.INTEGER },                   -- client .toc build it was saved under
+                { name = "patch",  type = DB.ColumnType.TEXT },                      -- patch version string, e.g. "12.0.5"
             }
         },
     },

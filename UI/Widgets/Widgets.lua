@@ -3,7 +3,7 @@ local Theme = ns.Theme
 
 -- UI/Widgets/Widgets.lua
 -- Base of the Widget layer: the factory table, the base class hierarchy, the generic Container and the
--- shared private helpers (unwrap/style/claimLevel/adopt). Loads first (pinned) so widgets + consumers
+-- shared private helpers (unwrap/style/adopt). Loads first (pinned) so widgets + consumers
 -- can reference ns.UI.Widgets / ns.UI._wb. Each concrete widget lives in its own UI/Widgets/<Name>.lua.
 -- Static factory of themed building blocks (the LoL "dark + blue" language in
 -- WoW frame form). Everything funnels through here so the look stays
@@ -215,24 +215,6 @@ end
 Widgets.Container = ContainerW
 local function adopt(region) return ContainerW:New(region, "__adopt__") end   -- wrap an existing raw region
 
--- Frame levels claimed by Widgets.Window, PER STRATA (a level only governs draw order among
--- frames in the SAME strata), so two windows in one strata never share a level and z-fight. A
--- requested level that's taken steps DOWN to the highest free level below it and warns with the
--- level it actually used. Windows are persistent singletons, so claims are never released.
-local usedLevels = {}   -- strata -> { level -> true }
-local function claimLevel(strata, requested)
-    local taken = usedLevels[strata]
-    if not taken then taken = {}; usedLevels[strata] = taken end
-    local level = requested
-    while level > 0 and taken[level] do level = level - 1 end
-    if level ~= requested then
-        ns.Logger:Core():Warn(("window level %d (strata %s) is already in use; using %d instead")
-            :format(requested, strata, level))
-    end
-    taken[level] = true
-    return level
-end
-
 -- Shared "needs a /reload to apply" flag, appended to an option's label so the
 -- marker looks the same everywhere it's used.
 Widgets.RELOAD_FLAG = "  |cff" .. Theme.hex.amber .. "(reload)|r"
@@ -250,6 +232,6 @@ end
 -- Shared private base layer for the per-widget files (NOT public API).
 ns.UI._wb = {
     Widget = Widget, FrameWidget = FrameWidget, TextWidget = TextWidget, TextureWidget = TextureWidget,
-    Container = ContainerW, unwrap = unwrap, style = style, claimLevel = claimLevel, adopt = adopt,
+    Container = ContainerW, unwrap = unwrap, style = style, adopt = adopt,
     Changeable = Changeable, Registrable = Registrable,
 }

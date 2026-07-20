@@ -11,16 +11,14 @@ local Monk = ns.Monk   -- shared Monk surface (constants + RegisterSpec), set in
 -- load-order dep satisfied by the toc; this spec's parent chain is Monk -> Class), not a
 -- service/module-instance dependency.
 
-local MonkBase = Class.new("MonkBase", ns.ClassSpec)
-ns.Monk.SetBase(MonkBase)   -- so Brewmaster.lua (loads after) can extend it
-
-MonkBase.settings = {
+local MonkBase = Class.new("MonkBase", ns.ClassSpec, { statics = { settings = {
     { type = "header", text = "Expel Harm" },
     { type = "toggle", key = "expelHarm", label = "Show heal-threshold marker", default = true,
       desc = "A line on your health bar marking where Expel Harm would heal you to full." },
     { type = "color", key = "expelColor", label = "Ready colour", default = Monk.ExpelReadyColor(), dependsOn = "expelHarm" },
     { type = "color", key = "expelInactiveColor", label = "On-cooldown colour", default = Monk.ExpelCooldownColor(), dependsOn = "expelHarm" },
-}
+} } })
+ns.Monk.SetBase(MonkBase)   -- so Brewmaster.lua (loads after) can extend it
 
 function MonkBase:OnSettingChanged()
     self:Host():_ScheduleUpdate()

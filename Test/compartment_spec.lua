@@ -10,7 +10,7 @@ local S = dofile("Test/support.lua")
 --     frame is absent (old client);
 --   * OnClick routes Left/Right/Middle to the correct action per the service's matrix.
 
-local DB_FILES = { "Types", "Schema", "RowStore", "IndexManager", "Constraints", "TriggerManager",
+local DB_FILES = { "Schema", "RowStore", "IndexManager", "Constraints", "TriggerManager",
                    "Database", "Aggregate", "WhereClause", "ColumnResolver", "QueryPlan",
                    "QueryBuilder", "QueryExecutor" }
 

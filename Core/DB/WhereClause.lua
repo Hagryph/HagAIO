@@ -14,7 +14,6 @@ local Class = ns.Class
 --   w:Where("q", "in", { 1, 2 }):OrWhere("via", "is null")
 --   w:Group(function(g) g:Where("a","=",1):OrWhere("b","=",2) end):AndWhere("c","=",3)
 
-ns.DB = ns.DB or {}
 local DB = ns.DB
 local Op = DB.Op   -- the operator vocabulary (Types.lua); the strings live there, not here
 

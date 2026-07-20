@@ -18,7 +18,6 @@ local addonName, ns = ...
 --   orderBy    : list of { ref, dir = "asc" | "desc" }
 --   limit, offset : number | nil
 
-ns.DB = ns.DB or {}
 local DB = ns.DB
 
 local QueryPlan = {}

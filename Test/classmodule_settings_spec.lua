@@ -17,6 +17,21 @@ local function setup()
 end
 
 describe("Class module spec settings", function()
+    it("keeps each spec schema in its declaring subclass's private static store", function()
+        local ns = setup()
+        local A = ns.Class.new("SpecA", ns.ClassSpec, {
+            statics = { settings = { { type = "note", text = "A" } } },
+        })
+        local B = ns.Class.new("SpecB", ns.ClassSpec, {
+            statics = { settings = { { type = "note", text = "B" } } },
+        })
+        local a, b = A:New({}), B:New({})
+        assert.are.equal("A", a:GetSettings()[1].text)
+        assert.are.equal("B", b:GetSettings()[1].text)
+        assert.is_nil(A.settings)
+        assert.is_nil(B.settings)
+    end)
+
     it("GetSettings resolves the registered spec for the current spec without it being loaded", function()
         local ns, mod = setup()
         local specSettings = { { type = "toggle", key = "x", label = "X", default = true } }

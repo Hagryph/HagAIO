@@ -9,8 +9,8 @@ local addonName, ns = ...
 -- its OWN private query methods (small DAOs) over self:DB() -- the engine is the substrate, the
 -- owner keeps the fast, intention-revealing accessors next to the feature.
 --
---   tables = { flight_route = { scope = "global", columns = {...}, unique = {...} },
---              flight_hop   = { scope = "global", columns = {...}, primaryKey = {...} } }
+--   tables = { flight_route = { scope = ns.DB.Scope.GLOBAL, columns = {...}, unique = {...} },
+--              flight_hop   = { scope = ns.DB.Scope.GLOBAL, columns = {...}, primaryKey = {...} } }
 --   ...
 --   function MyModule:_BestTime(faction, a, b)            -- a private, often-used query
 --       local r = self:DB():Select("t"):From("flight_route")

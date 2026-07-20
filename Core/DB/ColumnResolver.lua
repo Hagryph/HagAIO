@@ -10,7 +10,6 @@ local Class = ns.Class
 -- A composite row is a map alias -> stored-row (or nil for the unmatched side of an outer join);
 -- reading a column from a nil/absent source yields DB.NULL.
 
-ns.DB = ns.DB or {}
 local DB = ns.DB
 
 local ColumnResolver = Class.new("DBColumnResolver")

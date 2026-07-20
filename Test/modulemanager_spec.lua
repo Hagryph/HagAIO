@@ -10,7 +10,7 @@ local S = dofile("Test/support.lua")
 --     refused otherwise, and is disabled in cascade when the dep goes off;
 --   * alwaysOn modules ignore the persisted state and can't be disabled.
 
-local DB_FILES = { "Types", "Schema", "RowStore", "IndexManager", "Constraints", "TriggerManager",
+local DB_FILES = { "Schema", "RowStore", "IndexManager", "Constraints", "TriggerManager",
                    "Database", "Aggregate", "WhereClause", "ColumnResolver", "QueryPlan",
                    "QueryBuilder", "QueryExecutor", "CoreTables", "DatabaseManager" }
 

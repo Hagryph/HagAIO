@@ -109,7 +109,6 @@ end
 
 -- The shared database (or nil before it's built), and the singleton logger-prefs row.
 local function sharedDB() return ns.DatabaseManager and ns.DatabaseManager:Shared() or nil end
-local function val(v, default) return (v ~= nil and not ns.DB.isNull(v)) and v or default end
 
 function Logger:_PrefRow()
     local db = sharedDB(); if not db then return nil end
@@ -126,8 +125,8 @@ end
 -- Pull persisted prefs from the shared database (built by the time this runs, on ADDON_LOADED).
 function Logger:LoadSettings()
     local p, r = self:_p(), self:_PrefRow()
-    p.minLevel = val(r and r.min_level, LEVELS.INFO:Order())
-    p.echo     = val(r and r.echo, true)
+    p.minLevel = ns.DB.value(r and r.min_level, LEVELS.INFO:Order())
+    p.echo     = ns.DB.value(r and r.echo, true)
 end
 
 -- Register is idempotent: the first registration of a name wins, so calling it

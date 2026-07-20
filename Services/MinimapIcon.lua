@@ -1,5 +1,6 @@
 local addonName, ns = ...
 local Class = ns.Class
+local DB = ns.DB
 
 -- Services/MinimapIcon.lua
 -- A standalone minimap button (NOT LibDBIcon — no external libraries). A round
@@ -158,10 +159,10 @@ end
 
 ns.ServiceManager:Register(MinimapIcon:New("MinimapIcon", {
     deps = { "EventBus", "SettingsWindow" },
-    tables = { minimap = { scope = "global", columns = {
-        { name = "id",    type = "integer", primaryKey = true },   -- singleton row (id = 1)
-        { name = "shown", type = "boolean" },
-        { name = "angle", type = "number" },
+    tables = { minimap = { scope = DB.Scope.GLOBAL, columns = {
+        { name = "id",    type = DB.ColumnType.INTEGER, primaryKey = true },   -- singleton row (id = 1)
+        { name = "shown", type = DB.ColumnType.BOOLEAN },
+        { name = "angle", type = DB.ColumnType.NUMBER },
     } } },
     generalToggles = {
         {

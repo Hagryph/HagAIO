@@ -1,5 +1,6 @@
 local addonName, ns = ...
 local Class = ns.Class
+local DB = ns.DB
 
 -- Services/Compartment.lua
 -- Registers HagAIO into the Addon Compartment — the button hub on the minimap
@@ -103,9 +104,9 @@ end
 
 ns.ServiceManager:Register(Compartment:New("Compartment", {
     deps = { "EventBus", "SettingsWindow" },
-    tables = { compartment = { scope = "global", columns = {
-        { name = "id",    type = "integer", primaryKey = true },   -- singleton row (id = 1)
-        { name = "shown", type = "boolean" },
+    tables = { compartment = { scope = DB.Scope.GLOBAL, columns = {
+        { name = "id",    type = DB.ColumnType.INTEGER, primaryKey = true },   -- singleton row (id = 1)
+        { name = "shown", type = DB.ColumnType.BOOLEAN },
     } } },
     generalToggles = {
         {

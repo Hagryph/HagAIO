@@ -12,7 +12,6 @@ local Class = ns.Class
 -- NULL handling: a key column that is NULL (absent) is NOT indexed. SQL lets a UNIQUE column hold
 -- many NULLs, and a NULL never equals anything, so NULL rows simply don't participate in any map.
 
-ns.DB = ns.DB or {}
 local DB = ns.DB
 
 -- The shared value/key encoding (Core/DB/Types.lua) -- one byte-compatible source for every

@@ -17,7 +17,6 @@ local Class = ns.Class
 -- A re-entrancy guard stops a trigger whose action issues DML on the same table+timing+event from
 -- recursing into itself forever.
 
-ns.DB = ns.DB or {}
 local DB = ns.DB
 
 local TriggerManager = Class.new("DBTriggerManager")

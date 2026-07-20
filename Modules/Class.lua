@@ -22,7 +22,7 @@ ns.ClassModule = ClassModule       -- per-class files add their methods here
 local ClassSpec = Class.new("ClassSpec", nil, { abstract = true })
 function ClassSpec:Initialize(host) self:_p().host = host end
 function ClassSpec:Host() return self:_p().host end
-function ClassSpec:GetSettings() return self.settings or {} end
+function ClassSpec:GetSettings() return self:_statics().settings or {} end
 ClassSpec.Load = Class.abstract("Load")
 ClassSpec.Unload = Class.abstract("Unload")
 function ClassSpec:OnSettingChanged() end   -- optional; a spec overrides to react

@@ -13,7 +13,6 @@ local Class = ns.Class
 -- Reach the live database via ns.DatabaseManager:Shared(), or self:DB() on a module/service, and
 -- query its tables: self:DB():Select(...):From("faction"):Run().
 
-ns.DB = ns.DB or {}
 local DB = ns.DB
 
 local DatabaseManager = Class.new("DatabaseManager", ns.Service)

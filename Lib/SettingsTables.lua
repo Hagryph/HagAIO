@@ -1,5 +1,8 @@
 local addonName, ns = ...
 local Class = ns.Class
+local SettingsTables = Class.new("SettingsTables", ns.Lib, {
+    statics = { fieldsCache = setmetatable({}, { __mode = "k" }) },
+})
 
 -- Lib/SettingsTables.lua
 -- Expresses the addon's SETTINGS as ordinary Database tables and resolves the
@@ -24,20 +27,6 @@ local Class = ns.Class
 -- would serialise to an EMPTY row/blob (silent data loss). A colour DEFAULT may be authored as an
 -- ns.Color for readability; it is decomposed to a triple at the door (colorTriple, below).
 
--- Shared row-cell guard (ns.DB.isSet). Bound at CALL time: this lib also loads in headless
--- rigs that don't bring the DB engine in, where ns.DB doesn't exist yet (it's only ever
--- called with a built database, so the late bind is always satisfied in practice).
-local function isSet(v) return ns.DB.isSet(v) end
-
--- Structural equality (handles the small tables settings use, e.g. {r,g,b} colours).
-local function deepEqual(a, b)
-    if a == b then return true end
-    if type(a) ~= "table" or type(b) ~= "table" then return false end
-    for k, v in pairs(a) do if not deepEqual(v, b[k]) then return false end end
-    for k in pairs(b) do if a[k] == nil then return false end end
-    return true
-end
-
 -- A colour DEFAULT may be authored as an ns.Color; the engine works in plain { r, g, b } scalars,
 -- so decompose it here at the door. Anything already plain (a raw triple from a headless rig that
 -- skips Lib/Color, or ns.Color simply not loaded) passes through untouched.
@@ -50,29 +39,29 @@ end
 local function fieldFor(e)
     local key, t = e.key, e.type
     if t == ns.SettingType.TOGGLE then
-        return { cols = { { name = key, type = "boolean" } },
-                 read  = function(row) local v = row[key]; if isSet(v) then return v end end,
+        return { cols = { { name = key, type = ns.DB.ColumnType.BOOLEAN } },
+                 read  = function(row) local v = row[key]; if ns.DB.isSet(v) then return v end end,
                  write = function(v)   return { [key] = v and true or false } end }
     elseif t == ns.SettingType.SELECT or t == "input" then
-        return { cols = { { name = key, type = "text" } },
-                 read  = function(row) local v = row[key]; if isSet(v) then return v end end,
+        return { cols = { { name = key, type = ns.DB.ColumnType.TEXT } },
+                 read  = function(row) local v = row[key]; if ns.DB.isSet(v) then return v end end,
                  write = function(v)   return { [key] = v } end }
     elseif t == "number" or t == "slider" or t == "range" then
-        return { cols = { { name = key, type = "number" } },
-                 read  = function(row) local v = row[key]; if isSet(v) then return v end end,
+        return { cols = { { name = key, type = ns.DB.ColumnType.NUMBER } },
+                 read  = function(row) local v = row[key]; if ns.DB.isSet(v) then return v end end,
                  write = function(v)   return { [key] = v } end }
     elseif t == ns.SettingType.COLOR then
         local r, g, b = key .. "_r", key .. "_g", key .. "_b"
         return { color = true,
-                 cols = { { name = r, type = "number" }, { name = g, type = "number" }, { name = b, type = "number" } },
-                 read  = function(row) if isSet(row[r]) then return { row[r], row[g], row[b] } end end,
+                 cols = { { name = r, type = ns.DB.ColumnType.NUMBER }, { name = g, type = ns.DB.ColumnType.NUMBER }, { name = b, type = ns.DB.ColumnType.NUMBER } },
+                 read  = function(row) if ns.DB.isSet(row[r]) then return { row[r], row[g], row[b] } end end,
                  write = function(v)   return { [r] = v[1], [g] = v[2], [b] = v[3] } end }
     end
 end
 
 -- Ordered field list for a schema (cached by schema identity), plus a key -> field index.
-local fieldsCache = setmetatable({}, { __mode = "k" })
 local function schemaFields(schema)
+    local fieldsCache = Class.statics(SettingsTables).fieldsCache
     local fs = fieldsCache[schema]
     if not fs then
         fs = { byKey = {} }
@@ -102,8 +91,6 @@ end
 local function profRow(db, nsKey, name)
     return db:Select("*"):From(pName(nsKey)):Where("profile", "=", name):Limit(1):Run()[1]
 end
-
-local SettingsTables = Class.new("SettingsTables", ns.Lib)
 
 -- Cache sentinel: "this key RESOLVED to nil" (distinct from "not cached yet").
 local NIL = {}
@@ -160,9 +147,9 @@ end
 function SettingsTables:DeriveTables(nsKey, schema)
     local fs = schemaFields(schema)
     if #fs == 0 then return {} end
-    local oCols = { { name = "id", type = "integer", primaryKey = true } }
-    local pCols = { { name = "profile", type = "text", primaryKey = true,
-                      references = { table = "profile", column = "name", onDelete = "cascade" } } }
+    local oCols = { { name = "id", type = ns.DB.ColumnType.INTEGER, primaryKey = true } }
+    local pCols = { { name = "profile", type = ns.DB.ColumnType.TEXT, primaryKey = true,
+                      references = { table = "profile", column = "name", onDelete = ns.DB.OnDelete.CASCADE } } }
     for _, f in ipairs(fs) do
         for _, c in ipairs(f.cols) do
             oCols[#oCols + 1] = { name = c.name, type = c.type }   -- nullable by default
@@ -170,8 +157,8 @@ function SettingsTables:DeriveTables(nsKey, schema)
         end
     end
     local out = {}
-    out[oName(nsKey)] = { scope = "char",   columns = oCols }
-    out[pName(nsKey)] = { scope = "global", columns = pCols }
+    out[oName(nsKey)] = { scope = ns.DB.Scope.CHAR,   columns = oCols }
+    out[pName(nsKey)] = { scope = ns.DB.Scope.GLOBAL, columns = pCols }
     return out
 end
 
@@ -179,7 +166,7 @@ end
 function SettingsTables:LoadedProfile(db)
     local r = db:Select("loaded_profile"):From("config"):Where("id", "=", 1):Limit(1):Run()[1]
     local v = r and r.loaded_profile
-    if isSet(v) then return v end
+    if ns.DB.isSet(v) then return v end
 end
 
 function SettingsTables:SetLoadedProfile(db, name)
@@ -256,7 +243,7 @@ function SettingsTables:Set(db, nsKey, schema, key, value)
     self:Invalidate(db, nsKey)
     local t = oName(nsKey)
     local exists = charRow(db, nsKey) ~= nil
-    if deepEqual(value, self:Baseline(db, nsKey, schema, key)) then
+    if ns.Helpers.DeepEqual(value, self:Baseline(db, nsKey, schema, key)) then
         if not exists then return end
         local clear = {}; for _, c in ipairs(f.cols) do clear[c.name] = ns.DB.NULL end
         db:Update(t, clear, function(r) return r.id == 1 end)
@@ -286,7 +273,7 @@ function SettingsTables:SnapshotInto(db, nsKey, schema, name)
     local cols, any = {}, false
     for _, f in ipairs(fs) do
         local v = self:Get(db, nsKey, schema, f.key)
-        if v ~= nil and not deepEqual(v, f.default) then
+        if v ~= nil and not ns.Helpers.DeepEqual(v, f.default) then
             for k, val in pairs(f.write(v)) do cols[k] = val end; any = true
         else
             for _, c in ipairs(f.cols) do cols[c.name] = ns.DB.NULL end
@@ -307,7 +294,7 @@ function SettingsTables:EffectiveDiffs(db, nsKey, schema)
     local out
     for _, f in ipairs(schemaFields(schema)) do
         local v = self:Get(db, nsKey, schema, f.key)
-        if v ~= nil and not deepEqual(v, f.default) then out = out or {}; out[f.key] = v end
+        if v ~= nil and not ns.Helpers.DeepEqual(v, f.default) then out = out or {}; out[f.key] = v end
     end
     return out
 end
@@ -343,7 +330,7 @@ function SettingsTables:_EnableBaseline(db, name, default)
     if loaded then
         local pr = db:Select("enabled"):From("profile_module_enable")
             :Where("profile", "=", loaded):AndWhere("name", "=", name):Limit(1):Run()[1]
-        if pr and isSet(pr.enabled) then return pr.enabled end
+        if pr and ns.DB.isSet(pr.enabled) then return pr.enabled end
     end
     return default and true or false
 end
@@ -351,7 +338,7 @@ end
 -- Effective enabled: char override ?? loaded profile ?? registered default.
 function SettingsTables:GetModuleEnabled(db, name, default)
     local r = db:Select("enabled"):From("module_enable"):Where("name", "=", name):Limit(1):Run()[1]
-    if r and isSet(r.enabled) then return r.enabled end
+    if r and ns.DB.isSet(r.enabled) then return r.enabled end
     return self:_EnableBaseline(db, name, default)
 end
 

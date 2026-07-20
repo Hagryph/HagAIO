@@ -3,7 +3,7 @@ local S = dofile("Test/support.lua")
 -- Profiles are built ON THE DATABASE: a `profile` row + per-namespace `p_*` rows (FK cascade). The
 -- live cascade (override -> loaded profile -> default) is resolved by Lib/SettingsTables.lua. These
 -- specs drive the rewritten service against a built database with one registered settings namespace.
-local DB_FILES = { "Types", "Schema", "RowStore", "IndexManager", "Constraints", "TriggerManager",
+local DB_FILES = { "Schema", "RowStore", "IndexManager", "Constraints", "TriggerManager",
                    "Database", "Aggregate", "WhereClause", "ColumnResolver", "QueryPlan",
                    "QueryBuilder", "QueryExecutor", "CoreTables", "DatabaseManager" }
 
