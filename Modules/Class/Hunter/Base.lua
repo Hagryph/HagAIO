@@ -6,14 +6,18 @@ local Hunter = ns.Hunter
 -- player chooses a Hunter specialisation.
 local HunterBase = Class.new("HunterBase", ns.ClassSpec, { statics = { settings = {
     { type = "header", text = "Steady Shot" },
-    { type = "toggle", key = "steadyShot", label = "Show final Focus while casting", default = true,
-      desc = "While casting Steady Shot, extend the Focus bar to show how much Focus you will have when the cast finishes." },
+    { type = "toggle", key = "steadyShot", label = "Show post-cast Focus", default = true,
+      desc = "Show a prediction band from current Focus to the amount you will have after Steady Shot finishes." },
     { type = "color", key = "steadyColor", label = "Prediction colour",
       default = Hunter.SteadyColor(), dependsOn = "steadyShot" },
+    { type = "toggle", key = "steadyCastFill", label = "Extend actual Focus while casting", default = true,
+      desc = "While casting Steady Shot, extend Blizzard's actual Focus fill by the Focus the cast will generate." },
 } } })
 
 function HunterBase:OnSettingChanged()
-    self:Host():_ScheduleSteady()
+    local host = self:Host()
+    host:_UpdateSteadyBarRange()
+    host:_ScheduleSteady()
 end
 
 function HunterBase:Load()
@@ -27,10 +31,14 @@ function HunterBase:Load()
             if unit == "player" and statusbar.unitFrame == PlayerFrame then
                 local hp = host:_p()
                 if hp.steadyPowerBar ~= statusbar then
+                    host:_RestoreSteadyBarRange()
                     hp.steadyPowerBar = statusbar
                     host:_WatchBarSize(statusbar, function() host:_ScheduleSteady() end)
                     host:_ScheduleSteady()
                 end
+                -- Blizzard restores the ordinary [0, max] range during its own
+                -- update; while Steady Shot is casting, reapply our predicted range.
+                host:_UpdateSteadyBarRange()
             end
         end)
         p.steadyPowerHookInstalled = true
@@ -53,10 +61,14 @@ function HunterBase:Load()
     host:OnUnit("UNIT_SPELLCAST_SUCCEEDED",   { "player" }, stopCast, "hunter")
 
     host:On("UNIT_MAXPOWER", function(_, unit)
-        if unit == "player" then host:_SnapshotSteadyMax(); host:_ScheduleSteady() end
+        if unit == "player" then
+            host:_SnapshotSteadyMax(); host:_UpdateSteadyBarRange(); host:_ScheduleSteady()
+        end
     end, "hunter")
     host:On("UNIT_DISPLAYPOWER", function(_, unit)
-        if unit == "player" then host:_SnapshotSteadyMax(); host:_ScheduleSteady() end
+        if unit == "player" then
+            host:_SnapshotSteadyMax(); host:_UpdateSteadyBarRange(); host:_ScheduleSteady()
+        end
     end, "hunter")
     host:On("TRAIT_CONFIG_UPDATED",         function() host:_RefreshSteadyGain() end, "hunter")
     host:On("ACTIVE_COMBAT_CONFIG_CHANGED", function() host:_RefreshSteadyGain() end, "hunter")
@@ -70,6 +82,7 @@ function HunterBase:Unload()
     local host = self:Host()
     local p = host:_p()
     host:ReleaseScope("hunter")
+    host:_RestoreSteadyBarRange()
     p.steadyScheduled = false
     p.steadyActive = false
     p.steadyCasting = false

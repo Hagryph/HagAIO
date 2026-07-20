@@ -92,6 +92,7 @@ function ClassModule:_RefreshSteadyGainNow()
             if p.steadyActive and not p.steadyGain then
                 local retry = readSteadyFocusGain()
                 p.steadyGain = retry and retry > 0 and retry or nil
+                self:_UpdateSteadyBarRange()
                 self:_ScheduleSteady()
             end
         end, "hunter")
@@ -100,6 +101,7 @@ end
 
 function ClassModule:_RefreshSteadyGain()
     self:_RefreshSteadyGainNow()
+    self:_UpdateSteadyBarRange()
     self:_ScheduleSteady()
 end
 
@@ -117,6 +119,7 @@ function ClassModule:_StartSteadyCast(castGUID, spellID)
     local p = self:_p()
     p.steadyCasting = spellID == Spell.STEADY_SHOT
     p.steadyCastGUID = p.steadyCasting and castGUID or nil
+    self:_UpdateSteadyBarRange()
     self:_ScheduleSteady()
 end
 
@@ -128,8 +131,52 @@ function ClassModule:_StopSteadyCast(castGUID, spellID)
     if (castGUID and castGUID == p.steadyCastGUID) or spellID == Spell.STEADY_SHOT then
         p.steadyCasting = false
         p.steadyCastGUID = nil
+        self:_UpdateSteadyBarRange()
         self:_ScheduleSteady()
     end
+end
+
+function ClassModule:_RestoreSteadyBarRange()
+    local p = self:_p()
+    local bar = p.steadyRangeBar
+    local maxFocus = p.steadyMaxSnap
+    if bar and bar.SetMinMaxValues and maxFocus and maxFocus > 0 then
+        bar:SetMinMaxValues(0, maxFocus)
+    end
+    p.steadyRangeBar = nil
+end
+
+-- Extend Blizzard's ACTUAL Focus fill without reading current Focus and without
+-- drawing another bar. If Blizzard's current value is F, changing the status-bar
+-- range from [0, max] to [-gain, max-gain] makes its own fill render at
+-- (F + gain) / max. The UnitFrameManaBar_Update post-hook reapplies this range
+-- after Blizzard refreshes it; cast end restores the normal range immediately.
+function ClassModule:_UpdateSteadyBarRange()
+    local p = self:_p()
+    local bar = p.steadyPowerBar
+    if not (bar and self:IsEnabled() and p.steadyActive and p.steadyCasting
+            and self:GetSetting("steadyCastFill")) then
+        self:_RestoreSteadyBarRange()
+        return
+    end
+
+    local gain = p.steadyGain
+    local maxFocus = UnitPowerMax("player", POWER_FOCUS)
+    if maxFocus and not ns.Secrets:Is(maxFocus) and maxFocus > 0 then
+        p.steadyMaxSnap = maxFocus
+    else
+        maxFocus = p.steadyMaxSnap
+    end
+    if not gain or gain <= 0 or not maxFocus or maxFocus <= 0 then
+        self:_RestoreSteadyBarRange()
+        return
+    end
+
+    if p.steadyRangeBar and p.steadyRangeBar ~= bar then
+        self:_RestoreSteadyBarRange()
+    end
+    bar:SetMinMaxValues(-gain, maxFocus - gain)
+    p.steadyRangeBar = bar
 end
 
 -- Draw a translucent extension from Blizzard's current Focus fill edge. The
@@ -141,8 +188,7 @@ function ClassModule:_UpdateSteady()
     local bar = p.steadyPowerBar
     if not bar then return end
 
-    if not (self:IsEnabled() and p.steadyActive and p.steadyCasting
-            and self:GetSetting("steadyShot")) then
+    if not (self:IsEnabled() and p.steadyActive and self:GetSetting("steadyShot")) then
         if p.steadyMarker then p.steadyMarker:Hide() end
         return
     end
