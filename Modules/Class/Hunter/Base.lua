@@ -41,6 +41,23 @@ function HunterBase:Load()
         p.steadyPowerHookInstalled = true
     end
 
+    -- Blizzard updates (and normally hides) ManaCostPredictionBar for every cast.
+    -- Reapply our positive Steady Shot continuation after that native update, using
+    -- the same native segment rather than competing with it from a separate texture.
+    if not p.steadyPredictionHookInstalled and type(UnitFrameManaCostPredictionBars_Update) == "function" then
+        hooksecurefunc("UnitFrameManaCostPredictionBars_Update", function(frame)
+            if frame == PlayerFrame then
+                local hp = host:_p()
+                if not hp.steadyPowerBar and frame.manabar then
+                    hp.steadyPowerBar = frame.manabar
+                    host:_WatchBarSize(frame.manabar, function() host:_ScheduleSteady() end)
+                end
+                host:_UpdateSteadyCastFill()
+            end
+        end)
+        p.steadyPredictionHookInstalled = true
+    end
+
     p.steadyActive = true
     p.steadyCasting = false
     p.steadyCastGUID = nil
@@ -84,7 +101,7 @@ function HunterBase:Unload()
     p.steadyCasting = false
     p.steadyCastGUID = nil
     if p.steadyMarker then p.steadyMarker:Hide() end
-    if p.steadyCastFill then p.steadyCastFill:Hide() end
+    if p.steadyNativePrediction then p.steadyNativePrediction:Hide() end
 end
 
 Hunter.RegisterBase("Hunter-Base", HunterBase, { "EventBus", "Secrets" })

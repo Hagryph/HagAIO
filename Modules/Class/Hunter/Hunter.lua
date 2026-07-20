@@ -151,7 +151,6 @@ function ClassModule:_SteadyBarVisuals()
         p.steadyHost = host
         p.steadyHostBar = bar
         p.steadyMarker = nil
-        p.steadyCastFill = nil
     end
     return bar, fill
 end
@@ -167,21 +166,26 @@ function ClassModule:_SteadyGainWidth(bar, gain, maxFocus)
     return (gain / maxFocus) * barWidth
 end
 
--- Secret-safe visual continuation of Blizzard's own fill. Mutating the native
--- StatusBar range taints Blizzard_TextStatusBar when it compares secret values,
--- so the native bar must remain untouched. This is a texture (not another
--- StatusBar), copies the native fill texture/tint, and begins exactly at its live
--- right edge; visually it is one continuous fill extended by the generated Focus.
+-- Use Blizzard's own masked ManaCostPredictionBar segment to continue the native
+-- fill. Do NOT call its UpdateFillPosition method: that reads the bar's secret max
+-- and divides in addon-tainted execution. We already have plain max/width snapshots,
+-- so only position its native FillMask with non-secret pixel geometry.
 function ClassModule:_UpdateSteadyCastFill()
     local p = self:_p()
+    local prior = p.steadyNativePrediction
     if not (self:IsEnabled() and p.steadyActive and p.steadyCasting
             and self:GetSetting("steadyCastFill")) then
-        if p.steadyCastFill then p.steadyCastFill:Hide() end
+        if prior then prior:Hide() end
         return
     end
 
-    local bar, fill = self:_SteadyBarVisuals()
-    if not bar then return end
+    local bar = p.steadyPowerBar
+    local fill = bar and bar.GetStatusBarTexture and bar:GetStatusBarTexture()
+    local prediction = bar and bar.ManaCostPredictionBar
+    if not (bar and fill and prediction and prediction.Fill and prediction.FillMask) then
+        if prior then prior:Hide() end
+        return
+    end
 
     local gain = p.steadyGain
     local maxFocus = UnitPowerMax("player", POWER_FOCUS)
@@ -191,28 +195,24 @@ function ClassModule:_UpdateSteadyCastFill()
         maxFocus = p.steadyMaxSnap
     end
     if not gain or gain <= 0 or not maxFocus or maxFocus <= 0 then
-        if p.steadyCastFill then p.steadyCastFill:Hide() end
+        if prior then prior:Hide() end
         return
     end
 
     local width = self:_SteadyGainWidth(bar, gain, maxFocus)
     if not width then
-        if p.steadyCastFill then p.steadyCastFill:Hide() end
+        if prior then prior:Hide() end
         return
     end
-    if not p.steadyCastFill then
-        p.steadyCastFill = ns.UI.Widgets.Fill:New(p.steadyHost, { layer = "OVERLAY", sublevel = 8 })
-    end
-    local extension = p.steadyCastFill
-    local texture = fill.GetTexture and fill:GetTexture()
-    if texture then extension:SetTexture(texture) end
-    if fill.GetVertexColor then extension:SetVertexColor(fill:GetVertexColor()) end
-    extension:ClearAllPoints()
-    extension:SetPoint("TOPLEFT", fill, "TOPRIGHT", 0, 0)
-    extension:SetPoint("BOTTOMLEFT", fill, "BOTTOMRIGHT", 0, 0)
-    extension:SetWidth(width)
-    extension:Show()
-    p.steadyHost:Show()
+    if prior and prior ~= prediction then prior:Hide() end
+    local r, g, b = bar:GetStatusBarColor()
+    prediction.Fill:SetVertexColor(r, g, b, 1)
+    prediction.FillMask:ClearAllPoints()
+    prediction.FillMask:SetPoint("TOPLEFT", fill, "TOPRIGHT", 0, 0)
+    prediction.FillMask:SetPoint("BOTTOMLEFT", fill, "BOTTOMRIGHT", 0, 0)
+    prediction.FillMask:SetWidth(width)
+    prediction:Show()
+    p.steadyNativePrediction = prediction
 end
 
 -- Draw a translucent extension from Blizzard's current Focus fill edge. The
