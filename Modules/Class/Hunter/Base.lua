@@ -6,8 +6,8 @@ local Hunter = ns.Hunter
 -- player chooses a Hunter specialisation.
 local HunterBase = Class.new("HunterBase", ns.ClassSpec, { statics = { settings = {
     { type = "header", text = "Steady Shot" },
-    { type = "toggle", key = "steadyShot", label = "Show post-cast Focus", default = true,
-      desc = "A bar showing how much Focus you will have after Steady Shot finishes." },
+    { type = "toggle", key = "steadyShot", label = "Show final Focus while casting", default = true,
+      desc = "While casting Steady Shot, extend the Focus bar to show how much Focus you will have when the cast finishes." },
     { type = "color", key = "steadyColor", label = "Prediction colour",
       default = Hunter.SteadyColor(), dependsOn = "steadyShot" },
 } } })
@@ -37,6 +37,21 @@ function HunterBase:Load()
     end
 
     p.steadyActive = true
+    p.steadyCasting = false
+    p.steadyCastGUID = nil
+
+    host:OnUnit("UNIT_SPELLCAST_START", { "player" }, function(_, _, castGUID, spellID)
+        host:_StartSteadyCast(castGUID, spellID)
+    end, "hunter")
+    local function stopCast(_, _, castGUID, spellID)
+        host:_StopSteadyCast(castGUID, spellID)
+    end
+    host:OnUnit("UNIT_SPELLCAST_STOP",        { "player" }, stopCast, "hunter")
+    host:OnUnit("UNIT_SPELLCAST_FAILED",      { "player" }, stopCast, "hunter")
+    host:OnUnit("UNIT_SPELLCAST_FAILED_QUIET", { "player" }, stopCast, "hunter")
+    host:OnUnit("UNIT_SPELLCAST_INTERRUPTED", { "player" }, stopCast, "hunter")
+    host:OnUnit("UNIT_SPELLCAST_SUCCEEDED",   { "player" }, stopCast, "hunter")
+
     host:On("UNIT_MAXPOWER", function(_, unit)
         if unit == "player" then host:_SnapshotSteadyMax(); host:_ScheduleSteady() end
     end, "hunter")
@@ -57,6 +72,8 @@ function HunterBase:Unload()
     host:ReleaseScope("hunter")
     p.steadyScheduled = false
     p.steadyActive = false
+    p.steadyCasting = false
+    p.steadyCastGUID = nil
     if p.steadyMarker then p.steadyMarker:Hide() end
 end
 

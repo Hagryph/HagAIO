@@ -113,6 +113,25 @@ function ClassModule:_ScheduleSteady()
     end, "hunter")
 end
 
+function ClassModule:_StartSteadyCast(castGUID, spellID)
+    local p = self:_p()
+    p.steadyCasting = spellID == Spell.STEADY_SHOT
+    p.steadyCastGUID = p.steadyCasting and castGUID or nil
+    self:_ScheduleSteady()
+end
+
+function ClassModule:_StopSteadyCast(castGUID, spellID)
+    local p = self:_p()
+    if not p.steadyCasting then return end
+    -- Match the cast token when supplied; the spell-ID fallback covers clients or
+    -- terminal cast events that omit the token.
+    if (castGUID and castGUID == p.steadyCastGUID) or spellID == Spell.STEADY_SHOT then
+        p.steadyCasting = false
+        p.steadyCastGUID = nil
+        self:_ScheduleSteady()
+    end
+end
+
 -- Draw a translucent extension from Blizzard's current Focus fill edge. The
 -- clipped host caps the extension at the bar's maximum, producing the post-cast
 -- Focus result without ever asking addon code for the current (possibly secret)
@@ -122,7 +141,8 @@ function ClassModule:_UpdateSteady()
     local bar = p.steadyPowerBar
     if not bar then return end
 
-    if not (self:IsEnabled() and p.steadyActive and self:GetSetting("steadyShot")) then
+    if not (self:IsEnabled() and p.steadyActive and p.steadyCasting
+            and self:GetSetting("steadyShot")) then
         if p.steadyMarker then p.steadyMarker:Hide() end
         return
     end
