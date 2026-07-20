@@ -81,6 +81,7 @@ backs the `dependsOn` greying of individual settings controls.
 HagAIO.toc                 Load manifest — header tracked; file list filled on deploy
 Core/
   Namespace.lua            Root namespace module
+  Player.lua               Shared, session-cached player classification
   Class.lua                Minimal metatable-based OOP system with true per-instance encapsulation
   Type.lua                 VALUE-TYPE factory -- a sibling of ns.Class for immutable value objects (e.g
   Enum.lua                 ENUM factory -- a sibling of ns.Class for FROZEN constant tables

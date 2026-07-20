@@ -13,6 +13,7 @@
   "scanDirs": ["Core", "Lib", "Services", "UI", "Modules"],
   "pinnedHead": [
     "Core/Namespace.lua",
+    "Core/Player.lua",
     "Core/Class.lua",
     "Core/Type.lua",
     "Core/Enum.lua",

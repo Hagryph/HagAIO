@@ -69,33 +69,6 @@ ns.DevIdentity = {
     IsWhitelisted = function(key) return DEV_WHITELIST[key] == true end,
 }
 
--- Shared, session-cached player classification. These two values are useful well
--- beyond the Class settings module, so keep one namespace-level source of truth:
---   ns.Player.class = the unlocalized class token (for example "HUNTER")
---   ns.Player.spec  = "none" or the current specialization index
--- Core/Init.lua refreshes both at login and only `spec` on specialization changes.
-local Player = { class = nil, spec = "none" }
-
-function Player.RefreshClass()
-    local class = UnitClass and select(2, UnitClass("player"))
-    if class then Player.class = class end
-    return Player.class
-end
-
-function Player.RefreshSpec()
-    local idx = GetSpecialization and GetSpecialization()
-    local count = (GetNumSpecializations and GetNumSpecializations()) or 0
-    Player.spec = (idx and idx >= 1 and idx <= count) and idx or "none"
-    return Player.spec
-end
-
-function Player.Refresh()
-    Player.RefreshClass()
-    Player.RefreshSpec()
-end
-
-ns.Player = Player
-
 -- Run `fn(isDevChar)` once the character identity is KNOWN -- immediately when it already
 -- is, else queued until Core/Init.lua flushes on PLAYER_LOGIN (identity is guaranteed by
 -- then). Dev-only surfaces register through this instead of a bare load-time IsDevChar()
