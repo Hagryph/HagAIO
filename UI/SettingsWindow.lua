@@ -509,7 +509,23 @@ end
 -- Render one settings HOST's schema (a Module OR a Submodule -- anything with
 -- GetSettings/GetSetting/SetSetting) into `content` starting at `y`; returns the
 -- new y. Controls bind live to that host.
-function SettingsWindow:_RenderSchema(content, host, width, y)
+local function renderSection(content, text, y, sections)
+    if sections.seen then
+        y = y - 8
+        local divider = W.Fill:New(content, { layer = "ARTWORK" })
+        divider:SetPoint("TOPLEFT", 10, y)
+        divider:SetPoint("TOPRIGHT", content, "TOPRIGHT", -10, y)
+        divider:SetHeight(1)
+        divider:SetColorTexture(Theme.Unpack("border"))
+        y = y - 14
+    end
+    local h = W.SectionLabel:New(content, text)
+    h:SetPoint("TOPLEFT", 4, y - 6)
+    sections.seen = true
+    return y - 28
+end
+
+function SettingsWindow:_RenderSchema(content, host, width, y, sections)
     local schema = host:GetSettings()
 
     -- controls that declare `dependsOn` get greyed out when their parent option is off -- each control
@@ -545,9 +561,8 @@ function SettingsWindow:_RenderSchema(content, host, width, y)
                 -- them and leave enough air that their labels don't collide.
                 y = y - 10
             elseif groupOpen then
-                -- Schema dependencies give us hierarchy, but not enough semantic
-                -- information to place dividers reliably. Use a modest gap here;
-                -- features author an explicit divider where a real group ends.
+                -- These are settings within the same named section, so use only
+                -- a modest gap. Dividers belong exclusively between section labels.
                 y = y - 10
             end
             if not s.dependsOn then groupOpen = true end
@@ -556,9 +571,7 @@ function SettingsWindow:_RenderSchema(content, host, width, y)
         end
 
         if s.type == ns.SettingType.HEADER then
-            local h = W.SectionLabel:New(content, s.text)
-            h:SetPoint("TOPLEFT", 4, y - 6)
-            y = y - 28
+            y = renderSection(content, s.text, y, sections)
 
         elseif s.type == ns.SettingType.NOTE then
             local n = W.Text:New(content, s.text, "textDim", "GameFontHighlightSmall")
@@ -566,16 +579,6 @@ function SettingsWindow:_RenderSchema(content, host, width, y)
             n:SetWidth(width - 16)
             n:SetJustifyH("LEFT")
             y = y - (n:GetStringHeight() + 12)
-
-        elseif s.type == ns.SettingType.DIVIDER then
-            y = y - 8
-            local divider = W.Fill:New(content, { layer = "ARTWORK" })
-            divider:SetPoint("TOPLEFT", 10, y)
-            divider:SetPoint("TOPRIGHT", content, "TOPRIGHT", -10, y)
-            divider:SetHeight(1)
-            divider:SetColorTexture(Theme.Unpack("border"))
-            y = y - 14
-            groupOpen = false
 
         elseif s.type == ns.SettingType.TOGGLE then
             local t = W.Toggle:New(content, s.reload and W.FlagReload(s.label) or s.label)
@@ -652,18 +655,17 @@ function SettingsWindow:_BuildModuleControls(sf, module)
     if not width or width < 1 then width = 420 end
 
     local y, rendered = -4, false
+    local sections = { seen = false }
     if #module:GetSettings() > 0 then
-        y = self:_RenderSchema(content, module, width, y)
+        y = self:_RenderSchema(content, module, width, y, sections)
         rendered = true
     end
 
     local subs = ns.SubmoduleManager and ns.SubmoduleManager:ConfigurableChildrenOf(module:GetName()) or {}
     for _, sub in ipairs(subs) do
         if sub.GetSettings and #sub:GetSettings() > 0 then
-            local h = W.SectionLabel:New(content, sub:GetTitle())
-            h:SetPoint("TOPLEFT", 4, y - 6)
-            y = y - 28
-            y = self:_RenderSchema(content, sub, width, y)
+            y = renderSection(content, sub:GetTitle(), y, sections)
+            y = self:_RenderSchema(content, sub, width, y, sections)
             rendered = true
         end
     end
