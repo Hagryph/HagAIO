@@ -6,12 +6,14 @@ local Hunter = ns.Hunter
 -- player chooses a Hunter specialisation.
 local HunterBase = Class.new("HunterBase", ns.ClassSpec, { statics = { settings = {
     { type = "header", text = "Steady Shot" },
-    { type = "toggle", key = "steadyShot", label = "Show post-cast Focus", default = true,
-      desc = "Show a prediction band from current Focus to the amount you will have after Steady Shot finishes." },
-    { type = "color", key = "steadyColor", label = "Prediction colour",
+    { type = "toggle", key = "steadyCastFill", label = "Show cast prediction segment", default = true,
+      desc = "While casting Steady Shot, append its generated Focus using Blizzard's native prediction segment." },
+    { type = "color", key = "steadyCastColor", label = "Cast prediction colour",
+      default = Hunter.SteadyCastColor(), dependsOn = "steadyCastFill" },
+    { type = "toggle", key = "steadyShot", label = "Show second Focus segment", default = true,
+      desc = "Show another Steady Shot gain segment. During the cast it begins after the cast prediction segment; otherwise it begins at current Focus." },
+    { type = "color", key = "steadyColor", label = "Second segment colour",
       default = Hunter.SteadyColor(), dependsOn = "steadyShot" },
-    { type = "toggle", key = "steadyCastFill", label = "Extend actual Focus while casting", default = true,
-      desc = "While casting Steady Shot, extend Blizzard's actual Focus fill by the Focus the cast will generate." },
 } } })
 
 function HunterBase:OnSettingChanged()
@@ -102,6 +104,7 @@ function HunterBase:Unload()
     p.steadyCastGUID = nil
     if p.steadyMarker then p.steadyMarker:Hide() end
     if p.steadyNativePrediction then p.steadyNativePrediction:Hide() end
+    p.steadyNativePredictionShown = false
 end
 
 Hunter.RegisterBase("Hunter-Base", HunterBase, { "EventBus", "Secrets" })

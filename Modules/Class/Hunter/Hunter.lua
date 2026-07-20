@@ -15,6 +15,7 @@ local Spell = ns.Enum.new("HunterSpell", {
 })
 
 local STEADY_COLOR = ns.Color:New(1, 1, 1)
+local STEADY_CAST_COLOR = ns.Color:New(1, 0.78, 0.18)
 
 local function readSteadyFocusGain()
     local desc = C_Spell and C_Spell.GetSpellDescription
@@ -34,11 +35,13 @@ ns.SubmoduleManager:Register(ns.Submodule:New("Hunter", {
 local Hunter = ns.Class.new("Hunter", nil, {
     statics = {
         steadyColor = STEADY_COLOR,
+        steadyCastColor = STEADY_CAST_COLOR,
     },
 })
 local S = ns.Class.statics(Hunter)
 
 function Hunter.SteadyColor() return S.steadyColor end
+function Hunter.SteadyCastColor() return S.steadyCastColor end
 
 -- Register behaviour for a Hunter that has not selected a specialisation. This
 -- mirrors Monk-Base: the "none" settings bucket exists while disabled, and the
@@ -176,6 +179,7 @@ function ClassModule:_UpdateSteadyCastFill()
     if not (self:IsEnabled() and p.steadyActive and p.steadyCasting
             and self:GetSetting("steadyCastFill")) then
         if prior then prior:Hide() end
+        p.steadyNativePredictionShown = false
         return
     end
 
@@ -184,6 +188,7 @@ function ClassModule:_UpdateSteadyCastFill()
     local prediction = bar and bar.ManaCostPredictionBar
     if not (bar and fill and prediction and prediction.Fill and prediction.FillMask) then
         if prior then prior:Hide() end
+        p.steadyNativePredictionShown = false
         return
     end
 
@@ -196,23 +201,26 @@ function ClassModule:_UpdateSteadyCastFill()
     end
     if not gain or gain <= 0 or not maxFocus or maxFocus <= 0 then
         if prior then prior:Hide() end
+        p.steadyNativePredictionShown = false
         return
     end
 
     local width = self:_SteadyGainWidth(bar, gain, maxFocus)
     if not width then
         if prior then prior:Hide() end
+        p.steadyNativePredictionShown = false
         return
     end
     if prior and prior ~= prediction then prior:Hide() end
-    local r, g, b = bar:GetStatusBarColor()
-    prediction.Fill:SetVertexColor(r, g, b, 1)
+    local color = self:GetSetting("steadyCastColor") or STEADY_CAST_COLOR
+    prediction.Fill:SetVertexColor(color:R(), color:G(), color:B(), 1)
     prediction.FillMask:ClearAllPoints()
     prediction.FillMask:SetPoint("TOPLEFT", fill, "TOPRIGHT", 0, 0)
     prediction.FillMask:SetPoint("BOTTOMLEFT", fill, "BOTTOMRIGHT", 0, 0)
     prediction.FillMask:SetWidth(width)
     prediction:Show()
     p.steadyNativePrediction = prediction
+    p.steadyNativePredictionShown = true
 end
 
 -- Draw a translucent extension from Blizzard's current Focus fill edge. The
@@ -260,8 +268,15 @@ function ClassModule:_UpdateSteady()
     local color = self:GetSetting("steadyColor") or STEADY_COLOR
     marker:SetColorTexture(color:R(), color:G(), color:B(), 0.55)
     marker:ClearAllPoints()
-    marker:SetPoint("TOPLEFT", fill, "TOPRIGHT", 0, 0)
-    marker:SetPoint("BOTTOMLEFT", fill, "BOTTOMRIGHT", 0, 0)
+    -- While the native cast prediction is visible, chain this SECOND segment
+    -- after its FillMask rather than overlapping it. Outside that cast state it
+    -- retains the original behaviour and starts at the live Focus fill edge.
+    local anchor = fill
+    if p.steadyNativePredictionShown and p.steadyNativePrediction then
+        anchor = p.steadyNativePrediction.FillMask
+    end
+    marker:SetPoint("TOPLEFT", anchor, "TOPRIGHT", 0, 0)
+    marker:SetPoint("BOTTOMLEFT", anchor, "BOTTOMRIGHT", 0, 0)
     marker:SetWidth(width)
     marker:Show()
     p.steadyHost:Show()
