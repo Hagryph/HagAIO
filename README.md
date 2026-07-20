@@ -322,10 +322,15 @@ Regenerate with `python tools/gen_icon.py`.
 
 ```powershell
 ./deploy.ps1
+./deploy.ps1 -AutoCommit
+./deploy.ps1 -AutoCommit -CommitMessage "UI: refine dashboard layout"
 ```
 
 Mirrors the addon into `…\_retail_\Interface\AddOns\HagAIO`, then `/reload` in-game.
 Override the target with `-AddonsPath` or the `WOW_ADDONS_PATH` environment variable.
+`-AutoCommit` stages all repository changes after a successful deploy and creates a commit;
+if `-CommitMessage` is omitted, the message is `Deploy: update addon`. A clean worktree is
+reported and skipped without error. The option commits locally only and never pushes.
 
 The full contributor workflow — lint gates (`npm run check`), what's generated, the
 load-order manifest, and release packaging — lives in [CONTRIBUTING.md](CONTRIBUTING.md).

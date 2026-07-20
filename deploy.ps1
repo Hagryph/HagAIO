@@ -22,16 +22,86 @@
 .PARAMETER AddonsPath
     Override the WoW retail AddOns directory. Defaults to the standard install,
     or the WOW_ADDONS_PATH environment variable if set.
+
+.PARAMETER AutoCommit
+    After a successful deploy and repo-doc generation, stage all repository
+    changes and create a Git commit. A clean worktree is a successful no-op.
+
+.PARAMETER CommitMessage
+    Message for -AutoCommit. Defaults to "Deploy: update addon".
 #>
 [CmdletBinding()]
 param(
     [string]$AddonsPath = $(if ($env:WOW_ADDONS_PATH) { $env:WOW_ADDONS_PATH }
-        else { "C:\Program Files (x86)\World of Warcraft\_retail_\Interface\AddOns" })
+        else { "C:\Program Files (x86)\World of Warcraft\_retail_\Interface\AddOns" }),
+    [switch]$AutoCommit,
+    [string]$CommitMessage = "Deploy: update addon"
 )
 
 $ErrorActionPreference = "Stop"
 $src  = $PSScriptRoot
 $dest = Join-Path $AddonsPath "HagAIO"
+
+function Invoke-RepoAutoCommit {
+    param(
+        [Parameter(Mandatory = $true)][string]$Root,
+        [Parameter(Mandatory = $true)][string]$Message
+    )
+
+    if (-not (Get-Command git -CommandType Application -ErrorAction SilentlyContinue)) {
+        throw "Autocommit requested, but git was not found on PATH."
+    }
+
+    $repoRoot = & git -C $Root rev-parse --show-toplevel
+    if ($LASTEXITCODE -ne 0) {
+        throw "Autocommit requested, but the deploy source is not a Git worktree: $Root"
+    }
+
+    $expectedRoot = [System.IO.Path]::GetFullPath($Root).TrimEnd('\', '/')
+    $actualRoot = [System.IO.Path]::GetFullPath(([string]$repoRoot).Trim()).TrimEnd('\', '/')
+    if (-not [string]::Equals($expectedRoot, $actualRoot, [System.StringComparison]::OrdinalIgnoreCase)) {
+        throw "Autocommit refused: deploy source '$expectedRoot' is not the Git root '$actualRoot'."
+    }
+
+    $changes = @(& git -C $actualRoot status --porcelain=v1 --untracked-files=all)
+    if ($LASTEXITCODE -ne 0) {
+        throw "git status failed while preparing the deploy autocommit."
+    }
+    if ($changes.Count -eq 0) {
+        Write-Host "Autocommit: no repository changes to commit." -ForegroundColor DarkGray
+        return
+    }
+
+    & git -C $actualRoot add --all -- .
+    if ($LASTEXITCODE -ne 0) {
+        throw "git add failed while preparing the deploy autocommit."
+    }
+
+    $staged = @(& git -C $actualRoot diff --cached --name-only --)
+    if ($LASTEXITCODE -ne 0) {
+        throw "git diff failed while preparing the deploy autocommit."
+    }
+    if ($staged.Count -eq 0) {
+        Write-Host "Autocommit: no repository changes to commit." -ForegroundColor DarkGray
+        return
+    }
+
+    $messageText = $Message.Trim()
+    if ([string]::IsNullOrWhiteSpace($messageText)) {
+        $messageText = "Deploy: update addon"
+    }
+
+    & git -C $actualRoot commit -m $messageText
+    if ($LASTEXITCODE -ne 0) {
+        throw "git commit failed after deployment. The changes remain staged."
+    }
+
+    $commit = & git -C $actualRoot rev-parse --short HEAD
+    if ($LASTEXITCODE -ne 0) {
+        throw "The deploy commit succeeded, but its commit ID could not be read."
+    }
+    Write-Host "Autocommit: created $(([string]$commit).Trim()) ($messageText)" -ForegroundColor Green
+}
 
 # Deploy-time autogen (Common must load first; it defines the shared helpers + the load
 # order from tools/load-order.json). tools/autogen.ps1 owns the repo-doc generation
@@ -71,6 +141,10 @@ Update-DeployedDevChars -Root $src -DeployedFile (Join-Path $dest "Core\Namespac
 # 3. Repo docs: README regions + DATABASE_SCHEMA.md, shared with the standalone
 #    tools/autogen.ps1 (CI checks their freshness). A missing LuaJIT only warns here.
 Update-RepoDocs -Root $src -SchemaOptional
+
+if ($AutoCommit) {
+    Invoke-RepoAutoCommit -Root $src -Message $CommitMessage
+}
 
 Write-Host "Deployed HagAIO -> $dest" -ForegroundColor Green
 Write-Host "Autogen: .toc + namespace slots (deployed), README (repo) regenerated." -ForegroundColor DarkGray
