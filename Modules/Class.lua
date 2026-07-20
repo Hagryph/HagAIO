@@ -30,7 +30,7 @@ ns.ClassSpec = ClassSpec
 
 -- "none" when the player has no specialisation, else the spec index (1-4). A spec-less
 -- character returns an out-of-range "initial" index, so gate on the in-range index only.
-function ClassModule:CurrentSpecKey()
+local function readCurrentSpecKey()
     local idx = GetSpecialization and GetSpecialization()
     if not idx then return "none" end
     local num = (GetNumSpecializations and GetNumSpecializations()) or 0
@@ -38,13 +38,40 @@ function ClassModule:CurrentSpecKey()
     return idx
 end
 
+-- The class is immutable for the lifetime of the character session, while the
+-- specialisation changes only on login / PLAYER_SPECIALIZATION_CHANGED. Keep the
+-- resolved key instead of repeatedly querying the game API from settings and
+-- submodule-condition paths.
+function ClassModule:CurrentSpecKey()
+    return self:_p().currentSpec or "none"
+end
+
+function ClassModule:_RefreshCurrentSpec()
+    self:_p().currentSpec = readCurrentSpecKey()
+end
+
 -- ---- lifecycle ------------------------------------------------------------
 function ClassModule:OnInitialize()
     local p = self:_p()
     local _, classToken = UnitClass("player")
     p.class = p.class or classToken   -- keep the token _ContributeTables used, so namespaces match the tables
+    self:_RefreshCurrentSpec()
     p.description = "Helpers tailored to your class and specialisation."
     self:_BuildSettings()
+
+    -- Persistent session subscription: Class may be disabled, but its settings
+    -- page and condition-gated children still need the current spec. Explicitly
+    -- reevaluate after updating because EventBus handler order is intentionally
+    -- unspecified; this produces the right final state in either order.
+    ns.EventBus:On("PLAYER_SPECIALIZATION_CHANGED", function(_, unit)
+        if unit and unit ~= "player" then return end
+        self:_RefreshCurrentSpec()
+        self:_BuildSettings()
+        if ns.UI and ns.UI.SettingsWindow then
+            ns.UI.SettingsWindow:InvalidateModule(self:GetName())
+        end
+        ns.SubmoduleManager:Reevaluate()
+    end)
 end
 
 -- Register a spec object under specKey so the module resolves the CURRENT spec's settings for display
@@ -160,8 +187,9 @@ ns.ModuleManager:Register(ClassModule:New("Class", {
     -- Per-spec settings tables live in the shared database. The actual Contribute happens via the
     -- inherited ns.DatabaseOwner mixin (the base _ContributeTables, fed by our _CollectTables), so
     -- there's no direct ns.DatabaseManager access here -- but the load-order dep is still required.
+    -- EventBus maintains the cached spec, and SettingsWindow is invalidated after it changes.
     -- hag-lint-disable depcheck: DatabaseManager
-    deps = { "DatabaseManager" },
+    deps = { "DatabaseManager", "EventBus", "SettingsWindow" },
     -- Event subscriptions go through self:On (ns.Component); each spec submodule declares the
     -- services ITS features use.
     settings = {},   -- built per spec from the active spec submodule

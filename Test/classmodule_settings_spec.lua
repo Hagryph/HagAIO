@@ -53,4 +53,18 @@ describe("Class module spec settings", function()
         mod:SetActiveSpec({ GetSettings = function() return { { type = "note", text = "loaded" } } end })
         assert.are.equal("loaded", mod:GetSettings()[1].text)
     end)
+
+    it("caches the current spec until the spec-change refresh", function()
+        local current = 2
+        local _, mod = setup()
+        _G.GetSpecialization = function() return current end
+        _G.GetNumSpecializations = function() return 3 end
+
+        mod:_RefreshCurrentSpec()
+        assert.are.equal(2, mod:CurrentSpecKey())
+        current = 1
+        assert.are.equal(2, mod:CurrentSpecKey())
+        mod:_RefreshCurrentSpec()
+        assert.are.equal(1, mod:CurrentSpecKey())
+    end)
 end)
