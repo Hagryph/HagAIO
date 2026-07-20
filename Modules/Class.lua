@@ -77,6 +77,19 @@ function ClassModule:ClearActiveSpec()
     self:SetActiveSpec(nil)
 end
 
+-- Class features that attach predictive overlays to Blizzard bars only need a repaint when
+-- the bar is resized; the live fill edge tracks the current secret-safe value on its own.
+-- Keep the weak-keyed hook ledger on the Class module instance instead of stamping addon
+-- state onto Blizzard-owned frames.
+function ClassModule:_WatchBarSize(bar, onResize)
+    if not bar then return end
+    local p = self:_p()
+    p.sizeWatched = p.sizeWatched or setmetatable({}, { __mode = "k" })
+    if p.sizeWatched[bar] then return end
+    p.sizeWatched[bar] = true
+    bar:HookScript("OnSizeChanged", onResize)
+end
+
 -- (Re)build the settings schema from the active spec. Defaults come from the per-spec settings
 -- view (see _SettingsNamespace) via the cascade -- no manual seeding.
 function ClassModule:_BuildSettings()

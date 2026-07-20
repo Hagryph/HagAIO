@@ -38,4 +38,15 @@ function SpellTooltipParser.Damage(desc)
     return num(n)
 end
 
+-- Resource restored by "Generates N <resource>" / "Restores N <resource>".
+-- Resource names are enUS tooltip words such as "Focus" or "Energy".
+function SpellTooltipParser.ResourceGain(desc, resource)
+    if type(desc) ~= "string" or type(resource) ~= "string" or resource == "" then return nil end
+    local text = desc:lower()
+    local name = resource:lower():gsub("(%W)", "%%%1")
+    local n = text:match("generates%s*([%d,]+)%s*" .. name)
+        or text:match("restores%s*([%d,]+)%s*" .. name)
+    return num(n)
+end
+
 ns.LibManager:RegisterValue("SpellTooltipParser", SpellTooltipParser)

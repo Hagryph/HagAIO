@@ -199,6 +199,8 @@ Modules/
   Misc.lua                 Miscellaneous helpers, each its own SUBMODULE of this thin parent module -- the codebase's
   Questing.lua             Everything around levelling through quests, in one module:
   UnitFrames.lua           Colours the player & target health bars by remaining health: green at full,
+  Class\Hunter\Hunter.lua  Hunter entry point and shared Steady Shot Focus prediction behaviour
+  Class\Hunter\Marksmanship.lua (no description)
   Class\Monk\Monk.lua      Monk module entry point (loads before its per-spec siblings): the shared Monk behaviour
   Class\Monk\Base.lua      The no-specialisation Monk spec (CurrentSpecKey "none"): the Expel Harm heal-threshold
   Class\Monk\Brewmaster.lua The Brewmaster Monk spec (CurrentSpecKey 1): extends MonkBase (Base.lua) with a Tiger
