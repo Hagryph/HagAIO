@@ -83,10 +83,19 @@ function Skins:_UpdatePlayerHealthColor()
     local p = self:_p()
     if not (self:IsEnabled() and self:GetSetting("healthBarPlayer")
         and p.playerBar and p.healthColorCurve) then
+        if p.playerBar then
+            p.playerBar:SetStatusBarDesaturated(false)
+            p.playerBar:SetStatusBarColor(1, 1, 1, 1)
+        end
         return
     end
     local color = UnitHealthPercent("player", true, p.healthColorCurve)
-    if color then p.playerBar:SetStatusBarColor(color:GetRGB()) end
+    if color then
+        -- Blizzard's health atlas has a baked green tint. Desaturating the
+        -- existing StatusBar removes that tint without replacing its texture.
+        p.playerBar:SetStatusBarDesaturated(true)
+        p.playerBar:SetStatusBarColor(color:GetRGB())
+    end
 end
 
 function Skins:_ObservePlayerBar(bar, unit)
@@ -118,6 +127,11 @@ end
 
 function Skins:OnDisable()
     self:ReleaseScope("player-health-color")
+    local bar = self:_p().playerBar
+    if bar then
+        bar:SetStatusBarDesaturated(false)
+        bar:SetStatusBarColor(1, 1, 1, 1)
+    end
     if S.active == self then S.active = nil end
 end
 
