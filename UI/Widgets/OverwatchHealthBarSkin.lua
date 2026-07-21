@@ -92,9 +92,11 @@ function OverwatchHealthBarSkinW:Initialize(bar)
     controller:Hide()
 end
 
-function OverwatchHealthBarSkinW:_SetColor(...)
+function OverwatchHealthBarSkinW:_SetColor(r, g, b)
+    -- The source texture is hidden while the skin is active, so its alpha is zero.
+    -- Preserve only its health RGB and keep every replacement fragment opaque.
     for _, segment in ipairs(self:_p().segments) do
-        segment.fill:SetVertexColor(...)
+        segment.fill:SetVertexColor(r, g, b, 1)
     end
 end
 
