@@ -1,6 +1,9 @@
 local addonName, ns = ...
 local Class = ns.Class
 
+-- Skins is an optional visual owner, not a module dependency: Unit Frames must
+-- remain usable when Skins is disabled. hag-lint-disable depcheck: Skins
+
 -- Modules/UnitFrames.lua
 -- Colours the player & target health bars by remaining health: green at full,
 -- through yellow, to red when low.
@@ -90,6 +93,7 @@ function UnitFrames:OnEnable()
     self:OnUnit("UNIT_HEALTH",    units, function(_, u) self:_Color(u) end)
     self:OnUnit("UNIT_MAXHEALTH", units, function(_, u) self:_Color(u) end)
     self:On("PLAYER_TARGET_CHANGED", function() self:_Color("target") end)
+    self:Subscribe("HagAIO_PlayerHealthSkinChanged", function() self:_ApplyColors() end)
 
     self:_Color("player")
     self:_Color("target")
@@ -97,7 +101,11 @@ end
 
 function UnitFrames:OnDisable()
     local p = self:_p()
-    for _, bar in pairs(p.bars) do restore(bar) end
+    for unit, bar in pairs(p.bars) do
+        local skinOwnsPlayer = unit == "player" and ns.Skins
+            and ns.Skins.OwnsPlayerHealthColor and ns.Skins:OwnsPlayerHealthColor()
+        if not skinOwnsPlayer then restore(bar) end
+    end
 end
 
 -- ---- colouring ------------------------------------------------------------
@@ -121,6 +129,8 @@ end
 function UnitFrames:_Color(unit)
     if unit ~= "player" and unit ~= "target" then return end
     if not self:IsEnabled() or not self:GetSetting(unit) then return end
+    if unit == "player" and ns.Skins and ns.Skins.OwnsPlayerHealthColor
+        and ns.Skins:OwnsPlayerHealthColor() then return end
     if unit == "target" and not UnitExists("target") then return end
     local p = self:_p()
     local bar = p.bars[unit]
@@ -139,7 +149,15 @@ end
 function UnitFrames:_ApplyColors()
     local p = self:_p()
     for unit, bar in pairs(p.bars) do
-        if self:GetSetting(unit) then self:_Color(unit) else restore(bar) end
+        local skinOwnsPlayer = unit == "player" and ns.Skins
+            and ns.Skins.OwnsPlayerHealthColor and ns.Skins:OwnsPlayerHealthColor()
+        if skinOwnsPlayer then
+            -- The Skins module owns the player fill while its skin is active.
+        elseif self:GetSetting(unit) then
+            self:_Color(unit)
+        else
+            restore(bar)
+        end
     end
 end
 

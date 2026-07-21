@@ -56,6 +56,7 @@ const WIDGETS = [
   "NavItem", "Segmented", "ColorSwatch", "CollapsibleSection", "Input", "Slider", "SettingsGroup",
   "Window", "ScrollArea", "Grid", "Nav", "Texture", "IconGrid", "Container",
   "Fill", "StatusBar", "ProgressBar", "MultilineEdit", "Tooltip", "MapArt", "Typography", "TextSelection",
+  "OverwatchHealthBarSkin",
 ];
 
 const allow = (rel, list) => list.some((a) => (a.endsWith("/") ? rel.startsWith(a) : rel === a));

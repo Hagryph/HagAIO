@@ -155,6 +155,7 @@ UI/
   Widgets\MultilineEdit.lua A scrollable multi-line EditBox -- the copy-in/out surface
   Widgets\Nav.lua          A vertical NAVIGATION list: section labels + selectable items (optionally indented as
   Widgets\NavItem.lua      Left-rail navigation item with active accent bar + tint
+  Widgets\OverwatchHealthBarSkin.lua Visual skin for Blizzard's player health StatusBar
   Widgets\Panel.lua        A bordered, themed container Frame
   Widgets\ProgressBar.lua  A themed horizontal progress bar (a StatusBar with an accent fill over a panel2 track)
   Widgets\ScrollArea.lua   A vertically scrollable area with a CUSTOM themed scrollbar (no Blizzard template, so no grey
@@ -199,6 +200,7 @@ Modules/
   Dev.lua                  Developer settings module
   Misc.lua                 Miscellaneous helpers, each its own SUBMODULE of this thin parent module -- the codebase's
   Questing.lua             Everything around levelling through quests, in one module:
+  Skins.lua                Optional visual skins for Blizzard UI
   UnitFrames.lua           Colours the player & target health bars by remaining health: green at full,
   Class\Hunter\Hunter.lua  Hunter entry point and shared Steady Shot Focus prediction behaviour
   Class\Hunter\Base.lua    (no description)

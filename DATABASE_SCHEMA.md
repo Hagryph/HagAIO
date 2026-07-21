@@ -42,6 +42,7 @@ Open **[diagram/DB/index.html](diagram/DB/index.html)** in a browser for an inte
 | [`o_module_Dashboard`](#o_module_Dashboard) | `char` | 5 | id | `Modules/Dashboard.lua` |
 | [`o_module_Dev`](#o_module_Dev) | `char` | 2 | id | `Modules/Dev.lua` |
 | [`o_module_Questing`](#o_module_Questing) | `char` | 10 | id | `Modules/Questing.lua` |
+| [`o_module_Skins`](#o_module_Skins) | `char` | 3 | id | `Modules/Skins.lua` |
 | [`o_module_UnitFrames`](#o_module_UnitFrames) | `char` | 12 | id | `Modules/UnitFrames.lua` |
 | [`o_submodule_FlightTimers`](#o_submodule_FlightTimers) | `char` | 3 | id | `Modules/Misc/FlightTimers.lua` |
 | [`o_submodule_SellJunk`](#o_submodule_SellJunk) | `char` | 2 | id | `Modules/Misc/SellJunk.lua` |
@@ -50,6 +51,7 @@ Open **[diagram/DB/index.html](diagram/DB/index.html)** in a browser for an inte
 | [`p_module_Dashboard`](#p_module_Dashboard) | `global` | 5 | profile | `Modules/Dashboard.lua` |
 | [`p_module_Dev`](#p_module_Dev) | `global` | 2 | profile | `Modules/Dev.lua` |
 | [`p_module_Questing`](#p_module_Questing) | `global` | 10 | profile | `Modules/Questing.lua` |
+| [`p_module_Skins`](#p_module_Skins) | `global` | 3 | profile | `Modules/Skins.lua` |
 | [`p_module_UnitFrames`](#p_module_UnitFrames) | `global` | 12 | profile | `Modules/UnitFrames.lua` |
 | [`p_submodule_FlightTimers`](#p_submodule_FlightTimers) | `global` | 3 | profile | `Modules/Misc/FlightTimers.lua` |
 | [`p_submodule_SellJunk`](#p_submodule_SellJunk) | `global` | 2 | profile | `Modules/Misc/SellJunk.lua` |
@@ -431,6 +433,18 @@ Open **[diagram/DB/index.html](diagram/DB/index.html)** in a browser for an inte
 
 ---
 
+### `o_module_Skins`  ·  scope `char`
+
+*Defined in `Modules/Skins.lua`.*
+
+| Column | Type | Null | Key | Default | References |
+|---|---|---|---|---|---|
+| `id` | integer | no | PK |  |  |
+| `playerHealth` | boolean | yes |  |  |  |
+| `animateHealth` | boolean | yes |  |  |  |
+
+---
+
 ### `o_module_UnitFrames`  ·  scope `char`
 
 *Defined in `Modules/UnitFrames.lua`.*
@@ -555,6 +569,18 @@ Open **[diagram/DB/index.html](diagram/DB/index.html)** in a browser for an inte
 | `autoDialogue` | boolean | yes |  |  |  |
 | `shiftPause` | boolean | yes |  |  |  |
 | `pauseInstance` | boolean | yes |  |  |  |
+
+---
+
+### `p_module_Skins`  ·  scope `global`
+
+*Defined in `Modules/Skins.lua`.*
+
+| Column | Type | Null | Key | Default | References |
+|---|---|---|---|---|---|
+| `profile` | text | no | PK |  | → `profile.name` on delete cascade |
+| `playerHealth` | boolean | yes |  |  |  |
+| `animateHealth` | boolean | yes |  |  |  |
 
 ---
 
