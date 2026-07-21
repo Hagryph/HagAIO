@@ -239,8 +239,8 @@ local function surface(frame, opts)
 
     if opts.shadow then
         local shadow = frame:CreateTexture(nil, "BACKGROUND", nil, -8)
-        shadow:SetPoint("TOPLEFT", frame, "TOPLEFT", 4, -4)
-        shadow:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", 5, -5)
+        shadow:SetPoint("TOPLEFT", frame, "TOPLEFT", 2, -2)
+        shadow:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", 2, -2)
         shadow:SetColorTexture(Theme.Unpack("shadow"))
     end
     if opts.highlight ~= false then

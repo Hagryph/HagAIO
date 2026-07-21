@@ -62,7 +62,7 @@ Theme.rgb = {
     surfaceRaised= Color:New(0.094, 0.108, 0.141, 0.99),
     control      = Color:New(0.110, 0.125, 0.161, 0.98),
     controlHover = Color:New(0.141, 0.161, 0.204, 0.98),
-    shadow       = Color:New(0.000, 0.000, 0.000, 0.52),
+    shadow       = Color:New(0.000, 0.000, 0.000, 0.36),
     highlight    = Color:New(0.290, 0.702, 0.902, 0.09),
 }
 
