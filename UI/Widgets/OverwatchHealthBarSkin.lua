@@ -18,7 +18,7 @@ local OverwatchHealthBarSkinW = ns.Class.new("OverwatchHealthBarSkin", FrameWidg
         depletedY = 1,
         depletedScaleX = 1,
         depletedScaleY = 1.6,
-        depletedSmoothingStages = 2,
+        depletedHold = 0.22,
     },
 })
 local S = ns.Class.statics(OverwatchHealthBarSkinW)
@@ -71,6 +71,7 @@ function OverwatchHealthBarSkinW:Initialize(bar)
     p.applied = false
     p.animated = true
     p.transitionsArmed = false
+    p.transitionTimers = {}
     p.disposed = false
 
     for i = 1, S.segmentCount do
@@ -101,38 +102,20 @@ function OverwatchHealthBarSkinW:Initialize(bar)
         depletedGate:EnableMouse(false)
         depletedGate:SetAlpha(0)
 
-        local transitionStages = {}
-        for stage = 1, S.depletedSmoothingStages - 1 do
-            local driver = CreateFrame("StatusBar", nil, depletedGate)
-            driver:SetSize(1, 1)
-            driver:SetPoint("CENTER", depletedGate, "CENTER")
-            driver:SetMinMaxValues(0, 1)
-            driver:SetValue(1)
-            driver:SetAlpha(0)
-            transitionStages[stage] = driver
-        end
-
         local transition = CreateFrame("StatusBar", nil, depletedGate)
         transition:SetFrameLevel(depletedGate:GetFrameLevel())
         transition:EnableMouse(false)
         transition:SetMinMaxValues(0, 1)
         transition:SetStatusBarTexture(S.texture)
         transition:SetValue(1)
-        transitionStages[S.depletedSmoothingStages] = transition
 
         local transitionFill = transition:GetStatusBarTexture()
         transitionFill:SetDrawLayer("OVERLAY", 1)
         smoothTexture(transitionFill)
         transition:SetScript("OnUpdate", function()
-            -- Chaining native interpolation stages stretches Blizzard's fixed-speed
-            -- ease without inspecting any secret. The final interpolated value is
-            -- also a sanctioned alpha input, so the enlarged copy visibly fades
-            -- instead of merely losing width as its StatusBar texture is cropped.
-            local ease = Enum.StatusBarInterpolation.ExponentialEaseOut
-            for stage = 2, #transitionStages do
-                transitionStages[stage]:SetValue(
-                    transitionStages[stage - 1]:GetInterpolatedValue(), ease)
-            end
+            -- Forwarding the native interpolated value to alpha is secret-safe.
+            -- Do not retarget this StatusBar here: SetValue on every frame restarts
+            -- the interpolation and prevents the depletion transition from moving.
             transitionFill:SetAlpha(transition:GetInterpolatedValue())
         end)
 
@@ -142,7 +125,6 @@ function OverwatchHealthBarSkinW:Initialize(bar)
             background = background,
             depletedGate = depletedGate,
             transition = transition,
-            transitionStages = transitionStages,
             transitionFill = transitionFill,
             curve = createSegmentCurve(i),
             depletedCurve = createStateCurve(i, true),
@@ -206,12 +188,34 @@ function OverwatchHealthBarSkinW:_Layout(width, height)
     end
 end
 
+function OverwatchHealthBarSkinW:_CancelTransitionTimers()
+    local timers = self:_p().transitionTimers
+    for timer in pairs(timers) do timer:Cancel() end
+    wipe(timers)
+end
+
+function OverwatchHealthBarSkinW:_StartTransitions(targets)
+    local p = self:_p()
+    local timer
+    timer = ns.Scheduler:After(S.depletedHold, function()
+        p.transitionTimers[timer] = nil
+        if not (p.applied and not p.disposed) then return end
+        local ease = Enum.StatusBarInterpolation.ExponentialEaseOut
+        for i = 1, #p.segments do
+            p.segments[i].transition:SetValue(targets[i], ease)
+        end
+    end)
+    p.transitionTimers[timer] = true
+end
+
 function OverwatchHealthBarSkinW:UpdateHealth()
     local p = self:_p()
     if not (p.applied and UnitHealthPercent) then return self end
 
     local interpolation = Enum.StatusBarInterpolation
-    for _, segment in ipairs(p.segments) do
+    local queueTransitions = p.animated and p.transitionsArmed and interpolation ~= nil
+    local transitionTargets = {}
+    for i, segment in ipairs(p.segments) do
         local value = UnitHealthPercent("player", true, segment.curve)
         if p.animated and interpolation then
             segment.bar:SetValue(value, interpolation.ExponentialEaseOut)
@@ -225,14 +229,16 @@ function OverwatchHealthBarSkinW:UpdateHealth()
         local depleted = UnitHealthPercent("player", true, segment.depletedCurve)
         local present = UnitHealthPercent("player", true, segment.presentCurve)
         segment.depletedGate:SetAlpha(depleted)
-        if p.animated and p.transitionsArmed and interpolation then
-            segment.transitionStages[1]:SetValue(present, interpolation.ExponentialEaseOut)
+        if queueTransitions then
+            -- Keep the enlarged fragment visible briefly, then assign its secret
+            -- target once. Blizzard owns the actual interpolation; Lua never reads
+            -- or branches on health and repeated same-state updates cannot replay it.
+            transitionTargets[i] = present
         else
-            for _, stage in ipairs(segment.transitionStages) do
-                stage:SetValue(present)
-            end
+            segment.transition:SetValue(present)
         end
     end
+    if queueTransitions then self:_StartTransitions(transitionTargets) end
     p.transitionsArmed = true
 
     self:_SyncColor()
@@ -256,6 +262,7 @@ end
 function OverwatchHealthBarSkinW:SetAnimated(animated)
     local p = self:_p()
     p.animated = animated and true or false
+    self:_CancelTransitionTimers()
     if p.applied then self:UpdateHealth() end
     return self
 end
@@ -264,6 +271,7 @@ function OverwatchHealthBarSkinW:Restore()
     local p = self:_p()
     p.applied = false
     p.transitionsArmed = false
+    self:_CancelTransitionTimers()
     for _, segment in ipairs(p.segments) do
         segment.depletedGate:SetAlpha(0)
     end
