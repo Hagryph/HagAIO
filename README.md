@@ -155,9 +155,9 @@ UI/
   Widgets\Input.lua        Themed single-line EditBox
   Widgets\MapArt.lua       ZONE MAP ART, composed by hand
   Widgets\MultilineEdit.lua A scrollable multi-line EditBox -- the copy-in/out surface
+  Widgets\NativeHealthBarSkin.lua A view over Blizzard's existing StatusBar
   Widgets\Nav.lua          A vertical NAVIGATION list: section labels + selectable items (optionally indented as
   Widgets\NavItem.lua      Left-rail navigation item with active accent bar + tint
-  Widgets\OverwatchHealthBarSkin.lua Ten adjacent StatusBars rendered through the Overwatch slanted-fragment texture
   Widgets\PageHeader.lua   Application-style page heading: a raised header band with an accent rail, title, concise
   Widgets\Panel.lua        A bordered, themed container Frame
   Widgets\ProgressBar.lua  A themed horizontal progress bar (a StatusBar with an accent fill over a panel2 track)
@@ -214,7 +214,7 @@ Modules/
   Misc\FlightTimers.lua    The Flight Timers submodule of Misc (registered under the parent "Misc" module)
   Misc\SellJunk.lua        The Sell Junk submodule of Misc (registered under the parent "Misc" module)
   Skins\HealthBarSkin.lua  Abstract health-bar skin
-  Skins\OverwatchSkin.lua  Concrete Overwatch health-bar skin
+  Skins\NativeHealthBarSkin.lua The always-available health-bar renderer
 Dev/                       Scratch space (excluded from deploy)
 deploy.ps1                 Mirror the addon into the live WoW AddOns folder + generate the .toc
 ```
