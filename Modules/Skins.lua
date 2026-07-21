@@ -124,6 +124,10 @@ end
 
 function Skins:GetSettings() return self:_p().settings end
 
+function Skins:GetHealthBarSkin(key)
+    return self:_p().healthBarSkinsByKey[key]
+end
+
 -- The schema is dynamic at construction time: concrete skin files register after this parent module
 -- file, but before ADDON_LOADED asks every owner to contribute its tables.
 function Skins:_CollectTables()
@@ -172,7 +176,7 @@ end
 ns.ModuleManager:Register(Skins:New("Skins", {
     title = "Skins",
     description = "Restyles parts of the game interface.",
-    defaultEnabled = false,
+    defaultEnabled = true,
     color = ns.Theme.hex.accent,
     -- Settings are assembled from later-loaded skin classes, so DatabaseManager is explicit rather
     -- than being inferred from the empty constructor schema. Health-bar skins own scoped unit events

@@ -13,7 +13,7 @@ local DropdownW = ns.Class.new("Dropdown", FrameWidget, { mixins = { Changeable 
 
 -- Menus are parented to UIParent so they can escape clipped/scaled settings content. Match the
 -- control's effective strata and then step above its inherited level: a fixed DIALOG level renders
--- behind DIALOG-strata popups such as the Overwatch layout editor.
+-- behind DIALOG-strata popups.
 function DropdownW:_RaiseMenu()
     local p = self:_p()
     local strata = p.dropdown:GetFrameStrata()

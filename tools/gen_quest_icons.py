@@ -9,8 +9,6 @@ outline, a soft cyan glow and a drop shadow:
   Media/quest-daily.tga    a plain "!"                      (Daily Quests)
   Media/quest-weekly.tga   the "!" orbited by two arrows    (Weekly Quests)
 
-Also writes PNG previews under tools/ for eyeballing outside WoW.
-
 Run:  python tools/gen_quest_icons.py
 """
 
@@ -167,9 +165,7 @@ def save(layer, name):
     os.makedirs(media, exist_ok=True)
     tga = os.path.join(media, name + ".tga")
     icon.save(tga)
-    png = os.path.join(HERE, name + "_preview.png")
-    icon.save(png)
-    print("wrote", tga, "and", png, icon.size, icon.mode)
+    print("wrote", tga, icon.size, icon.mode)
 
 
 def main():

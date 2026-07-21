@@ -8,7 +8,6 @@ black) with a subtle drop shadow.
 
 Outputs (64x64, power-of-two as WoW requires):
   Media/icon.tga          32-bit BGRA TGA consumed by the game
-  tools/icon_preview.png  PNG for eyeballing the result outside WoW
 
 Run:  python tools/gen_icon.py
 """
@@ -127,12 +126,7 @@ def main():
     os.makedirs(media, exist_ok=True)
     tga_path = os.path.join(media, "icon.tga")
     icon.save(tga_path)  # 32-bit TGA (RGBA)
-    png_path = os.path.join(HERE, "icon_preview.png")
-    # preview on a checkerboard so transparency is visible
-    icon.save(png_path)
-
     print("wrote", tga_path)
-    print("wrote", png_path)
     print("size", icon.size, "mode", icon.mode)
 
 
