@@ -42,7 +42,7 @@ Open **[diagram/DB/index.html](diagram/DB/index.html)** in a browser for an inte
 | [`o_module_Dashboard`](#o_module_Dashboard) | `char` | 5 | id | `Modules/Dashboard.lua` |
 | [`o_module_Dev`](#o_module_Dev) | `char` | 2 | id | `Modules/Dev.lua` |
 | [`o_module_Questing`](#o_module_Questing) | `char` | 10 | id | `Modules/Questing.lua` |
-| [`o_module_Skins`](#o_module_Skins) | `char` | 16 | id | `Modules/Skins.lua` |
+| [`o_module_Skins`](#o_module_Skins) | `char` | 11 | id | `Modules/Skins.lua` |
 | [`o_submodule_FlightTimers`](#o_submodule_FlightTimers) | `char` | 3 | id | `Modules/Misc/FlightTimers.lua` |
 | [`o_submodule_SellJunk`](#o_submodule_SellJunk) | `char` | 2 | id | `Modules/Misc/SellJunk.lua` |
 | [`p_module_Class_MONK_1`](#p_module_Class_MONK_1) | `global` | 13 | profile | `Modules/Class.lua` |
@@ -50,7 +50,7 @@ Open **[diagram/DB/index.html](diagram/DB/index.html)** in a browser for an inte
 | [`p_module_Dashboard`](#p_module_Dashboard) | `global` | 5 | profile | `Modules/Dashboard.lua` |
 | [`p_module_Dev`](#p_module_Dev) | `global` | 2 | profile | `Modules/Dev.lua` |
 | [`p_module_Questing`](#p_module_Questing) | `global` | 10 | profile | `Modules/Questing.lua` |
-| [`p_module_Skins`](#p_module_Skins) | `global` | 16 | profile | `Modules/Skins.lua` |
+| [`p_module_Skins`](#p_module_Skins) | `global` | 11 | profile | `Modules/Skins.lua` |
 | [`p_submodule_FlightTimers`](#p_submodule_FlightTimers) | `global` | 3 | profile | `Modules/Misc/FlightTimers.lua` |
 | [`p_submodule_SellJunk`](#p_submodule_SellJunk) | `global` | 2 | profile | `Modules/Misc/SellJunk.lua` |
 | [`profile`](#profile) | `global` | 2 | name | `Core/DB/CoreTables.lua` |
@@ -438,12 +438,7 @@ Open **[diagram/DB/index.html](diagram/DB/index.html)** in a browser for an inte
 | Column | Type | Null | Key | Default | References |
 |---|---|---|---|---|---|
 | `id` | integer | no | PK |  |  |
-| `healthBarSkin` | text | yes |  |  |  |
 | `healthBarPlayer` | boolean | yes |  |  |  |
-| `healthBarTarget` | boolean | yes |  |  |  |
-| `healthBarFocus` | boolean | yes |  |  |  |
-| `healthBarPet` | boolean | yes |  |  |  |
-| `healthBarNameplates` | boolean | yes |  |  |  |
 | `endColor_r` | number | yes |  |  |  |
 | `endColor_g` | number | yes |  |  |  |
 | `endColor_b` | number | yes |  |  |  |
@@ -569,12 +564,7 @@ Open **[diagram/DB/index.html](diagram/DB/index.html)** in a browser for an inte
 | Column | Type | Null | Key | Default | References |
 |---|---|---|---|---|---|
 | `profile` | text | no | PK |  | → `profile.name` on delete cascade |
-| `healthBarSkin` | text | yes |  |  |  |
 | `healthBarPlayer` | boolean | yes |  |  |  |
-| `healthBarTarget` | boolean | yes |  |  |  |
-| `healthBarFocus` | boolean | yes |  |  |  |
-| `healthBarPet` | boolean | yes |  |  |  |
-| `healthBarNameplates` | boolean | yes |  |  |  |
 | `endColor_r` | number | yes |  |  |  |
 | `endColor_g` | number | yes |  |  |  |
 | `endColor_b` | number | yes |  |  |  |

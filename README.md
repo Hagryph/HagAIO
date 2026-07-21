@@ -155,7 +155,6 @@ UI/
   Widgets\Input.lua        Themed single-line EditBox
   Widgets\MapArt.lua       ZONE MAP ART, composed by hand
   Widgets\MultilineEdit.lua A scrollable multi-line EditBox -- the copy-in/out surface
-  Widgets\NativeHealthBarSkin.lua A view over Blizzard's existing StatusBar
   Widgets\Nav.lua          A vertical NAVIGATION list: section labels + selectable items (optionally indented as
   Widgets\NavItem.lua      Left-rail navigation item with active accent bar + tint
   Widgets\PageHeader.lua   Application-style page heading: a raised header band with an accent rail, title, concise
@@ -203,7 +202,7 @@ Modules/
   Dev.lua                  Developer settings module
   Misc.lua                 Miscellaneous helpers, each its own SUBMODULE of this thin parent module -- the codebase's
   Questing.lua             Everything around levelling through quests, in one module:
-  Skins.lua                Skin lifecycle and registry
+  Skins.lua                Skins retains the shared abstract lifecycle for future skin surfaces
   Class\Hunter\Hunter.lua  Hunter entry point and shared Steady Shot Focus prediction behaviour
   Class\Hunter\Base.lua    (no description)
   Class\Monk\Monk.lua      Monk module entry point (loads before its per-spec siblings): the shared Monk behaviour
@@ -213,8 +212,6 @@ Modules/
   Dashboard\ExpansionCatalog.lua The Dashboard's instance + zone CATALOG layer, extracted out of the module so the module itself
   Misc\FlightTimers.lua    The Flight Timers submodule of Misc (registered under the parent "Misc" module)
   Misc\SellJunk.lua        The Sell Junk submodule of Misc (registered under the parent "Misc" module)
-  Skins\HealthBarSkin.lua  Abstract health-bar skin
-  Skins\NativeHealthBarSkin.lua The always-available health-bar renderer
 Dev/                       Scratch space (excluded from deploy)
 deploy.ps1                 Mirror the addon into the live WoW AddOns folder + generate the .toc
 ```

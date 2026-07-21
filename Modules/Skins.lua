@@ -2,11 +2,8 @@ local addonName, ns = ...
 local Class = ns.Class
 
 -- Modules/Skins.lua
--- Skin lifecycle and registry. A Skin owns the guarded Load/Unload transition; concrete skins expose
--- their selector label and settings from private class statics. The Skins module owns selection plus
--- the common HealthBarSkin settings, unloads the old object before loading the new one, and builds the
--- page from the registered skins.
-
+-- Skins retains the shared abstract lifecycle for future skin surfaces. The
+-- only live feature today is the player's existing health-bar colour.
 local Skin = Class.new("Skin", nil, { abstract = true })
 
 function Skin:Initialize(owner)
@@ -16,15 +13,8 @@ function Skin:Initialize(owner)
 end
 
 function Skin:Owner() return self:_p().owner end
-function Skin:GetKey() return self:_statics().key end
-function Skin:GetLabel() return self:_statics().label end
-function Skin:IsDefault() return self:_statics().default == true end
-function Skin:GetSettings() return self:_statics().settings or {} end
-function Skin:GetSetting(key) return self:Owner():GetSetting(key) end
 function Skin:IsLoaded() return self:_p().loaded end
 
--- Template-method lifecycle: subclasses implement OnLoad/OnUnload, while this base guarantees
--- idempotence and never leaves the lifecycle flag set when loading fails.
 function Skin:Load()
     local p = self:_p()
     if p.loaded then return false end
@@ -49,141 +39,112 @@ end
 
 Skin.OnLoad = Class.abstract("OnLoad")
 Skin.OnUnload = Class.abstract("OnUnload")
-function Skin:OnSettingChanged() end
-
 ns.Skin = Skin
 
 local Skins = Class.new("Skins", ns.Module, {
-    statics = { noSkinKey = "none" },
+    statics = {
+        observing = false,
+        active = nil,
+    },
 })
+local S = Class.statics(Skins)
 
 function Skins:Initialize(name, opts)
     Skins.super.Initialize(self, name, opts)
     local p = self:_p()
-    p.healthBarSkins = {}
-    p.healthBarSkinsByKey = {}
-    p.activeHealthBarSkin = nil
-    p.defaultHealthBarSkinKey = nil
-    self:_BuildSettings()
+    p.playerBar = nil
+    p.healthColorCurve = nil
 end
 
-function Skins:RegisterHealthBarSkin(skin)
-    assert(skin and skin.IsInstanceOf and skin:IsInstanceOf(ns.HealthBarSkin),
-        "Skins:RegisterHealthBarSkin needs an ns.HealthBarSkin")
-    assert(skin:Owner() == self, "Skins:RegisterHealthBarSkin: skin belongs to another owner")
-    local key, label = skin:GetKey(), skin:GetLabel()
-    assert(type(key) == "string" and key ~= "", "Skins:RegisterHealthBarSkin: skin needs a non-empty static key")
-    assert(type(label) == "string" and label ~= "", "Skins:RegisterHealthBarSkin: skin needs a non-empty static label")
+function Skins:_BuildHealthColorCurve()
+    local low = self:GetSetting("startColor")
+    local mid = self:GetSetting("midColor")
+    local full = self:GetSetting("endColor")
+    if not (C_CurveUtil and C_CurveUtil.CreateColorCurve and UnitHealthPercent and CreateColor
+        and low and mid and full) then
+        return nil
+    end
 
+    local curve = C_CurveUtil.CreateColorCurve()
+    curve:SetType(Enum.LuaCurveType.Linear)
+    local points = ns.ColorCurve.HealthPoints(
+        { low:R(), low:G(), low:B() },
+        { mid:R(), mid:G(), mid:B() },
+        { full:R(), full:G(), full:B() })
+    for _, point in ipairs(points) do
+        curve:AddPoint(point.pos, CreateColor(point[1], point[2], point[3]))
+    end
+    return curve
+end
+
+-- UnitHealthPercent evaluates the curve inside the client, so its secret color
+-- can be passed directly to the StatusBar color sink without Lua inspecting it.
+function Skins:_UpdatePlayerHealthColor()
     local p = self:_p()
-    assert(not p.healthBarSkinsByKey[key], "Skins:RegisterHealthBarSkin: duplicate skin key '" .. key .. "'")
-    if skin:IsDefault() then
-        assert(not p.defaultHealthBarSkinKey, "Skins:RegisterHealthBarSkin: only one skin may be the default")
-        p.defaultHealthBarSkinKey = key
+    if not (self:IsEnabled() and self:GetSetting("healthBarPlayer")
+        and p.playerBar and p.healthColorCurve) then
+        return
     end
-    p.healthBarSkins[#p.healthBarSkins + 1] = skin
-    p.healthBarSkinsByKey[key] = skin
-    self:_BuildSettings()
-    return skin
+    local color = UnitHealthPercent("player", true, p.healthColorCurve)
+    if color then p.playerBar:SetStatusBarColor(color:GetRGB()) end
 end
 
--- One stable schema assembled when skins register at file load. HealthBarSkin contributes the common
--- destination/colour rows once; each concrete skin adds only its own ordinary options. The module adds
--- structural visibility but never turns either set into indented `dependsOn` suboptions.
-function Skins:_BuildSettings()
-    local p, noSkinKey = self:_p(), self:_statics().noSkinKey
-    local choices = { { value = noSkinKey, text = "No Skin" } }
-    for _, skin in ipairs(p.healthBarSkins or {}) do
-        choices[#choices + 1] = { value = skin:GetKey(), text = skin:GetLabel() }
-    end
-
-    local settings = {
-        { type = "header", text = "HealthBar Skin" },
-        { type = "dropdown", key = "healthBarSkin", label = "Skin",
-          default = p.defaultHealthBarSkinKey or noSkinKey, options = choices },
-    }
-    if ns.HealthBarSkin then
-        for _, authored in ipairs(ns.HealthBarSkin.CommonSettings()) do
-            local option = {}
-            for key, value in pairs(authored) do option[key] = value end
-            option.visibleWhen = { key = "healthBarSkin", notEquals = noSkinKey }
-            settings[#settings + 1] = option
-        end
-    end
-    for _, skin in ipairs(p.healthBarSkins or {}) do
-        for _, authored in ipairs(skin:GetSettings()) do
-            local option = {}
-            for key, value in pairs(authored) do option[key] = value end
-            option.visibleWhen = { key = "healthBarSkin", equals = skin:GetKey() }
-            settings[#settings + 1] = option
-        end
-    end
-    ns.Contributions.ValidateSettings(settings, self:GetName())
-    p.settings = settings
-end
-
-function Skins:GetSettings() return self:_p().settings end
-
-function Skins:GetHealthBarSkin(key)
-    return self:_p().healthBarSkinsByKey[key]
-end
-
--- The schema is dynamic at construction time: concrete skin files register after this parent module
--- file, but before ADDON_LOADED asks every owner to contribute its tables.
-function Skins:_CollectTables()
-    local schema, nsKey = self:GetSettings(), self:_SettingsNamespace()
-    ns.SettingsTables:Register(nsKey, schema)
-    return ns.SettingsTables:DeriveTables(nsKey, schema)
-end
-
-function Skins:_ActivateSelectedHealthBarSkin()
-    local p = self:_p()
-    local selected = self:GetSetting("healthBarSkin")
-    local nextSkin = self:IsEnabled() and p.healthBarSkinsByKey[selected] or nil
-    if p.activeHealthBarSkin == nextSkin then return end
-
-    if p.activeHealthBarSkin then p.activeHealthBarSkin:Unload() end
-    p.activeHealthBarSkin = nil
-    if nextSkin then
-        nextSkin:Load()
-        p.activeHealthBarSkin = nextSkin
+function Skins:_ObservePlayerBar(bar, unit)
+    if unit == "player" and bar and bar.unitFrame == _G.PlayerFrame then
+        self:_p().playerBar = bar
+        self:_UpdatePlayerHealthColor()
     end
 end
 
 function Skins:OnInitialize()
-    ns.HealthBarSkin.StartObserving()
+    if S.observing or type(UnitFrameHealthBar_Update) ~= "function" then return end
+    S.observing = true
+    hooksecurefunc("UnitFrameHealthBar_Update", function(bar, unit)
+        if S.active then S.active:_ObservePlayerBar(bar, unit) end
+    end)
 end
 
 function Skins:OnEnable()
-    self:_ActivateSelectedHealthBarSkin()
+    S.active = self
+    self:_p().healthColorCurve = self:_BuildHealthColorCurve()
+    self:On("UNIT_HEALTH", function(_, unit)
+        if unit == "player" then self:_UpdatePlayerHealthColor() end
+    end, "player-health-color")
+    self:On("UNIT_MAXHEALTH", function(_, unit)
+        if unit == "player" then self:_UpdatePlayerHealthColor() end
+    end, "player-health-color")
+    self:_UpdatePlayerHealthColor()
 end
 
 function Skins:OnDisable()
-    local p = self:_p()
-    if p.activeHealthBarSkin then p.activeHealthBarSkin:Unload() end
-    p.activeHealthBarSkin = nil
+    self:ReleaseScope("player-health-color")
+    if S.active == self then S.active = nil end
 end
 
-function Skins:OnSettingChanged(key, value)
-    if key == "healthBarSkin" then
-        self:_ActivateSelectedHealthBarSkin()
-        return
+function Skins:OnSettingChanged(key)
+    if key == "startColor" or key == "midColor" or key == "endColor" then
+        self:_p().healthColorCurve = self:_BuildHealthColorCurve()
     end
-    local active = self:_p().activeHealthBarSkin
-    if active then active:OnSettingChanged(key, value) end
+    self:_UpdatePlayerHealthColor()
 end
 
 ns.ModuleManager:Register(Skins:New("Skins", {
     title = "Skins",
-    description = "Restyles parts of the game interface.",
+    description = "Colors the player health bar.",
     defaultEnabled = true,
     color = ns.Theme.hex.accent,
-    -- Settings are assembled from later-loaded skin classes, so DatabaseManager is explicit rather
-    -- than being inferred from the empty constructor schema. Health-bar skins own scoped unit events
-    -- and zero-delay application through this module's EventBus/Scheduler resources.
-    -- The dynamic settings table contribution and HealthBarSkin's owner-scoped On/After calls
-    -- are indirect uses, so the dependency scanner cannot see them at this module call site.
-    -- hag-lint-disable depcheck: DatabaseManager, EventBus, Scheduler
-    deps = { "DatabaseManager", "EventBus", "Scheduler" },
-    settings = {},
+    -- hag-lint-disable depcheck: DatabaseManager, EventBus
+    deps = { "DatabaseManager", "EventBus" },
+    settings = {
+        { type = "header", text = "Health Bar" },
+        { type = "toggle", key = "healthBarPlayer", label = "Player frame", default = true },
+        { type = "header", text = "Health Colors" },
+        { type = "color", key = "endColor", label = "Full health",
+          default = ns.Color:New(0.20, 0.80, 0.20) },
+        { type = "color", key = "midColor", label = "Mid health",
+          default = ns.Color:New(0.95, 0.82, 0.15) },
+        { type = "color", key = "startColor", label = "Low health",
+          default = ns.Color:New(0.90, 0.15, 0.15) },
+        { type = "note", text = "Health fades from Full at 100% through Mid to Low at 30% and below." },
+    },
 }))
