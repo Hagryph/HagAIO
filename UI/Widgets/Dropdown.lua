@@ -24,9 +24,11 @@ function DropdownW:Initialize(parent, options, defaultText)
     local arrow = Widgets.Text:New(dropdown, "v", "accent", "GameFontNormalSmall")
     arrow:SetPoint("RIGHT", dropdown, "RIGHT", -10, 1)
 
-    -- The blocker moves to UIParent only while open, then returns under the owned
-    -- button. That provides outside-click dismissal without leaking a detached tree.
-    local blocker = CreateFrame("Button", nil, dropdown)
+    -- Keep the popup root on UIParent for its whole interactive lifetime. Reparenting
+    -- it from this scaled settings subtree during OnClick could invalidate its
+    -- effective scale/layering before the menu was drawn. Dispose reparents the
+    -- hidden tree once, so the normal widget teardown can still own every child.
+    local blocker = CreateFrame("Button", nil, UIParent)
     blocker:SetAllPoints(UIParent)
     blocker:SetFrameStrata("DIALOG")
     blocker:EnableMouse(true)
@@ -37,6 +39,7 @@ function DropdownW:Initialize(parent, options, defaultText)
     menu:SetPoint("TOPLEFT", dropdown, "BOTTOMLEFT", 0, -2)
     menu:SetFrameLevel(blocker:GetFrameLevel() + 10)
     menu:SetClampedToScreen(true)
+    menu:Hide()
 
     local p = self:_p()
     p.options = options or {}
@@ -94,8 +97,9 @@ function DropdownW:Initialize(parent, options, defaultText)
 
     local function close()
         p.open = false
+        p.hovered = false
+        menu:Hide()
         blocker:Hide()
-        blocker:SetParent(dropdown)
         renderButton()
     end
     p.close = close
@@ -145,7 +149,6 @@ function DropdownW:Initialize(parent, options, defaultText)
             close()
         else
             p.open = true
-            blocker:SetParent(UIParent)
             blocker:Show()
             menu:Show()
             renderRows()
@@ -189,6 +192,7 @@ end
 function DropdownW:Dispose()
     local p = self:_p()
     if p.close then p.close() end
+    if p.blocker then p.blocker:SetParent(self:_Frame()) end
     DropdownW.super.Dispose(self)
 end
 
