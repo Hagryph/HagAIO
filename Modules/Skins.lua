@@ -3,11 +3,9 @@ local Class = ns.Class
 
 -- Modules/Skins.lua
 -- Optional visual skins for Blizzard UI. The first skin restyles the real player
--- health bar with Overwatch-inspired percentage blocks and a cyan health-change
--- flash while leaving Blizzard's secret health value and prediction layers alone.
+-- health bar with Overwatch-inspired slanted blocks and a health-change
+-- flash while leaving Blizzard's secret health value, color and prediction layers alone.
 local Skins = Class.new("Skins", ns.Module)
-
-local HEALTH_SKIN_CHANGED = "HagAIO_PlayerHealthSkinChanged"
 
 function Skins:OnInitialize()
     local p = self:_p()
@@ -39,11 +37,6 @@ end
 function Skins:OnDisable()
     self:_p().applyQueued = false
     self:_RemovePlayerHealthSkin()
-    ns.EventBus:Emit(HEALTH_SKIN_CHANGED)
-end
-
-function Skins:OwnsPlayerHealthColor()
-    return self:IsEnabled() and self:GetSetting("playerHealth") == true
 end
 
 function Skins:_QueueApply()
@@ -70,7 +63,6 @@ function Skins:_ApplyPlayerHealthSkin()
     end
     p.skin:SetAnimated(self:GetSetting("animateHealth"))
     p.skin:Apply()
-    ns.EventBus:Emit(HEALTH_SKIN_CHANGED)
 end
 
 function Skins:_RemovePlayerHealthSkin()
@@ -86,7 +78,6 @@ function Skins:_RefreshPlayerHealth()
         self:_QueueApply()
     else
         self:_RemovePlayerHealthSkin()
-        ns.EventBus:Emit(HEALTH_SKIN_CHANGED)
     end
 end
 
@@ -105,8 +96,6 @@ ns.ModuleManager:Register(Skins:New("Skins", {
     description = "Restyles parts of the game interface.",
     defaultEnabled = false,
     color = ns.Theme.hex.accent,
-    publishAs = "Skins",
-    deps = { "EventBus" },
     settingsWatch = {
         playerHealth = "_RefreshPlayerHealth",
         animateHealth = "_RefreshHealthAnimation",
@@ -114,8 +103,8 @@ ns.ModuleManager:Register(Skins:New("Skins", {
     settings = {
         { type = "header", text = "Overwatch Health Bar" },
         { type = "toggle", key = "playerHealth", label = "Overwatch player health bar", default = true,
-          desc = "Give your player health bar white segments and a cyan edge." },
+          desc = "Split your player health bar into ten slanted blocks while keeping its health color." },
         { type = "toggle", key = "animateHealth", label = "Animate health changes", default = true,
-          desc = "Flash the filled health segments when your health changes.", dependsOn = "playerHealth" },
+          desc = "Brighten the filled health segments when your health changes.", dependsOn = "playerHealth" },
     },
 }))
