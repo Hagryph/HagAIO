@@ -4,23 +4,26 @@ import { fileURLToPath } from "node:url";
 
 const SIZE = 128;
 const SAMPLES = 8;
+const EDGE_FEATHER = 0.05;
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
-const output = path.join(root, "Media", "overwatch-segment.tga");
+const output = path.join(root, "Media", "overwatch-segment-hq.tga");
 
 // Preserve the reference fragment silhouette while supersampling its diagonal
 // edges. The generated 32-bit TGA is deliberately deterministic and reviewable.
 function alphaAt(pixelX, pixelY) {
-    let covered = 0;
+    let coverage = 0;
     for (let sy = 0; sy < SAMPLES; sy += 1) {
         for (let sx = 0; sx < SAMPLES; sx += 1) {
             const x = (pixelX + (sx + 0.5) / SAMPLES) / SIZE;
             const y = (pixelY + (sy + 0.5) / SAMPLES) / SIZE;
             const left = 0.25 * (1 - y);
             const right = 1 - 0.25 * y;
-            if (x >= left && x <= right) covered += 1;
+            const edgeDistance = Math.min(x - left, right - x);
+            const linear = Math.max(0, Math.min(1, edgeDistance / EDGE_FEATHER + 0.5));
+            coverage += linear * linear * (3 - 2 * linear);
         }
     }
-    return Math.round(255 * covered / (SAMPLES * SAMPLES));
+    return Math.round(255 * coverage / (SAMPLES * SAMPLES));
 }
 
 const header = Buffer.alloc(18);

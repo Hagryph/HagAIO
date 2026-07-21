@@ -13,7 +13,7 @@ local unwrap, style, adopt = _wb.unwrap, _wb.style, _wb.adopt
 local OverwatchHealthBarSkinW = ns.Class.new("OverwatchHealthBarSkin", FrameWidget, {
     statics = {
         segmentCount = 10,
-        texture = "Interface\\AddOns\\HagAIO\\Media\\overwatch-segment",
+        texture = "Interface\\AddOns\\HagAIO\\Media\\overwatch-segment-hq",
         depletedDuration = 0.4,
         depletedX = 7,
         depletedY = 1,
@@ -80,6 +80,18 @@ local function createSegmentCurve(index)
     return curve
 end
 
+local function createDepletedCurve(index)
+    local threshold = (index - 1) / S.segmentCount
+    local afterThreshold = math.min(threshold + 0.000001, 1)
+    local curve = C_CurveUtil.CreateCurve()
+    curve:SetType(Enum.LuaCurveType.Step)
+    curve:AddPoint(0, 1)
+    if threshold > 0 then curve:AddPoint(threshold, 1) end
+    curve:AddPoint(afterThreshold, 0)
+    if afterThreshold < 1 then curve:AddPoint(1, 0) end
+    return curve
+end
+
 function OverwatchHealthBarSkinW:Initialize(bar)
     local rawBar = unwrap(bar)
     local controller = CreateFrame("Frame", nil, rawBar)
@@ -95,6 +107,7 @@ function OverwatchHealthBarSkinW:Initialize(bar)
     p.segments = {}
     p.applied = false
     p.animated = true
+    p.transitionsArmed = false
     p.disposed = false
 
     for i = 1, S.segmentCount do
@@ -118,20 +131,43 @@ function OverwatchHealthBarSkinW:Initialize(bar)
         -- The reference skin animates a separate copy after a fragment is fully
         -- depleted: it grows vertically, drifts right, and fades away. Keeping the
         -- copy separate lets the live fragment continue tracking health immediately.
-        local depleted = segmentBar:CreateTexture(nil, "OVERLAY", nil, 1)
-        depleted:SetAllPoints(segmentBar)
+        local depletedGate = CreateFrame("Frame", nil, segmentBar)
+        depletedGate:SetAllPoints(segmentBar)
+        depletedGate:SetFrameLevel(segmentBar:GetFrameLevel() + 1)
+        depletedGate:EnableMouse(false)
+        depletedGate:SetAlpha(0)
+
+        local depleted = depletedGate:CreateTexture(nil, "OVERLAY", nil, 1)
+        depleted:SetAllPoints(depletedGate)
         depleted:SetTexture(S.texture)
         smoothTexture(depleted)
         depleted:Hide()
+
+        -- A one-bit hidden StatusBar turns a secret curve boundary into a native
+        -- OnValueChanged transition. The handler deliberately ignores its secret
+        -- value; the secret alpha gate above decides whether the transition was a
+        -- depletion (visible) or a refill (invisible).
+        local depletedAnimation = createDepletedAnimation(depleted)
+        local transition = CreateFrame("StatusBar", nil, segmentBar)
+        transition:SetMinMaxValues(0, 1)
+        transition:SetValue(0)
+        transition:Hide()
+        transition:SetScript("OnValueChanged", function()
+            if p.applied and p.animated and p.transitionsArmed then
+                depletedAnimation:Restart()
+            end
+        end)
 
         p.segments[i] = {
             bar = segmentBar,
             fill = fill,
             background = background,
+            depletedGate = depletedGate,
             depleted = depleted,
-            depletedAnimation = createDepletedAnimation(depleted),
+            depletedAnimation = depletedAnimation,
+            transition = transition,
             curve = createSegmentCurve(i),
-            lastValue = nil,
+            depletedCurve = createDepletedCurve(i),
         }
     end
 
@@ -194,30 +230,20 @@ function OverwatchHealthBarSkinW:UpdateHealth()
     local interpolation = Enum.StatusBarInterpolation
     for _, segment in ipairs(p.segments) do
         local value = UnitHealthPercent("player", true, segment.curve)
-
-        -- In restricted situations health is a secret number. It may be forwarded
-        -- into StatusBar:SetValue, but Lua must not compare it to decide whether an
-        -- AnimationGroup should play. Reset the accessible baseline in that case;
-        -- smooth StatusBar interpolation remains available and secret-safe.
-        local secret = issecretvalue and issecretvalue(value)
-        if secret then
-            segment.lastValue = nil
-            if p.animated and interpolation then
-                segment.bar:SetValue(value, interpolation.ExponentialEaseOut)
-            else
-                segment.bar:SetValue(value)
-            end
-        elseif p.animated and segment.lastValue and segment.lastValue > 0 and value <= 0 then
-            -- Snap the emptied fragment out before its colored copy bursts away.
-            segment.bar:SetValue(0)
-            segment.depletedAnimation:Restart()
-        elseif p.animated and interpolation then
+        if p.animated and interpolation then
             segment.bar:SetValue(value, interpolation.ExponentialEaseOut)
         else
             segment.bar:SetValue(value)
         end
-        if not secret then segment.lastValue = value end
+
+        -- Both sinks accept secret numbers from addon code. Setting the gate first
+        -- makes a damage transition visible before the hidden bar fires its script;
+        -- a healing transition runs the same script behind alpha zero.
+        local depleted = UnitHealthPercent("player", true, segment.depletedCurve)
+        segment.depletedGate:SetAlpha(depleted)
+        segment.transition:SetValue(depleted)
     end
+    p.transitionsArmed = true
 
     self:_SyncColor()
     if p.sourceFill then p.sourceFill:SetAlpha(0) end
@@ -253,10 +279,11 @@ end
 function OverwatchHealthBarSkinW:Restore()
     local p = self:_p()
     p.applied = false
+    p.transitionsArmed = false
     for _, segment in ipairs(p.segments) do
-        segment.lastValue = nil
         segment.depletedAnimation:Stop()
         resetDepletedTexture(segment.depleted)
+        segment.depletedGate:SetAlpha(0)
     end
     p.controller:Hide()
     if p.sourceFill then p.sourceFill:SetAlpha(1) end
