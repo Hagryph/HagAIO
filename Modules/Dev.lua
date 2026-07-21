@@ -74,7 +74,7 @@ function Dev:BuildSettingsPage(sf)
     -- Dungeon group gets a "next image" stepper: the Current Season tile cycles through every season
     -- dungeon's splash so each can be inspected (and tuned) in turn. The label shows which is showing.
     buildGroup("dungeon", "Dungeon", function(gc, sy)
-        local btn = W.Button:New(gc, "Next dungeon image  >")
+        local btn = W.Button:New(gc, "Next dungeon image  >", { primary = true })
         btn:SetPoint("TOPLEFT", gc, "TOPLEFT", 0, sy)
         local nameFS = W.Text:New(gc, "", "accent", "GameFontHighlightSmall")
         nameFS:SetPoint("LEFT", btn, "RIGHT", 12, 0)

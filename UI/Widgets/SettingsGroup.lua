@@ -6,7 +6,7 @@ local Widget, FrameWidget, TextWidget, TextureWidget = _wb.Widget, _wb.FrameWidg
 local unwrap, style, surface, adopt = _wb.unwrap, _wb.style, _wb.surface, _wb.adopt
 
 -- UI/Widgets/SettingsGroup.lua
--- A titled settings GROUP: a raised application panel with a header strip (chevron + `title`) and a
+-- A titled settings GROUP: a compact application card with a header rail and a
 -- content area below it that callers fill. COLLAPSIBLE by default; opts.collapsible=false produces
 -- the static section cards used by SettingsWindow's row-major panel grid. Clicking the header toggles
 -- the body when collapsible. The
@@ -16,24 +16,24 @@ local unwrap, style, surface, adopt = _wb.unwrap, _wb.style, _wb.surface, _wb.ad
 local SettingsGroupW = ns.Class.new("SettingsGroup", FrameWidget)
 function SettingsGroupW:Initialize(parent, title, opts)
     opts = opts or {}
-    local HEADER, PAD = 34, 14
+    local HEADER, PAD = 30, 16
     local collapsible = opts.collapsible ~= false
     local g = CreateFrame("Frame", nil, unwrap(parent), "BackdropTemplate")
-    surface(g, { bgKey = "surface", borderKey = "border", shadow = opts.shadow ~= false })
+    surface(g, { bgKey = "surface", borderKey = "border", shadow = opts.shadow == true })
 
     local header = CreateFrame("Button", nil, g)
     header:SetPoint("TOPLEFT", 1, -1); header:SetPoint("TOPRIGHT", -1, -1); header:SetHeight(HEADER)
     local strip = header:CreateTexture(nil, "BACKGROUND"); strip:SetAllPoints(); strip:SetColorTexture(Theme.Unpack("surfaceRaised"))
-    local rail = header:CreateTexture(nil, "ARTWORK")
-    rail:SetPoint("TOPLEFT"); rail:SetPoint("BOTTOMLEFT"); rail:SetWidth(3)
-    rail:SetColorTexture(Theme.Unpack(opts.accentKey or "accent"))
-    local chevron = Widgets.Text:New(header, "-", "accent", "GameFontNormal")
-    chevron:SetPoint("LEFT", 12, 0)
+    local divider = header:CreateTexture(nil, "ARTWORK")
+    divider:SetPoint("BOTTOMLEFT", 2, 0); divider:SetPoint("BOTTOMRIGHT", -2, 0); divider:SetHeight(1)
+    divider:SetColorTexture(Theme.Unpack("border"))
+    local chevron = Widgets.Text:New(header, "v", "accent", "GameFontNormalSmall")
+    chevron:SetPoint("LEFT", 13, 0)
     chevron:SetShown(collapsible)
     local label = Widgets.SectionLabel:New(header, title)
-    if collapsible then label:SetPoint("LEFT", chevron, "RIGHT", 8, 0)
-    else label:SetPoint("LEFT", 14, 0) end
-    label:SetTextColor(Theme.Unpack("text"))
+    if collapsible then label:SetPoint("LEFT", chevron, "RIGHT", 7, 0)
+    else label:SetPoint("LEFT", 15, 0) end
+    label:SetTextColor(Theme.Unpack("textDim"))
 
     local content = Widgets.Container:New(g)
     content:SetPoint("TOPLEFT", g, "TOPLEFT", PAD, -(HEADER + PAD))
@@ -43,14 +43,22 @@ function SettingsGroupW:Initialize(parent, title, opts)
     local p = self:_p()
     p.content, p.contentH, p.expanded, p.label = content, 0, true, label
     local function apply()
-        if collapsible then chevron:SetText(p.expanded and "-" or "+") end
+        if collapsible then chevron:SetText(p.expanded and "v" or ">") end
         content:SetShown(p.expanded)
         g:SetHeight(p.expanded and (HEADER + PAD + math.max(0, p.contentH) + PAD) or HEADER)
     end
     p.apply = apply
     if collapsible then
-        header:SetScript("OnEnter", function() g:SetBackdropBorderColor(Theme.Unpack("accent")) end)
-        header:SetScript("OnLeave", function() g:SetBackdropBorderColor(Theme.Unpack("border")) end)
+        header:SetScript("OnEnter", function()
+            strip:SetColorTexture(Theme.Unpack("controlHover"))
+            g:SetBackdropBorderColor(Theme.Unpack("borderStrong"))
+            label:SetTextColor(Theme.Unpack("text"))
+        end)
+        header:SetScript("OnLeave", function()
+            strip:SetColorTexture(Theme.Unpack("surfaceRaised"))
+            g:SetBackdropBorderColor(Theme.Unpack("border"))
+            label:SetTextColor(Theme.Unpack("textDim"))
+        end)
         header:SetScript("OnClick", function()
             p.expanded = not p.expanded; apply()
             if p.onToggle then p.onToggle(p.expanded) end

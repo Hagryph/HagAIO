@@ -34,7 +34,7 @@ function ConfirmationWindow:_Build()
     cancel:SetPoint("BOTTOMRIGHT", -22, 20)
     cancel:SetOnClick(function() self:Hide() end)
 
-    local confirm = W.Button:New(body, "Confirm", { width = 104 })
+    local confirm = W.Button:New(body, "Confirm", { width = 104, primary = true })
     confirm:SetPoint("RIGHT", cancel, "LEFT", -12, 0)
     confirm:SetOnClick(function()
         local callback = p.onConfirm

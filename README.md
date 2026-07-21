@@ -144,7 +144,7 @@ UI/
   CopyWindow.lua           A themed, reusable "copy this text out of the game" window
   SettingsWindow.lua       The unique, themed settings menu (replaces the default Blizzard options
   Widgets\Avatar.lua       A framed portrait/avatar: a themed bordered box whose texture fills it (inset by the border),
-  Widgets\Button.lua       A themed PUSH button: a bordered box with a centred label that lights to accent on hover
+  Widgets\Button.lua       A themed PUSH button: a filled secondary action by default, or a cyan-tonal
   Widgets\CollapsibleSection.lua Collapsible section ("accordion"): a clickable header with a +/- chevron that
   Widgets\ColorSwatch.lua  Colour swatch button + HagAIO colour dialog
   Widgets\Divider.lua      1px horizontal hairline (anchor + width set by caller)
@@ -163,7 +163,7 @@ UI/
   Widgets\ScrollArea.lua   A vertically scrollable area with a CUSTOM themed scrollbar (no Blizzard template, so no grey
   Widgets\SectionLabel.lua Uppercase, dim, lightly spaced section label (LoL's letter-spaced caps)
   Widgets\Segmented.lua    Segmented selector (LoL "view-switch"): a row of option buttons, active one
-  Widgets\SettingsGroup.lua A titled settings GROUP: a raised application panel with a header strip (chevron + `title`) and a
+  Widgets\SettingsGroup.lua A titled settings GROUP: a compact application card with a header rail and a
   Widgets\Slider.lua       Themed horizontal slider with a track, an accent fill, a draggable thumb, and a live numeric
   Widgets\StatusBar.lua    A bare StatusBar widget for HUD fills
   Widgets\Text.lua         (no description)

@@ -78,7 +78,7 @@ function ColorSwatchW:Initialize(parent)
 
     local cancel = Widgets.Button:New(dialog, "Cancel", { width = 78 })
     cancel:SetPoint("BOTTOMRIGHT", dialog, "BOTTOMRIGHT", -112, 18)
-    local apply = Widgets.Button:New(dialog, "Apply", { width = 78 })
+    local apply = Widgets.Button:New(dialog, "Apply", { width = 78, primary = true })
     apply:SetPoint("BOTTOMRIGHT", dialog, "BOTTOMRIGHT", -20, 18)
 
     local function byte(v) return math.max(0, math.min(255, math.floor((v or 0) + 0.5))) end

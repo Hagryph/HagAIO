@@ -6,25 +6,37 @@ local Widget, FrameWidget, TextWidget, TextureWidget = _wb.Widget, _wb.FrameWidg
 local unwrap, style, adopt = _wb.unwrap, _wb.style, _wb.adopt
 
 -- UI/Widgets/Button.lua
--- A themed PUSH button: a bordered box with a centred label that lights to accent on hover.
+-- A themed PUSH button: a filled secondary action by default, or a cyan-tonal
+-- primary action with opts.primary=true. The shared treatment makes actions
+-- read as controls rather than empty outlined rectangles.
 -- Auto-sizes to the text (override with opts.width / opts.height). Methods: :SetText(s)
 -- :SetOnClick(fn) :SetEnabled(bool).
 local ButtonW = ns.Class.new("Button", FrameWidget)
 function ButtonW:Initialize(parent, text, opts)
     opts = opts or {}
     local b = CreateFrame("Button", nil, unwrap(parent), "BackdropTemplate")
-    style(b, "control", "borderStrong")
-    b:SetHeight(opts.height or 28)
+    style(b, opts.primary and "accentSoft" or "surfaceRaised", opts.primary and "accentDim" or "border")
+    b:SetHeight(opts.height or 30)
+    local topLight = b:CreateTexture(nil, "BORDER")
+    topLight:SetPoint("TOPLEFT", 1, -1); topLight:SetPoint("TOPRIGHT", -1, -1); topLight:SetHeight(1)
+    topLight:SetColorTexture(Theme.Unpack(opts.primary and "accent" or "highlight"))
+    local underline = b:CreateTexture(nil, "ARTWORK")
+    underline:SetPoint("BOTTOMLEFT", 1, 1); underline:SetPoint("BOTTOMRIGHT", -1, 1); underline:SetHeight(1)
+    underline:SetColorTexture(Theme.Unpack("accent", 0))
     local fs = Widgets.Text:New(b, text, "text", "GameFontHighlight")
     fs:SetPoint("CENTER")
     local function fit() b:SetWidth(opts.width or math.max(opts.minWidth or 76, fs:GetStringWidth() + 28)) end
     fit()
     local p = self:_p()
-    p.label, p.fit, p.enabled = fs, fit, true
+    p.label, p.fit, p.enabled, p.primary, p.underline = fs, fit, true, opts.primary == true, underline
     local function render(hover)
-        b:SetBackdropColor(Theme.Unpack(hover and p.enabled and "controlHover" or "control"))
-        b:SetBackdropBorderColor(Theme.Unpack(hover and p.enabled and "accent" or "borderStrong"))
-        fs:SetTextColor(Theme.Unpack(p.enabled and (hover and "accent" or "text") or "textFaint"))
+        local active = hover and p.enabled
+        local background = p.primary and (active and "controlHover" or "accentSoft")
+            or (active and "controlHover" or "surfaceRaised")
+        b:SetBackdropColor(Theme.Unpack(background))
+        b:SetBackdropBorderColor(Theme.Unpack(active and "accent" or (p.primary and "accentDim" or "border")))
+        fs:SetTextColor(Theme.Unpack(p.enabled and (p.primary or active) and "accent" or (p.enabled and "textDim" or "textFaint")))
+        p.underline:SetColorTexture(Theme.Unpack("accent", active and 1 or 0))
     end
     p.render = render
     b:SetScript("OnEnter", function() render(true) end)

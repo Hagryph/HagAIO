@@ -370,7 +370,7 @@ function SettingsWindow:_BuildProfilesPage(parent)
     local input = W.Input:New(saveBody, 220)
     input:SetPoint("TOPLEFT", 0, -20)
     p.profileNameInput = input
-    local save = W.Button:New(saveBody, "Save", { width = 72 })
+    local save = W.Button:New(saveBody, "Save", { width = 72, primary = true })
     save:SetPoint("LEFT", input, "RIGHT", 16, 0)
     save:SetOnClick(function()
         local name = input:GetValue()
