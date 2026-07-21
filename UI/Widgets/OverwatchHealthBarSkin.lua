@@ -19,6 +19,7 @@ local OverwatchHealthBarSkinW = ns.Class.new("OverwatchHealthBarSkin", FrameWidg
         depletedScaleX = 1,
         depletedScaleY = 1.6,
         depletedHold = 0.22,
+        depletedDuration = 0.4,
     },
 })
 local S = ns.Class.statics(OverwatchHealthBarSkinW)
@@ -28,6 +29,27 @@ local function smoothTexture(texture)
     -- those samples stay smooth when Blizzard lays the player frame on half pixels.
     if texture.SetSnapToPixelGrid then texture:SetSnapToPixelGrid(false) end
     if texture.SetTexelSnappingBias then texture:SetTexelSnappingBias(0) end
+end
+
+local function createDepletedAnimation(texture)
+    local group = texture:CreateAnimationGroup()
+
+    -- These animations receive only ordinary constants. Secret health controls the
+    -- enclosing alpha gate and the separate fade driver, never :Play() or geometry.
+    local translation = group:CreateAnimation("Translation")
+    translation:SetOrder(1)
+    translation:SetDuration(S.depletedDuration)
+    translation:SetOffset(S.depletedX, S.depletedY)
+    translation:SetSmoothing("OUT")
+
+    local scale = group:CreateAnimation("Scale")
+    scale:SetOrder(1)
+    scale:SetDuration(S.depletedDuration)
+    scale:SetScaleFrom(1, 1)
+    scale:SetScaleTo(S.depletedScaleX, S.depletedScaleY)
+    scale:SetOrigin("CENTER", 0, 0)
+    scale:SetSmoothing("OUT")
+    return group
 end
 
 local function createSegmentCurve(index)
@@ -92,31 +114,31 @@ function OverwatchHealthBarSkinW:Initialize(bar)
         background:SetVertexColor(0.1, 0.1, 0.1, 0.55)
         smoothTexture(background)
 
-        -- The depleted copy is a native StatusBar rather than an AnimationGroup.
-        -- Its secret state moves from one to zero once when this fragment vanishes,
-        -- while the enclosing secret-alpha gate keeps its inverse healing transition
-        -- invisible. Repeated UNIT_HEALTH updates at zero cannot replay the effect.
+        -- Secret health may select this gate's alpha, but never starts an animation.
+        -- The full fragment inside uses an ordinary native animation unconditionally;
+        -- its separate secret-safe fade driver makes old depleted copies invisible.
         local depletedGate = CreateFrame("Frame", nil, segmentBar)
         depletedGate:SetAllPoints(segmentBar)
         depletedGate:SetFrameLevel(segmentBar:GetFrameLevel() + 1)
         depletedGate:EnableMouse(false)
         depletedGate:SetAlpha(0)
 
-        local transition = CreateFrame("StatusBar", nil, depletedGate)
-        transition:SetFrameLevel(depletedGate:GetFrameLevel())
-        transition:EnableMouse(false)
-        transition:SetMinMaxValues(0, 1)
-        transition:SetStatusBarTexture(S.texture)
-        transition:SetValue(1)
+        -- The visible copy remains a complete fragment throughout the effect. A
+        -- hidden StatusBar supplies only its secret-safe alpha; using its fill as
+        -- the artwork would crop the slanted texture into a right-edge blob.
+        local transitionTexture = depletedGate:CreateTexture(nil, "OVERLAY", nil, 1)
+        transitionTexture:SetAllPoints(depletedGate)
+        transitionTexture:SetTexture(S.texture)
+        smoothTexture(transitionTexture)
 
-        local transitionFill = transition:GetStatusBarTexture()
-        transitionFill:SetDrawLayer("OVERLAY", 1)
-        smoothTexture(transitionFill)
-        transition:SetScript("OnUpdate", function()
-            -- Forwarding the native interpolated value to alpha is secret-safe.
-            -- Do not retarget this StatusBar here: SetValue on every frame restarts
-            -- the interpolation and prevents the depletion transition from moving.
-            transitionFill:SetAlpha(transition:GetInterpolatedValue())
+        local transitionDriver = CreateFrame("StatusBar", nil, depletedGate)
+        transitionDriver:SetSize(1, 1)
+        transitionDriver:SetPoint("CENTER", depletedGate, "CENTER")
+        transitionDriver:SetMinMaxValues(0, 1)
+        transitionDriver:SetValue(1)
+        transitionDriver:SetAlpha(0)
+        transitionDriver:SetScript("OnUpdate", function()
+            transitionTexture:SetAlpha(transitionDriver:GetInterpolatedValue())
         end)
 
         p.segments[i] = {
@@ -124,8 +146,9 @@ function OverwatchHealthBarSkinW:Initialize(bar)
             fill = fill,
             background = background,
             depletedGate = depletedGate,
-            transition = transition,
-            transitionFill = transitionFill,
+            transitionTexture = transitionTexture,
+            transitionDriver = transitionDriver,
+            depletedAnimation = createDepletedAnimation(transitionTexture),
             curve = createSegmentCurve(i),
             depletedCurve = createStateCurve(i, true),
             presentCurve = createStateCurve(i, false),
@@ -158,7 +181,7 @@ function OverwatchHealthBarSkinW:_SetColor(r, g, b)
     -- Preserve only its health RGB and keep every replacement fragment opaque.
     for _, segment in ipairs(self:_p().segments) do
         segment.fill:SetVertexColor(r, g, b, 1)
-        segment.transitionFill:SetVertexColor(r, g, b, 1)
+        segment.transitionTexture:SetVertexColor(r, g, b, 1)
     end
 end
 
@@ -181,10 +204,6 @@ function OverwatchHealthBarSkinW:_Layout(width, height)
         segment.bar:ClearAllPoints()
         segment.bar:SetSize(segmentWidth, height)
         segment.bar:SetPoint("LEFT", p.controller, "LEFT", (i - 1) * segmentWidth, 0)
-
-        segment.transition:ClearAllPoints()
-        segment.transition:SetSize(segmentWidth * S.depletedScaleX, height * S.depletedScaleY)
-        segment.transition:SetPoint("CENTER", segment.bar, "CENTER", S.depletedX, S.depletedY)
     end
 end
 
@@ -202,7 +221,7 @@ function OverwatchHealthBarSkinW:_StartTransitions(targets)
         if not (p.applied and not p.disposed) then return end
         local ease = Enum.StatusBarInterpolation.ExponentialEaseOut
         for i = 1, #p.segments do
-            p.segments[i].transition:SetValue(targets[i], ease)
+            p.segments[i].transitionDriver:SetValue(targets[i], ease)
         end
     end)
     p.transitionTimers[timer] = true
@@ -230,12 +249,16 @@ function OverwatchHealthBarSkinW:UpdateHealth()
         local present = UnitHealthPercent("player", true, segment.presentCurve)
         segment.depletedGate:SetAlpha(depleted)
         if queueTransitions then
-            -- Keep the enlarged fragment visible briefly, then assign its secret
-            -- target once. Blizzard owns the actual interpolation; Lua never reads
-            -- or branches on health and repeated same-state updates cannot replay it.
+            -- Play is deliberately unconditional and receives no secret. Only the
+            -- newly depleted fragment is visible: present fragments are hidden by
+            -- the depletion gate, and older depleted fragments have a zero driver.
+            -- This gives the removed fragment real scale/translation frames before
+            -- its full texture fades, without Lua branching on health.
+            segment.depletedAnimation:Play()
             transitionTargets[i] = present
         else
-            segment.transition:SetValue(present)
+            segment.depletedAnimation:Stop()
+            segment.transitionDriver:SetValue(present)
         end
     end
     if queueTransitions then self:_StartTransitions(transitionTargets) end
@@ -263,6 +286,9 @@ function OverwatchHealthBarSkinW:SetAnimated(animated)
     local p = self:_p()
     p.animated = animated and true or false
     self:_CancelTransitionTimers()
+    if not p.animated then
+        for _, segment in ipairs(p.segments) do segment.depletedAnimation:Stop() end
+    end
     if p.applied then self:UpdateHealth() end
     return self
 end
@@ -273,6 +299,7 @@ function OverwatchHealthBarSkinW:Restore()
     p.transitionsArmed = false
     self:_CancelTransitionTimers()
     for _, segment in ipairs(p.segments) do
+        segment.depletedAnimation:Stop()
         segment.depletedGate:SetAlpha(0)
     end
     p.controller:Hide()
