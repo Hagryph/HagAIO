@@ -11,7 +11,11 @@ local Changeable = _wb.Changeable
 -- language: raised surface, live preview, RGB sliders, hexadecimal input and explicit Apply/Cancel.
 -- Live edits apply immediately (matching Blizzard's picker); Cancel restores the opening colour.
 -- Methods: :SetColor(r,g,b) :GetColor() :SetOnChange(fn) :SetDefault :SetEnabled.
-local ColorSwatchW = ns.Class.new("ColorSwatch", FrameWidget, { mixins = { Changeable } })
+local ColorSwatchW = ns.Class.new("ColorSwatch", FrameWidget, {
+    mixins = { Changeable },
+    statics = { popupSerial = 0 },
+})
+local S = ns.Class.statics(ColorSwatchW)
 function ColorSwatchW:Initialize(parent)
     local btn = CreateFrame("Button", nil, unwrap(parent), "BackdropTemplate")
     btn:SetSize(30, 20)
@@ -29,7 +33,12 @@ function ColorSwatchW:Initialize(parent)
 
     -- One modal per swatch keeps lifecycle ownership simple: when the swatch is disposed its hidden
     -- UIParent popup is reparented beneath it and the normal widget cascade tears everything down.
-    local blocker = CreateFrame("Button", nil, UIParent)
+    S.popupSerial = S.popupSerial + 1
+    local blockerName = "HagAIOColorPickerPopup" .. S.popupSerial
+    local blocker = CreateFrame("Button", blockerName, UIParent)
+    -- Insert at the top of the global Escape stack so this modal consumes Escape
+    -- before the settings window's own UISpecialFrames entry.
+    table.insert(UISpecialFrames, 1, blockerName)
     blocker:SetAllPoints(UIParent)
     blocker:SetFrameStrata("DIALOG")
     blocker:EnableMouse(true)
@@ -104,21 +113,30 @@ function ColorSwatchW:Initialize(parent)
         paintPicker(r, g, b, true)
     end)
 
-    local function close() blocker:Hide() end
-    local function cancelPicker()
-        local r, g, b = p.openR, p.openG, p.openB
-        close()
-        if r then set(r, g, b); if p.onChange then p.onChange(r, g, b) end end
+    local function close(accepted)
+        p.accepted = accepted == true
+        blocker:Hide()
     end
+    local function cancelPicker() close(false) end
+    blocker:HookScript("OnHide", function()
+        if not p.pickerOpen then return end
+        if not p.accepted and p.openR then
+            set(p.openR, p.openG, p.openB)
+            if p.onChange then p.onChange(p.openR, p.openG, p.openB) end
+        end
+        p.pickerOpen = false
+        p.accepted = false
+    end)
     local function open()
         p.openR, p.openG, p.openB = p.r, p.g, p.b
+        p.pickerOpen, p.accepted = true, false
         paintPicker(p.r, p.g, p.b, false)
         blocker:Show()
     end
     blocker:SetScript("OnClick", cancelPicker)
     cancel:SetOnClick(cancelPicker)
-    apply:SetOnClick(close)
-    p.blocker, p.closePicker, p.openPicker = blocker, close, open
+    apply:SetOnClick(function() close(true) end)
+    p.blocker, p.blockerName, p.closePicker, p.openPicker = blocker, blockerName, cancelPicker, open
 
     btn:SetScript("OnEnter", function() if p.enabled then btn:SetBackdropBorderColor(Theme.Unpack("accent")) end end)
     btn:SetScript("OnLeave", function() btn:SetBackdropBorderColor(Theme.Unpack("borderStrong")) end)
@@ -157,6 +175,11 @@ end
 function ColorSwatchW:Dispose()
     local p = self:_p()
     if p.closePicker then p.closePicker() end
+    if p.blockerName then
+        for i = #UISpecialFrames, 1, -1 do
+            if UISpecialFrames[i] == p.blockerName then table.remove(UISpecialFrames, i) end
+        end
+    end
     if p.blocker then p.blocker:SetParent(self:_Frame()) end
     ColorSwatchW.super.Dispose(self)
 end
