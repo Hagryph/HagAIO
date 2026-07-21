@@ -155,7 +155,7 @@ UI/
   Widgets\MultilineEdit.lua A scrollable multi-line EditBox -- the copy-in/out surface
   Widgets\Nav.lua          A vertical NAVIGATION list: section labels + selectable items (optionally indented as
   Widgets\NavItem.lua      Left-rail navigation item with active accent bar + tint
-  Widgets\OverwatchHealthBarSkin.lua Visual skin for Blizzard's player health StatusBar
+  Widgets\OverwatchHealthBarSkin.lua Ports the construction model from Overwatch Nameplate v1.0.1 (Wago 8jzI_7A9R):
   Widgets\Panel.lua        A bordered, themed container Frame
   Widgets\ProgressBar.lua  A themed horizontal progress bar (a StatusBar with an accent fill over a panel2 track)
   Widgets\ScrollArea.lua   A vertically scrollable area with a CUSTOM themed scrollbar (no Blizzard template, so no grey

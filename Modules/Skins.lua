@@ -3,8 +3,8 @@ local Class = ns.Class
 
 -- Modules/Skins.lua
 -- Optional visual skins for Blizzard UI. The first skin restyles the real player
--- health bar with Overwatch-inspired slanted blocks and a health-change
--- flash while leaving Blizzard's secret health value, color and prediction layers alone.
+-- health bar with independent Overwatch-inspired fragments and native smooth
+-- fill movement while leaving Blizzard's secret health value and predictions alone.
 local Skins = Class.new("Skins", ns.Module)
 
 function Skins:OnInitialize()
@@ -29,8 +29,8 @@ function Skins:OnInitialize()
 end
 
 function Skins:OnEnable()
-    self:OnUnit("UNIT_HEALTH", { "player" }, function() self:_PulsePlayerHealth() end)
-    self:OnUnit("UNIT_MAXHEALTH", { "player" }, function() self:_PulsePlayerHealth() end)
+    self:OnUnit("UNIT_HEALTH", { "player" }, function() self:_UpdatePlayerHealth() end)
+    self:OnUnit("UNIT_MAXHEALTH", { "player" }, function() self:_UpdatePlayerHealth() end)
     self:_RefreshPlayerHealth()
 end
 
@@ -56,7 +56,11 @@ function Skins:_ApplyPlayerHealthSkin()
     local p = self:_p()
     local bar = p.playerBar
     if not bar then return end
-    if p.skin and p.skinnedBar ~= bar then self:_RemovePlayerHealthSkin() end
+    if p.skin and p.skinnedBar ~= bar then
+        p.skin:Dispose()
+        p.skin = nil
+        p.skinnedBar = nil
+    end
     if not p.skin then
         p.skin = ns.UI.Widgets.OverwatchHealthBarSkin:New(bar)
         p.skinnedBar = bar
@@ -67,9 +71,7 @@ end
 
 function Skins:_RemovePlayerHealthSkin()
     local p = self:_p()
-    if p.skin then p.skin:Dispose() end
-    p.skin = nil
-    p.skinnedBar = nil
+    if p.skin then p.skin:Restore() end
 end
 
 function Skins:_RefreshPlayerHealth()
@@ -86,9 +88,9 @@ function Skins:_RefreshHealthAnimation()
     if skin then skin:SetAnimated(self:GetSetting("animateHealth")) end
 end
 
-function Skins:_PulsePlayerHealth()
+function Skins:_UpdatePlayerHealth()
     local p = self:_p()
-    if p.skin then p.skin:Pulse() end
+    if p.skin then p.skin:UpdateHealth() end
 end
 
 ns.ModuleManager:Register(Skins:New("Skins", {
@@ -103,8 +105,8 @@ ns.ModuleManager:Register(Skins:New("Skins", {
     settings = {
         { type = "header", text = "Overwatch Health Bar" },
         { type = "toggle", key = "playerHealth", label = "Overwatch player health bar", default = true,
-          desc = "Split your player health bar into ten slanted blocks while keeping its health color." },
+          desc = "Replace the health fill with ten separate slanted fragments." },
         { type = "toggle", key = "animateHealth", label = "Animate health changes", default = true,
-          desc = "Brighten the filled health segments when your health changes.", dependsOn = "playerHealth" },
+          desc = "Smoothly move health through the fragments.", dependsOn = "playerHealth" },
     },
 }))
