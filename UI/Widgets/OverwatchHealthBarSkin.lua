@@ -14,11 +14,11 @@ local OverwatchHealthBarSkinW = ns.Class.new("OverwatchHealthBarSkin", FrameWidg
     statics = {
         segmentCount = 10,
         texture = "Interface\\AddOns\\HagAIO\\Media\\overwatch-segment-hd",
-        depletedDuration = 0.7,
         depletedX = 7,
         depletedY = 1,
         depletedScaleX = 1,
         depletedScaleY = 1.6,
+        depletedSmoothingStages = 2,
     },
 })
 local S = ns.Class.statics(OverwatchHealthBarSkinW)
@@ -28,47 +28,6 @@ local function smoothTexture(texture)
     -- those samples stay smooth when Blizzard lays the player frame on half pixels.
     if texture.SetSnapToPixelGrid then texture:SetSnapToPixelGrid(false) end
     if texture.SetTexelSnappingBias then texture:SetTexelSnappingBias(0) end
-end
-
-local function resetDepletedTexture(texture)
-    texture:Hide()
-    texture:SetAlpha(1)
-end
-
-local function createDepletedAnimation(texture)
-    local group = texture:CreateAnimationGroup()
-    group:SetScript("OnPlay", function()
-        texture:SetAlpha(1)
-        texture:Show()
-    end)
-    group:SetScript("OnFinished", function()
-        resetDepletedTexture(texture)
-    end)
-    group:SetScript("OnStop", function()
-        resetDepletedTexture(texture)
-    end)
-
-    local translation = group:CreateAnimation("Translation")
-    translation:SetOrder(1)
-    translation:SetDuration(S.depletedDuration)
-    translation:SetOffset(S.depletedX, S.depletedY)
-    translation:SetSmoothing("OUT")
-
-    local alpha = group:CreateAnimation("Alpha")
-    alpha:SetOrder(1)
-    alpha:SetDuration(S.depletedDuration)
-    alpha:SetFromAlpha(1)
-    alpha:SetToAlpha(0)
-    alpha:SetSmoothing("OUT")
-
-    local scale = group:CreateAnimation("Scale")
-    scale:SetOrder(1)
-    scale:SetDuration(S.depletedDuration)
-    scale:SetScaleFrom(1, 1)
-    scale:SetScaleTo(S.depletedScaleX, S.depletedScaleY)
-    scale:SetOrigin("CENTER", 0, 0)
-    scale:SetSmoothing("OUT")
-    return group
 end
 
 local function createSegmentCurve(index)
@@ -132,29 +91,60 @@ function OverwatchHealthBarSkinW:Initialize(bar)
         background:SetVertexColor(0.1, 0.1, 0.1, 0.55)
         smoothTexture(background)
 
-        -- A separate copy grows, drifts, and fades through WoW's native animation
-        -- driver while the live fragment continues tracking health immediately.
+        -- The depleted copy is a native StatusBar rather than an AnimationGroup.
+        -- Its secret state moves from one to zero once when this fragment vanishes,
+        -- while the enclosing secret-alpha gate keeps its inverse healing transition
+        -- invisible. Repeated UNIT_HEALTH updates at zero cannot replay the effect.
         local depletedGate = CreateFrame("Frame", nil, segmentBar)
         depletedGate:SetAllPoints(segmentBar)
         depletedGate:SetFrameLevel(segmentBar:GetFrameLevel() + 1)
         depletedGate:EnableMouse(false)
         depletedGate:SetAlpha(0)
 
-        local depletedTexture = depletedGate:CreateTexture(nil, "OVERLAY", nil, 1)
-        depletedTexture:SetAllPoints(depletedGate)
-        depletedTexture:SetTexture(S.texture)
-        smoothTexture(depletedTexture)
-        depletedTexture:Hide()
+        local transitionStages = {}
+        for stage = 1, S.depletedSmoothingStages - 1 do
+            local driver = CreateFrame("StatusBar", nil, depletedGate)
+            driver:SetSize(1, 1)
+            driver:SetPoint("CENTER", depletedGate, "CENTER")
+            driver:SetMinMaxValues(0, 1)
+            driver:SetValue(1)
+            driver:SetAlpha(0)
+            transitionStages[stage] = driver
+        end
+
+        local transition = CreateFrame("StatusBar", nil, depletedGate)
+        transition:SetFrameLevel(depletedGate:GetFrameLevel())
+        transition:EnableMouse(false)
+        transition:SetMinMaxValues(0, 1)
+        transition:SetStatusBarTexture(S.texture)
+        transition:SetValue(1)
+        transitionStages[S.depletedSmoothingStages] = transition
+
+        local transitionFill = transition:GetStatusBarTexture()
+        transitionFill:SetDrawLayer("OVERLAY", 1)
+        smoothTexture(transitionFill)
+        transition:SetScript("OnUpdate", function()
+            -- Chaining native interpolation stages stretches Blizzard's fixed-speed
+            -- ease without inspecting any secret. Each stage only forwards the
+            -- previous bar's current secret value into another sanctioned sink.
+            local ease = Enum.StatusBarInterpolation.ExponentialEaseOut
+            for stage = 2, #transitionStages do
+                transitionStages[stage]:SetValue(
+                    transitionStages[stage - 1]:GetInterpolatedValue(), ease)
+            end
+        end)
 
         p.segments[i] = {
             bar = segmentBar,
             fill = fill,
             background = background,
             depletedGate = depletedGate,
-            depletedTexture = depletedTexture,
-            depletedAnimation = createDepletedAnimation(depletedTexture),
+            transition = transition,
+            transitionStages = transitionStages,
+            transitionFill = transitionFill,
             curve = createSegmentCurve(i),
             depletedCurve = createStateCurve(i, true),
+            presentCurve = createStateCurve(i, false),
         }
     end
 
@@ -184,7 +174,7 @@ function OverwatchHealthBarSkinW:_SetColor(r, g, b)
     -- Preserve only its health RGB and keep every replacement fragment opaque.
     for _, segment in ipairs(self:_p().segments) do
         segment.fill:SetVertexColor(r, g, b, 1)
-        segment.depletedTexture:SetVertexColor(r, g, b, 1)
+        segment.transitionFill:SetVertexColor(r, g, b, 1)
     end
 end
 
@@ -207,6 +197,10 @@ function OverwatchHealthBarSkinW:_Layout(width, height)
         segment.bar:ClearAllPoints()
         segment.bar:SetSize(segmentWidth, height)
         segment.bar:SetPoint("LEFT", p.controller, "LEFT", (i - 1) * segmentWidth, 0)
+
+        segment.transition:ClearAllPoints()
+        segment.transition:SetSize(segmentWidth * S.depletedScaleX, height * S.depletedScaleY)
+        segment.transition:SetPoint("CENTER", segment.bar, "CENTER", S.depletedX, S.depletedY)
     end
 end
 
@@ -223,21 +217,18 @@ function OverwatchHealthBarSkinW:UpdateHealth()
             segment.bar:SetValue(value)
         end
 
-        -- Deliberate client probe: UnitHealthPercent evaluates the step curve inside
-        -- Blizzard and returns a secret 0/1 state. SetAlpha is the known sanctioned
-        -- sink. SetPlaying is driven by the same value directly so the client, not
-        -- addon Lua, decides whether the native group runs. Do not pcall this: if
-        -- Midnight rejects the tainted caller or numeric secret, surface that error.
+        -- The secret gate is visible only after depletion. The inverse state drives
+        -- a one-way native interpolation from full to empty; healing restores the
+        -- driver behind alpha zero, ready for the next genuine depletion.
         local depleted = UnitHealthPercent("player", true, segment.depletedCurve)
+        local present = UnitHealthPercent("player", true, segment.presentCurve)
         segment.depletedGate:SetAlpha(depleted)
-        if p.animated and p.transitionsArmed then
-            if issecretvalue and issecretvalue(depleted) then
-                segment.depletedAnimation:SetPlaying(depleted)
-            else
-                segment.depletedAnimation:SetPlaying(depleted > 0)
-            end
+        if p.animated and p.transitionsArmed and interpolation then
+            segment.transitionStages[1]:SetValue(present, interpolation.ExponentialEaseOut)
         else
-            segment.depletedAnimation:SetPlaying(false)
+            for _, stage in ipairs(segment.transitionStages) do
+                stage:SetValue(present)
+            end
         end
     end
     p.transitionsArmed = true
@@ -263,12 +254,6 @@ end
 function OverwatchHealthBarSkinW:SetAnimated(animated)
     local p = self:_p()
     p.animated = animated and true or false
-    if not p.animated then
-        for _, segment in ipairs(p.segments) do
-            segment.depletedAnimation:Stop()
-            resetDepletedTexture(segment.depletedTexture)
-        end
-    end
     if p.applied then self:UpdateHealth() end
     return self
 end
@@ -278,8 +263,6 @@ function OverwatchHealthBarSkinW:Restore()
     p.applied = false
     p.transitionsArmed = false
     for _, segment in ipairs(p.segments) do
-        segment.depletedAnimation:Stop()
-        resetDepletedTexture(segment.depletedTexture)
         segment.depletedGate:SetAlpha(0)
     end
     p.controller:Hide()
