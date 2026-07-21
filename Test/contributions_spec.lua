@@ -111,12 +111,15 @@ describe("Contributions.ValidateSettings", function()
     S.load(ns, "Lib/Color.lua")            -- a colour default must be an ns.Color (validated below)
     local V = ns.Contributions.ValidateSettings
 
-    it("accepts the five rendered types (header/note/toggle/select/color)", function()
+    it("accepts the six rendered types (header/note/toggle/select/dropdown/color)", function()
         assert.is_true(pcall(V, {
             { type = "header", text = "H" },
             { type = "note",   text = "N" },
             { type = "toggle", key = "t", label = "T" },
             { type = "select", key = "s", label = "S", options = { "a", "b" } },
+            { type = "dropdown", key = "d", label = "D", options = {
+                { value = "a", text = "A" }, { value = "b", text = "B" },
+            } },
             { type = "color",  key = "c", label = "C", default = ns.Color:New(1, 1, 1) },
         }, "owner"))
     end)
@@ -140,5 +143,16 @@ describe("Contributions.ValidateSettings", function()
     it("still enforces key + label on a keyed control", function()
         assert.is_false(pcall(V, { { type = "toggle", label = "no key" } }, "owner"))
         assert.is_false(pcall(V, { { type = "toggle", key = "k" } }, "owner"))   -- no label
+    end)
+
+    it("validates dropdown options and structural visibility", function()
+        assert.is_false(pcall(V, { { type = "dropdown", key = "d", label = "D" } }, "owner"))
+        assert.is_false(pcall(V, {
+            { type = "toggle", key = "t", label = "T", visibleWhen = "selector" },
+        }, "owner"))
+        assert.is_true(pcall(V, {
+            { type = "dropdown", key = "d", label = "D", options = { { value = "a", text = "A" } } },
+            { type = "toggle", key = "t", label = "T", visibleWhen = { key = "d", equals = "a" } },
+        }, "owner"))
     end)
 end)

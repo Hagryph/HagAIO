@@ -2,95 +2,161 @@ local addonName, ns = ...
 local Class = ns.Class
 
 -- Modules/Skins.lua
--- Optional visual skins for Blizzard UI. The first skin restyles the real player
--- health bar with independent Overwatch-inspired fragments and native smooth
--- fill movement while leaving Blizzard's secret health value and predictions alone.
-local Skins = Class.new("Skins", ns.Module)
+-- Skin lifecycle and registry. A Skin owns the guarded Load/Unload transition; concrete skins expose
+-- their selector label and settings from private class statics. The Skins module is only the selector:
+-- it unloads the old object before loading the new one and builds the page from the registered skins.
+
+local Skin = Class.new("Skin", nil, { abstract = true })
+
+function Skin:Initialize(owner)
+    local p = self:_p()
+    p.owner = owner
+    p.loaded = false
+end
+
+function Skin:Owner() return self:_p().owner end
+function Skin:GetKey() return self:_statics().key end
+function Skin:GetLabel() return self:_statics().label end
+function Skin:IsDefault() return self:_statics().default == true end
+function Skin:GetSettings() return self:_statics().settings or {} end
+function Skin:GetSetting(key) return self:Owner():GetSetting(key) end
+function Skin:IsLoaded() return self:_p().loaded end
+
+-- Template-method lifecycle: subclasses implement OnLoad/OnUnload, while this base guarantees
+-- idempotence and never leaves the lifecycle flag set when loading fails.
+function Skin:Load()
+    local p = self:_p()
+    if p.loaded then return false end
+    p.loaded = true
+    local ok, err = pcall(self.OnLoad, self)
+    if not ok then
+        pcall(self.OnUnload, self)
+        p.loaded = false
+        error(err, 0)
+    end
+    return true
+end
+
+function Skin:Unload()
+    local p = self:_p()
+    if not p.loaded then return false end
+    local ok, err = pcall(self.OnUnload, self)
+    p.loaded = false
+    if not ok then error(err, 0) end
+    return true
+end
+
+Skin.OnLoad = Class.abstract("OnLoad")
+Skin.OnUnload = Class.abstract("OnUnload")
+function Skin:OnSettingChanged() end
+
+ns.Skin = Skin
+
+local Skins = Class.new("Skins", ns.Module, {
+    statics = { noSkinKey = "none" },
+})
+
+function Skins:Initialize(name, opts)
+    Skins.super.Initialize(self, name, opts)
+    local p = self:_p()
+    p.healthBarSkins = {}
+    p.healthBarSkinsByKey = {}
+    p.activeHealthBarSkin = nil
+    p.defaultHealthBarSkinKey = nil
+    self:_BuildSettings()
+end
+
+function Skins:RegisterHealthBarSkin(skin)
+    assert(skin and skin.IsInstanceOf and skin:IsInstanceOf(ns.HealthBarSkin),
+        "Skins:RegisterHealthBarSkin needs an ns.HealthBarSkin")
+    assert(skin:Owner() == self, "Skins:RegisterHealthBarSkin: skin belongs to another owner")
+    local key, label = skin:GetKey(), skin:GetLabel()
+    assert(type(key) == "string" and key ~= "", "Skins:RegisterHealthBarSkin: skin needs a non-empty static key")
+    assert(type(label) == "string" and label ~= "", "Skins:RegisterHealthBarSkin: skin needs a non-empty static label")
+
+    local p = self:_p()
+    assert(not p.healthBarSkinsByKey[key], "Skins:RegisterHealthBarSkin: duplicate skin key '" .. key .. "'")
+    if skin:IsDefault() then
+        assert(not p.defaultHealthBarSkinKey, "Skins:RegisterHealthBarSkin: only one skin may be the default")
+        p.defaultHealthBarSkinKey = key
+    end
+    p.healthBarSkins[#p.healthBarSkins + 1] = skin
+    p.healthBarSkinsByKey[key] = skin
+    self:_BuildSettings()
+    return skin
+end
+
+-- One stable schema assembled when skins register at file load. Each concrete skin owns its own
+-- ordinary option rows; the module adds structural visibility but never a `dependsOn` relationship.
+function Skins:_BuildSettings()
+    local p, noSkinKey = self:_p(), self:_statics().noSkinKey
+    local choices = { { value = noSkinKey, text = "No Skin" } }
+    for _, skin in ipairs(p.healthBarSkins or {}) do
+        choices[#choices + 1] = { value = skin:GetKey(), text = skin:GetLabel() }
+    end
+
+    local settings = {
+        { type = "header", text = "HealthBar Skin" },
+        { type = "dropdown", key = "healthBarSkin", label = "Skin",
+          default = p.defaultHealthBarSkinKey or noSkinKey, options = choices },
+    }
+    for _, skin in ipairs(p.healthBarSkins or {}) do
+        for _, authored in ipairs(skin:GetSettings()) do
+            local option = {}
+            for key, value in pairs(authored) do option[key] = value end
+            option.visibleWhen = { key = "healthBarSkin", equals = skin:GetKey() }
+            settings[#settings + 1] = option
+        end
+    end
+    ns.Contributions.ValidateSettings(settings, self:GetName())
+    p.settings = settings
+end
+
+function Skins:GetSettings() return self:_p().settings end
+
+-- The schema is dynamic at construction time: concrete skin files register after this parent module
+-- file, but before ADDON_LOADED asks every owner to contribute its tables.
+function Skins:_CollectTables()
+    local schema, nsKey = self:GetSettings(), self:_SettingsNamespace()
+    ns.SettingsTables:Register(nsKey, schema)
+    return ns.SettingsTables:DeriveTables(nsKey, schema)
+end
+
+function Skins:_ActivateSelectedHealthBarSkin()
+    local p = self:_p()
+    local selected = self:GetSetting("healthBarSkin")
+    local nextSkin = self:IsEnabled() and p.healthBarSkinsByKey[selected] or nil
+    if p.activeHealthBarSkin == nextSkin then return end
+
+    if p.activeHealthBarSkin then p.activeHealthBarSkin:Unload() end
+    p.activeHealthBarSkin = nil
+    if nextSkin then
+        nextSkin:Load()
+        p.activeHealthBarSkin = nextSkin
+    end
+end
 
 function Skins:OnInitialize()
-    local p = self:_p()
-    p.playerBar = nil
-    p.skinnedBar = nil
-    p.skin = nil
-    p.applyQueued = false
-
-    -- Permanent learn-only hook: Blizzard's visible player health StatusBar is
-    -- reliable here, while PlayerFrame aliases may refer to a hidden bar. Defer
-    -- layout work one frame so this hook never flushes Blizzard's secret layout.
-    if type(UnitFrameHealthBar_Update) == "function" then
-        local module = self
-        hooksecurefunc("UnitFrameHealthBar_Update", function(statusbar, unit)
-            if unit == "player" and statusbar.unitFrame == PlayerFrame then
-                module:_p().playerBar = statusbar
-                module:_QueueApply()
-            end
-        end)
-    end
+    ns.HealthBarSkin.StartObserving()
 end
 
 function Skins:OnEnable()
-    self:OnUnit("UNIT_HEALTH", { "player" }, function() self:_UpdatePlayerHealth() end)
-    self:OnUnit("UNIT_MAXHEALTH", { "player" }, function() self:_UpdatePlayerHealth() end)
-    self:_RefreshPlayerHealth()
+    self:_ActivateSelectedHealthBarSkin()
 end
 
 function Skins:OnDisable()
-    self:_p().applyQueued = false
-    self:_RemovePlayerHealthSkin()
+    local p = self:_p()
+    if p.activeHealthBarSkin then p.activeHealthBarSkin:Unload() end
+    p.activeHealthBarSkin = nil
 end
 
-function Skins:_QueueApply()
-    local p = self:_p()
-    if not (self:IsEnabled() and self:GetSetting("playerHealth") and p.playerBar) then return end
-    if p.applyQueued then return end
-    p.applyQueued = true
-    self:After(0, function()
-        p.applyQueued = false
-        if self:IsEnabled() and self:GetSetting("playerHealth") then
-            self:_ApplyPlayerHealthSkin()
-        end
-    end)
-end
-
-function Skins:_ApplyPlayerHealthSkin()
-    local p = self:_p()
-    local bar = p.playerBar
-    if not bar then return end
-    if p.skin and p.skinnedBar ~= bar then
-        p.skin:Dispose()
-        p.skin = nil
-        p.skinnedBar = nil
+function Skins:OnSettingChanged(key, value)
+    if key == "healthBarSkin" then
+        self:_ActivateSelectedHealthBarSkin()
+        return
     end
-    if not p.skin then
-        p.skin = ns.UI.Widgets.OverwatchHealthBarSkin:New(bar)
-        p.skinnedBar = bar
-    end
-    p.skin:SetAnimated(self:GetSetting("animateHealth"))
-    p.skin:Apply()
-end
-
-function Skins:_RemovePlayerHealthSkin()
-    local p = self:_p()
-    if p.skin then p.skin:Restore() end
-end
-
-function Skins:_RefreshPlayerHealth()
-    if not self:IsEnabled() then return end
-    if self:GetSetting("playerHealth") then
-        self:_QueueApply()
-    else
-        self:_RemovePlayerHealthSkin()
-    end
-end
-
-function Skins:_RefreshHealthAnimation()
-    local skin = self:_p().skin
-    if skin then skin:SetAnimated(self:GetSetting("animateHealth")) end
-end
-
-function Skins:_UpdatePlayerHealth()
-    local p = self:_p()
-    if p.skin then p.skin:UpdateHealth() end
+    local active = self:_p().activeHealthBarSkin
+    if active then active:OnSettingChanged(key, value) end
 end
 
 ns.ModuleManager:Register(Skins:New("Skins", {
@@ -98,15 +164,12 @@ ns.ModuleManager:Register(Skins:New("Skins", {
     description = "Restyles parts of the game interface.",
     defaultEnabled = false,
     color = ns.Theme.hex.accent,
-    settingsWatch = {
-        playerHealth = "_RefreshPlayerHealth",
-        animateHealth = "_RefreshHealthAnimation",
-    },
-    settings = {
-        { type = "header", text = "Overwatch Health Bar" },
-        { type = "toggle", key = "playerHealth", label = "Overwatch player health bar", default = true,
-          desc = "Replace the health fill with ten separate slanted fragments." },
-        { type = "toggle", key = "animateHealth", label = "Animate health changes", default = true,
-          desc = "Smoothly move health through the fragments.", dependsOn = "playerHealth" },
-    },
+    -- Settings are assembled from later-loaded skin classes, so DatabaseManager is explicit rather
+    -- than being inferred from the empty constructor schema. Health-bar skins own scoped unit events
+    -- and zero-delay application through this module's EventBus/Scheduler resources.
+    -- The dynamic settings table contribution and HealthBarSkin's owner-scoped OnUnit/After calls
+    -- are indirect uses, so the dependency scanner cannot see them at this module call site.
+    -- hag-lint-disable depcheck: DatabaseManager, EventBus, Scheduler
+    deps = { "DatabaseManager", "EventBus", "Scheduler" },
+    settings = {},
 }))

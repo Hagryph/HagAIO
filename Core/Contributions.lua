@@ -18,7 +18,8 @@ local Contributions = {}
 -- typo ERRORS loudly instead of yielding nil. Defined here because Core/Contributions.lua is early
 -- (after Core/Enum.lua) and loads before all three consumers.
 ns.SettingType = ns.Enum.new("SettingType", {
-    HEADER = "header", NOTE = "note", TOGGLE = "toggle", SELECT = "select", COLOR = "color",
+    HEADER = "header", NOTE = "note", TOGGLE = "toggle", SELECT = "select",
+    DROPDOWN = "dropdown", COLOR = "color",
 })
 
 -- The control types the Settings page can actually RENDER (UI/SettingsWindow.lua:_RenderSchema).
@@ -28,22 +29,26 @@ ns.SettingType = ns.Enum.new("SettingType", {
 -- are structural; KEYED_SETTING is the rendered subset that binds to a saved value (needs key + label).
 -- Both sets are DERIVED from ns.SettingType so the vocabulary has one source of truth.
 local ST = ns.SettingType
-local RENDERED_TYPE = { [ST.HEADER] = true, [ST.NOTE] = true, [ST.TOGGLE] = true, [ST.SELECT] = true, [ST.COLOR] = true }
-local KEYED_SETTING = { [ST.TOGGLE] = true, [ST.SELECT] = true, [ST.COLOR] = true }
+local RENDERED_TYPE = {
+    [ST.HEADER] = true, [ST.NOTE] = true, [ST.TOGGLE] = true,
+    [ST.SELECT] = true, [ST.DROPDOWN] = true, [ST.COLOR] = true,
+}
+local KEYED_SETTING = { [ST.TOGGLE] = true, [ST.SELECT] = true, [ST.DROPDOWN] = true, [ST.COLOR] = true }
 
 -- Validate a settings schema at CONSTRUCTION so a malformed entry fails loudly here (at
 -- file load) instead of silently breaking later when the page renders. Rules:
 --   * every entry is a table with a string `type` the renderer can draw;
 --   * "header"/"note" need `text`;
---   * a keyed control (toggle/select/color) needs a non-empty string `key` + `label`;
---   * "select" needs an `options` list; a "color" default must be a { r, g, b } number array.
+--   * a keyed control (toggle/select/dropdown/color) needs a non-empty string `key` + `label`;
+--   * selectors need an `options` list; a "color" default must be an ns.Color value;
+--   * `visibleWhen` is structural visibility, distinct from `dependsOn` (enabled + indented).
 function Contributions.ValidateSettings(settings, owner)
     for i, s in ipairs(settings or {}) do
         local where = ("%s settings[%d]"):format(tostring(owner), i)
         assert(type(s) == "table", where .. ": entry must be a table")
         assert(type(s.type) == "string", where .. ": missing string 'type'")
         assert(RENDERED_TYPE[s.type],
-            where .. (": control type '%s' has no renderer (the page draws only header/note/toggle/select/color)"):format(s.type))
+            where .. (": control type '%s' has no renderer (the page draws only header/note/toggle/select/dropdown/color)"):format(s.type))
         if s.type == ST.HEADER or s.type == ST.NOTE then
             assert(type(s.text) == "string", where .. " (" .. s.type .. "): needs 'text'")
         end
@@ -51,8 +56,17 @@ function Contributions.ValidateSettings(settings, owner)
             assert(type(s.key) == "string" and s.key ~= "", where .. " (" .. s.type .. "): needs a non-empty string 'key'")
             assert(s.label ~= nil, where .. " (" .. s.type .. "): needs a 'label'")
         end
-        if s.type == ST.SELECT then
-            assert(type(s.options) == "table", where .. " (select): needs an 'options' list")
+        if s.type == ST.SELECT or s.type == ST.DROPDOWN then
+            assert(type(s.options) == "table", where .. " (" .. s.type .. "): needs an 'options' list")
+        end
+        if s.type == ST.DROPDOWN and type(s.options) == "table" then
+            assert(#s.options > 0, where .. " (dropdown): 'options' must not be empty")
+            for optionIndex, option in ipairs(s.options) do
+                local optionWhere = where .. " (dropdown) options[" .. optionIndex .. "]"
+                assert(type(option) == "table", optionWhere .. ": must be a table")
+                assert(option.value ~= nil, optionWhere .. ": needs 'value'")
+                assert(type(option.text) == "string" and option.text ~= "", optionWhere .. ": needs non-empty string 'text'")
+            end
         end
         if s.type == ST.COLOR and s.default ~= nil then
             -- a colour default is an ns.Color value (ns.Color:New(r, g, b)); its r,g,b seed the
@@ -70,6 +84,12 @@ function Contributions.ValidateSettings(settings, owner)
                     assert(type(k) == "string", where .. ": 'dependsOn' list entries must be strings")
                 end
             end
+        end
+        if s.visibleWhen ~= nil then
+            assert(type(s.visibleWhen) == "table", where .. ": 'visibleWhen' must be a table")
+            assert(type(s.visibleWhen.key) == "string" and s.visibleWhen.key ~= "",
+                where .. ": 'visibleWhen.key' must be a non-empty string")
+            assert(s.visibleWhen.equals ~= nil, where .. ": 'visibleWhen.equals' is required")
         end
     end
 end

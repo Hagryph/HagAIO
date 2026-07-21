@@ -525,14 +525,26 @@ local function renderSection(content, text, y, sections)
     return y - 28
 end
 
-function SettingsWindow:_RenderSchema(content, host, width, y, sections)
+function SettingsWindow:_RenderSchema(content, host, width, y, sections, pageName)
     local schema = host:GetSettings()
+
+    -- Visibility selects which complete, top-level rows belong to the current schema view. This is
+    -- deliberately separate from `dependsOn`: hidden skin options are not parented, indented, or
+    -- greyed suboptions; when their skin is selected they take part in the normal section layout.
+    local visible = {}
+    for _, s in ipairs(schema) do
+        local rule = s.visibleWhen
+        if not rule or host:GetSetting(rule.key) == rule.equals then
+            visible[#visible + 1] = s
+        end
+    end
 
     -- controls that declare `dependsOn` get greyed out when their parent option is off -- each control
     -- declares its own :EnableWhen condition and the widget layer re-checks it automatically.
     local graph = ns.DependencyGraph:New()
     for _, s in ipairs(schema) do
-        if s.key and (s.type == ns.SettingType.TOGGLE or s.type == ns.SettingType.SELECT or s.type == ns.SettingType.COLOR) then
+        if s.key and (s.type == ns.SettingType.TOGGLE or s.type == ns.SettingType.SELECT
+            or s.type == ns.SettingType.DROPDOWN or s.type == ns.SettingType.COLOR) then
             graph:Add(s.key, function() return host:GetSetting(s.key) and true or false end, s.dependsOn)
         end
     end
@@ -551,9 +563,10 @@ function SettingsWindow:_RenderSchema(content, host, width, y, sections)
     local controls = {}   -- setting key -> its widget, so a dependent can watch its parent widget(s)
     local pending = {}    -- { widget, key } dependents, wired to their parents after every control exists
     local groupOpen = false
-    for _, s in ipairs(schema) do
+    for _, s in ipairs(visible) do
         local keyed = s.type == ns.SettingType.TOGGLE
             or s.type == ns.SettingType.SELECT
+            or s.type == ns.SettingType.DROPDOWN
             or s.type == ns.SettingType.COLOR
         if keyed then
             if s.dependsOn then
@@ -612,6 +625,25 @@ function SettingsWindow:_RenderSchema(content, host, width, y, sections)
             if s.dependsOn then pending[#pending + 1] = { w = seg, key = s.key, on = s.dependsOn } end
             y = y - 34
 
+        elseif s.type == ns.SettingType.DROPDOWN then
+            local lbl = W.Text:New(content, s.reload and W.FlagReload(s.label) or s.label, "text", "GameFontHighlight")
+            local x = s.dependsOn and 30 or 6
+            lbl:SetPoint("TOPLEFT", x, y)
+            y = y - 20
+            local dropdown = W.Dropdown:New(content, s.options, s.placeholder)
+            dropdown:SetPoint("TOPLEFT", x, y)
+            dropdown:SetWidth(s.width or 220)
+            dropdown:SetValue(host:GetSetting(s.key))
+            dropdown:SetOnChange(function(value)
+                host:SetSetting(s.key, value)
+                -- Rebuild after Blizzard finishes the menu selection callback. The new page includes
+                -- exactly the ordinary rows belonging to the newly selected variant.
+                ns.Scheduler:After(0, function() self:InvalidateModule(pageName) end)
+            end)
+            if s.key then controls[s.key] = dropdown end
+            if s.dependsOn then pending[#pending + 1] = { w = dropdown, key = s.key, on = s.dependsOn } end
+            y = y - 34
+
         elseif s.type == ns.SettingType.COLOR then
             local lbl = W.Text:New(content, s.label, "text", "GameFontHighlight")
             local x = s.dependsOn and 30 or 6
@@ -657,7 +689,7 @@ function SettingsWindow:_BuildModuleControls(sf, module)
     local y, rendered = -4, false
     local sections = { seen = false }
     if #module:GetSettings() > 0 then
-        y = self:_RenderSchema(content, module, width, y, sections)
+        y = self:_RenderSchema(content, module, width, y, sections, module:GetName())
         rendered = true
     end
 
@@ -665,7 +697,7 @@ function SettingsWindow:_BuildModuleControls(sf, module)
     for _, sub in ipairs(subs) do
         if sub.GetSettings and #sub:GetSettings() > 0 then
             y = renderSection(content, sub:GetTitle(), y, sections)
-            y = self:_RenderSchema(content, sub, width, y, sections)
+            y = self:_RenderSchema(content, sub, width, y, sections, module:GetName())
             rendered = true
         end
     end

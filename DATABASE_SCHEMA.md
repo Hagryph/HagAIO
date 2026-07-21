@@ -440,7 +440,7 @@ Open **[diagram/DB/index.html](diagram/DB/index.html)** in a browser for an inte
 | Column | Type | Null | Key | Default | References |
 |---|---|---|---|---|---|
 | `id` | integer | no | PK |  |  |
-| `playerHealth` | boolean | yes |  |  |  |
+| `healthBarSkin` | text | yes |  |  |  |
 | `animateHealth` | boolean | yes |  |  |  |
 
 ---
@@ -579,7 +579,7 @@ Open **[diagram/DB/index.html](diagram/DB/index.html)** in a browser for an inte
 | Column | Type | Null | Key | Default | References |
 |---|---|---|---|---|---|
 | `profile` | text | no | PK |  | → `profile.name` on delete cascade |
-| `playerHealth` | boolean | yes |  |  |  |
+| `healthBarSkin` | text | yes |  |  |  |
 | `animateHealth` | boolean | yes |  |  |  |
 
 ---

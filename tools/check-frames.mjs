@@ -53,7 +53,7 @@ const FRAME_ALLOW = [
 // Raw) are intentionally absent -- they own no frame and may be called normally.
 const WIDGETS = [
   "Panel", "Divider", "Avatar", "Text", "SectionLabel", "TextButton", "Button", "Toggle",
-  "NavItem", "Segmented", "ColorSwatch", "CollapsibleSection", "Input", "Slider", "SettingsGroup",
+  "NavItem", "Segmented", "Dropdown", "ColorSwatch", "CollapsibleSection", "Input", "Slider", "SettingsGroup",
   "Window", "ScrollArea", "Grid", "Nav", "Texture", "IconGrid", "Container",
   "Fill", "StatusBar", "ProgressBar", "MultilineEdit", "Tooltip", "MapArt", "Typography", "TextSelection",
   "OverwatchHealthBarSkin",

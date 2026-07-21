@@ -56,6 +56,11 @@ local Module = Class.new("Module", ns.Component, { mixins = { ns.Publishable } }
 --   { type = "toggle", key = "...", label = "...", default = bool, desc = "..." }
 --   { type = "select", key = "...", label = "...", default = "v",
 --       options = { { value = "v", text = "..." }, ... } }
+--   { type = "dropdown", key = "...", label = "...", default = "v",
+--       options = { { value = "v", text = "..." }, ... } }
+-- A keyed row may declare `visibleWhen = { key = "selector", equals = "v" }`; it is then
+-- rendered as an ordinary top-level row only for that selection. `dependsOn` remains the separate
+-- parent/suboption relationship: always rendered, indented, and disabled while its parent is off.
 function Module:Initialize(name, opts)
     opts = opts or {}
     Module.super.Initialize(self, name, opts.color or ns.Theme.hex.accent)  -- ns.Loggable: name + colour

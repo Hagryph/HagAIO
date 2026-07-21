@@ -147,6 +147,7 @@ UI/
   Widgets\CollapsibleSection.lua Collapsible section ("accordion"): a clickable header with a +/- chevron that
   Widgets\ColorSwatch.lua  Colour swatch button: shows the current colour, opens the Blizzard colour
   Widgets\Divider.lua      1px horizontal hairline (anchor + width set by caller)
+  Widgets\Dropdown.lua     Native retail dropdown backed by Blizzard's current Menu system
   Widgets\Fill.lua         A plain SOLID-COLOUR texture region (a tint/overlay/marker)
   Widgets\Grid.lua         Column-aligned GRID -- the one row/column layout engine
   Widgets\IconGrid.lua     Auto-sizing ICON GRID -- Encounter-Journal-style tiles laid out a FIXED number per row, each
@@ -200,7 +201,7 @@ Modules/
   Dev.lua                  Developer settings module
   Misc.lua                 Miscellaneous helpers, each its own SUBMODULE of this thin parent module -- the codebase's
   Questing.lua             Everything around levelling through quests, in one module:
-  Skins.lua                Optional visual skins for Blizzard UI
+  Skins.lua                Skin lifecycle and registry
   UnitFrames.lua           Colours the player & target health bars by remaining health: green at full,
   Class\Hunter\Hunter.lua  Hunter entry point and shared Steady Shot Focus prediction behaviour
   Class\Hunter\Base.lua    (no description)
@@ -211,6 +212,8 @@ Modules/
   Dashboard\ExpansionCatalog.lua The Dashboard's instance + zone CATALOG layer, extracted out of the module so the module itself
   Misc\FlightTimers.lua    The Flight Timers submodule of Misc (registered under the parent "Misc" module)
   Misc\SellJunk.lua        The Sell Junk submodule of Misc (registered under the parent "Misc" module)
+  Skins\HealthBarSkin.lua  Abstract player-health-bar skin
+  Skins\OverwatchSkin.lua  Concrete Overwatch player-health-bar skin
 Dev/                       Scratch space (excluded from deploy)
 deploy.ps1                 Mirror the addon into the live WoW AddOns folder + generate the .toc
 ```

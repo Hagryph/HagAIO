@@ -1,0 +1,83 @@
+local S = dofile("Test/support.lua")
+
+local function build()
+    local ns = S.newNs()
+    local module
+    ns.ModuleManager = {
+        Register = function(_, value) module = value; return value end,
+    }
+    S.load(ns, "Core/Module.lua")
+    S.load(ns, "Modules/Skins.lua")
+    S.load(ns, "Modules/Skins/HealthBarSkin.lua")
+    return ns, module
+end
+
+describe("Skin lifecycle", function()
+    it("is abstract and guards Load/Unload transitions", function()
+        local ns, owner = build()
+        assert.has_error(function() ns.Skin:New(owner) end)
+
+        local calls = {}
+        local TestSkin = ns.Class.new("TestSkin", ns.Skin, {
+            statics = { key = "test", label = "Test", settings = {} },
+        })
+        function TestSkin:OnLoad() calls[#calls + 1] = "load" end
+        function TestSkin:OnUnload() calls[#calls + 1] = "unload" end
+
+        local skin = TestSkin:New(owner)
+        assert.is_true(skin:Load())
+        assert.is_false(skin:Load())
+        assert.is_true(skin:IsLoaded())
+        assert.is_true(skin:Unload())
+        assert.is_false(skin:Unload())
+        assert.is_false(skin:IsLoaded())
+        assert.are.equal("load", calls[1])
+        assert.are.equal("unload", calls[2])
+        assert.are.equal(2, #calls)
+    end)
+
+    it("rolls a failed load back through OnUnload", function()
+        local ns, owner = build()
+        local cleaned = false
+        local BrokenSkin = ns.Class.new("BrokenSkin", ns.Skin, {
+            statics = { key = "broken", label = "Broken", settings = {} },
+        })
+        function BrokenSkin:OnLoad() error("load failed") end
+        function BrokenSkin:OnUnload() cleaned = true end
+
+        local skin = BrokenSkin:New(owner)
+        assert.has_error(function() skin:Load() end)
+        assert.is_true(cleaned)
+        assert.is_false(skin:IsLoaded())
+    end)
+end)
+
+describe("Skins settings schema", function()
+    it("builds No Skin plus registered skins and keeps skin options top-level", function()
+        local ns, module = build()
+        local TestSkin = ns.Class.new("TestSkin", ns.HealthBarSkin, {
+            statics = {
+                key = "test",
+                label = "Test Skin",
+                default = true,
+                settings = {
+                    { type = "toggle", key = "effect", label = "Effect", default = true },
+                },
+            },
+        })
+        function TestSkin:CreateHealthBarView() end
+        module:RegisterHealthBarSkin(TestSkin:New(module))
+
+        local schema = module:GetSettings()
+        assert.are.equal("HealthBar Skin", schema[1].text)
+        assert.are.equal("dropdown", schema[2].type)
+        assert.are.equal("test", schema[2].default)
+        assert.are.equal("none", schema[2].options[1].value)
+        assert.are.equal("No Skin", schema[2].options[1].text)
+        assert.are.equal("test", schema[2].options[2].value)
+        assert.are.equal("toggle", schema[3].type)
+        assert.is_nil(schema[3].dependsOn)
+        assert.are.equal("healthBarSkin", schema[3].visibleWhen.key)
+        assert.are.equal("test", schema[3].visibleWhen.equals)
+    end)
+end)

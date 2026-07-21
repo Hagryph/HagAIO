@@ -126,13 +126,22 @@ describe("Contributions.ValidateSettings", function()
     it("rejects a keyed control with no key", function()
         assert.is_false(check({ { type = "toggle", label = "L" } }))
     end)
-    it("rejects a select with no options", function()
+    it("rejects a selector with no options", function()
         assert.is_false(check({ { type = "select", key = "k", label = "L" } }))
+        assert.is_false(check({ { type = "dropdown", key = "k", label = "L" } }))
     end)
     it("checks dependsOn is a string or a list of strings", function()
         assert.is_false(check({ { type = "toggle", key = "k", label = "L", dependsOn = 5 } }))
         assert.is_true(check({ { type = "toggle", key = "k", label = "L", dependsOn = "other" } }))
         assert.is_true(check({ { type = "toggle", key = "k", label = "L", dependsOn = { "a", "b" } } }))
+    end)
+    it("checks visibleWhen has a key and comparison value", function()
+        assert.is_false(check({ { type = "toggle", key = "k", label = "L", visibleWhen = true } }))
+        assert.is_false(check({ { type = "toggle", key = "k", label = "L", visibleWhen = { key = "d" } } }))
+        assert.is_true(check({
+            { type = "dropdown", key = "d", label = "D", options = { { value = "on", text = "On" } } },
+            { type = "toggle", key = "k", label = "L", visibleWhen = { key = "d", equals = "on" } },
+        }))
     end)
 end)
 

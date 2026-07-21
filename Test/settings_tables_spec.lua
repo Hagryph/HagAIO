@@ -7,6 +7,7 @@ local DB_FILES = { "Schema", "RowStore", "IndexManager", "Constraints", "Trigger
 local SCHEMA = {
     { type = "toggle", key = "a", default = true },
     { type = "select", key = "m", default = "off" },
+    { type = "dropdown", key = "skin", default = "none" },
     { type = "color",  key = "c", default = { 1, 0, 0 } },
 }
 local NS = "module_Foo"
@@ -53,6 +54,7 @@ describe("SettingsTables: schema -> tables", function()
         assert.is_true(db:Schema():Table("o_module_Foo"):HasColumn("c_r"))
         assert.is_true(db:Schema():Table("o_module_Foo"):HasColumn("c_g"))
         assert.is_true(db:Schema():Table("o_module_Foo"):HasColumn("c_b"))
+        assert.is_true(db:Schema():Table("o_module_Foo"):HasColumn("skin"))
     end)
 end)
 
@@ -61,6 +63,7 @@ describe("SettingsTables: cascade read/write", function()
         local db, st = build()
         assert.are.equal(true, st:Get(db, NS, SCHEMA, "a"))
         assert.are.equal("off", st:Get(db, NS, SCHEMA, "m"))
+        assert.are.equal("none", st:Get(db, NS, SCHEMA, "skin"))
         assert.is_true(colorEq(st:Get(db, NS, SCHEMA, "c"), 1, 0, 0))
     end)
 
@@ -68,9 +71,11 @@ describe("SettingsTables: cascade read/write", function()
         local db, st = build()
         st:Set(db, NS, SCHEMA, "a", false)
         st:Set(db, NS, SCHEMA, "m", "auto")
+        st:Set(db, NS, SCHEMA, "skin", "overwatch")
         st:Set(db, NS, SCHEMA, "c", { 0, 1, 0 })
         assert.are.equal(false, st:Get(db, NS, SCHEMA, "a"))
         assert.are.equal("auto", st:Get(db, NS, SCHEMA, "m"))
+        assert.are.equal("overwatch", st:Get(db, NS, SCHEMA, "skin"))
         assert.is_true(colorEq(st:Get(db, NS, SCHEMA, "c"), 0, 1, 0))
         assert.are.equal(1, db:Store():Count("o_module_Foo"))  -- a single override row (id=1)
     end)

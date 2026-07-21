@@ -19,7 +19,7 @@ local SettingsTables = Class.new("SettingsTables", ns.Lib, {
 -- when that layer leaves the key alone, so the lower layer shows through.
 --
 -- The DB forbids table cells (Core/DB/Types.lua), so a value maps to typed scalar COLUMNS:
---   toggle -> <key> boolean   select/input -> <key> text   number/slider/range -> <key> number
+--   toggle -> <key> boolean   select/dropdown/input -> <key> text   number/slider/range -> <key> number
 --   color  -> <key>_r, <key>_g, <key>_b number
 -- COLOUR shape: this engine only ever handles a colour as a plain { r, g, b } triple. The rich
 -- ns.Color VALUE type is presented one layer up (Component:GetSetting/SetSetting wrap/unwrap it);
@@ -42,7 +42,7 @@ local function fieldFor(e)
         return { cols = { { name = key, type = ns.DB.ColumnType.BOOLEAN } },
                  read  = function(row) local v = row[key]; if ns.DB.isSet(v) then return v end end,
                  write = function(v)   return { [key] = v and true or false } end }
-    elseif t == ns.SettingType.SELECT or t == "input" then
+    elseif t == ns.SettingType.SELECT or t == ns.SettingType.DROPDOWN or t == "input" then
         return { cols = { { name = key, type = ns.DB.ColumnType.TEXT } },
                  read  = function(row) local v = row[key]; if ns.DB.isSet(v) then return v end end,
                  write = function(v)   return { [key] = v } end }
