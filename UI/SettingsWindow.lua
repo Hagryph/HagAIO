@@ -9,7 +9,13 @@ local W = ns.UI.Widgets
 -- three pages: Modules (live toggles), Log (the Logger's history, live), and
 -- About. Styled to match the LoL Game Helper desktop app.
 
-local SettingsWindow = Class.new("SettingsWindow", ns.Service)
+local SettingsWindow = Class.new("SettingsWindow", ns.Service, { statics = {
+    windowWidth = 920,
+    windowHeight = 640,
+    navWidth = 170,
+    gridMinWidth = 660,
+    gridGutter = 24,
+} })
 
 -- A General-page contribution may carry `visibleDeps` (a list of SERVICE names): it shows only
 -- when every one of them is loaded. A soft, visibility-only dependency (e.g. a dev-only toggle
@@ -92,7 +98,9 @@ function SettingsWindow:_Build()
     if p.built then return end
 
     -- shared chrome: movable HIGH-strata frame + draggable bar (title + version) + close X.
-    local f = W.Window:New(600, { name = "HagAIOSettingsWindow", width = 620, height = 460,
+    local layout = self:_statics()
+    local f = W.Window:New(600, { name = "HagAIOSettingsWindow",
+        width = layout.windowWidth, height = layout.windowHeight,
         strata = "HIGH", title = "HAGAIO", subtitle = "v" .. tostring(ns.Meta.version),
         onClose = function() self:Hide() end,
         autoClose = true,   -- hide in combat / Edit Mode, reopen to the same page after
@@ -107,7 +115,7 @@ function SettingsWindow:_Build()
 
     -- left nav rail
     local nav = W.Panel:New(f, "bg0", "border")
-    nav:SetWidth(150)
+    nav:SetWidth(layout.navWidth)
     nav:SetPoint("TOPLEFT", bar, "BOTTOMLEFT", 0, -1)
     nav:SetPoint("BOTTOMLEFT", f, "BOTTOMLEFT", 1, 1)
 
@@ -506,43 +514,10 @@ function SettingsWindow:_EnsureModulePage(name)
     return page
 end
 
--- Render one settings HOST's schema (a Module OR a Submodule -- anything with
--- GetSettings/GetSetting/SetSetting) into `content` starting at `y`; returns the
--- new y. Controls bind live to that host.
-local function renderSection(content, text, y, sections)
-    if sections.seen then
-        y = y - 8
-        local divider = W.Fill:New(content, { layer = "ARTWORK" })
-        divider:SetPoint("TOPLEFT", 10, y)
-        divider:SetPoint("TOPRIGHT", content, "TOPRIGHT", -10, y)
-        divider:SetHeight(1)
-        divider:SetColorTexture(Theme.Unpack("border"))
-        y = y - 14
-    end
-    local h = W.SectionLabel:New(content, text)
-    h:SetPoint("TOPLEFT", 4, y - 6)
-    sections.seen = true
-    return y - 28
-end
-
-function SettingsWindow:_RenderSchema(content, host, width, y, sections, pageName)
+-- A dependency state belongs to one settings host, but is shared by all of that host's visual
+-- sections. A dependency may therefore cross a column without losing its parent widget.
+function SettingsWindow:_NewSchemaState(host)
     local schema = host:GetSettings()
-
-    -- Visibility selects which complete, top-level rows belong to the current schema view. This is
-    -- deliberately separate from `dependsOn`: hidden skin options are not parented, indented, or
-    -- greyed suboptions; when their skin is selected they take part in the normal section layout.
-    local visible = {}
-    for _, s in ipairs(schema) do
-        local rule = s.visibleWhen
-        local current = rule and host:GetSetting(rule.key)
-        if not rule or (rule.equals ~= nil and current == rule.equals)
-            or (rule.notEquals ~= nil and current ~= rule.notEquals) then
-            visible[#visible + 1] = s
-        end
-    end
-
-    -- controls that declare `dependsOn` get greyed out when their parent option is off -- each control
-    -- declares its own :EnableWhen condition and the widget layer re-checks it automatically.
     local graph = ns.DependencyGraph:New()
     for _, s in ipairs(schema) do
         if s.key and (s.type == ns.SettingType.TOGGLE or s.type == ns.SettingType.SELECT
@@ -562,10 +537,42 @@ function SettingsWindow:_RenderSchema(content, host, width, y, sections, pageNam
         end
     end
 
-    local controls = {}   -- setting key -> its widget, so a dependent can watch its parent widget(s)
-    local pending = {}    -- { widget, key } dependents, wired to their parents after every control exists
+    return { graph = graph, controls = {}, pending = {} }
+end
+
+-- Turn a host schema into semantic layout blocks. Headers start named blocks; an unheaded module
+-- remains an unnamed block and is deliberately rendered full-width. A submodule title supplies the
+-- section name for its otherwise-unheaded schema.
+function SettingsWindow:_AppendSchemaBlocks(blocks, host, fallbackTitle)
+    local current
+    for _, s in ipairs(host:GetSettings()) do
+        local rule = s.visibleWhen
+        local value = rule and host:GetSetting(rule.key)
+        local visible = not rule or (rule.equals ~= nil and value == rule.equals)
+            or (rule.notEquals ~= nil and value ~= rule.notEquals)
+        if visible then
+            if s.type == ns.SettingType.HEADER then
+                current = { host = host, title = s.text, settings = {} }
+                blocks[#blocks + 1] = current
+            else
+                if not current then
+                    current = { host = host, title = fallbackTitle, settings = {} }
+                    blocks[#blocks + 1] = current
+                end
+                current.settings[#current.settings + 1] = s
+            end
+        end
+    end
+end
+
+-- Render the controls inside one semantic section. The section heading and inter-section divider
+-- are owned by the grid layout, keeping row spacing independent of column placement.
+function SettingsWindow:_RenderSchemaBlock(content, block, width, y, pageName, state)
+    local host = block.host
+    local controls, pending = state.controls, state.pending
+
     local groupOpen = false
-    for _, s in ipairs(visible) do
+    for _, s in ipairs(block.settings) do
         local keyed = s.type == ns.SettingType.TOGGLE
             or s.type == ns.SettingType.SELECT
             or s.type == ns.SettingType.DROPDOWN
@@ -581,14 +588,9 @@ function SettingsWindow:_RenderSchema(content, host, width, y, sections, pageNam
                 y = y - 10
             end
             if not s.dependsOn then groupOpen = true end
-        elseif s.type == ns.SettingType.HEADER then
-            groupOpen = false
         end
 
-        if s.type == ns.SettingType.HEADER then
-            y = renderSection(content, s.text, y, sections)
-
-        elseif s.type == ns.SettingType.NOTE then
+        if s.type == ns.SettingType.NOTE then
             local n = W.Text:New(content, s.text, "textDim", "GameFontHighlightSmall")
             n:SetPoint("TOPLEFT", 4, y)
             n:SetWidth(width - 16)
@@ -666,16 +668,19 @@ function SettingsWindow:_RenderSchema(content, host, width, y, sections, pageNam
         end
     end
 
+    return y
+end
+
+function SettingsWindow:_WireSchemaState(state)
     -- Wire each dependent to watch its PARENT widget(s): when a parent changes it re-checks the graph
     -- (and the EnableWhen cascade carries transitive chains). Targeted -- only the widgets it depends on.
-    for _, d in ipairs(pending) do
+    for _, d in ipairs(state.pending) do
         local parents = {}
         for _, key in ipairs(type(d.on) == "table" and d.on or { d.on }) do
-            if controls[key] then parents[#parents + 1] = controls[key] end
+            if state.controls[key] then parents[#parents + 1] = state.controls[key] end
         end
-        d.w:EnableWhen(parents, function() return graph:IsSatisfied(d.key) end)
+        d.w:EnableWhen(parents, function() return state.graph:IsSatisfied(d.key) end)
     end
-    return y
 end
 
 -- A module page = the module's own schema, then the settings of every CONFIGURABLE submodule of
@@ -688,29 +693,79 @@ function SettingsWindow:_BuildModuleControls(sf, module)
     local width = content:GetWidth()   -- the scroll area keeps the content width synced for us
     if not width or width < 1 then width = 420 end
 
-    local y, rendered = -4, false
-    local sections = { seen = false }
+    local blocks, states = {}, {}
     if #module:GetSettings() > 0 then
-        y = self:_RenderSchema(content, module, width, y, sections, module:GetName())
-        rendered = true
+        self:_AppendSchemaBlocks(blocks, module)
+        states[module] = self:_NewSchemaState(module)
     end
 
     local subs = ns.SubmoduleManager and ns.SubmoduleManager:ConfigurableChildrenOf(module:GetName()) or {}
     for _, sub in ipairs(subs) do
         if sub.GetSettings and #sub:GetSettings() > 0 then
-            y = renderSection(content, sub:GetTitle(), y, sections)
-            y = self:_RenderSchema(content, sub, width, y, sections, module:GetName())
-            rendered = true
+            self:_AppendSchemaBlocks(blocks, sub, sub:GetTitle())
+            states[sub] = self:_NewSchemaState(sub)
         end
     end
 
-    if not rendered then
+    if #blocks == 0 then
         local none = W.Text:New(content, "This module has no options.", "textFaint", "GameFontHighlightSmall")
         none:SetPoint("TOPLEFT", 4, -4)
         content:SetHeight(30)
         return
     end
-    content:SetHeight(math.max(30, -y + 8))
+
+    -- Only complete, named sections enter the grid. Without semantic section names there is no
+    -- honest scan boundary, so the entire page keeps the conventional full-width vertical flow.
+    local layout = self:_statics()
+    local grid = width >= layout.gridMinWidth and #blocks > 1
+    for _, block in ipairs(blocks) do
+        if not block.title then grid = false; break end
+    end
+
+    local columns = grid and 2 or 1
+    local columnWidth = grid and math.floor((width - layout.gridGutter) / 2) or width
+    local columnY, columnSections = { -4, -4 }, { 0, 0 }
+    for index, block in ipairs(blocks) do
+        local column = 1
+        if columns == 2 then
+            -- Seed both columns, then keep them visually balanced. Sections are independent units,
+            -- so masonry placement removes dead space without compromising a control sequence.
+            if index == 2 then
+                column = 2
+            elseif index > 2 and columnY[2] > columnY[1] then
+                column = 2
+            end
+        end
+
+        local section = W.Container:New(content)
+        section:SetWidth(columnWidth)
+        local x = column == 2 and (columnWidth + layout.gridGutter) or 0
+        section:SetPoint("TOPLEFT", content, "TOPLEFT", x, columnY[column])
+
+        local y = 0
+        if columnSections[column] > 0 then
+            local divider = W.Fill:New(section, { layer = "ARTWORK" })
+            divider:SetPoint("TOPLEFT", 10, y)
+            divider:SetPoint("TOPRIGHT", section, "TOPRIGHT", -10, y)
+            divider:SetHeight(1)
+            divider:SetColorTexture(Theme.Unpack("border"))
+            y = y - 22
+        end
+        if block.title then
+            local heading = W.SectionLabel:New(section, block.title)
+            heading:SetPoint("TOPLEFT", 4, y - 6)
+            y = y - 28
+        end
+        y = self:_RenderSchemaBlock(section, block, columnWidth, y, module:GetName(), states[block.host])
+
+        local height = math.max(30, -y + 8)
+        section:SetHeight(height)
+        columnY[column] = columnY[column] - height
+        columnSections[column] = columnSections[column] + 1
+    end
+
+    for _, state in pairs(states) do self:_WireSchemaState(state) end
+    content:SetHeight(math.max(30, -math.min(columnY[1], columnY[2]) + 8))
 end
 
 function SettingsWindow:_BuildLogPage(parent)
