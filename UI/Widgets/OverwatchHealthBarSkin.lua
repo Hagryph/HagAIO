@@ -18,7 +18,7 @@ local OverwatchHealthBarSkinW = ns.Class.new("OverwatchHealthBarSkin", FrameWidg
         depletedY = 1,
         depletedScaleX = 1,
         depletedScaleY = 1.6,
-        depletedSmoothingStages = 4,
+        depletedSmoothingStages = 2,
     },
 })
 local S = ns.Class.statics(OverwatchHealthBarSkinW)
@@ -132,8 +132,6 @@ function OverwatchHealthBarSkinW:Initialize(bar)
                 transitionStages[stage]:SetValue(
                     transitionStages[stage - 1]:GetInterpolatedValue(), ease)
             end
-            -- GetInterpolatedValue may be secret; SetAlpha is its sanctioned sink.
-            transitionFill:SetAlpha(transition:GetInterpolatedValue())
         end)
 
         p.segments[i] = {
