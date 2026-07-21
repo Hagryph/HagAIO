@@ -138,9 +138,17 @@ describe("Contributions.ValidateSettings", function()
     it("checks visibleWhen has a key and comparison value", function()
         assert.is_false(check({ { type = "toggle", key = "k", label = "L", visibleWhen = true } }))
         assert.is_false(check({ { type = "toggle", key = "k", label = "L", visibleWhen = { key = "d" } } }))
+        assert.is_false(check({
+            { type = "toggle", key = "k", label = "L",
+              visibleWhen = { key = "d", equals = "on", notEquals = "off" } },
+        }))
         assert.is_true(check({
             { type = "dropdown", key = "d", label = "D", options = { { value = "on", text = "On" } } },
             { type = "toggle", key = "k", label = "L", visibleWhen = { key = "d", equals = "on" } },
+        }))
+        assert.is_true(check({
+            { type = "dropdown", key = "d", label = "D", options = { { value = "on", text = "On" } } },
+            { type = "toggle", key = "k", label = "L", visibleWhen = { key = "d", notEquals = "off" } },
         }))
     end)
 end)

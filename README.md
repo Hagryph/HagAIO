@@ -147,7 +147,7 @@ UI/
   Widgets\CollapsibleSection.lua Collapsible section ("accordion"): a clickable header with a +/- chevron that
   Widgets\ColorSwatch.lua  Colour swatch button: shows the current colour, opens the Blizzard colour
   Widgets\Divider.lua      1px horizontal hairline (anchor + width set by caller)
-  Widgets\Dropdown.lua     Native retail dropdown backed by Blizzard's current Menu system
+  Widgets\Dropdown.lua     HagAIO-themed dropdown with a dark popout, restrained accent state, and no
   Widgets\Fill.lua         A plain SOLID-COLOUR texture region (a tint/overlay/marker)
   Widgets\Grid.lua         Column-aligned GRID -- the one row/column layout engine
   Widgets\IconGrid.lua     Auto-sizing ICON GRID -- Encounter-Journal-style tiles laid out a FIXED number per row, each
@@ -156,7 +156,7 @@ UI/
   Widgets\MultilineEdit.lua A scrollable multi-line EditBox -- the copy-in/out surface
   Widgets\Nav.lua          A vertical NAVIGATION list: section labels + selectable items (optionally indented as
   Widgets\NavItem.lua      Left-rail navigation item with active accent bar + tint
-  Widgets\OverwatchHealthBarSkin.lua Ports the construction model from Overwatch Nameplate v1.0.1 (Wago 8jzI_7A9R):
+  Widgets\OverwatchHealthBarSkin.lua Ten adjacent StatusBars rendered through the Overwatch slanted-fragment texture
   Widgets\Panel.lua        A bordered, themed container Frame
   Widgets\ProgressBar.lua  A themed horizontal progress bar (a StatusBar with an accent fill over a panel2 track)
   Widgets\ScrollArea.lua   A vertically scrollable area with a CUSTOM themed scrollbar (no Blizzard template, so no grey
@@ -212,8 +212,8 @@ Modules/
   Dashboard\ExpansionCatalog.lua The Dashboard's instance + zone CATALOG layer, extracted out of the module so the module itself
   Misc\FlightTimers.lua    The Flight Timers submodule of Misc (registered under the parent "Misc" module)
   Misc\SellJunk.lua        The Sell Junk submodule of Misc (registered under the parent "Misc" module)
-  Skins\HealthBarSkin.lua  Abstract player-health-bar skin
-  Skins\OverwatchSkin.lua  Concrete Overwatch player-health-bar skin
+  Skins\HealthBarSkin.lua  Abstract health-bar skin
+  Skins\OverwatchSkin.lua  Concrete Overwatch health-bar skin
 Dev/                       Scratch space (excluded from deploy)
 deploy.ps1                 Mirror the addon into the live WoW AddOns folder + generate the .toc
 ```

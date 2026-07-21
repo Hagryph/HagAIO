@@ -41,7 +41,8 @@ local KEYED_SETTING = { [ST.TOGGLE] = true, [ST.SELECT] = true, [ST.DROPDOWN] = 
 --   * "header"/"note" need `text`;
 --   * a keyed control (toggle/select/dropdown/color) needs a non-empty string `key` + `label`;
 --   * selectors need an `options` list; a "color" default must be an ns.Color value;
---   * `visibleWhen` is structural visibility, distinct from `dependsOn` (enabled + indented).
+--   * `visibleWhen` is structural visibility with exactly one `equals`/`notEquals` comparison,
+--     distinct from `dependsOn` (enabled + indented).
 function Contributions.ValidateSettings(settings, owner)
     for i, s in ipairs(settings or {}) do
         local where = ("%s settings[%d]"):format(tostring(owner), i)
@@ -89,7 +90,10 @@ function Contributions.ValidateSettings(settings, owner)
             assert(type(s.visibleWhen) == "table", where .. ": 'visibleWhen' must be a table")
             assert(type(s.visibleWhen.key) == "string" and s.visibleWhen.key ~= "",
                 where .. ": 'visibleWhen.key' must be a non-empty string")
-            assert(s.visibleWhen.equals ~= nil, where .. ": 'visibleWhen.equals' is required")
+            local hasEquals = s.visibleWhen.equals ~= nil
+            local hasNotEquals = s.visibleWhen.notEquals ~= nil
+            assert(hasEquals ~= hasNotEquals,
+                where .. ": 'visibleWhen' needs exactly one of 'equals' or 'notEquals'")
         end
     end
 end

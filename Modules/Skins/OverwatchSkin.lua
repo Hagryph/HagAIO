@@ -2,26 +2,19 @@ local addonName, ns = ...
 local Class = ns.Class
 
 -- Modules/Skins/OverwatchSkin.lua
--- Concrete Overwatch player-health-bar skin. The HealthBarSkin base owns attachment and lifecycle;
--- this class owns only its visual implementation and the options that configure it.
+-- Concrete Overwatch health-bar skin. HealthBarSkin owns unit discovery and lifecycle;
+-- this class supplies only the visual implementation.
 local OverwatchSkin = Class.new("OverwatchSkin", ns.HealthBarSkin, {
     statics = {
         key = "overwatch",
         label = "Overwatch",
         default = true,
-        settings = {
-            { type = "toggle", key = "animateHealth", label = "Animate health changes", default = true,
-              desc = "Smoothly move health through the fragments." },
-        },
+        settings = {},
     },
 })
 
-function OverwatchSkin:CreateHealthBarView(bar)
-    return ns.UI.Widgets.OverwatchHealthBarSkin:New(bar)
-end
-
-function OverwatchSkin:ConfigureHealthBarView(view)
-    view:SetAnimated(self:GetSetting("animateHealth"))
+function OverwatchSkin:CreateHealthBarView(bar, unit)
+    return ns.UI.Widgets.OverwatchHealthBarSkin:New(bar, unit)
 end
 
 local skins = assert(ns.ModuleManager:GetModule("Skins"),

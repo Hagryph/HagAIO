@@ -534,7 +534,9 @@ function SettingsWindow:_RenderSchema(content, host, width, y, sections, pageNam
     local visible = {}
     for _, s in ipairs(schema) do
         local rule = s.visibleWhen
-        if not rule or host:GetSetting(rule.key) == rule.equals then
+        local current = rule and host:GetSetting(rule.key)
+        if not rule or (rule.equals ~= nil and current == rule.equals)
+            or (rule.notEquals ~= nil and current ~= rule.notEquals) then
             visible[#visible + 1] = s
         end
     end
@@ -636,7 +638,7 @@ function SettingsWindow:_RenderSchema(content, host, width, y, sections, pageNam
             dropdown:SetValue(host:GetSetting(s.key))
             dropdown:SetOnChange(function(value)
                 host:SetSetting(s.key, value)
-                -- Rebuild after Blizzard finishes the menu selection callback. The new page includes
+                -- Rebuild after the selection callback. The new page includes
                 -- exactly the ordinary rows belonging to the newly selected variant.
                 ns.Scheduler:After(0, function() self:InvalidateModule(pageName) end)
             end)

@@ -235,7 +235,11 @@
     o_module_Skins {
         integer id PK
         text healthBarSkin
-        boolean animateHealth
+        boolean healthBarPlayer
+        boolean healthBarTarget
+        boolean healthBarFocus
+        boolean healthBarPet
+        boolean healthBarNameplates
     }
     o_module_UnitFrames {
         integer id PK
@@ -311,7 +315,11 @@
     p_module_Skins {
         text profile PK
         text healthBarSkin
-        boolean animateHealth
+        boolean healthBarPlayer
+        boolean healthBarTarget
+        boolean healthBarFocus
+        boolean healthBarPet
+        boolean healthBarNameplates
     }
     p_module_UnitFrames {
         text profile PK

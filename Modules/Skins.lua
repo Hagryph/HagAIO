@@ -99,6 +99,16 @@ function Skins:_BuildSettings()
         { type = "header", text = "HealthBar Skin" },
         { type = "dropdown", key = "healthBarSkin", label = "Skin",
           default = p.defaultHealthBarSkinKey or noSkinKey, options = choices },
+        { type = "toggle", key = "healthBarPlayer", label = "Player frame", default = true,
+          visibleWhen = { key = "healthBarSkin", notEquals = noSkinKey } },
+        { type = "toggle", key = "healthBarTarget", label = "Target frame", default = false,
+          visibleWhen = { key = "healthBarSkin", notEquals = noSkinKey } },
+        { type = "toggle", key = "healthBarFocus", label = "Focus frame", default = false,
+          visibleWhen = { key = "healthBarSkin", notEquals = noSkinKey } },
+        { type = "toggle", key = "healthBarPet", label = "Pet frame", default = false,
+          visibleWhen = { key = "healthBarSkin", notEquals = noSkinKey } },
+        { type = "toggle", key = "healthBarNameplates", label = "Nameplates", default = false,
+          visibleWhen = { key = "healthBarSkin", notEquals = noSkinKey } },
     }
     for _, skin in ipairs(p.healthBarSkins or {}) do
         for _, authored in ipairs(skin:GetSettings()) do
@@ -167,7 +177,7 @@ ns.ModuleManager:Register(Skins:New("Skins", {
     -- Settings are assembled from later-loaded skin classes, so DatabaseManager is explicit rather
     -- than being inferred from the empty constructor schema. Health-bar skins own scoped unit events
     -- and zero-delay application through this module's EventBus/Scheduler resources.
-    -- The dynamic settings table contribution and HealthBarSkin's owner-scoped OnUnit/After calls
+    -- The dynamic settings table contribution and HealthBarSkin's owner-scoped On/After calls
     -- are indirect uses, so the dependency scanner cannot see them at this module call site.
     -- hag-lint-disable depcheck: DatabaseManager, EventBus, Scheduler
     deps = { "DatabaseManager", "EventBus", "Scheduler" },
