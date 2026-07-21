@@ -488,10 +488,15 @@ function SettingsWindow:_RefreshProfilesPage()
     if not p.profileGrid then return end
     local names = ns.Profiles and ns.Profiles:List() or {}
     p.profileEmpty:SetShown(#names == 0)
+    -- An explicit character selection overrides the account-wide global profile.
+    -- The rail marks whichever profile is actually supplying this character's baseline;
+    -- it is independent of row clicks, which only copy the name into the save field.
+    local effectiveProfile = ns.Profiles:GetLoaded() or ns.Profiles:GetGlobal()
     local rows = {}
     for _, name in ipairs(names) do
         rows[#rows + 1] = {
             cells = { name, "", "", "", "" },
+            accent = name == effectiveProfile,
             onClick = function()
                 if p.profileNameInput then p.profileNameInput:SetValue(name) end
             end,

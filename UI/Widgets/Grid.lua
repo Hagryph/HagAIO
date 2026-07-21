@@ -22,7 +22,7 @@ local unwrap, style, adopt = _wb.unwrap, _wb.style, _wb.adopt
 -- header (the sidebar/nav form) keeps the bare look -- only clickable rows paint.
 -- A row passed to :SetRows is one of:
 --   { cells = { <cell>, .. }, color=paletteKey, cellColor=function(colIndex)->key|{r,g,b},
---     onClick=fn, active=bool, indent=number,
+--     onClick=fn, active=bool, accent=bool, indent=number,
 --     controls=function(rowFrame, columnXs) ... end }  -- a data / nav row; controls lets the
 --       caller place persistent widgets (checkboxes/buttons) at columnXs[i] (cache them on
 --       rowFrame, re-bind each call) so an interactive table still aligns through the grid
@@ -246,7 +246,6 @@ function GridW:Initialize(parent, opts)
                 if rd.onClick then
                     r:EnableMouse(true)
                     r:SetScript("OnClick", function() rd.onClick(rd) end)
-                    r.bar:SetShown(rd.active and true or false)
                     if rd.active then r.cells[1]:SetTextColor(Theme.Unpack("accent")) end
                     r:SetScript("OnEnter", function() paint(true) end)
                     r:SetScript("OnLeave", function() paint(false) end)
@@ -255,6 +254,10 @@ function GridW:Initialize(parent, opts)
                     r:SetScript("OnEnter", function() paint(true) end)
                     r:SetScript("OnLeave", function() paint(false) end)
                 end
+                -- `active` is selectable-navigation treatment (wash + text + bar).
+                -- `accent` is the status-only treatment used by enabled/effective rows:
+                -- the same left rail, without implying that clicking selected the row.
+                r.bar:SetShown((rd.active or rd.accent) and true or false)
                 paint(false)
                 if dataMode then r.sep:Show() end             -- hairline under every data row
                 -- custom per-row widgets (checkboxes/buttons) positioned at the column x's: the row
