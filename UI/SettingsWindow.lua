@@ -369,15 +369,26 @@ function SettingsWindow:_BuildProfilesPage(parent)
     saveLabel:SetPoint("TOPLEFT", 2, 0)
     local input = W.Input:New(saveBody, 220)
     input:SetPoint("TOPLEFT", 0, -20)
+    p.profileNameInput = input
     local save = W.Button:New(saveBody, "Save", { width = 72 })
     save:SetPoint("LEFT", input, "RIGHT", 16, 0)
     save:SetOnClick(function()
         local name = input:GetValue()
         if name and name ~= "" then
-            ns.Profiles:Save(name)
-            input:SetValue("")
-            self:LogSuccess("saved profile '" .. name .. "'")
-            self:_RefreshProfilesPage()
+            local function saveProfile()
+                local ok, err = ns.Profiles:Save(name)
+                if not ok then self:LogWarn(err or "save failed"); return end
+                input:SetValue("")
+                self:LogSuccess("saved profile '" .. name .. "'")
+                self:_RefreshProfilesPage()
+            end
+            if ns.Profiles:Has(name) then
+                ns.UI.ConfirmationWindow:Ask("Overwrite profile?",
+                    "A profile named '" .. name .. "' already exists. Replace it with your current configuration?",
+                    "Overwrite", saveProfile)
+            else
+                saveProfile()
+            end
         end
     end)
     local import = W.Button:New(saveBody, "Import", { width = 82 })
@@ -457,8 +468,17 @@ function SettingsWindow:_ProfileRowControls(row, xs, name)
     end)
     row.delBtn:ClearAllPoints(); row.delBtn:SetPoint("LEFT", xs[5], 0)
     row.delBtn:SetScript("OnClick", function()
-        ns.Profiles:Delete(name)
-        self:_RefreshProfilesPage()
+        local p = self:_p()
+        ns.UI.ConfirmationWindow:Ask("Delete profile?",
+            "Delete '" .. name .. "'? This cannot be undone.", "Delete", function()
+                local ok, err = ns.Profiles:Delete(name)
+                if not ok then self:LogWarn(err or "delete failed"); return end
+                if p.profileNameInput and p.profileNameInput:GetValue() == name then
+                    p.profileNameInput:SetValue("")
+                end
+                self:LogSuccess("deleted profile '" .. name .. "'")
+                self:_RefreshProfilesPage()
+            end)
     end)
 end
 
@@ -472,6 +492,9 @@ function SettingsWindow:_RefreshProfilesPage()
     for _, name in ipairs(names) do
         rows[#rows + 1] = {
             cells = { name, "", "", "", "" },
+            onClick = function()
+                if p.profileNameInput then p.profileNameInput:SetValue(name) end
+            end,
             controls = function(row, xs) self:_ProfileRowControls(row, xs, name) end,
         }
     end
@@ -1002,7 +1025,7 @@ end
 
 ns.ServiceManager:Register(SettingsWindow:New("SettingsWindow", {
     ui = true,
-    deps = { "EventBus", "SlashCommand", "Profiles", "CopyWindow", "Scheduler" },   -- Scheduler: the deferred log re-measure
+    deps = { "EventBus", "SlashCommand", "Profiles", "CopyWindow", "ConfirmationWindow", "Scheduler" },   -- Scheduler: the deferred log re-measure
     commands = {
         config = { handler = function(self) self:Toggle() end, help = "open the settings window" },
         log    = { handler = function(self) self:Show("log") end, help = "open the activity log" },

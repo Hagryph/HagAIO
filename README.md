@@ -140,6 +140,7 @@ Lib/
 UI/
   Theme.lua                Static design system ported from the LoL Game Helper desktop app's
   Widgets\Widgets.lua      Base of the Widget layer: the factory table, the base class hierarchy, the generic Container and the
+  ConfirmationWindow.lua   Shared themed confirmation window for destructive or replacing actions
   CopyWindow.lua           A themed, reusable "copy this text out of the game" window
   SettingsWindow.lua       The unique, themed settings menu (replaces the default Blizzard options
   Widgets\Avatar.lua       A framed portrait/avatar: a themed bordered box whose texture fills it (inset by the border),
