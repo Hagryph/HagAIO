@@ -27,7 +27,7 @@ function SettingsGroupW:Initialize(parent, title, opts)
     local divider = header:CreateTexture(nil, "ARTWORK")
     divider:SetPoint("BOTTOMLEFT", 2, 0); divider:SetPoint("BOTTOMRIGHT", -2, 0); divider:SetHeight(1)
     divider:SetColorTexture(Theme.Unpack("border"))
-    local chevron = Widgets.Text:New(header, "v", "accent", "GameFontNormalSmall")
+    local chevron = Widgets.Text:New(header, "-", "accent", "GameFontNormalSmall")
     chevron:SetPoint("LEFT", 13, 0)
     chevron:SetShown(collapsible)
     local label = Widgets.SectionLabel:New(header, title)
@@ -43,7 +43,7 @@ function SettingsGroupW:Initialize(parent, title, opts)
     local p = self:_p()
     p.content, p.contentH, p.expanded, p.label = content, 0, true, label
     local function apply()
-        if collapsible then chevron:SetText(p.expanded and "v" or ">") end
+        if collapsible then chevron:SetText(p.expanded and "-" or "+") end
         content:SetShown(p.expanded)
         g:SetHeight(p.expanded and (HEADER + PAD + math.max(0, p.contentH) + PAD) or HEADER)
     end

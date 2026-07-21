@@ -72,12 +72,12 @@ function CopyWindow:_Build()
     footer:SetPoint("BOTTOMRIGHT", f, "BOTTOMRIGHT", -16, 12)
     p.footer = footer
 
-    local prev = W.TextButton:New(footer, "< Prev")
+    local prev = W.TextButton:New(footer, "Previous")
     prev:SetPoint("LEFT", footer, "LEFT", 0, 0)
     prev:SetScript("OnClick", function() self:_Goto(p.page - 1) end)
     p.prev = prev
 
-    local nextBtn = W.TextButton:New(footer, "Next >")
+    local nextBtn = W.TextButton:New(footer, "Next")
     nextBtn:SetPoint("RIGHT", footer, "RIGHT", 0, 0)
     nextBtn:SetScript("OnClick", function() self:_Goto(p.page + 1) end)
     p.next = nextBtn
