@@ -55,6 +55,51 @@ describe("Profiles", function()
         assert.is_nil(p[NS].y)                          -- unchanged from default -> not stored
     end)
 
+    it("overwriting the loaded profile preserves inherited state and includes character changes", function()
+        local pr, db, ns = setup()
+        local modules = {
+            { name = "Alpha", default = true },
+            { name = "Beta", default = true },
+        }
+        ns.ModuleManager.Iterate = function()
+            local i = 0
+            return function()
+                i = i + 1
+                local spec = modules[i]
+                if not spec then return nil end
+                return {
+                    IsAlwaysOn = function() return false end,
+                    GetName = function() return spec.name end,
+                    IsDefaultEnabled = function() return spec.default end,
+                }
+            end
+        end
+
+        db:Insert("profile", { name = "A" })
+        db:Insert("p_module_Foo", { profile = "A", x = true })
+        db:Insert("profile_module_enable", { profile = "A", name = "Alpha", enabled = false })
+        db:Insert("profile_editmode", { profile = "A", key = "inherited",
+            point = "CENTER", x = 10, y = 20 })
+        pr:LoadProfile("A")
+
+        set(ns, db, "y", "b")
+        ns.SettingsTables:SetModuleEnabled(db, "Beta", false, true)
+        db:Insert("editmode", { key = "changed", point = "TOP", x = 30, y = 40 })
+
+        assert.is_true((pr:Save("A")))
+        local saved = pr:Get("A")
+        assert.are.equal(true, saved[NS].x)
+        assert.are.equal("b", saved[NS].y)
+        assert.are.equal(false, saved.modules.Alpha)
+        assert.are.equal(false, saved.modules.Beta)
+        assert.are.equal("CENTER", saved.editmode.inherited.point)
+        assert.are.equal(10, saved.editmode.inherited.x)
+        assert.are.equal(20, saved.editmode.inherited.y)
+        assert.are.equal("TOP", saved.editmode.changed.point)
+        assert.are.equal(30, saved.editmode.changed.x)
+        assert.are.equal(40, saved.editmode.changed.y)
+    end)
+
     it("List / Has / Get / Delete", function()
         local pr = setup()
         pr:Save("A")

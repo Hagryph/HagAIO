@@ -74,11 +74,21 @@ function Profiles:_CurrentSnapshot()
         end
     end
     if mods then out.modules = mods end
-    local em
-    for _, r in ipairs(db:Select("key", "point", "x", "y"):From("editmode"):Run()) do
-        em = em or {}; em[r.key] = { point = r.point, x = r.x, y = r.y }
+    -- Frame positions have the same cascade as settings: character override ->
+    -- loaded profile -> no stored value. Build that effective map before Save
+    -- mutates any profile rows, then overlay this character's changes.
+    local em = {}
+    local loaded = ns.SettingsTables:LoadedProfile(db)
+    if loaded then
+        for _, r in ipairs(db:Select("key", "point", "x", "y"):From("profile_editmode")
+            :Where("profile", "=", loaded):Run()) do
+            em[r.key] = { point = r.point, x = r.x, y = r.y }
+        end
     end
-    if em then out.editmode = em end
+    for _, r in ipairs(db:Select("key", "point", "x", "y"):From("editmode"):Run()) do
+        em[r.key] = { point = r.point, x = r.x, y = r.y }
+    end
+    if next(em) then out.editmode = em end
     return out
 end
 
@@ -86,22 +96,22 @@ end
 function Profiles:Save(name)
     if type(name) ~= "string" or name == "" then return false, "a profile name is required" end
     local db = self:DB()
+    -- Capture every effective layer BEFORE touching the destination. This is
+    -- essential when overwriting the profile currently loaded by this character:
+    -- deleting its rows first would make unchanged values fall through to defaults.
+    local snapshot = self:_CurrentSnapshot()
     self:_EnsureRow(name)
     for _, e in ipairs(ns.SettingsTables:Namespaces()) do
-        ns.SettingsTables:SnapshotInto(db, e.ns, e.schema, name)
+        ns.SettingsTables:WriteProfileValues(db, e.ns, e.schema, name, snapshot[e.ns])
     end
     db:Delete("profile_module_enable", function(r) return r.profile == name end)
-    for m in ns.ModuleManager:Iterate() do
-        if not m:IsAlwaysOn() then
-            local enabled = ns.SettingsTables:GetModuleEnabled(db, m:GetName(), m:IsDefaultEnabled())
-            if enabled ~= m:IsDefaultEnabled() then
-                db:Insert("profile_module_enable", { profile = name, name = m:GetName(), enabled = enabled })
-            end
-        end
+    for moduleName, enabled in pairs(snapshot.modules or {}) do
+        db:Insert("profile_module_enable", { profile = name, name = moduleName, enabled = enabled })
     end
     db:Delete("profile_editmode", function(r) return r.profile == name end)
-    for _, r in ipairs(db:Select("key", "point", "x", "y"):From("editmode"):Run()) do
-        db:Insert("profile_editmode", { profile = name, key = r.key, point = r.point, x = r.x, y = r.y })
+    for key, pos in pairs(snapshot.editmode or {}) do
+        db:Insert("profile_editmode", { profile = name, key = key,
+            point = pos.point, x = pos.x, y = pos.y })
     end
     return true
 end

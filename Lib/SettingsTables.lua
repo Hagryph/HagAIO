@@ -311,17 +311,29 @@ function SettingsTables:ReadProfile(db, nsKey, schema, name)
     if next(out) then return out end
 end
 
--- Write a { key = value } map into profile `name`'s row for <ns> (used by import).
+-- Replace profile `name`'s values for <ns> from a { key = value } map (used by
+-- save/import). Missing keys are cleared; an empty map removes the namespace row.
 function SettingsTables:WriteProfileValues(db, nsKey, schema, name, values)
     self:Invalidate(db, nsKey)   -- `name` may be the loaded profile (the middle cascade layer)
     local cols = {}
     for _, f in ipairs(schemaFields(schema)) do
         local v = values and values[f.key]
-        if v ~= nil then for k, val in pairs(f.write(v)) do cols[k] = val end end
+        if v ~= nil then
+            for k, val in pairs(f.write(v)) do cols[k] = val end
+        else
+            for _, c in ipairs(f.cols) do cols[c.name] = ns.DB.NULL end
+        end
     end
-    if not next(cols) then return end
-    if profRow(db, nsKey, name) then db:Update(pName(nsKey), cols, function(r) return r.profile == name end)
-    else cols.profile = name; db:Insert(pName(nsKey), cols) end
+    local t = pName(nsKey)
+    local exists = profRow(db, nsKey, name) ~= nil
+    if not values or not next(values) then
+        if exists then db:Delete(t, function(r) return r.profile == name end) end
+    elseif exists then
+        db:Update(t, cols, function(r) return r.profile == name end)
+    else
+        cols.profile = name
+        db:Insert(t, cols)
+    end
 end
 
 -- ---- module enable-state (the central module_enable / profile_module_enable tables) ------------
