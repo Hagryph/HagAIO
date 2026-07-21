@@ -3,8 +3,9 @@ local Class = ns.Class
 
 -- Modules/Skins.lua
 -- Skin lifecycle and registry. A Skin owns the guarded Load/Unload transition; concrete skins expose
--- their selector label and settings from private class statics. The Skins module is only the selector:
--- it unloads the old object before loading the new one and builds the page from the registered skins.
+-- their selector label and settings from private class statics. The Skins module owns selection plus
+-- the common HealthBarSkin settings, unloads the old object before loading the new one, and builds the
+-- page from the registered skins.
 
 local Skin = Class.new("Skin", nil, { abstract = true })
 
@@ -86,8 +87,9 @@ function Skins:RegisterHealthBarSkin(skin)
     return skin
 end
 
--- One stable schema assembled when skins register at file load. Each concrete skin owns its own
--- ordinary option rows; the module adds structural visibility but never a `dependsOn` relationship.
+-- One stable schema assembled when skins register at file load. HealthBarSkin contributes the common
+-- destination/colour rows once; each concrete skin adds only its own ordinary options. The module adds
+-- structural visibility but never turns either set into indented `dependsOn` suboptions.
 function Skins:_BuildSettings()
     local p, noSkinKey = self:_p(), self:_statics().noSkinKey
     local choices = { { value = noSkinKey, text = "No Skin" } }
@@ -99,17 +101,15 @@ function Skins:_BuildSettings()
         { type = "header", text = "HealthBar Skin" },
         { type = "dropdown", key = "healthBarSkin", label = "Skin",
           default = p.defaultHealthBarSkinKey or noSkinKey, options = choices },
-        { type = "toggle", key = "healthBarPlayer", label = "Player frame", default = true,
-          visibleWhen = { key = "healthBarSkin", notEquals = noSkinKey } },
-        { type = "toggle", key = "healthBarTarget", label = "Target frame", default = false,
-          visibleWhen = { key = "healthBarSkin", notEquals = noSkinKey } },
-        { type = "toggle", key = "healthBarFocus", label = "Focus frame", default = false,
-          visibleWhen = { key = "healthBarSkin", notEquals = noSkinKey } },
-        { type = "toggle", key = "healthBarPet", label = "Pet frame", default = false,
-          visibleWhen = { key = "healthBarSkin", notEquals = noSkinKey } },
-        { type = "toggle", key = "healthBarNameplates", label = "Nameplates", default = false,
-          visibleWhen = { key = "healthBarSkin", notEquals = noSkinKey } },
     }
+    if ns.HealthBarSkin then
+        for _, authored in ipairs(ns.HealthBarSkin.CommonSettings()) do
+            local option = {}
+            for key, value in pairs(authored) do option[key] = value end
+            option.visibleWhen = { key = "healthBarSkin", notEquals = noSkinKey }
+            settings[#settings + 1] = option
+        end
+    end
     for _, skin in ipairs(p.healthBarSkins or {}) do
         for _, authored in ipairs(skin:GetSettings()) do
             local option = {}

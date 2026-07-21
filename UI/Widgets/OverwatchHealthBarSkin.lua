@@ -52,6 +52,7 @@ function OverwatchHealthBarSkinW:Initialize(bar, unit, kind, settingUnit)
     p.controller = controller
     p.sourceFill = rawBar.GetStatusBarTexture and rawBar:GetStatusBarTexture()
     p.segments = {}
+    p.healthColorCurve = nil
     p.applied = false
     p.disposed = false
 
@@ -84,13 +85,13 @@ function OverwatchHealthBarSkinW:Initialize(bar, unit, kind, settingUnit)
     -- Unit frames and nameplates can recolor their source bar independently. Mirror
     -- each tint into this view; secret channels are forwarded to another visual sink.
     if p.sourceFill and hooksecurefunc then
-        hooksecurefunc(p.sourceFill, "SetVertexColor", function(_, ...)
-            if not p.disposed then self:_SetColor(...) end
+        hooksecurefunc(p.sourceFill, "SetVertexColor", function()
+            if not p.disposed then self:_SyncColor() end
         end)
     end
     if rawBar.SetStatusBarColor and hooksecurefunc then
-        hooksecurefunc(rawBar, "SetStatusBarColor", function(_, ...)
-            if not p.disposed then self:_SetColor(...) end
+        hooksecurefunc(rawBar, "SetStatusBarColor", function()
+            if not p.disposed then self:_SyncColor() end
         end)
     end
 
@@ -106,7 +107,7 @@ function OverwatchHealthBarSkinW:_SetColor(r, g, b)
     -- Pet and Focus lock their StatusBar tint and rely on Blizzard's green health
     -- artwork. Our white fragment texture has no atlas color to inherit, so carry
     -- that baked hue explicitly. Every other destination keeps its live tint.
-    local bakedGreen = p.kind == "fixed" and p.bar.lockColor
+    local bakedGreen = not p.healthColorCurve and p.kind == "fixed" and p.bar.lockColor
         and S.bakedGreenDestinations[p.settingUnit]
     if bakedGreen then r, g, b = 0, 1, 0 end
     for _, segment in ipairs(p.segments) do
@@ -116,11 +117,23 @@ end
 
 function OverwatchHealthBarSkinW:_SyncColor()
     local p = self:_p()
+    if p.healthColorCurve and UnitHealthPercent then
+        local color = UnitHealthPercent(p.unit, true, p.healthColorCurve)
+        if color then
+            self:_SetColor(color:GetRGB())
+            return
+        end
+    end
     if p.bar.GetStatusBarColor then
         self:_SetColor(p.bar:GetStatusBarColor())
     elseif p.sourceFill then
         self:_SetColor(p.sourceFill:GetVertexColor())
     end
+end
+
+function OverwatchHealthBarSkinW:SetHealthColorCurve(curve)
+    self:_p().healthColorCurve = curve
+    return self
 end
 
 function OverwatchHealthBarSkinW:_Layout(width, height)

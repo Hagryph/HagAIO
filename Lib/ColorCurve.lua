@@ -1,7 +1,7 @@
 local addonName, ns = ...
 
 -- Lib/ColorCurve.lua
--- Pure colour-curve construction -- no WoW API, no state. Extracted from UnitFrames.lua so the
+-- Pure colour-curve construction -- no WoW API, no state. HealthBarSkin uses it so the
 -- "three settings endpoints (low/mid/full colours) -> ColorCurve points" mapping is unit-testable.
 --   * HealthPoints(lo, mid, hi) returns the ordered list of { pos, r, g, b } the health-bar curve
 --     is built from: low colour pinned at 0% AND 30% (so it holds flat at/below 30%), mid at 55%,

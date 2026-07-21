@@ -53,7 +53,6 @@
     profile ||--o{ p_module_Dev : "profile"
     profile ||--o{ p_module_Questing : "profile"
     profile ||--o{ p_module_Skins : "profile"
-    profile ||--o{ p_module_UnitFrames : "profile"
     profile ||--o{ p_submodule_FlightTimers : "profile"
     profile ||--o{ p_submodule_SellJunk : "profile"
     profile ||--o{ profile_editmode : "profile"
@@ -240,11 +239,6 @@
         boolean healthBarFocus
         boolean healthBarPet
         boolean healthBarNameplates
-    }
-    o_module_UnitFrames {
-        integer id PK
-        boolean player
-        boolean target
         number endColor_r
         number endColor_g
         number endColor_b
@@ -320,11 +314,6 @@
         boolean healthBarFocus
         boolean healthBarPet
         boolean healthBarNameplates
-    }
-    p_module_UnitFrames {
-        text profile PK
-        boolean player
-        boolean target
         number endColor_r
         number endColor_g
         number endColor_b

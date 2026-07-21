@@ -6,6 +6,8 @@ local function build()
     ns.ModuleManager = {
         Register = function(_, value) module = value; return value end,
     }
+    S.load(ns, "Lib/Color.lua")
+    S.load(ns, "Lib/ColorCurve.lua")
     S.load(ns, "Core/Module.lua")
     S.load(ns, "Modules/Skins.lua")
     S.load(ns, "Modules/Skins/HealthBarSkin.lua")
@@ -53,7 +55,7 @@ describe("Skin lifecycle", function()
 end)
 
 describe("Skins settings schema", function()
-    it("builds No Skin, unit targets, and registered skin options as top-level rows", function()
+    it("builds shared health-bar options for every registered skin", function()
         local ns, module = build()
         local TestSkin = ns.Class.new("TestSkin", ns.HealthBarSkin, {
             statics = {
@@ -83,9 +85,16 @@ describe("Skins settings schema", function()
         assert.are.equal("healthBarPet", schema[6].key)
         assert.are.equal("healthBarNameplates", schema[7].key)
         assert.is_false(schema[7].default)
-        assert.are.equal("toggle", schema[8].type)
-        assert.is_nil(schema[8].dependsOn)
-        assert.are.equal("healthBarSkin", schema[8].visibleWhen.key)
-        assert.are.equal("test", schema[8].visibleWhen.equals)
+        for i = 3, 12 do assert.are.equal("none", schema[i].visibleWhen.notEquals) end
+        assert.are.equal("Health Colors", schema[8].text)
+        assert.are.equal("none", schema[8].visibleWhen.notEquals)
+        assert.are.equal("endColor", schema[9].key)
+        assert.are.equal("midColor", schema[10].key)
+        assert.are.equal("startColor", schema[11].key)
+        assert.are.equal("note", schema[12].type)
+        assert.are.equal("toggle", schema[13].type)
+        assert.is_nil(schema[13].dependsOn)
+        assert.are.equal("healthBarSkin", schema[13].visibleWhen.key)
+        assert.are.equal("test", schema[13].visibleWhen.equals)
     end)
 end)

@@ -3,8 +3,9 @@ local Class = ns.Class
 
 -- Modules/Skins/HealthBarSkin.lua
 -- Abstract health-bar skin. It owns discovery and lifecycle for Blizzard's fixed
--- player/target/focus/pet frames plus pooled nameplates. A concrete skin creates
--- one independent visual view per bar and retargets pooled views to their current unit token.
+-- player/target/focus/pet frames plus pooled nameplates, and supplies every concrete
+-- skin with the same health-colour curve. A concrete skin creates one independent
+-- visual view per bar and retargets pooled views to their current unit token.
 local HealthBarSkin = Class.new("HealthBarSkin", ns.Skin, {
     abstract = true,
     statics = {
@@ -33,6 +34,26 @@ local HealthBarSkin = Class.new("HealthBarSkin", ns.Skin, {
             healthBarPet = true,
             healthBarNameplates = true,
         },
+        healthColorSettingKeys = {
+            endColor = true,
+            midColor = true,
+            startColor = true,
+        },
+        commonSettings = {
+            { type = "toggle", key = "healthBarPlayer", label = "Player frame", default = true },
+            { type = "toggle", key = "healthBarTarget", label = "Target frame", default = false },
+            { type = "toggle", key = "healthBarFocus", label = "Focus frame", default = false },
+            { type = "toggle", key = "healthBarPet", label = "Pet frame", default = false },
+            { type = "toggle", key = "healthBarNameplates", label = "Nameplates", default = false },
+            { type = "header", text = "Health Colors" },
+            { type = "color", key = "endColor", label = "Full health",
+              default = ns.Color:New(0.20, 0.80, 0.20) },
+            { type = "color", key = "midColor", label = "Mid health",
+              default = ns.Color:New(0.95, 0.82, 0.15) },
+            { type = "color", key = "startColor", label = "Low health",
+              default = ns.Color:New(0.90, 0.15, 0.15) },
+            { type = "note", text = "Health fades from Full at 100% through Mid to Low at 30% and below." },
+        },
     },
 })
 local S = Class.statics(HealthBarSkin)
@@ -45,6 +66,30 @@ function HealthBarSkin:Initialize(owner)
     p.nameplateQueued = {}
     p.viewsByBar = setmetatable({}, { __mode = "k" })
     p.unitsByBar = setmetatable({}, { __mode = "k" })
+    p.healthColorCurve = nil
+end
+
+function HealthBarSkin.CommonSettings()
+    return S.commonSettings
+end
+
+function HealthBarSkin:_BuildHealthColorCurve()
+    if not (C_CurveUtil and C_CurveUtil.CreateColorCurve and UnitHealthPercent and CreateColor) then return nil end
+    local low = self:GetSetting("startColor")
+    local mid = self:GetSetting("midColor")
+    local full = self:GetSetting("endColor")
+    if not (low and mid and full) then return nil end
+
+    local curve = C_CurveUtil.CreateColorCurve()
+    curve:SetType(Enum.LuaCurveType.Linear)
+    local points = ns.ColorCurve.HealthPoints(
+        { low:R(), low:G(), low:B() },
+        { mid:R(), mid:G(), mid:B() },
+        { full:R(), full:G(), full:B() })
+    for _, point in ipairs(points) do
+        curve:AddPoint(point.pos, CreateColor(point[1], point[2], point[3]))
+    end
+    return curve
 end
 
 -- This permanent hook only learns Blizzard's four stable health bars. It never
@@ -106,13 +151,14 @@ function HealthBarSkin:_ApplyEntry(id, entry)
             or self:CreateHealthBarView(entry.bar, entry.unit, entry.kind, entry.settingUnit)
         assert(view and type(view.Apply) == "function"
             and type(view.Restore) == "function" and type(view.UpdateHealth) == "function"
-            and type(view.SetUnit) == "function",
+            and type(view.SetUnit) == "function" and type(view.SetHealthColorCurve) == "function",
             self:GetClassName() .. ": CreateHealthBarView must return a health-bar skin widget")
         p.viewsByBar[entry.bar] = view
         entry.view = view
         view:SetUnit(entry.unit, entry.kind, entry.settingUnit)
     end
     self:ConfigureHealthBarView(entry.view)
+    entry.view:SetHealthColorCurve(p.healthColorCurve)
     entry.view:Apply()
 end
 
@@ -226,6 +272,10 @@ function HealthBarSkin:OnLoad()
     assert(not S.active or S.active == self, "HealthBarSkin: another health-bar skin is still loaded")
     S.active = self
     local owner, scope = self:Owner(), self:_Scope()
+    self:_p().healthColorCurve = self:_BuildHealthColorCurve()
+    if not self:_p().healthColorCurve then
+        owner:LogWarn("health-bar coloring isn't supported on this client build")
+    end
     owner:On("UNIT_HEALTH", function(_, unit) self:UpdateHealth(unit) end, scope)
     owner:On("UNIT_MAXHEALTH", function(_, unit) self:UpdateHealth(unit) end, scope)
     owner:On("NAME_PLATE_UNIT_ADDED", function(_, unit) self:_QueueNameplate(unit) end, scope)
@@ -262,6 +312,17 @@ end
 function HealthBarSkin:OnSettingChanged(key)
     if S.targetSettingKeys[key] then
         self:_RefreshTargets()
+        return
+    end
+    if S.healthColorSettingKeys[key] then
+        local p = self:_p()
+        p.healthColorCurve = self:_BuildHealthColorCurve()
+        for _, entry in pairs(p.entries) do
+            if entry.view then
+                entry.view:SetHealthColorCurve(p.healthColorCurve)
+                entry.view:UpdateHealth()
+            end
+        end
         return
     end
     for _, entry in pairs(self:_p().entries) do

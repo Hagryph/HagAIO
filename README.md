@@ -202,7 +202,6 @@ Modules/
   Misc.lua                 Miscellaneous helpers, each its own SUBMODULE of this thin parent module -- the codebase's
   Questing.lua             Everything around levelling through quests, in one module:
   Skins.lua                Skin lifecycle and registry
-  UnitFrames.lua           Colours the player & target health bars by remaining health: green at full,
   Class\Hunter\Hunter.lua  Hunter entry point and shared Steady Shot Focus prediction behaviour
   Class\Hunter\Base.lua    (no description)
   Class\Monk\Monk.lua      Monk module entry point (loads before its per-spec siblings): the shared Monk behaviour

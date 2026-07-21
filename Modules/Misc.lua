@@ -53,7 +53,7 @@ ns.ModuleManager:Register(Misc:New("Misc", {
     title = "Miscellaneous",
     description = "Flight-path timers and selling junk.",
     defaultEnabled = false,
-    color = ns.Theme.hex.grey,  -- distinct tag (accent=Core, green=UnitFrames, purple=Class, gold=Questing, red=CVars)
+    color = ns.Theme.hex.grey,  -- distinct tag (accent=Core/Skins, purple=Class, gold=Questing, red=CVars)
     -- The parent is thin: no service deps of its own (DatabaseManager is auto-added by `tables`); the
     -- flight recorder's EventBus dep lives on the FlightTimers submodule that actually uses it.
     tables = FLIGHT_TABLES,   -- flight_route + flight_hop contributed to the shared database (GLOBAL)
