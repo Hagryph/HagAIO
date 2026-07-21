@@ -13,8 +13,8 @@ local OverwatchSkin = Class.new("OverwatchSkin", ns.HealthBarSkin, {
     },
 })
 
-function OverwatchSkin:CreateHealthBarView(bar, unit)
-    return ns.UI.Widgets.OverwatchHealthBarSkin:New(bar, unit)
+function OverwatchSkin:CreateHealthBarView(bar, unit, kind, settingUnit)
+    return ns.UI.Widgets.OverwatchHealthBarSkin:New(bar, unit, kind, settingUnit)
 end
 
 local skins = assert(ns.ModuleManager:GetModule("Skins"),

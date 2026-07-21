@@ -102,14 +102,15 @@ function HealthBarSkin:_ApplyEntry(id, entry)
     local p = self:_p()
     if not (self:IsLoaded() and S.active == self and p.entries[id] == entry) then return end
     if not entry.view then
-        local view = p.viewsByBar[entry.bar] or self:CreateHealthBarView(entry.bar, entry.unit)
+        local view = p.viewsByBar[entry.bar]
+            or self:CreateHealthBarView(entry.bar, entry.unit, entry.kind, entry.settingUnit)
         assert(view and type(view.Apply) == "function"
             and type(view.Restore) == "function" and type(view.UpdateHealth) == "function"
             and type(view.SetUnit) == "function",
             self:GetClassName() .. ": CreateHealthBarView must return a health-bar skin widget")
         p.viewsByBar[entry.bar] = view
         entry.view = view
-        view:SetUnit(entry.unit)
+        view:SetUnit(entry.unit, entry.kind, entry.settingUnit)
     end
     self:ConfigureHealthBarView(entry.view)
     entry.view:Apply()
@@ -152,7 +153,7 @@ function HealthBarSkin:_AttachBar(unit, bar, kind, settingUnit)
         local unitIds = p.entryIdsByUnit[unit]
         if not unitIds then unitIds = {}; p.entryIdsByUnit[unit] = unitIds end
         unitIds[id] = true
-        if entry.view then entry.view:SetUnit(unit) end
+        if entry.view then entry.view:SetUnit(unit, kind, settingUnit) end
     end
     if not entry.view then self:_QueueApply(id, entry) end
 end

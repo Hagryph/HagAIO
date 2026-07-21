@@ -14,6 +14,7 @@ local OverwatchHealthBarSkinW = ns.Class.new("OverwatchHealthBarSkin", FrameWidg
     statics = {
         segmentCount = 10,
         texture = "Interface\\AddOns\\HagAIO\\Media\\overwatch-segment-hd",
+        bakedGreenDestinations = { focus = true, pet = true },
     },
 })
 local S = ns.Class.statics(OverwatchHealthBarSkinW)
@@ -35,7 +36,7 @@ local function createSegmentCurve(index)
     return curve
 end
 
-function OverwatchHealthBarSkinW:Initialize(bar, unit)
+function OverwatchHealthBarSkinW:Initialize(bar, unit, kind, settingUnit)
     local rawBar = unwrap(bar)
     local controller = CreateFrame("Frame", nil, rawBar)
     controller:SetAllPoints(rawBar)
@@ -46,6 +47,8 @@ function OverwatchHealthBarSkinW:Initialize(bar, unit)
     local p = self:_p()
     p.bar = rawBar
     p.unit = unit
+    p.kind = kind
+    p.settingUnit = settingUnit
     p.controller = controller
     p.sourceFill = rawBar.GetStatusBarTexture and rawBar:GetStatusBarTexture()
     p.segments = {}
@@ -99,7 +102,14 @@ function OverwatchHealthBarSkinW:Initialize(bar, unit)
 end
 
 function OverwatchHealthBarSkinW:_SetColor(r, g, b)
-    for _, segment in ipairs(self:_p().segments) do
+    local p = self:_p()
+    -- Pet and Focus lock their StatusBar tint and rely on Blizzard's green health
+    -- artwork. Our white fragment texture has no atlas color to inherit, so carry
+    -- that baked hue explicitly. Every other destination keeps its live tint.
+    local bakedGreen = p.kind == "fixed" and p.bar.lockColor
+        and S.bakedGreenDestinations[p.settingUnit]
+    if bakedGreen then r, g, b = 0, 1, 0 end
+    for _, segment in ipairs(p.segments) do
         segment.fill:SetVertexColor(r, g, b, 1)
     end
 end
@@ -139,9 +149,11 @@ function OverwatchHealthBarSkinW:UpdateHealth()
     return self
 end
 
-function OverwatchHealthBarSkinW:SetUnit(unit)
+function OverwatchHealthBarSkinW:SetUnit(unit, kind, settingUnit)
     local p = self:_p()
     p.unit = unit
+    p.kind = kind
+    p.settingUnit = settingUnit
     if p.applied then self:UpdateHealth() end
     return self
 end
