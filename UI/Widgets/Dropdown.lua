@@ -11,6 +11,18 @@ local Changeable = _wb.Changeable
 -- Blizzard visual template. Options are { { value = value, text = "Label" }, ... }.
 local DropdownW = ns.Class.new("Dropdown", FrameWidget, { mixins = { Changeable } })
 
+-- Menus are parented to UIParent so they can escape clipped/scaled settings content. Match the
+-- control's effective strata and then step above its inherited level: a fixed DIALOG level renders
+-- behind DIALOG-strata popups such as the Overwatch layout editor.
+function DropdownW:_RaiseMenu()
+    local p = self:_p()
+    local strata = p.dropdown:GetFrameStrata()
+    local level = p.dropdown:GetFrameLevel() + 20
+    p.blocker:SetFrameStrata(strata)
+    p.blocker:SetFrameLevel(level)
+    p.menu:SetFrameLevel(level + 10)
+end
+
 function DropdownW:Initialize(parent, options, defaultText)
     local dropdown = CreateFrame("Button", nil, unwrap(parent), "BackdropTemplate")
     dropdown:SetSize(220, 30)
@@ -30,7 +42,6 @@ function DropdownW:Initialize(parent, options, defaultText)
     -- hidden tree once, so the normal widget teardown can still own every child.
     local blocker = CreateFrame("Button", nil, UIParent)
     blocker:SetAllPoints(UIParent)
-    blocker:SetFrameStrata("DIALOG")
     blocker:EnableMouse(true)
     blocker:Hide()
 
@@ -49,6 +60,7 @@ function DropdownW:Initialize(parent, options, defaultText)
     p.hovered = false
     p.selectedText = selectedText
     p.arrow = arrow
+    p.dropdown = dropdown
     p.blocker = blocker
     p.menu = menu
     p.rows = {}
@@ -149,6 +161,7 @@ function DropdownW:Initialize(parent, options, defaultText)
             close()
         else
             p.open = true
+            self:_RaiseMenu()
             blocker:Show()
             menu:Show()
             renderRows()
