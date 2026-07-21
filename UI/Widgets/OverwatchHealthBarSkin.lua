@@ -125,13 +125,15 @@ function OverwatchHealthBarSkinW:Initialize(bar)
         smoothTexture(transitionFill)
         transition:SetScript("OnUpdate", function()
             -- Chaining native interpolation stages stretches Blizzard's fixed-speed
-            -- ease without inspecting any secret. Each stage only forwards the
-            -- previous bar's current secret value into another sanctioned sink.
+            -- ease without inspecting any secret. The final interpolated value is
+            -- also a sanctioned alpha input, so the enlarged copy visibly fades
+            -- instead of merely losing width as its StatusBar texture is cropped.
             local ease = Enum.StatusBarInterpolation.ExponentialEaseOut
             for stage = 2, #transitionStages do
                 transitionStages[stage]:SetValue(
                     transitionStages[stage - 1]:GetInterpolatedValue(), ease)
             end
+            transitionFill:SetAlpha(transition:GetInterpolatedValue())
         end)
 
         p.segments[i] = {
