@@ -508,19 +508,15 @@ function SettingsWindow:_EnsureModulePage(name)
     header:SetPoint("TOPRIGHT", -12, -12)
     local actions = header:Actions()
 
-    local back = W.Button:New(actions, "< Modules", { width = 86 })
-    back:SetPoint("RIGHT", actions, "RIGHT", 0, 0)
-    back:SetScript("OnClick", function() self:Show("modules") end)
-
     -- enable toggle on the header row -- omitted for a mandatory (always-on) module, which shows a
     -- faint "Always on" tag instead since it can't be turned off.
     local enable
     if module:IsAlwaysOn() then
         local tag = W.Text:New(actions, "ALWAYS ON", "green", "GameFontHighlightSmall")
-        tag:SetPoint("RIGHT", back, "LEFT", -16, 0)
+        tag:SetPoint("RIGHT", actions, "RIGHT", 0, 0)
     else
         enable = W.Toggle:New(actions, "Enabled")
-        enable:SetPoint("RIGHT", back, "LEFT", -76, 0)
+        enable:SetPoint("RIGHT", actions, "RIGHT", -58, 0)
         enable:SetChecked(module:IsEnabled())
         enable:SetOnToggle(function(on)
             if on then module:Enable() else module:Disable() end
