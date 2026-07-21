@@ -12,7 +12,7 @@ local unwrap, style, adopt = _wb.unwrap, _wb.style, _wb.adopt
 -- width so only the vertical axis scrolls), then call :Update() after its height changes.
 local ScrollAreaW = ns.Class.new("ScrollArea", FrameWidget)
 function ScrollAreaW:Initialize(parent, name)
-    local BAR = 5
+    local BAR = 6
     local sa = CreateFrame("Frame", nil, unwrap(parent))
 
     local sf = CreateFrame("ScrollFrame", name, sa)
@@ -24,14 +24,14 @@ function ScrollAreaW:Initialize(parent, name)
     sf:SetScrollChild(content)
 
     local track = sa:CreateTexture(nil, "BACKGROUND")
-    track:SetColorTexture(Theme.Unpack("panel2", 0.6))
+    track:SetColorTexture(Theme.Unpack("control", 0.45))
     track:SetWidth(BAR)
     track:SetPoint("TOPRIGHT"); track:SetPoint("BOTTOMRIGHT")
 
     local thumb = CreateFrame("Frame", nil, sa)
     thumb:SetWidth(BAR)
     local thumbTex = thumb:CreateTexture(nil, "ARTWORK"); thumbTex:SetAllPoints()
-    thumbTex:SetColorTexture(Theme.Unpack("borderStrong"))
+    thumbTex:SetColorTexture(Theme.Unpack("accentDim", 0.65))
 
     local function maxScroll() return math.max(0, (content:GetHeight() or 0) - (sf:GetHeight() or 0)) end
     local function update()
@@ -57,7 +57,7 @@ function ScrollAreaW:Initialize(parent, name)
 
     thumb:EnableMouse(true)
     thumb:SetScript("OnEnter", function() thumbTex:SetColorTexture(Theme.Unpack("accent")) end)
-    thumb:SetScript("OnLeave", function() thumbTex:SetColorTexture(Theme.Unpack("borderStrong")) end)
+    thumb:SetScript("OnLeave", function() thumbTex:SetColorTexture(Theme.Unpack("accentDim", 0.65)) end)
     thumb:RegisterForDrag("LeftButton")
     thumb:SetScript("OnDragStart", function()
         local _, cy0 = GetCursorPosition()

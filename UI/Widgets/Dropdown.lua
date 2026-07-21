@@ -3,7 +3,7 @@ local Theme = ns.Theme
 local Widgets = ns.UI.Widgets
 local _wb = ns.UI._wb
 local Widget, FrameWidget, TextWidget, TextureWidget = _wb.Widget, _wb.FrameWidget, _wb.TextWidget, _wb.TextureWidget
-local unwrap, style, adopt = _wb.unwrap, _wb.style, _wb.adopt
+local unwrap, style, surface, adopt = _wb.unwrap, _wb.style, _wb.surface, _wb.adopt
 local Changeable = _wb.Changeable
 
 -- UI/Widgets/Dropdown.lua
@@ -13,8 +13,8 @@ local DropdownW = ns.Class.new("Dropdown", FrameWidget, { mixins = { Changeable 
 
 function DropdownW:Initialize(parent, options, defaultText)
     local dropdown = CreateFrame("Button", nil, unwrap(parent), "BackdropTemplate")
-    dropdown:SetSize(220, 26)
-    style(dropdown, "panel2", "borderStrong")
+    dropdown:SetSize(220, 30)
+    style(dropdown, "control", "borderStrong")
 
     local selectedText = Widgets.Text:New(dropdown, defaultText or "Select", "textDim", "GameFontNormalSmall")
     selectedText:SetPoint("LEFT", dropdown, "LEFT", 10, 0)
@@ -35,7 +35,7 @@ function DropdownW:Initialize(parent, options, defaultText)
     blocker:Hide()
 
     local menu = CreateFrame("Frame", nil, blocker, "BackdropTemplate")
-    style(menu, "bg1", "borderStrong")
+    surface(menu, { bgKey = "surfaceRaised", borderKey = "borderStrong", shadow = true })
     menu:SetPoint("TOPLEFT", dropdown, "BOTTOMLEFT", 0, -2)
     menu:SetFrameLevel(blocker:GetFrameLevel() + 10)
     menu:SetClampedToScreen(true)
@@ -63,17 +63,17 @@ function DropdownW:Initialize(parent, options, defaultText)
     local function renderButton()
         selectedText:SetText(labelFor(p.value))
         if not p.enabled then
-            dropdown:SetBackdropColor(Theme.Unpack("panel2", 0.5))
+            dropdown:SetBackdropColor(Theme.Unpack("control", 0.5))
             dropdown:SetBackdropBorderColor(Theme.Unpack("border"))
             selectedText:SetTextColor(Theme.Unpack("textFaint"))
             arrow:SetTextColor(Theme.Unpack("textFaint"))
         elseif p.open or p.hovered then
-            dropdown:SetBackdropColor(Theme.Unpack("panelHover"))
+            dropdown:SetBackdropColor(Theme.Unpack("controlHover"))
             dropdown:SetBackdropBorderColor(Theme.Unpack("accent"))
             selectedText:SetTextColor(Theme.Unpack("text"))
             arrow:SetTextColor(Theme.Unpack("accent"))
         else
-            dropdown:SetBackdropColor(Theme.Unpack("panel2"))
+            dropdown:SetBackdropColor(Theme.Unpack("control"))
             dropdown:SetBackdropBorderColor(Theme.Unpack("borderStrong"))
             selectedText:SetTextColor(Theme.Unpack("text"))
             arrow:SetTextColor(Theme.Unpack("accent"))
@@ -107,9 +107,9 @@ function DropdownW:Initialize(parent, options, defaultText)
     blocker:SetScript("OnClick", close)
     for i, option in ipairs(p.options) do
         local row = CreateFrame("Button", nil, menu)
-        row:SetPoint("TOPLEFT", menu, "TOPLEFT", 2, -2 - ((i - 1) * 24))
-        row:SetPoint("TOPRIGHT", menu, "TOPRIGHT", -2, -2 - ((i - 1) * 24))
-        row:SetHeight(24)
+        row:SetPoint("TOPLEFT", menu, "TOPLEFT", 3, -3 - ((i - 1) * 28))
+        row:SetPoint("TOPRIGHT", menu, "TOPRIGHT", -3, -3 - ((i - 1) * 28))
+        row:SetHeight(28)
 
         local background = row:CreateTexture(nil, "BACKGROUND")
         background:SetAllPoints()
@@ -125,7 +125,7 @@ function DropdownW:Initialize(parent, options, defaultText)
             button = row, background = background, text = text, value = option.value,
         }
         row:SetScript("OnEnter", function()
-            background:SetColorTexture(Theme.Unpack("panelHover"))
+            background:SetColorTexture(Theme.Unpack("controlHover"))
             background:Show()
             text:SetTextColor(Theme.Unpack("text"))
         end)
@@ -140,7 +140,7 @@ function DropdownW:Initialize(parent, options, defaultText)
         end)
     end
 
-    menu:SetSize(220, (#p.options * 24) + 4)
+    menu:SetSize(220, (#p.options * 28) + 6)
     dropdown:SetScript("OnEnter", function() p.hovered = true; renderButton() end)
     dropdown:SetScript("OnLeave", function() p.hovered = false; renderButton() end)
     dropdown:SetScript("OnClick", function()

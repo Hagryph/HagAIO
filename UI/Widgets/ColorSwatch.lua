@@ -12,12 +12,12 @@ local Changeable = _wb.Changeable
 local ColorSwatchW = ns.Class.new("ColorSwatch", FrameWidget, { mixins = { Changeable } })
 function ColorSwatchW:Initialize(parent)
     local btn = CreateFrame("Button", nil, unwrap(parent), "BackdropTemplate")
-    btn:SetSize(26, 16)
-    style(btn, "panel2", "borderStrong")
+    btn:SetSize(30, 20)
+    style(btn, "control", "borderStrong")
 
     local sw = btn:CreateTexture(nil, "ARTWORK")
-    sw:SetPoint("TOPLEFT", 2, -2)
-    sw:SetPoint("BOTTOMRIGHT", -2, 2)
+    sw:SetPoint("TOPLEFT", 3, -3)
+    sw:SetPoint("BOTTOMRIGHT", -3, 3)
     sw:SetColorTexture(1, 1, 1)
 
     local p = self:_p()

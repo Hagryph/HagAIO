@@ -229,9 +229,40 @@ local function style(frame, bgKey, borderKey, edgeSize)
     return frame
 end
 
+-- Compose the modern LoL-style surface hierarchy from WoW-safe flat textures. A soft offset shadow
+-- lifts major panels, the one-pixel top light keeps dark surfaces legible, and an optional accent
+-- rail marks the active/important edge. This is deliberately private: concrete widgets decide which
+-- surfaces deserve elevation, so callers cannot accumulate arbitrary nested decoration.
+local function surface(frame, opts)
+    opts = opts or {}
+    style(frame, opts.bgKey or "surface", opts.borderKey or "border", opts.edgeSize)
+
+    if opts.shadow then
+        local shadow = frame:CreateTexture(nil, "BACKGROUND", nil, -8)
+        shadow:SetPoint("TOPLEFT", frame, "TOPLEFT", 4, -4)
+        shadow:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", 5, -5)
+        shadow:SetColorTexture(Theme.Unpack("shadow"))
+    end
+    if opts.highlight ~= false then
+        local light = frame:CreateTexture(nil, "BORDER", nil, 1)
+        light:SetPoint("TOPLEFT", frame, "TOPLEFT", 1, -1)
+        light:SetPoint("TOPRIGHT", frame, "TOPRIGHT", -1, -1)
+        light:SetHeight(1)
+        light:SetColorTexture(Theme.Unpack("highlight"))
+    end
+    if opts.accent then
+        local rail = frame:CreateTexture(nil, "ARTWORK", nil, 1)
+        rail:SetPoint("TOPLEFT", frame, "TOPLEFT", 1, -1)
+        rail:SetPoint("BOTTOMLEFT", frame, "BOTTOMLEFT", 1, 1)
+        rail:SetWidth(opts.accentWidth or 3)
+        rail:SetColorTexture(Theme.Unpack(opts.accentKey or "accent"))
+    end
+    return frame
+end
+
 -- Shared private base layer for the per-widget files (NOT public API).
 ns.UI._wb = {
     Widget = Widget, FrameWidget = FrameWidget, TextWidget = TextWidget, TextureWidget = TextureWidget,
-    Container = ContainerW, unwrap = unwrap, style = style, adopt = adopt,
+    Container = ContainerW, unwrap = unwrap, style = style, surface = surface, adopt = adopt,
     Changeable = Changeable, Registrable = Registrable,
 }

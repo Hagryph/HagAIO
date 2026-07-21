@@ -13,16 +13,22 @@ local ButtonW = ns.Class.new("Button", FrameWidget)
 function ButtonW:Initialize(parent, text, opts)
     opts = opts or {}
     local b = CreateFrame("Button", nil, unwrap(parent), "BackdropTemplate")
-    style(b, "panel2", "borderStrong")
-    b:SetHeight(opts.height or 24)
+    style(b, "control", "borderStrong")
+    b:SetHeight(opts.height or 28)
     local fs = Widgets.Text:New(b, text, "text", "GameFontHighlight")
     fs:SetPoint("CENTER")
-    local function fit() b:SetWidth(opts.width or math.max(opts.minWidth or 70, fs:GetStringWidth() + 24)) end
+    local function fit() b:SetWidth(opts.width or math.max(opts.minWidth or 76, fs:GetStringWidth() + 28)) end
     fit()
     local p = self:_p()
     p.label, p.fit, p.enabled = fs, fit, true
-    b:SetScript("OnEnter", function() if p.enabled then b:SetBackdropBorderColor(Theme.Unpack("accent")) end end)
-    b:SetScript("OnLeave", function() b:SetBackdropBorderColor(Theme.Unpack("borderStrong")) end)
+    local function render(hover)
+        b:SetBackdropColor(Theme.Unpack(hover and p.enabled and "controlHover" or "control"))
+        b:SetBackdropBorderColor(Theme.Unpack(hover and p.enabled and "accent" or "borderStrong"))
+        fs:SetTextColor(Theme.Unpack(p.enabled and (hover and "accent" or "text") or "textFaint"))
+    end
+    p.render = render
+    b:SetScript("OnEnter", function() render(true) end)
+    b:SetScript("OnLeave", function() render(false) end)
     b:SetScript("OnClick", function() if p.enabled and p.onClick then p.onClick() end end)
     self:_Attach(b)
 end
@@ -30,8 +36,8 @@ function ButtonW:SetText(s)     local p = self:_p(); p.label:SetText(s); p.fit()
 function ButtonW:SetOnClick(fn) self:_p().onClick = fn; return self end
 function ButtonW:SetEnabled(on)
     local p = self:_p(); p.enabled = on and true or false
-    p.label:SetTextColor(Theme.Unpack(p.enabled and "text" or "textFaint"))
     self:_Frame():SetAlpha(p.enabled and 1 or 0.6)
+    p.render(false)
     return self
 end
 Widgets.Button = ButtonW

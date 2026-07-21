@@ -19,7 +19,10 @@ function ProgressBarW:Initialize(parent, opts)
     bar:GetStatusBarTexture():SetVertexColor(Theme.Unpack(opts.fillKey or "accent"))
     local bg = bar:CreateTexture(nil, "BACKGROUND")
     bg:SetAllPoints()
-    bg:SetColorTexture(Theme.Unpack(opts.bgKey or "panel2"))
+    bg:SetColorTexture(Theme.Unpack(opts.bgKey or "control"))
+    local sheen = bar:CreateTexture(nil, "OVERLAY")
+    sheen:SetPoint("TOPLEFT"); sheen:SetPoint("TOPRIGHT"); sheen:SetHeight(1)
+    sheen:SetColorTexture(Theme.Unpack("highlight"))
     self:_Attach(bar)
 end
 function ProgressBarW:SetValue(frac) self:_Frame():SetValue(math.max(0, math.min(1, frac or 0))); return self end

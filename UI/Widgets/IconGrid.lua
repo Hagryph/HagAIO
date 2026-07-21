@@ -49,12 +49,12 @@ function IconGridW:Initialize(parent, opts)
             -- image holder: a bordered frame that the texture always FILLS (the image follows this
             -- frame, never a manual size). The border (BORDER layer) draws over the image (BACKGROUND).
             local band = CreateFrame("Frame", nil, t, "BackdropTemplate")
-            style(band, "panel2", "border")
+            style(band, "surfaceRaised", "border")
             band:SetPoint("TOPLEFT", t, "TOPLEFT", 0, 0)
             band:SetPoint("BOTTOMRIGHT", t, "BOTTOMRIGHT", 0, TITLE_H)
             t.band = band
             local tb = t:CreateTexture(nil, "ARTWORK")         -- titlebar strip below the image
-            tb:SetColorTexture(Theme.Unpack("bg1"))
+            tb:SetColorTexture(Theme.Unpack("surface"))
             tb:SetPoint("TOPLEFT", band, "BOTTOMLEFT", 0, 0); tb:SetPoint("BOTTOMRIGHT", t, "BOTTOMRIGHT", 0, 0)
             t.titlebar = tb
             local label = t:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")

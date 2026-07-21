@@ -5,6 +5,8 @@ local _wb = ns.UI._wb
 local Widget, FrameWidget, TextWidget, TextureWidget = _wb.Widget, _wb.FrameWidget, _wb.TextWidget, _wb.TextureWidget
 local unwrap, style, adopt = _wb.unwrap, _wb.style, _wb.adopt
 local Changeable = _wb.Changeable
+local CHECK_ATLAS = (C_Texture and C_Texture.GetAtlasInfo and C_Texture.GetAtlasInfo("common-icon-checkmark"))
+    and "common-icon-checkmark" or nil
 
 -- UI/Widgets/Toggle.lua
 -- Themed checkbox. Methods: :SetChecked(bool) :GetChecked() :SetOnToggle(fn) :SetEnabled(bool).
@@ -16,12 +18,13 @@ function ToggleW:Initialize(parent, labelText)
 
     local box = CreateFrame("Frame", nil, btn, "BackdropTemplate")
     box:SetAllPoints()
-    style(box, "panel2", "borderStrong")
+    style(box, "control", "borderStrong")
 
     local check = box:CreateTexture(nil, "OVERLAY")
-    check:SetTexture("Interface\\Buttons\\UI-CheckBox-Check")
+    if CHECK_ATLAS then check:SetAtlas(CHECK_ATLAS)
+    else check:SetTexture("Interface\\Buttons\\UI-CheckBox-Check") end
     check:SetPoint("CENTER")
-    check:SetSize(20, 20)
+    check:SetSize(14, 14)
     check:Hide()
 
     local label
@@ -34,7 +37,7 @@ function ToggleW:Initialize(parent, labelText)
     p.state, p.enabled = false, true
     local function render()
         if not p.enabled then  -- greyed out: dim, show state faintly, ignore input
-            box:SetBackdropColor(Theme.Unpack("panel2", 0.5))
+            box:SetBackdropColor(Theme.Unpack("control", 0.5))
             box:SetBackdropBorderColor(Theme.Unpack("border"))
             check:SetVertexColor(0.5, 0.5, 0.5)
             check:SetShown(p.state)
@@ -44,11 +47,11 @@ function ToggleW:Initialize(parent, labelText)
         check:SetVertexColor(1, 1, 1)
         if label then label:SetTextColor(Theme.Unpack("text")) end
         if p.state then
-            box:SetBackdropColor(Theme.Unpack("accent", 0.85))
+            box:SetBackdropColor(Theme.Unpack("accentDim"))
             box:SetBackdropBorderColor(Theme.Unpack("accent"))
             check:Show()
         else
-            box:SetBackdropColor(Theme.Unpack("panel2"))
+            box:SetBackdropColor(Theme.Unpack("control"))
             box:SetBackdropBorderColor(Theme.Unpack("borderStrong"))
             check:Hide()
         end

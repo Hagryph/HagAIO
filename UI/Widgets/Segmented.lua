@@ -13,8 +13,8 @@ local Changeable = _wb.Changeable
 local SegmentedW = ns.Class.new("Segmented", FrameWidget, { mixins = { Changeable } })
 function SegmentedW:Initialize(parent, options)
     local c = CreateFrame("Frame", nil, unwrap(parent), "BackdropTemplate")
-    style(c, "panel2", "border")
-    c:SetHeight(24)
+    style(c, "control", "border")
+    c:SetHeight(28)
 
     local p = self:_p()
     p.btns, p.enabled = {}, true
@@ -35,12 +35,12 @@ function SegmentedW:Initialize(parent, options)
         local fs = Widgets.Text:New(b, opt.text, "textDim", "GameFontNormalSmall")
         fs:SetPoint("CENTER")
         local w = math.max(46, fs:GetStringWidth() + 18)
-        b:SetSize(w, 20)
+        b:SetSize(w, 24)
         b:SetPoint("LEFT", x, 0)
 
         local bg = b:CreateTexture(nil, "BACKGROUND")
         bg:SetAllPoints()
-        bg:SetColorTexture(Theme.Unpack("accentSoft"))
+        bg:SetColorTexture(Theme.Unpack("accentSoft", 0.20))
         bg:Hide()
 
         p.btns[#p.btns + 1] = { bg = bg, fs = fs, value = opt.value }

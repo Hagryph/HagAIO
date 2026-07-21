@@ -3,7 +3,7 @@ local Theme = ns.Theme
 local Widgets = ns.UI.Widgets
 local _wb = ns.UI._wb
 local Widget, FrameWidget, TextWidget, TextureWidget = _wb.Widget, _wb.FrameWidget, _wb.TextWidget, _wb.TextureWidget
-local unwrap, style, adopt = _wb.unwrap, _wb.style, _wb.adopt
+local unwrap, style, surface, adopt = _wb.unwrap, _wb.style, _wb.surface, _wb.adopt
 
 -- UI/Widgets/CollapsibleSection.lua
 -- Collapsible section ("accordion"): a clickable header with a +/- chevron that
@@ -16,20 +16,25 @@ local unwrap, style, adopt = _wb.unwrap, _wb.style, _wb.adopt
 --          :SetOnToggle(fn)   (read current total height with :GetHeight()).
 local CollapsibleSectionW = ns.Class.new("CollapsibleSection", FrameWidget)
 function CollapsibleSectionW:Initialize(parent, titleText)
-    local HEADER, GAP = 26, 4
-    local sec = CreateFrame("Frame", nil, unwrap(parent))
+    local HEADER, GAP = 32, 8
+    local sec = CreateFrame("Frame", nil, unwrap(parent), "BackdropTemplate")
     sec:SetHeight(HEADER)
+    surface(sec, { bgKey = "surface", borderKey = "border", shadow = true })
 
     local header = CreateFrame("Button", nil, sec, "BackdropTemplate")
     header:SetHeight(HEADER)
-    header:SetPoint("TOPLEFT")
-    header:SetPoint("TOPRIGHT")
-    style(header, "panel2", "border")
+    header:SetPoint("TOPLEFT", 1, -1)
+    header:SetPoint("TOPRIGHT", -1, -1)
+    style(header, "surfaceRaised", "border")
+
+    local rail = header:CreateTexture(nil, "ARTWORK")
+    rail:SetPoint("TOPLEFT", 1, -1); rail:SetPoint("BOTTOMLEFT", 1, 1); rail:SetWidth(3)
+    rail:SetColorTexture(Theme.Unpack("accent"))
 
     local chevron = Widgets.Text:New(header, "+", "accent", "GameFontNormalLarge")
-    chevron:SetPoint("LEFT", 10, 0)
+    chevron:SetPoint("LEFT", 12, 0)
     local label = Widgets.Text:New(header, titleText, "text", "GameFontNormal")
-    label:SetPoint("LEFT", chevron, "RIGHT", 8, 0)
+    label:SetPoint("LEFT", chevron, "RIGHT", 10, 0)
 
     local content = Widgets.Container:New(sec)
     content:SetPoint("TOPLEFT", header, "BOTTOMLEFT", 0, -GAP)

@@ -3,7 +3,7 @@ local Theme = ns.Theme
 local Widgets = ns.UI.Widgets
 local _wb = ns.UI._wb
 local Widget, FrameWidget, TextWidget, TextureWidget = _wb.Widget, _wb.FrameWidget, _wb.TextWidget, _wb.TextureWidget
-local unwrap, style, adopt = _wb.unwrap, _wb.style, _wb.adopt
+local unwrap, style, surface, adopt = _wb.unwrap, _wb.style, _wb.surface, _wb.adopt
 local Registrable = _wb.Registrable
 
 -- UI/Widgets/Window.lua
@@ -53,7 +53,7 @@ function WindowW:Initialize(level, opts)
     local f = CreateFrame("Frame", opts.name, UIParent, "BackdropTemplate")
     f:SetSize(opts.width or 560, opts.height or 440)
     f:SetPoint(opts.point or "CENTER")
-    style(f, "bg1", "borderStrong")
+    surface(f, { bgKey = "bg1", borderKey = "borderStrong", shadow = true })
     local strata = opts.strata or "HIGH"
     f:SetFrameStrata(strata)
     f:SetFrameLevel(WindowW._ClaimLevel(strata, level))
@@ -65,8 +65,8 @@ function WindowW:Initialize(level, opts)
     self:_Attach(f)
     local p = self:_p()
 
-    local H = opts.barHeight or 38
-    local bar = Widgets.Panel:New(f, "bg0", "border")
+    local H = opts.barHeight or 42
+    local bar = Widgets.Panel:New(f, "surfaceRaised", "border")
     bar:SetHeight(H)
     bar:SetPoint("TOPLEFT", 1, -1)
     bar:SetPoint("TOPRIGHT", -1, -1)
@@ -76,7 +76,7 @@ function WindowW:Initialize(level, opts)
     bar:SetScript("OnDragStop", function() f:StopMovingOrSizing() end)
     p.bar = bar
 
-    local title = Widgets.Text:New(bar, opts.title or "", opts.titleKey or "accent", "GameFontNormalLarge")
+    local title = Widgets.Text:New(bar, string.upper(opts.title or ""), opts.titleKey or "accent", "GameFontNormalLarge")
     title:SetPoint("LEFT", 16, 0)
     p.title = title
     if opts.subtitle then
@@ -90,8 +90,10 @@ function WindowW:Initialize(level, opts)
     close:SetPoint("RIGHT", 0, 0)
     local x = Widgets.Text:New(close, "X", "textDim", "GameFontNormalLarge")
     x:SetPoint("CENTER")
-    close:SetScript("OnEnter", function() x:SetTextColor(Theme.Unpack("red")) end)
-    close:SetScript("OnLeave", function() x:SetTextColor(Theme.Unpack("textDim")) end)
+    local closeBg = close:CreateTexture(nil, "BACKGROUND")
+    closeBg:SetAllPoints(); closeBg:SetColorTexture(Theme.Unpack("red", 0.18)); closeBg:Hide()
+    close:SetScript("OnEnter", function() closeBg:Show(); x:SetTextColor(Theme.Unpack("red")) end)
+    close:SetScript("OnLeave", function() closeBg:Hide(); x:SetTextColor(Theme.Unpack("textDim")) end)
     close:SetScript("OnClick", function() if opts.onClose then opts.onClose(self) else f:Hide() end end)
     p.closeBtn = close
 

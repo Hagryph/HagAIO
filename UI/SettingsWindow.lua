@@ -14,7 +14,7 @@ local SettingsWindow = Class.new("SettingsWindow", ns.Service, { statics = {
     windowHeight = 640,
     navWidth = 170,
     gridMinWidth = 660,
-    gridGutter = 24,
+    gridGutter = 16,
 } })
 
 -- A General-page contribution may carry `visibleDeps` (a list of SERVICE names): it shows only
@@ -83,7 +83,7 @@ function SettingsWindow:_InvalidateGeneral()
     local p = self:_p()
     if not p.built then return end
     local old = p.pages and p.pages.general
-    if old then old:Hide() end
+    if old then old:Dispose() end
     p.pages.general = self:_BuildGeneralPage(p.content)
     if p.frame and p.frame:IsShown() and p.current == "general" then
         self:Show("general")
@@ -114,16 +114,16 @@ function SettingsWindow:_Build()
     p.frame = f
 
     -- left nav rail
-    local nav = W.Panel:New(f, "bg0", "border")
+    local nav = W.Panel:New(f, "bg0", "border", { highlight = true })
     nav:SetWidth(layout.navWidth)
     nav:SetPoint("TOPLEFT", bar, "BOTTOMLEFT", 0, -1)
     nav:SetPoint("BOTTOMLEFT", f, "BOTTOMLEFT", 1, 1)
 
-    local navLabel = W.SectionLabel:New(nav, "Menu")
+    local navLabel = W.SectionLabel:New(nav, "Navigation")
     navLabel:SetPoint("TOPLEFT", 16, -16)
 
     -- content area
-    local content = W.Panel:New(f, "panel", "border")
+    local content = W.Panel:New(f, "surface", "border")
     content:SetPoint("TOPLEFT", nav, "TOPRIGHT", 1, 0)
     content:SetPoint("BOTTOMRIGHT", -1, 1)
     p.content = content
@@ -143,14 +143,14 @@ function SettingsWindow:_Build()
         { key = "log",      text = "Log" },
         { key = "about",    text = "About" },
     }
-    local y = -42
+    local y = -48
     for _, d in ipairs(defs) do
         local item = W.NavItem:New(nav, d.text)
         item:SetPoint("TOPLEFT", nav, "TOPLEFT", 8, y)
         item:SetPoint("RIGHT", nav, "RIGHT", -8, 0)
         item:SetScript("OnClick", function() self:Show(d.key) end)
         p.nav[d.key] = item
-        y = y - 38
+        y = y - 42
     end
 
     -- live log updates while the Log page is open
@@ -168,21 +168,16 @@ function SettingsWindow:_BuildModulesPage(parent)
     local page = W.Container:New(parent)
     page:SetAllPoints()
 
-    local title = W.Text:New(page, "Feature Modules", "text", "GameFontNormalLarge")
-    title:SetPoint("TOPLEFT", 18, -16)
-    local note = W.Text:New(page, "Toggle modules on or off. Changes apply immediately and persist.",
-        "textDim", "GameFontHighlightSmall")
-    note:SetPoint("TOPLEFT", title, "BOTTOMLEFT", 0, -6)
-
-    local div = W.Divider:New(page)
-    div:SetPoint("TOPLEFT", note, "BOTTOMLEFT", 0, -12)
-    div:SetPoint("RIGHT", page, "RIGHT", -18, 0)
+    local header = W.PageHeader:New(page, "Feature Modules",
+        "Enable features and open their configuration panels.")
+    header:SetPoint("TOPLEFT", 12, -12)
+    header:SetPoint("TOPRIGHT", -12, -12)
 
     -- the rows live in a scroll area so a long module list scrolls (and clips) instead of spilling
     -- past the window. ScrollArea syncs its content width + clips the viewport for us.
     local sa = W.ScrollArea:New(page, "HagAIOModulesScroll")
-    sa:SetPoint("TOPLEFT", div, "BOTTOMLEFT", 0, -12)
-    sa:SetPoint("BOTTOMRIGHT", page, "BOTTOMRIGHT", -18, 16)
+    sa:SetPoint("TOPLEFT", header, "BOTTOMLEFT", 0, -12)
+    sa:SetPoint("BOTTOMRIGHT", page, "BOTTOMRIGHT", -12, 12)
 
     local p = self:_p()
     p.moduleHolder = sa:Content()
@@ -194,7 +189,7 @@ end
 function SettingsWindow:_RefreshModules()
     local p = self:_p()
     local holder = p.moduleHolder
-    for _, r in ipairs(p.moduleRows) do r:Hide() end
+    for _, r in ipairs(p.moduleRows) do r:Dispose() end
     wipe(p.moduleRows)
 
     local mm = ns.ModuleManager
@@ -213,13 +208,15 @@ function SettingsWindow:_RefreshModules()
         if module:IsAvailable() then
             local depsMet = module:AreModuleDepsMet()
 
-            local row = W.Container:New(holder)
-            row:SetPoint("TOPLEFT", 2, y)
-            row:SetPoint("RIGHT", holder, "RIGHT", -2, 0)
-            row:SetHeight(44)
+            local row = W.Panel:New(holder, "surfaceRaised", "border", {
+                accent = module:IsEnabled(), accentKey = "accent",
+            })
+            row:SetPoint("TOPLEFT", 4, y)
+            row:SetPoint("RIGHT", holder, "RIGHT", -4, 0)
+            row:SetHeight(58)
 
             local toggle = W.Toggle:New(row, nil)
-            toggle:SetPoint("TOPLEFT", 0, -4)
+            toggle:SetPoint("LEFT", row, "LEFT", 16, 0)
             if module:IsAlwaysOn() then       -- mandatory: show it ticked but locked (no toggling)
                 toggle:SetChecked(true)
                 toggle:SetEnabled(false)
@@ -233,11 +230,11 @@ function SettingsWindow:_RefreshModules()
             end
 
             local name = W.Text:New(row, module:GetTitle(), depsMet and "text" or "textFaint", "GameFontNormal")
-            name:SetPoint("TOPLEFT", toggle, "TOPRIGHT", 12, 2)
+            name:SetPoint("TOPLEFT", row, "TOPLEFT", 50, -12)
 
-            local settings = W.TextButton:New(row, "Settings >")
-            settings:SetPoint("RIGHT", row, "RIGHT", -4, 0)
-            settings:SetScript("OnClick", function() self:Show("module:" .. module:GetName()) end)
+            local settings = W.Button:New(row, "Configure", { width = 92 })
+            settings:SetPoint("RIGHT", row, "RIGHT", -14, 0)
+            settings:SetOnClick(function() self:Show("module:" .. module:GetName()) end)
 
             local descText = module:GetDescription()
             if not depsMet then
@@ -250,7 +247,7 @@ function SettingsWindow:_RefreshModules()
             desc:SetJustifyH("LEFT")
 
             p.moduleRows[#p.moduleRows + 1] = row
-            y = y - 48
+            y = y - 66
         end
     end
     -- size the scroll child to the rows so it scrolls when the list outgrows the viewport (the
@@ -268,48 +265,86 @@ function SettingsWindow:_BuildGeneralPage(parent)
     local page = W.Container:New(parent)
     page:SetAllPoints()
 
-    local title = W.Text:New(page, "General", "text", "GameFontNormalLarge")
-    title:SetPoint("TOPLEFT", 18, -16)
-    local note = W.Text:New(page, "Addon-wide options.", "textDim", "GameFontHighlightSmall")
-    note:SetPoint("TOPLEFT", title, "BOTTOMLEFT", 0, -6)
+    local header = W.PageHeader:New(page, "General", "Addon-wide behaviour and integration options.")
+    header:SetPoint("TOPLEFT", 12, -12)
+    header:SetPoint("TOPRIGHT", -12, -12)
 
-    local div = W.Divider:New(page)
-    div:SetPoint("TOPLEFT", note, "BOTTOMLEFT", 0, -12)
-    div:SetPoint("RIGHT", page, "RIGHT", -18, 0)
+    local sa = W.ScrollArea:New(page, "HagAIOGeneralScroll")
+    sa:SetPoint("TOPLEFT", header, "BOTTOMLEFT", 0, -12)
+    sa:SetPoint("BOTTOMRIGHT", page, "BOTTOMRIGHT", -12, 12)
+    local content = sa:Content()
+    local width = content:GetWidth()
+    if not width or width < 1 then width = 700 end
 
-    -- y descends from just below the divider; everything anchors to the page's
-    -- top-left at a fixed x so section/toggle/desc indents stay consistent.
-    local y = -90
-    local lastSection = nil
+    local groups, byName = {}, {}
     for _, d in ipairs(p.generalToggles or {}) do
         if allServicesLoaded(d.visibleDeps) then  -- soft visibility dep: hide unless all listed services are loaded
-        local section = d.section or "General"
-        if section ~= lastSection then
-            local label = W.SectionLabel:New(page, section)
-            label:SetPoint("TOPLEFT", 22, y)
-            y = y - 28
-            lastSection = section
-        end
-
-        local toggle = W.Toggle:New(page, d.reload and W.FlagReload(d.label) or d.label)
-        toggle:SetPoint("TOPLEFT", 20, y)
-        toggle:SetChecked(d.get and d.get())
-        toggle:SetOnToggle(function(on)
-            local needsReload = d.set and d.set(on)
-            if needsReload and d.reloadMsg then
-                self:LogWarn(d.reloadMsg)
+            local section = d.section or "General"
+            local group = byName[section]
+            if not group then
+                group = { title = section, settings = {} }
+                groups[#groups + 1] = group
+                byName[section] = group
             end
-        end)
-        y = y - 24
-
-        if d.desc and d.desc ~= "" then
-            local desc = W.Text:New(page, d.desc, "textFaint", "GameFontHighlightSmall")
-            desc:SetPoint("TOPLEFT", 46, y)
-            y = y - 22
+            group.settings[#group.settings + 1] = d
         end
-        end  -- if allServicesLoaded
     end
 
+    local columns = width >= self:_statics().gridMinWidth and #groups > 1 and 2 or 1
+    local gutter, sideInset = self:_statics().gridGutter, 4
+    local panelWidth = math.floor((width - sideInset * 2 - (columns - 1) * gutter) / columns)
+    local rendered = {}
+    for _, group in ipairs(groups) do
+        local panel = W.SettingsGroup:New(content, group.title, { collapsible = false })
+        panel:SetWidth(panelWidth)
+        local body, y = panel:GetContent(), 0
+        for _, d in ipairs(group.settings) do
+            local label = W.Text:New(body, d.reload and W.FlagReload(d.label) or d.label,
+                "text", "GameFontHighlight")
+            label:SetPoint("TOPLEFT", 2, y - 2)
+            label:SetWidth(panelWidth - 76); label:SetJustifyH("LEFT")
+            local toggle = W.Toggle:New(body, nil)
+            toggle:SetPoint("TOPRIGHT", body, "TOPRIGHT", -2, y)
+            toggle:SetChecked(d.get and d.get())
+            toggle:SetOnToggle(function(on)
+                local needsReload = d.set and d.set(on)
+                if needsReload and d.reloadMsg then self:LogWarn(d.reloadMsg) end
+            end)
+            y = y - 26
+            if d.desc and d.desc ~= "" then
+                local desc = W.Text:New(body, d.desc, "textFaint", "GameFontHighlightSmall")
+                desc:SetPoint("TOPLEFT", 2, y)
+                desc:SetWidth(panelWidth - 46)
+                desc:SetJustifyH("LEFT")
+                y = y - desc:GetStringHeight() - 12
+            else
+                y = y - 8
+            end
+        end
+        panel:SetContentHeight(math.max(18, -y))
+        rendered[#rendered + 1] = { panel = panel, height = panel:GetHeight() }
+    end
+
+    local y = -4
+    for first = 1, #rendered, columns do
+        local rowHeight = 0
+        for i = first, math.min(#rendered, first + columns - 1) do
+            rowHeight = math.max(rowHeight, rendered[i].height)
+        end
+        for i = first, math.min(#rendered, first + columns - 1) do
+            local column = i - first
+            rendered[i].panel:SetHeight(rowHeight)
+            rendered[i].panel:SetPoint("TOPLEFT", content, "TOPLEFT",
+                sideInset + column * (panelWidth + gutter), y)
+        end
+        y = y - rowHeight - gutter
+    end
+    if #rendered == 0 then
+        local empty = W.Text:New(content, "No addon-wide options are available.", "textFaint", "GameFontHighlightSmall")
+        empty:SetPoint("TOPLEFT", 8, -8)
+        y = -32
+    end
+    content:SetHeight(math.max(30, -y + 4))
     return page
 end
 
@@ -319,26 +354,24 @@ function SettingsWindow:_BuildProfilesPage(parent)
     local page = W.Container:New(parent)
     page:SetAllPoints()
 
-    local title = W.Text:New(page, "Profiles", "text", "GameFontNormalLarge")
-    title:SetPoint("TOPLEFT", 18, -16)
-    local note = W.Text:New(page, "Save, switch and share full config sets. Loading a profile applies after /reload.",
-        "textDim", "GameFontHighlightSmall")
-    note:SetPoint("TOPLEFT", title, "BOTTOMLEFT", 0, -6)
-    local note2 = W.Text:New(page, "Tick Global to load that profile automatically on characters that haven't loaded one.",
-        "textDim", "GameFontHighlightSmall")
-    note2:SetPoint("TOPLEFT", note, "BOTTOMLEFT", 0, -4)
-    local div = W.Divider:New(page)
-    div:SetPoint("TOPLEFT", note2, "BOTTOMLEFT", 0, -12)
-    div:SetPoint("RIGHT", page, "RIGHT", -18, 0)
+    local header = W.PageHeader:New(page, "Profiles",
+        "Save, switch and share complete configuration sets.")
+    header:SetPoint("TOPLEFT", 12, -12)
+    header:SetPoint("TOPRIGHT", -12, -12)
+
+    local savePanel = W.SettingsGroup:New(page, "Save or Import", { collapsible = false })
+    savePanel:SetPoint("TOPLEFT", header, "BOTTOMLEFT", 0, -12)
+    savePanel:SetPoint("TOPRIGHT", header, "BOTTOMRIGHT", 0, -12)
+    local saveBody = savePanel:GetContent()
 
     -- save-current row
-    local saveLabel = W.Text:New(page, "Save current config as:", "textDim", "GameFontHighlightSmall")
-    saveLabel:SetPoint("TOPLEFT", 22, -80)
-    local input = W.Input:New(page, 180)
-    input:SetPoint("TOPLEFT", 20, -98)
-    local save = W.TextButton:New(page, "Save")
+    local saveLabel = W.Text:New(saveBody, "Save current configuration as", "textDim", "GameFontHighlightSmall")
+    saveLabel:SetPoint("TOPLEFT", 2, 0)
+    local input = W.Input:New(saveBody, 220)
+    input:SetPoint("TOPLEFT", 0, -20)
+    local save = W.Button:New(saveBody, "Save", { width = 72 })
     save:SetPoint("LEFT", input, "RIGHT", 16, 0)
-    save:SetScript("OnClick", function()
+    save:SetOnClick(function()
         local name = input:GetValue()
         if name and name ~= "" then
             ns.Profiles:Save(name)
@@ -347,9 +380,9 @@ function SettingsWindow:_BuildProfilesPage(parent)
             self:_RefreshProfilesPage()
         end
     end)
-    local import = W.TextButton:New(page, "Import string")
+    local import = W.Button:New(saveBody, "Import", { width = 82 })
     import:SetPoint("LEFT", save, "RIGHT", 24, 0)
-    import:SetScript("OnClick", function()
+    import:SetOnClick(function()
         ns.UI.CopyWindow:Prompt("Paste a profile string, then Import", function(text)
             local ok, res = ns.Profiles:Import(text, "Imported")
             if ok then
@@ -360,9 +393,16 @@ function SettingsWindow:_BuildProfilesPage(parent)
             end
         end)
     end)
+    local profileNote = W.Text:New(saveBody,
+        "Loading applies after /reload. Global profiles become the default for characters without a selection.",
+        "textFaint", "GameFontHighlightSmall")
+    profileNote:SetPoint("LEFT", import, "RIGHT", 18, 0)
+    profileNote:SetPoint("RIGHT", saveBody, "RIGHT", 0, 0)
+    profileNote:SetJustifyH("LEFT")
+    savePanel:SetContentHeight(50)
 
     local listLabel = W.SectionLabel:New(page, "Saved profiles")
-    listLabel:SetPoint("TOPLEFT", 22, -140)
+    listLabel:SetPoint("TOPLEFT", savePanel, "BOTTOMLEFT", 4, -18)
 
     -- the saved-profile list is a grid: a flex name column, then a Global checkbox column (the
     -- header names it -- no per-row label) and the Load / Export / Delete action columns.
@@ -374,8 +414,8 @@ function SettingsWindow:_BuildProfilesPage(parent)
             { width = 62, label = "" },                       -- Export
             { width = 62, label = "" },                       -- Delete
         } })
-    grid:SetPoint("TOPLEFT", listLabel, "BOTTOMLEFT", 0, -8)
-    grid:SetPoint("BOTTOMRIGHT", page, "BOTTOMRIGHT", -18, 14)
+    grid:SetPoint("TOPLEFT", listLabel, "BOTTOMLEFT", -4, -8)
+    grid:SetPoint("BOTTOMRIGHT", page, "BOTTOMRIGHT", -12, 12)
     p.profileGrid = grid
 
     local empty = W.Text:New(page, "No profiles yet.", "textFaint", "GameFontHighlightSmall")
@@ -463,42 +503,35 @@ function SettingsWindow:_EnsureModulePage(name)
     local page = W.Container:New(p.content)   -- a widget so :Dispose tears its whole control tree down
     page:SetAllPoints()
 
-    local back = W.TextButton:New(page, "< Modules")
-    back:SetPoint("TOPLEFT", 16, -14)
-    back:SetScript("OnClick", function() self:Show("modules") end)
+    local header = W.PageHeader:New(page, module:GetTitle(), module:GetDescription())
+    header:SetPoint("TOPLEFT", 12, -12)
+    header:SetPoint("TOPRIGHT", -12, -12)
+    local actions = header:Actions()
 
-    local title = W.Text:New(page, module:GetTitle(), "text", "GameFontNormalLarge")
-    title:SetPoint("TOPLEFT", back, "BOTTOMLEFT", 0, -8)
+    local back = W.Button:New(actions, "< Modules", { width = 86 })
+    back:SetPoint("RIGHT", actions, "RIGHT", 0, 0)
+    back:SetScript("OnClick", function() self:Show("modules") end)
 
     -- enable toggle on the header row -- omitted for a mandatory (always-on) module, which shows a
     -- faint "Always on" tag instead since it can't be turned off.
     local enable
     if module:IsAlwaysOn() then
-        local tag = W.Text:New(page, "Always on", "textFaint", "GameFontHighlightSmall")
-        tag:SetPoint("TOPRIGHT", page, "TOPRIGHT", -18, -20)
+        local tag = W.Text:New(actions, "ALWAYS ON", "green", "GameFontHighlightSmall")
+        tag:SetPoint("RIGHT", back, "LEFT", -16, 0)
     else
-        enable = W.Toggle:New(page, "Enabled")
-        enable:SetPoint("TOPRIGHT", page, "TOPRIGHT", -84, -16)
+        enable = W.Toggle:New(actions, "Enabled")
+        enable:SetPoint("RIGHT", back, "LEFT", -76, 0)
         enable:SetChecked(module:IsEnabled())
         enable:SetOnToggle(function(on)
             if on then module:Enable() else module:Disable() end
         end)
     end
 
-    local desc = W.Text:New(page, module:GetDescription(), "textDim", "GameFontHighlightSmall")
-    desc:SetPoint("TOPLEFT", title, "BOTTOMLEFT", 0, -6)
-    desc:SetPoint("RIGHT", page, "RIGHT", -18, 0)
-    desc:SetJustifyH("LEFT")
-
-    local div = W.Divider:New(page)
-    div:SetPoint("TOPLEFT", desc, "BOTTOMLEFT", 0, -12)
-    div:SetPoint("RIGHT", page, "RIGHT", -18, 0)
-
     -- the framework hands every module page our themed scroll area, so a module's BuildSettingsPage
     -- just fills sf:Content() and never defines a scrollbar of its own.
     local sf = W.ScrollArea:New(page, "HagAIOModule" .. name:gsub("%s", "") .. "Scroll")
-    sf:SetPoint("TOPLEFT", div, "BOTTOMLEFT", 0, -8)
-    sf:SetPoint("BOTTOMRIGHT", page, "BOTTOMRIGHT", -16, 14)
+    sf:SetPoint("TOPLEFT", header, "BOTTOMLEFT", 0, -12)
+    sf:SetPoint("BOTTOMRIGHT", page, "BOTTOMRIGHT", -12, 12)
 
     -- A module may own a fully custom, live-bound page (e.g. CVars, whose
     -- controls bind to the game rather than to keyed saved-vars). Otherwise the
@@ -540,9 +573,8 @@ function SettingsWindow:_NewSchemaState(host)
     return { graph = graph, controls = {}, pending = {} }
 end
 
--- Turn a host schema into semantic layout blocks. Headers start named blocks; an unheaded module
--- remains an unnamed block and is deliberately rendered full-width. A submodule title supplies the
--- section name for its otherwise-unheaded schema.
+-- Turn a host schema into semantic layout blocks. Headers start named blocks; the caller supplies a
+-- neutral fallback panel title for unheaded module settings, while a submodule title names its block.
 function SettingsWindow:_AppendSchemaBlocks(blocks, host, fallbackTitle)
     local current
     for _, s in ipairs(host:GetSettings()) do
@@ -598,45 +630,61 @@ function SettingsWindow:_RenderSchemaBlock(content, block, width, y, pageName, s
             y = y - (n:GetStringHeight() + 12)
 
         elseif s.type == ns.SettingType.TOGGLE then
-            local t = W.Toggle:New(content, s.reload and W.FlagReload(s.label) or s.label)
-            local x = s.dependsOn and 30 or 6
-            t:SetPoint("TOPLEFT", x, y)
+            local x = s.dependsOn and 20 or 2
+            local lbl = W.Text:New(content, s.reload and W.FlagReload(s.label) or s.label,
+                "text", "GameFontHighlight")
+            lbl:SetPoint("TOPLEFT", x, y - 2)
+            lbl:SetWidth(width - x - 48); lbl:SetJustifyH("LEFT")
+            local t = W.Toggle:New(content, nil)
+            t:SetPoint("TOPRIGHT", content, "TOPRIGHT", -2, y)
             t:SetChecked(host:GetSetting(s.key) and true or false)
             t:SetOnToggle(function(on) host:SetSetting(s.key, on) end)
             if s.key then controls[s.key] = t end
             if s.dependsOn then pending[#pending + 1] = { w = t, key = s.key, on = s.dependsOn } end
-            y = y - 26
+            y = y - 24
             if s.desc then
                 local d = W.Text:New(content, s.desc, "textFaint", "GameFontHighlightSmall")
-                d:SetPoint("TOPLEFT", x + 24, y)
-                d:SetWidth(width - x - 34)
+                d:SetPoint("TOPLEFT", x, y)
+                d:SetWidth(width - x - 12)
                 d:SetJustifyH("LEFT")
-                y = y - (d:GetStringHeight() + 8)
+                y = y - (d:GetStringHeight() + 10)
             else
-                y = y - 6
+                y = y - 4
             end
 
         elseif s.type == ns.SettingType.SELECT then
             local lbl = W.Text:New(content, s.reload and W.FlagReload(s.label) or s.label, "text", "GameFontHighlight")
-            local x = s.dependsOn and 30 or 6
-            lbl:SetPoint("TOPLEFT", x, y)
-            y = y - 20
+            local x = s.dependsOn and 20 or 2
             local seg = W.Segmented:New(content, s.options)
-            seg:SetPoint("TOPLEFT", x, y)
+            if lbl:GetStringWidth() + seg:GetWidth() + 26 <= width - x then
+                lbl:SetPoint("TOPLEFT", x, y - 5)
+                seg:SetPoint("TOPRIGHT", content, "TOPRIGHT", -2, y)
+                y = y - 32
+            else
+                lbl:SetPoint("TOPLEFT", x, y)
+                seg:SetPoint("TOPLEFT", x, y - 22)
+                y = y - 54
+            end
             seg:SetValue(host:GetSetting(s.key))
             seg:SetOnChange(function(v) host:SetSetting(s.key, v) end)
             if s.key then controls[s.key] = seg end
             if s.dependsOn then pending[#pending + 1] = { w = seg, key = s.key, on = s.dependsOn } end
-            y = y - 34
 
         elseif s.type == ns.SettingType.DROPDOWN then
             local lbl = W.Text:New(content, s.reload and W.FlagReload(s.label) or s.label, "text", "GameFontHighlight")
-            local x = s.dependsOn and 30 or 6
-            lbl:SetPoint("TOPLEFT", x, y)
-            y = y - 20
+            local x = s.dependsOn and 20 or 2
             local dropdown = W.Dropdown:New(content, s.options, s.placeholder)
-            dropdown:SetPoint("TOPLEFT", x, y)
-            dropdown:SetWidth(s.width or 220)
+            local dropdownWidth = math.min(s.width or 156, math.floor(width * 0.58))
+            dropdown:SetWidth(dropdownWidth)
+            if lbl:GetStringWidth() + dropdownWidth + 26 <= width - x then
+                lbl:SetPoint("TOPLEFT", x, y - 5)
+                dropdown:SetPoint("TOPRIGHT", content, "TOPRIGHT", -2, y)
+                y = y - 34
+            else
+                lbl:SetPoint("TOPLEFT", x, y)
+                dropdown:SetPoint("TOPLEFT", x, y - 22)
+                y = y - 58
+            end
             dropdown:SetValue(host:GetSetting(s.key))
             dropdown:SetOnChange(function(value)
                 host:SetSetting(s.key, value)
@@ -646,16 +694,15 @@ function SettingsWindow:_RenderSchemaBlock(content, block, width, y, pageName, s
             end)
             if s.key then controls[s.key] = dropdown end
             if s.dependsOn then pending[#pending + 1] = { w = dropdown, key = s.key, on = s.dependsOn } end
-            y = y - 34
 
         elseif s.type == ns.SettingType.COLOR then
             local lbl = W.Text:New(content, s.label, "text", "GameFontHighlight")
-            local x = s.dependsOn and 30 or 6
-            lbl:SetPoint("TOPLEFT", x, y)
+            local x = s.dependsOn and 20 or 2
+            lbl:SetPoint("TOPLEFT", x, y - 2)
             lbl:SetWidth(width - x - 58)
             lbl:SetJustifyH("LEFT")
             local sw = W.ColorSwatch:New(content)
-            sw:SetPoint("TOPRIGHT", content, "TOPRIGHT", -6, y)
+            sw:SetPoint("TOPRIGHT", content, "TOPRIGHT", -2, y)
             -- Colours are ns.Color values (override/profile/code default); the swatch keeps its
             -- r,g,b API, so unpack going in and re-wrap the picked colour going out.
             local c = host:GetSetting(s.key) or s.default or ns.Color:New(1, 1, 1)
@@ -695,7 +742,7 @@ function SettingsWindow:_BuildModuleControls(sf, module)
 
     local blocks, states = {}, {}
     if #module:GetSettings() > 0 then
-        self:_AppendSchemaBlocks(blocks, module)
+        self:_AppendSchemaBlocks(blocks, module, "Options")
         states[module] = self:_NewSchemaState(module)
     end
 
@@ -714,110 +761,85 @@ function SettingsWindow:_BuildModuleControls(sf, module)
         return
     end
 
-    -- Only complete, named sections enter the grid. Without semantic section names there is no
-    -- honest scan boundary, so the entire page keeps the conventional full-width vertical flow.
+    -- Named sections become application panels. Their internal controls keep a single vertical
+    -- sequence, while the panels themselves follow a predictable left-to-right row order.
     local layout = self:_statics()
     local grid = width >= layout.gridMinWidth and #blocks > 1
+    local columns = grid and 2 or 1
+    local sideInset = 4
+    local available = width - sideInset * 2
+    local columnWidth = grid and math.floor((available - layout.gridGutter) / 2) or available
+    local rendered = {}
     for _, block in ipairs(blocks) do
-        if not block.title then grid = false; break end
+        local panel = W.SettingsGroup:New(content, block.title or "Options", {
+            collapsible = false, shadow = true,
+        })
+        panel:SetWidth(columnWidth)
+        local body = panel:GetContent()
+        local bodyWidth = columnWidth - 28
+        local y = self:_RenderSchemaBlock(body, block, bodyWidth, 0, module:GetName(), states[block.host])
+        panel:SetContentHeight(math.max(18, -y))
+        rendered[#rendered + 1] = { panel = panel, height = panel:GetHeight() }
     end
 
-    local columns = grid and 2 or 1
-    local columnWidth = grid and math.floor((width - layout.gridGutter) / 2) or width
-    local columnY, columnSections = { -4, -4 }, { 0, 0 }
-    for index, block in ipairs(blocks) do
-        local column = 1
-        if columns == 2 then
-            -- Seed both columns, then keep them visually balanced. Sections are independent units,
-            -- so masonry placement removes dead space without compromising a control sequence.
-            if index == 2 then
-                column = 2
-            elseif index > 2 and columnY[2] > columnY[1] then
-                column = 2
-            end
+    local y = -4
+    for first = 1, #rendered, columns do
+        local rowHeight = 0
+        for i = first, math.min(#rendered, first + columns - 1) do
+            rowHeight = math.max(rowHeight, rendered[i].height)
         end
-
-        local section = W.Container:New(content)
-        section:SetWidth(columnWidth)
-        local x = column == 2 and (columnWidth + layout.gridGutter) or 0
-        section:SetPoint("TOPLEFT", content, "TOPLEFT", x, columnY[column])
-
-        local y = 0
-        if columnSections[column] > 0 then
-            local divider = W.Fill:New(section, { layer = "ARTWORK" })
-            divider:SetPoint("TOPLEFT", 10, y)
-            divider:SetPoint("TOPRIGHT", section, "TOPRIGHT", -10, y)
-            divider:SetHeight(1)
-            divider:SetColorTexture(Theme.Unpack("border"))
-            y = y - 22
+        for i = first, math.min(#rendered, first + columns - 1) do
+            local column = i - first
+            local entry = rendered[i]
+            entry.panel:SetHeight(rowHeight)
+            entry.panel:SetPoint("TOPLEFT", content, "TOPLEFT",
+                sideInset + column * (columnWidth + layout.gridGutter), y)
         end
-        if block.title then
-            local heading = W.SectionLabel:New(section, block.title)
-            heading:SetPoint("TOPLEFT", 4, y - 6)
-            y = y - 28
-        end
-        y = self:_RenderSchemaBlock(section, block, columnWidth, y, module:GetName(), states[block.host])
-
-        local height = math.max(30, -y + 8)
-        section:SetHeight(height)
-        columnY[column] = columnY[column] - height
-        columnSections[column] = columnSections[column] + 1
+        y = y - rowHeight - layout.gridGutter
     end
 
     for _, state in pairs(states) do self:_WireSchemaState(state) end
-    content:SetHeight(math.max(30, -math.min(columnY[1], columnY[2]) + 8))
+    content:SetHeight(math.max(30, -y + 4))
 end
 
 function SettingsWindow:_BuildLogPage(parent)
     local page = W.Container:New(parent)
     page:SetAllPoints()
 
-    local title = W.Text:New(page, "Activity Log", "text", "GameFontNormalLarge")
-    title:SetPoint("TOPLEFT", 18, -16)
+    local header = W.PageHeader:New(page, "Activity Log",
+        "Every module report is recorded here automatically.", { actionsWidth = 430 })
+    header:SetPoint("TOPLEFT", 12, -12)
+    header:SetPoint("TOPRIGHT", -12, -12)
+    local actions = header:Actions()
 
-    -- Controls sit on the title row, vertically centred on the title, so they
-    -- never collide with the note line below.
-    local clear = W.TextButton:New(page, "Clear")
-    clear:SetPoint("RIGHT", page, "RIGHT", -18, 0)
-    clear:SetPoint("TOP", title, "TOP", 0, 3)
-    clear:SetScript("OnClick", function()
+    local clear = W.Button:New(actions, "Clear", { width = 66 })
+    clear:SetPoint("RIGHT", actions, "RIGHT", 0, 8)
+    clear:SetOnClick(function()
         ns.Logger:Clear()
         self:_RefreshLog()
     end)
 
-    local echo = W.Toggle:New(page, "Echo to chat")
-    echo:SetPoint("RIGHT", clear, "LEFT", -88, 0)
-    echo:SetPoint("TOP", title, "TOP", 0, 0)
+    local echo = W.Toggle:New(actions, "Echo to chat")
+    echo:SetPoint("RIGHT", clear, "LEFT", -98, 8)
     echo:SetChecked(ns.Logger:GetEcho())
     echo:SetOnToggle(function(on) ns.Logger:SetEcho(on) end)
 
     -- Which reports reach chat while "Echo to chat" is on (the Logger's persisted level
     -- threshold -- forced lines like errors marked always-show still get through).
-    local lvlLabel = W.Text:New(page, "Chat shows", "text", "GameFontHighlight")
-    lvlLabel:SetPoint("TOPLEFT", page, "TOPLEFT", 18, -50)
-    local lvl = W.Segmented:New(page, {
+    local lvlLabel = W.Text:New(actions, "Chat shows", "textDim", "GameFontHighlightSmall")
+    lvlLabel:SetPoint("BOTTOMLEFT", actions, "BOTTOMLEFT", 0, 0)
+    local lvl = W.Segmented:New(actions, {
         { value = ns.LogLevel.INFO:Order(), text = "Everything" },
         { value = ns.LogLevel.WARN:Order(), text = "Warnings" },
         { value = ns.LogLevel.ERROR:Order(), text = "Errors only" },
     })
-    lvl:SetPoint("LEFT", lvlLabel, "RIGHT", 12, 0)
-    lvl:SetPoint("TOP", lvlLabel, "TOP", 0, 6)
+    lvl:SetPoint("LEFT", lvlLabel, "RIGHT", 10, 0)
     lvl:SetValue(ns.Logger:GetMinLevel())
     lvl:SetOnChange(function(v) ns.Logger:SetMinLevel(v) end)
 
-    -- Note pinned below the whole header band (title + controls + chat-level row), not
-    -- chained to the title, so the spacing is fixed regardless of font metrics.
-    local note = W.Text:New(page, "Every module report is recorded here automatically.",
-        "textDim", "GameFontHighlightSmall")
-    note:SetPoint("TOPLEFT", page, "TOPLEFT", 18, -82)
-
-    local div = W.Divider:New(page)
-    div:SetPoint("TOPLEFT", note, "BOTTOMLEFT", 0, -10)
-    div:SetPoint("RIGHT", page, "RIGHT", -18, 0)
-
     local sf = W.ScrollArea:New(page, "HagAIOLogScroll")
-    sf:SetPoint("TOPLEFT", div, "BOTTOMLEFT", 0, -8)
-    sf:SetPoint("BOTTOMRIGHT", page, "BOTTOMRIGHT", -16, 14)
+    sf:SetPoint("TOPLEFT", header, "BOTTOMLEFT", 0, -12)
+    sf:SetPoint("BOTTOMRIGHT", page, "BOTTOMRIGHT", -12, 12)
 
     -- PLAIN text lines (one pooled FontString per entry) with a TextSelection overlay: drag to
     -- select per character across lines, then Ctrl+C copies the selection -- like any text editor.
@@ -880,32 +902,42 @@ function SettingsWindow:_BuildAboutPage(parent)
     local page = W.Container:New(parent)
     page:SetAllPoints()
 
-    local title = W.Text:New(page, "HagAIO", "text", "GameFontNormalLarge")
-    title:SetPoint("TOPLEFT", 18, -18)
-    local ver = W.Text:New(page, "Version " .. tostring(ns.Meta.version) .. "   |cff5b6473|||r   Midnight 12.0.x",
+    local header = W.PageHeader:New(page, "HagAIO",
+        "A modular all-in-one toolkit for World of Warcraft.")
+    header:SetPoint("TOPLEFT", 12, -12)
+    header:SetPoint("TOPRIGHT", -12, -12)
+
+    local product = W.SettingsGroup:New(page, "Product", { collapsible = false })
+    product:SetPoint("TOPLEFT", header, "BOTTOMLEFT", 0, -12)
+    product:SetWidth(342)
+    local productBody = product:GetContent()
+    local ver = W.Text:New(productBody,
+        "Version " .. tostring(ns.Meta.version) .. "   |cff5b6473|||r   Midnight 12.0.x",
         "accent", "GameFontHighlight")
-    ver:SetPoint("TOPLEFT", title, "BOTTOMLEFT", 0, -8)
-
-    local desc = W.Text:New(page,
-        "All-in-One toolkit. A modular framework that feature modules\nplug into, sharing one logger and this settings window.",
+    ver:SetPoint("TOPLEFT", 0, 0)
+    local desc = W.Text:New(productBody,
+        "Feature modules share one framework, profile system, activity log and interface.",
         "textDim", "GameFontHighlightSmall")
-    desc:SetPoint("TOPLEFT", ver, "BOTTOMLEFT", 0, -16)
-    desc:SetJustifyH("LEFT")
-    desc:SetSpacing(4)
-
-    local author = W.Text:New(page, "Author: Hagryph", "text", "GameFontHighlight")
-    author:SetPoint("TOPLEFT", desc, "BOTTOMLEFT", 0, -20)
-    local repo = W.Text:New(page, "github.com/Hagryph/HagAIO", "textFaint", "GameFontHighlightSmall")
+    desc:SetPoint("TOPLEFT", ver, "BOTTOMLEFT", 0, -12)
+    desc:SetWidth(310); desc:SetJustifyH("LEFT")
+    local author = W.Text:New(productBody, "Created by Hagryph", "text", "GameFontHighlight")
+    author:SetPoint("TOPLEFT", desc, "BOTTOMLEFT", 0, -16)
+    local repo = W.Text:New(productBody, "github.com/Hagryph/HagAIO", "textFaint", "GameFontHighlightSmall")
     repo:SetPoint("TOPLEFT", author, "BOTTOMLEFT", 0, -6)
+    product:SetContentHeight(112)
 
-    local cmds = W.SectionLabel:New(page, "Commands")
-    cmds:SetPoint("TOPLEFT", repo, "BOTTOMLEFT", 0, -24)
-    local list = W.Text:New(page,
+    local commands = W.SettingsGroup:New(page, "Commands", { collapsible = false })
+    commands:SetPoint("TOPLEFT", product, "TOPRIGHT", 16, 0)
+    commands:SetPoint("RIGHT", header, "RIGHT", 0, 0)
+    commands:SetHeight(product:GetHeight())
+    local commandBody = commands:GetContent()
+    local list = W.Text:New(commandBody,
         "/hag  -  open this panel\n/hag log  -  open the activity log\n/hag modules  -  list modules\n/hag help  -  all commands",
         "textDim", "GameFontHighlightSmall")
-    list:SetPoint("TOPLEFT", cmds, "BOTTOMLEFT", 0, -8)
+    list:SetPoint("TOPLEFT", 0, 0)
     list:SetJustifyH("LEFT")
     list:SetSpacing(5)
+    commands:SetContentHeight(112)
     return page
 end
 

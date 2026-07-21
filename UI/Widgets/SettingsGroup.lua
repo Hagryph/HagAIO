@@ -3,27 +3,37 @@ local Theme = ns.Theme
 local Widgets = ns.UI.Widgets
 local _wb = ns.UI._wb
 local Widget, FrameWidget, TextWidget, TextureWidget = _wb.Widget, _wb.FrameWidget, _wb.TextWidget, _wb.TextureWidget
-local unwrap, style, adopt = _wb.unwrap, _wb.style, _wb.adopt
+local unwrap, style, surface, adopt = _wb.unwrap, _wb.style, _wb.surface, _wb.adopt
 
 -- UI/Widgets/SettingsGroup.lua
--- A titled settings GROUP: a bordered panel with a clickable header strip (chevron + `title`) and a
--- content area below it that callers fill. COLLAPSIBLE -- clicking the header toggles the body (the
+-- A titled settings GROUP: a raised application panel with a header strip (chevron + `title`) and a
+-- content area below it that callers fill. COLLAPSIBLE by default; opts.collapsible=false produces
+-- the static section cards used by SettingsWindow's row-major panel grid. Clicking the header toggles
+-- the body when collapsible. The
 -- group shrinks to just its header when collapsed). Returns the container Frame; anchor it like any
 -- widget. Methods: :GetContent() (parent your controls into it), :SetContentHeight(h) (the expanded
 -- body height), :SetExpanded(bool), :IsExpanded(), :SetOnToggle(fn) fn(expanded), :SetTitle(s).
 local SettingsGroupW = ns.Class.new("SettingsGroup", FrameWidget)
-function SettingsGroupW:Initialize(parent, title)
-    local HEADER, PAD = 24, 10
+function SettingsGroupW:Initialize(parent, title, opts)
+    opts = opts or {}
+    local HEADER, PAD = 34, 14
+    local collapsible = opts.collapsible ~= false
     local g = CreateFrame("Frame", nil, unwrap(parent), "BackdropTemplate")
-    style(g, "panel2", "border")
+    surface(g, { bgKey = "surface", borderKey = "border", shadow = opts.shadow ~= false })
 
     local header = CreateFrame("Button", nil, g)
     header:SetPoint("TOPLEFT", 1, -1); header:SetPoint("TOPRIGHT", -1, -1); header:SetHeight(HEADER)
-    local strip = header:CreateTexture(nil, "ARTWORK"); strip:SetAllPoints(); strip:SetColorTexture(Theme.Unpack("bg1"))
+    local strip = header:CreateTexture(nil, "BACKGROUND"); strip:SetAllPoints(); strip:SetColorTexture(Theme.Unpack("surfaceRaised"))
+    local rail = header:CreateTexture(nil, "ARTWORK")
+    rail:SetPoint("TOPLEFT"); rail:SetPoint("BOTTOMLEFT"); rail:SetWidth(3)
+    rail:SetColorTexture(Theme.Unpack(opts.accentKey or "accent"))
     local chevron = Widgets.Text:New(header, "-", "accent", "GameFontNormal")
-    chevron:SetPoint("LEFT", 8, 0)
-    local label = Widgets.Text:New(header, title, "text", "GameFontNormal")
-    label:SetPoint("LEFT", chevron, "RIGHT", 6, 0)
+    chevron:SetPoint("LEFT", 12, 0)
+    chevron:SetShown(collapsible)
+    local label = Widgets.SectionLabel:New(header, title)
+    if collapsible then label:SetPoint("LEFT", chevron, "RIGHT", 8, 0)
+    else label:SetPoint("LEFT", 14, 0) end
+    label:SetTextColor(Theme.Unpack("text"))
 
     local content = Widgets.Container:New(g)
     content:SetPoint("TOPLEFT", g, "TOPLEFT", PAD, -(HEADER + PAD))
@@ -33,17 +43,21 @@ function SettingsGroupW:Initialize(parent, title)
     local p = self:_p()
     p.content, p.contentH, p.expanded, p.label = content, 0, true, label
     local function apply()
-        chevron:SetText(p.expanded and "-" or "+")
+        if collapsible then chevron:SetText(p.expanded and "-" or "+") end
         content:SetShown(p.expanded)
         g:SetHeight(p.expanded and (HEADER + PAD + math.max(0, p.contentH) + PAD) or HEADER)
     end
     p.apply = apply
-    header:SetScript("OnEnter", function() g:SetBackdropBorderColor(Theme.Unpack("accent")) end)
-    header:SetScript("OnLeave", function() g:SetBackdropBorderColor(Theme.Unpack("border")) end)
-    header:SetScript("OnClick", function()
-        p.expanded = not p.expanded; apply()
-        if p.onToggle then p.onToggle(p.expanded) end
-    end)
+    if collapsible then
+        header:SetScript("OnEnter", function() g:SetBackdropBorderColor(Theme.Unpack("accent")) end)
+        header:SetScript("OnLeave", function() g:SetBackdropBorderColor(Theme.Unpack("border")) end)
+        header:SetScript("OnClick", function()
+            p.expanded = not p.expanded; apply()
+            if p.onToggle then p.onToggle(p.expanded) end
+        end)
+    else
+        header:EnableMouse(false)
+    end
     self:_Attach(g)
     apply()
 end

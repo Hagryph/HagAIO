@@ -11,7 +11,7 @@ local SectionLabelW = ns.Class.new("SectionLabel", TextWidget)
 function SectionLabelW:Initialize(parent, text)
     local fs = unwrap(parent):CreateFontString(nil, "ARTWORK", "GameFontNormalSmall")
     fs:SetText(string.upper(text or ""))
-    fs:SetTextColor(Theme.Unpack("textFaint"))
+    fs:SetTextColor(Theme.Unpack("textDim"))
     fs:SetSpacing(2)
     self:_Attach(fs)
 end

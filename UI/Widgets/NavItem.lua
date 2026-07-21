@@ -11,7 +11,7 @@ local unwrap, style, adopt = _wb.unwrap, _wb.style, _wb.adopt
 local NavItemW = ns.Class.new("NavItem", FrameWidget)
 function NavItemW:Initialize(parent, text)
     local b = CreateFrame("Button", nil, unwrap(parent), "BackdropTemplate")
-    b:SetHeight(34)
+    b:SetHeight(38)
     b:SetBackdrop(Theme.Backdrop(1))
     b:SetBackdropColor(0, 0, 0, 0)
     b:SetBackdropBorderColor(0, 0, 0, 0)
@@ -24,7 +24,7 @@ function NavItemW:Initialize(parent, text)
     bar:Hide()
 
     local fs = b:CreateFontString(nil, "ARTWORK", "GameFontNormal")
-    fs:SetPoint("LEFT", 14, 0)
+    fs:SetPoint("LEFT", 16, 0)
     fs:SetText(text)
     fs:SetTextColor(Theme.Unpack("textDim"))
 
@@ -32,11 +32,13 @@ function NavItemW:Initialize(parent, text)
     p.active = false
     local function render()
         if p.active then
-            b:SetBackdropColor(Theme.Unpack("accentSoft"))
+            b:SetBackdropColor(Theme.Unpack("accentSoft", 0.18))
+            b:SetBackdropBorderColor(Theme.Unpack("border"))
             fs:SetTextColor(Theme.Unpack("accent"))
             bar:Show()
         else
             b:SetBackdropColor(0, 0, 0, 0)
+            b:SetBackdropBorderColor(0, 0, 0, 0)
             fs:SetTextColor(Theme.Unpack("textDim"))
             bar:Hide()
         end
@@ -44,7 +46,8 @@ function NavItemW:Initialize(parent, text)
     p.render = render
     b:SetScript("OnEnter", function()
         if not p.active then
-            b:SetBackdropColor(Theme.Unpack("panel2"))
+            b:SetBackdropColor(Theme.Unpack("controlHover", 0.72))
+            b:SetBackdropBorderColor(Theme.Unpack("border"))
             fs:SetTextColor(Theme.Unpack("text"))
         end
     end)

@@ -20,7 +20,7 @@ function SliderW:Initialize(parent, opts)
     local fmt   = opts.format or "%.2f"
 
     local f = CreateFrame("Frame", nil, unwrap(parent))
-    f:SetSize(width, 34)
+    f:SetSize(width, 38)
 
     if opts.label then
         local label = Widgets.Text:New(f, opts.label, "text", "GameFontHighlightSmall")
@@ -38,18 +38,18 @@ function SliderW:Initialize(parent, opts)
     slider:SetObeyStepOnDrag(true)
 
     local track = f:CreateTexture(nil, "ARTWORK")
-    track:SetColorTexture(Theme.Unpack("panel2"))
-    track:SetHeight(4)
+    track:SetColorTexture(Theme.Unpack("control"))
+    track:SetHeight(6)
     track:SetPoint("LEFT", slider, "LEFT", 0, 0)
     track:SetPoint("RIGHT", slider, "RIGHT", 0, 0)
     local fill = f:CreateTexture(nil, "OVERLAY")
     fill:SetColorTexture(Theme.Unpack("accent"))
-    fill:SetHeight(4)
+    fill:SetHeight(6)
     fill:SetPoint("LEFT", track, "LEFT", 0, 0)
 
     local thumb = slider:CreateTexture(nil, "OVERLAY")
     thumb:SetColorTexture(Theme.Unpack("accent"))
-    thumb:SetSize(10, 16)
+    thumb:SetSize(12, 18)
     slider:SetThumbTexture(thumb)
 
     local p = self:_p()

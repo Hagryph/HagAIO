@@ -53,6 +53,17 @@ Theme.rgb = {
     textDim      = Color:New(0.541, 0.576, 0.639, 1.00),  -- #8a93a3
     textFaint    = Color:New(0.357, 0.392, 0.451, 1.00),  -- #5b6473
     purple       = Color:New(0.706, 0.514, 0.878, 1.00),  -- #b483e0
+
+    -- Surface roles used by the modern application shell. The original names above remain the
+    -- low-level palette; these roles make hierarchy intentional instead of letting every caller
+    -- choose an arbitrary shade. WoW has no CSS blur/radius, so elevation comes from restrained
+    -- shadows, highlights and borders composed by the widget layer.
+    surface      = Color:New(0.078, 0.090, 0.118, 0.98),
+    surfaceRaised= Color:New(0.094, 0.108, 0.141, 0.99),
+    control      = Color:New(0.110, 0.125, 0.161, 0.98),
+    controlHover = Color:New(0.141, 0.161, 0.204, 0.98),
+    shadow       = Color:New(0.000, 0.000, 0.000, 0.52),
+    highlight    = Color:New(0.290, 0.702, 0.902, 0.09),
 }
 
 -- Flat 8x8 white texture: tinted to any colour for solid fills + hairline

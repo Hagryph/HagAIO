@@ -157,12 +157,13 @@ UI/
   Widgets\Nav.lua          A vertical NAVIGATION list: section labels + selectable items (optionally indented as
   Widgets\NavItem.lua      Left-rail navigation item with active accent bar + tint
   Widgets\OverwatchHealthBarSkin.lua Ten adjacent StatusBars rendered through the Overwatch slanted-fragment texture
+  Widgets\PageHeader.lua   Application-style page heading: a raised header band with an accent rail, title, concise
   Widgets\Panel.lua        A bordered, themed container Frame
   Widgets\ProgressBar.lua  A themed horizontal progress bar (a StatusBar with an accent fill over a panel2 track)
   Widgets\ScrollArea.lua   A vertically scrollable area with a CUSTOM themed scrollbar (no Blizzard template, so no grey
   Widgets\SectionLabel.lua Uppercase, dim, lightly spaced section label (LoL's letter-spaced caps)
   Widgets\Segmented.lua    Segmented selector (LoL "view-switch"): a row of option buttons, active one
-  Widgets\SettingsGroup.lua A titled settings GROUP: a bordered panel with a clickable header strip (chevron + `title`) and a
+  Widgets\SettingsGroup.lua A titled settings GROUP: a raised application panel with a header strip (chevron + `title`) and a
   Widgets\Slider.lua       Themed horizontal slider with a track, an accent fill, a draggable thumb, and a live numeric
   Widgets\StatusBar.lua    A bare StatusBar widget for HUD fills
   Widgets\Text.lua         (no description)

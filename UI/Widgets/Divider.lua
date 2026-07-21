@@ -10,7 +10,7 @@ local unwrap, style, adopt = _wb.unwrap, _wb.style, _wb.adopt
 local DividerW = ns.Class.new("Divider", TextureWidget)
 function DividerW:Initialize(parent)
     local t = unwrap(parent):CreateTexture(nil, "ARTWORK")
-    t:SetColorTexture(Theme.Unpack("border"))
+    t:SetColorTexture(Theme.Unpack("borderStrong", 0.28))
     t:SetHeight(1)
     self:_Attach(t)
 end

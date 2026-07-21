@@ -13,9 +13,9 @@ function TextButtonW:Initialize(parent, text)
     local b = CreateFrame("Button", nil, unwrap(parent))
     local fs = Widgets.Text:New(b, text, "accent", "GameFontNormalSmall")
     fs:SetPoint("CENTER")
-    b:SetSize(math.max(40, fs:GetStringWidth() + 12), 20)
-    b:SetScript("OnEnter", function() fs:SetTextColor(Theme.Unpack("text")) end)
-    b:SetScript("OnLeave", function() fs:SetTextColor(Theme.Unpack("accent")) end)
+    b:SetSize(math.max(42, fs:GetStringWidth() + 14), 22)
+    b:SetScript("OnEnter", function() fs:SetTextColor(Theme.Unpack("text")); fs:SetShadowColor(Theme.Unpack("accent", 0.35)); fs:SetShadowOffset(1, -1) end)
+    b:SetScript("OnLeave", function() fs:SetTextColor(Theme.Unpack("accent")); fs:SetShadowColor(0, 0, 0, 0); fs:SetShadowOffset(0, 0) end)
     self:_Attach(b)
     self:_p().label = fs
 end

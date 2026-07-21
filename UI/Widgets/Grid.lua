@@ -60,7 +60,7 @@ function GridW:Initialize(parent, opts)
     -- own texture. This is what lifts the table off the page background.
     if dataMode then
         local bg = g:CreateTexture(nil, "BACKGROUND", nil, -2)
-        bg:SetAllPoints(); bg:SetColorTexture(Theme.Unpack("panel"))
+        bg:SetAllPoints(); bg:SetColorTexture(Theme.Unpack("surface"))
         local function edge(p1, x1, y1, p2, x2, y2, w, h)
             local t = g:CreateTexture(nil, "BACKGROUND", nil, -1)
             t:SetColorTexture(Theme.Unpack("border"))
@@ -95,7 +95,7 @@ function GridW:Initialize(parent, opts)
         -- the band: a filled strip so the column labels sit ON something, not in the void
         header.bg = header:CreateTexture(nil, "BACKGROUND")
         header.bg:SetAllPoints()
-        header.bg:SetColorTexture(Theme.Unpack("panel2", 0.9))
+        header.bg:SetColorTexture(Theme.Unpack("surfaceRaised", 0.96))
         -- accent underline directly below the band (the LoL signature line), then a breathing gap
         headerDiv = g:CreateTexture(nil, "ARTWORK")
         headerDiv:SetHeight(1)
@@ -239,8 +239,8 @@ function GridW:Initialize(parent, opts)
                 local stripe = striped and (i % 2 == 0)
                 local function paint(hover)
                     if rd.active then r.bg:SetColorTexture(Theme.Unpack("accentSoft"))
-                    elseif hover then r.bg:SetColorTexture(Theme.Unpack("panelHover", 0.55))
-                    elseif stripe then r.bg:SetColorTexture(Theme.Unpack("panel2", 0.45))
+                    elseif hover then r.bg:SetColorTexture(Theme.Unpack("controlHover", 0.62))
+                    elseif stripe then r.bg:SetColorTexture(Theme.Unpack("control", 0.38))
                     else r.bg:SetColorTexture(0, 0, 0, 0) end
                 end
                 if rd.onClick then
