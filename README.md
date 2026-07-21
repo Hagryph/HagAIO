@@ -145,7 +145,7 @@ UI/
   Widgets\Avatar.lua       A framed portrait/avatar: a themed bordered box whose texture fills it (inset by the border),
   Widgets\Button.lua       A themed PUSH button: a bordered box with a centred label that lights to accent on hover
   Widgets\CollapsibleSection.lua Collapsible section ("accordion"): a clickable header with a +/- chevron that
-  Widgets\ColorSwatch.lua  Colour swatch button: shows the current colour, opens the Blizzard colour
+  Widgets\ColorSwatch.lua  Colour swatch button + HagAIO colour dialog
   Widgets\Divider.lua      1px horizontal hairline (anchor + width set by caller)
   Widgets\Dropdown.lua     HagAIO-themed dropdown with a dark popout, restrained accent state, and no
   Widgets\Fill.lua         A plain SOLID-COLOUR texture region (a tint/overlay/marker)
