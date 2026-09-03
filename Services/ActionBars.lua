@@ -34,13 +34,12 @@ local SLOTS_PER_BAR = 12
 
 -- One independent registration returned to a glow owner. Registration and activation are separate:
 -- callers create the frame/style once, then only flip a plain active bit in their hot paths.
-function GlowClaim:Initialize(actionBars, button, owner, order, opts)
+function GlowClaim:Initialize(actionBars, button, owner, opts)
     local p = self:_p()
     p.actionBars = actionBars
     p.button = button
     p.owner = owner
-    p.sequence = order
-    p.order = opts.order or order
+    p.activationOrder = nil
     p.priority = opts.priority
     p.effect = opts.effect
     p.color = opts.color
@@ -50,8 +49,7 @@ function GlowClaim:Initialize(actionBars, button, owner, order, opts)
 end
 
 function GlowClaim:Priority() return self:_p().priority end
-function GlowClaim:Order() return self:_p().order end
-function GlowClaim:Sequence() return self:_p().sequence end
+function GlowClaim:ActivationOrder() return self:_p().activationOrder end
 function GlowClaim:Effect() return self:_p().effect end
 function GlowClaim:Color() return self:_p().color end
 function GlowClaim:Alpha() return self:_p().alpha end
@@ -173,12 +171,6 @@ function ActionBars:_GlowOptions(opts, current)
     if priority == nil then priority = current and current:Priority() or 0 end
     assert(type(priority) == "number", "ActionBars:RegisterGlow: priority must be a number")
 
-    local order = opts.order
-    local orderSecret = issecretvalue and issecretvalue(order)
-    assert(not orderSecret, "ActionBars:RegisterGlow: order cannot be secret")
-    if order == nil then order = current and current:Order() or nil end
-    assert(order == nil or type(order) == "number", "ActionBars:RegisterGlow: order must be a number")
-
     local effect = opts.effect
     local effectSecret = issecretvalue and issecretvalue(effect)
     assert(not effectSecret, "ActionBars:RegisterGlow: effect cannot be secret")
@@ -190,7 +182,7 @@ function ActionBars:_GlowOptions(opts, current)
     assert(not colorSecret, "ActionBars:RegisterGlow: color cannot be secret")
     if color == nil then color = current and current:Color() or ns.Theme.rgb.accent end
     assert(ns.Color.Is(color), "ActionBars:RegisterGlow: color must be an ns.Color")
-    return { priority = priority, order = order, effect = effect, color = color }
+    return { priority = priority, effect = effect, color = color }
 end
 
 function ActionBars:_GlowState(button)
@@ -210,9 +202,8 @@ function ActionBars:_GlowWinner(state)
     local winner
     for _, claim in pairs(state.claims) do
         if claim:IsActive() and (not winner or claim:Priority() > winner:Priority()
-            or (claim:Priority() == winner:Priority() and claim:Order() < winner:Order())
-            or (claim:Priority() == winner:Priority() and claim:Order() == winner:Order()
-                and claim:Sequence() < winner:Sequence())) then
+            or (claim:Priority() == winner:Priority()
+                and claim:ActivationOrder() < winner:ActivationOrder())) then
             winner = claim
         end
     end
@@ -234,9 +225,8 @@ function ActionBars:_ResolveGlow(state, changedClaim)
 end
 
 -- Pre-register or update one owner's glow claim for a button. This is the ONLY path that creates the
--- visual. Higher numeric priority wins, then lower order; registration sequence is the final tie-break.
--- opts = { priority = number (0), order = number (registration sequence),
---          effect = ns.ActionButtonGlowEffect.*, color = ns.Color }
+-- visual. Higher numeric priority wins; ties follow the order the CURRENT claims were activated.
+-- opts = { priority = number (0), effect = ns.ActionButtonGlowEffect.*, color = ns.Color }
 function ActionBars:RegisterGlow(button, owner, opts)
     assert(button ~= nil, "ActionBars:RegisterGlow: button is required")
     assert(type(owner) == "table", "ActionBars:RegisterGlow: owner must be an instance")
@@ -247,12 +237,9 @@ function ActionBars:RegisterGlow(button, owner, opts)
     state = state or self:_GlowState(button)
     if claim then
         local p = claim:_p()
-        p.priority, p.order, p.effect, p.color =
-            normalized.priority, normalized.order, normalized.effect, normalized.color
+        p.priority, p.effect, p.color = normalized.priority, normalized.effect, normalized.color
     else
-        local p = self:_p()
-        p.nextGlowOrder = (p.nextGlowOrder or 0) + 1
-        claim = GlowClaim:New(self, button, owner, p.nextGlowOrder, normalized)
+        claim = GlowClaim:New(self, button, owner, normalized)
         state.claims[owner] = claim
     end
     self:_ResolveGlow(state, claim)
@@ -288,11 +275,18 @@ function ActionBars:_SetGlowActive(claim, active)
     active = active and true or false
     if cp.active == active then return end
     cp.active = active
+    if active then
+        local p = self:_p()
+        p.nextGlowActivation = (p.nextGlowActivation or 0) + 1
+        cp.activationOrder = p.nextGlowActivation
+    else
+        cp.activationOrder = nil
+    end
     self:_ResolveGlow(state, claim)
 end
 
 -- Teardown removes the registration entirely. Removing an active winner immediately reveals the
--- next active priority/order candidate; removing an inactive or losing registration is inert.
+-- next active priority/activation-order candidate; removing an inactive or losing registration is inert.
 function ActionBars:UnregisterGlow(button, owner)
     local claim = button and owner and self:_RegisteredGlow(button, owner)
     if claim then claim:Unregister() end
@@ -306,6 +300,7 @@ function ActionBars:_UnregisterGlowClaim(claim)
     local state = states and states[cp.button]
     if state and state.claims[cp.owner] == claim then state.claims[cp.owner] = nil end
     cp.active = false
+    cp.activationOrder = nil
     cp.registered = false
     if state then self:_ResolveGlow(state) end
 end
