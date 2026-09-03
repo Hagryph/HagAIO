@@ -143,6 +143,7 @@ UI/
   ConfirmationWindow.lua   Shared themed confirmation window for destructive or replacing actions
   CopyWindow.lua           A themed, reusable "copy this text out of the game" window
   SettingsWindow.lua       The unique, themed settings menu (replaces the default Blizzard options
+  Widgets\ActionButtonGlow.lua One colour-accurate action-button outline with three presentation effects
   Widgets\Avatar.lua       A framed portrait/avatar: a themed bordered box whose texture fills it (inset by the border),
   Widgets\Button.lua       A themed PUSH button: a filled secondary action by default, or a cyan-tonal
   Widgets\CollapsibleSection.lua Collapsible section ("accordion"): a clickable header with a +/- chevron that

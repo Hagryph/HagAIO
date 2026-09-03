@@ -12,6 +12,8 @@ local S = dofile("Test/support.lua")
 --     and finds them.
 --   * DisplayCount nil-guards: returns a safe value rather than erroring when C_ActionBar / the
 --     looked-up slot is absent.
+--   * Glow claims are pre-registered, independently activated, and arbitrated by descending priority
+--     then ascending registration order; exactly one cached visual represents the winning claim.
 
 -- Install action-button frames as _G[prefix..index] = { action = slot }. Each entry maps a button
 -- name to the slot number it currently shows; returns the named frames keyed by name for assertions.
@@ -38,7 +40,7 @@ local function placeButtons(buttons)
 end
 
 -- Fresh ns with the ActionBars service loaded. Globals are reset so cases don't leak into each other.
-local function setup()
+local function setup(sourceTransform)
     clearButtons()
     _G.HasAction = function() return false end
     _G.GetActionInfo = function() return nil end
@@ -46,8 +48,38 @@ local function setup()
     _G.GetMacroInfo = function() return nil end
     _G.FindBaseSpellByID = nil
     _G.C_ActionBar = nil
+    _G.issecretvalue = nil
     local ns = S.newNs()
-    S.load(ns, "Services/ActionBars.lua")
+    S.load(ns, "Lib/Color.lua")
+    ns.Theme.rgb = { accent = ns.Color:New(0.29, 0.70, 0.90) }
+    ns.UI.Widgets = {}
+    ns._glowViews = {}
+    ns.UI.Widgets.ActionButtonGlow = {
+        New = function(_, button, target)
+            local view = {
+                button = button,
+                target = target,
+                shown = false,
+                renders = 0,
+            }
+            function view:SetEffect(effect) self.effect = effect; return self end
+            function view:SetColor(color) self.color = color; self.renders = self.renders + 1; return self end
+            function view:SetAlpha(alpha) self.alpha = alpha; return self end
+            function view:Show() self.shown = true; return self end
+            function view:Hide() self.shown = false; return self end
+            ns._glowViews[#ns._glowViews + 1] = view
+            return view
+        end,
+    }
+    if sourceTransform then
+        local file = assert(io.open("Services/ActionBars.lua", "rb"))
+        local source = file:read("*a")
+        file:close()
+        source = sourceTransform(source)
+        assert((loadstring or load)(source, "@Services/ActionBars.lua"))("HagAIO", ns)
+    else
+        S.load(ns, "Services/ActionBars.lua")
+    end
     return ns._captured["ActionBars"], ns
 end
 
@@ -199,6 +231,178 @@ describe("ActionBars", function()
                 GetActionDisplayCount = function(slot) if slot == 42 then return "3" end end,
             }
             assert.are.equal("3", ab:DisplayCount(100))
+        end)
+    end)
+
+    describe("glow registrations", function()
+        it("pre-registers one hidden visual and only activates an existing claim", function()
+            local ab, ns = setup()
+            local button, owner = { icon = {} }, {}
+            local claim = ab:RegisterGlow(button, owner)
+
+            assert.are.equal(1, #ns._glowViews)
+            assert.is_false(ns._glowViews[1].shown)
+            assert.is_false(claim:IsActive())
+            assert.is_true(claim:IsRegistered())
+
+            assert.has_error(function() ab:Glow(button, {}) end,
+                "ActionBars:Glow: owner has no registered glow for this button")
+            assert.are.equal(1, #ns._glowViews) -- failed activation did not lazily register
+
+            assert.are.equal(claim, ab:Glow(button, owner))
+            assert.is_true(claim:IsActive())
+            assert.is_true(ns._glowViews[1].shown)
+            assert.are.equal(ns.ActionButtonGlowEffect.PULSE, ns._glowViews[1].effect)
+            assert.are.equal(ns.Theme.rgb.accent, ns._glowViews[1].color)
+
+            ab:Unglow(button, owner)
+            assert.is_false(claim:IsActive())
+            assert.is_false(ns._glowViews[1].shown)
+            assert.is_true(claim:IsRegistered()) -- deactivation keeps the pre-registration
+            assert.are.equal(1, #ns._glowViews)
+        end)
+
+        it("shows only highest priority, breaking ties by first registration", function()
+            local ab, ns = setup()
+            local button = { icon = {} }
+            local owner1, owner2, owner3 = {}, {}, {}
+            local color1 = ns.Color:New(1, 0, 0)
+            local color2 = ns.Color:New(0, 1, 0)
+            local color3 = ns.Color:New(0, 0, 1)
+            local claim1 = ab:RegisterGlow(button, owner1, {
+                priority = 2, order = 1, effect = ns.ActionButtonGlowEffect.STEADY, color = color1,
+            })
+            local claim2 = ab:RegisterGlow(button, owner2, {
+                priority = 3, order = 2, effect = ns.ActionButtonGlowEffect.FLASH, color = color2,
+            })
+            local claim3 = ab:RegisterGlow(button, owner3, {
+                priority = 3, order = 3, effect = ns.ActionButtonGlowEffect.PULSE, color = color3,
+            })
+            local view = ns._glowViews[1]
+
+            assert.are.equal(1, #ns._glowViews) -- claims share one visual; effects never overlay
+            claim1:Activate()
+            claim3:Activate()
+            claim2:Activate() -- #2's lower order wins their priority tie
+            assert.are.equal(color2, view.color)
+            assert.are.equal(ns.ActionButtonGlowEffect.FLASH, view.effect)
+            local renders = view.renders
+
+            claim1:Deactivate() -- lower-priority #1 was not visible
+            assert.are.equal(renders, view.renders)
+            assert.are.equal(color2, view.color)
+
+            claim2:Deactivate() -- #3 is now the highest active registration
+            assert.are.equal(color3, view.color)
+            assert.are.equal(ns.ActionButtonGlowEffect.PULSE, view.effect)
+            assert.is_true(view.shown)
+
+            claim3:Deactivate()
+            assert.is_false(view.shown)
+        end)
+
+        it("keeps registration order across deactivation and reactivation", function()
+            local ab, ns = setup()
+            local button, firstOwner, secondOwner = {}, {}, {}
+            local first = ab:RegisterGlow(button, firstOwner, { priority = 5, color = ns.Color:New(1, 0, 0) })
+            local second = ab:RegisterGlow(button, secondOwner, { priority = 5, color = ns.Color:New(0, 1, 0) })
+            first:Activate()
+            second:Activate()
+            assert.are.equal(first:Color(), ns._glowViews[1].color)
+
+            first:Deactivate()
+            assert.are.equal(second:Color(), ns._glowViews[1].color)
+            first:Activate()
+            assert.are.equal(first:Color(), ns._glowViews[1].color)
+            assert.are.equal(1, #ns._glowViews)
+        end)
+
+        it("updates an owner's existing registration without duplicating it or resetting its order", function()
+            local ab, ns = setup()
+            local button, owner1, owner2 = {}, {}, {}
+            local first = ab:RegisterGlow(button, owner1, { priority = 2 })
+            local second = ab:RegisterGlow(button, owner2, { priority = 3 })
+            first:Activate()
+            second:Activate()
+
+            local color = ns.Color:New(0.8, 0.4, 0.1)
+            local same = ab:RegisterGlow(button, owner1, {
+                priority = 3, effect = ns.ActionButtonGlowEffect.STEADY, color = color,
+            })
+            assert.are.equal(first, same)
+            assert.are.equal(1, #ns._glowViews)
+            assert.are.equal(color, ns._glowViews[1].color) -- #1 keeps the older tie-break order
+            assert.are.equal(ns.ActionButtonGlowEffect.STEADY, ns._glowViews[1].effect)
+        end)
+
+        it("unregisters independently and falls through to the next active claim", function()
+            local ab, ns = setup()
+            local button, owner1, owner2 = {}, {}, {}
+            local lower = ab:RegisterGlow(button, owner1, { priority = 1, color = ns.Color:New(1, 0, 0) })
+            local higher = ab:RegisterGlow(button, owner2, { priority = 2, color = ns.Color:New(0, 1, 0) })
+            lower:Activate()
+            higher:Activate()
+            assert.are.equal(higher:Color(), ns._glowViews[1].color)
+
+            higher:Unregister()
+            assert.is_false(higher:IsRegistered())
+            assert.is_false(higher:IsActive())
+            assert.are.equal(lower:Color(), ns._glowViews[1].color)
+
+            assert.are.equal(lower, ab:UnregisterGlow(button, owner1))
+            assert.is_false(ns._glowViews[1].shown)
+            assert.are.equal(1, #ns._glowViews) -- cached visual remains reusable
+        end)
+
+        it("passes a secret alpha directly to the winning visual sink", function()
+            local ab, ns = setup()
+            local secret = { __secret = true }
+            _G.issecretvalue = function(value) return rawequal(value, secret) end
+            local claim = ab:RegisterGlow({}, {}, { priority = 1 }):Activate()
+
+            local ok = pcall(function() claim:SetAlpha(secret) end)
+            assert.is_true(ok)
+            assert.is_true(rawequal(secret, ns._glowViews[1].alpha))
+            assert.is_true(rawequal(secret, claim:Alpha()))
+        end)
+
+        it("rejects secret priorities and malformed presentation options before creating a visual", function()
+            local ab, ns = setup()
+            local secret = { __secret = true }
+            _G.issecretvalue = function(value) return rawequal(value, secret) end
+
+            assert.has_error(function() ab:RegisterGlow({}, {}, { priority = secret }) end,
+                "ActionBars:RegisterGlow: priority cannot be secret")
+            assert.has_error(function() ab:RegisterGlow({}, {}, { order = secret }) end,
+                "ActionBars:RegisterGlow: order cannot be secret")
+            assert.has_error(function() ab:RegisterGlow({}, {}, { effect = "sparkles" }) end,
+                "ActionBars:RegisterGlow: unknown effect")
+            assert.has_error(function() ab:RegisterGlow({}, {}, { color = { 1, 1, 1 } }) end,
+                "ActionBars:RegisterGlow: color must be an ns.Color")
+            assert.are.equal(0, #ns._glowViews)
+        end)
+
+        it("classifies secret options before the VM can reject nil comparisons", function()
+            local secret = { __secret = true }
+            _G.__HagAIOGlowNil = function(value)
+                if rawequal(value, secret) then error("attempt to compare a secret value", 2) end
+                return value == nil
+            end
+            local ab, ns = setup(function(source)
+                for _, field in ipairs({ "priority", "order", "effect", "color" }) do
+                    source = source:gsub(field .. " == nil", "__HagAIOGlowNil(" .. field .. ")")
+                end
+                return source
+            end)
+            _G.issecretvalue = function(value) return rawequal(value, secret) end
+
+            for _, field in ipairs({ "priority", "order", "effect", "color" }) do
+                local options = { [field] = secret }
+                assert.has_error(function() ab:RegisterGlow({}, {}, options) end,
+                    "ActionBars:RegisterGlow: " .. field .. " cannot be secret")
+            end
+            assert.are.equal(0, #ns._glowViews)
+            _G.__HagAIOGlowNil = nil
         end)
     end)
 end)

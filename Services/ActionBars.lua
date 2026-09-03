@@ -9,6 +9,14 @@ local Class = ns.Class
 -- events themselves (ACTIONBAR_SLOT_CHANGED, etc.) and re-query on change.
 
 local ActionBars = Class.new("ActionBars", ns.Service)
+local GlowClaim = Class.new("ActionButtonGlowClaim")
+
+-- Public, typo-safe effect choices for RegisterGlow(..., { effect = ... }).
+ns.ActionButtonGlowEffect = ns.Enum.new("ActionButtonGlowEffect", {
+    STEADY = "steady",
+    PULSE = "pulse",
+    FLASH = "flash",
+})
 
 -- The standard retail action bars (8 x 12 buttons). Pet/stance bars are excluded
 -- (class abilities don't live there).
@@ -23,6 +31,56 @@ local BAR_PREFIXES = {
     "MultiBar7Button",
 }
 local SLOTS_PER_BAR = 12
+
+-- One independent registration returned to a glow owner. Registration and activation are separate:
+-- callers create the frame/style once, then only flip a plain active bit in their hot paths.
+function GlowClaim:Initialize(actionBars, button, owner, order, opts)
+    local p = self:_p()
+    p.actionBars = actionBars
+    p.button = button
+    p.owner = owner
+    p.sequence = order
+    p.order = opts.order or order
+    p.priority = opts.priority
+    p.effect = opts.effect
+    p.color = opts.color
+    p.alpha = 1
+    p.active = false
+    p.registered = true
+end
+
+function GlowClaim:Priority() return self:_p().priority end
+function GlowClaim:Order() return self:_p().order end
+function GlowClaim:Sequence() return self:_p().sequence end
+function GlowClaim:Effect() return self:_p().effect end
+function GlowClaim:Color() return self:_p().color end
+function GlowClaim:Alpha() return self:_p().alpha end
+function GlowClaim:IsActive() return self:_p().active end
+function GlowClaim:IsRegistered() return self:_p().registered end
+
+function GlowClaim:SetAlpha(alpha)
+    local p = self:_p()
+    if p.registered then p.actionBars:_SetGlowAlpha(self, alpha) end
+    return self
+end
+
+function GlowClaim:Activate()
+    local p = self:_p()
+    if p.registered then p.actionBars:_SetGlowActive(self, true) end
+    return self
+end
+
+function GlowClaim:Deactivate()
+    local p = self:_p()
+    if p.registered then p.actionBars:_SetGlowActive(self, false) end
+    return self
+end
+
+function GlowClaim:Unregister()
+    local p = self:_p()
+    if p.registered then p.actionBars:_UnregisterGlowClaim(self) end
+    return self
+end
 
 local function buttonSlot(btn)
     if not btn then return nil end
@@ -105,6 +163,167 @@ function ActionBars:DisplayCount(spellID)
     local slots = C_ActionBar.FindSpellActionButtons(spellID)
     if slots and slots[1] then return C_ActionBar.GetActionDisplayCount(slots[1]) end
     return nil
+end
+
+function ActionBars:_GlowOptions(opts, current)
+    opts = opts or {}
+    local priority = opts.priority
+    local prioritySecret = issecretvalue and issecretvalue(priority)
+    assert(not prioritySecret, "ActionBars:RegisterGlow: priority cannot be secret")
+    if priority == nil then priority = current and current:Priority() or 0 end
+    assert(type(priority) == "number", "ActionBars:RegisterGlow: priority must be a number")
+
+    local order = opts.order
+    local orderSecret = issecretvalue and issecretvalue(order)
+    assert(not orderSecret, "ActionBars:RegisterGlow: order cannot be secret")
+    if order == nil then order = current and current:Order() or nil end
+    assert(order == nil or type(order) == "number", "ActionBars:RegisterGlow: order must be a number")
+
+    local effect = opts.effect
+    local effectSecret = issecretvalue and issecretvalue(effect)
+    assert(not effectSecret, "ActionBars:RegisterGlow: effect cannot be secret")
+    if effect == nil then effect = current and current:Effect() or ns.ActionButtonGlowEffect.PULSE end
+    assert(ns.Enum.has(ns.ActionButtonGlowEffect, effect), "ActionBars:RegisterGlow: unknown effect")
+
+    local color = opts.color
+    local colorSecret = issecretvalue and issecretvalue(color)
+    assert(not colorSecret, "ActionBars:RegisterGlow: color cannot be secret")
+    if color == nil then color = current and current:Color() or ns.Theme.rgb.accent end
+    assert(ns.Color.Is(color), "ActionBars:RegisterGlow: color must be an ns.Color")
+    return { priority = priority, order = order, effect = effect, color = color }
+end
+
+function ActionBars:_GlowState(button)
+    local p = self:_p()
+    p.glows = p.glows or setmetatable({}, { __mode = "k" })
+    local state = p.glows[button]
+    if state then return state end
+    state = {
+        claims = {},
+        view = ns.UI.Widgets.ActionButtonGlow:New(button, button.icon or button),
+    }
+    p.glows[button] = state
+    return state
+end
+
+function ActionBars:_GlowWinner(state)
+    local winner
+    for _, claim in pairs(state.claims) do
+        if claim:IsActive() and (not winner or claim:Priority() > winner:Priority()
+            or (claim:Priority() == winner:Priority() and claim:Order() < winner:Order())
+            or (claim:Priority() == winner:Priority() and claim:Order() == winner:Order()
+                and claim:Sequence() < winner:Sequence())) then
+            winner = claim
+        end
+    end
+    return winner
+end
+
+function ActionBars:_ResolveGlow(state, changedClaim)
+    local previous = state.winner
+    local winner = self:_GlowWinner(state)
+    state.winner = winner
+    if not winner then
+        state.view:Hide()
+    elseif winner ~= previous or winner == changedClaim then
+        state.view:SetEffect(winner:Effect())
+        state.view:SetColor(winner:Color())
+        state.view:SetAlpha(winner:Alpha())
+        state.view:Show()
+    end
+end
+
+-- Pre-register or update one owner's glow claim for a button. This is the ONLY path that creates the
+-- visual. Higher numeric priority wins, then lower order; registration sequence is the final tie-break.
+-- opts = { priority = number (0), order = number (registration sequence),
+--          effect = ns.ActionButtonGlowEffect.*, color = ns.Color }
+function ActionBars:RegisterGlow(button, owner, opts)
+    assert(button ~= nil, "ActionBars:RegisterGlow: button is required")
+    assert(type(owner) == "table", "ActionBars:RegisterGlow: owner must be an instance")
+    local states = self:_p().glows
+    local state = states and states[button]
+    local claim = state and state.claims[owner]
+    local normalized = self:_GlowOptions(opts, claim)
+    state = state or self:_GlowState(button)
+    if claim then
+        local p = claim:_p()
+        p.priority, p.order, p.effect, p.color =
+            normalized.priority, normalized.order, normalized.effect, normalized.color
+    else
+        local p = self:_p()
+        p.nextGlowOrder = (p.nextGlowOrder or 0) + 1
+        claim = GlowClaim:New(self, button, owner, p.nextGlowOrder, normalized)
+        state.claims[owner] = claim
+    end
+    self:_ResolveGlow(state, claim)
+    return claim
+end
+
+function ActionBars:_RegisteredGlow(button, owner)
+    local states = self:_p().glows
+    local state = states and states[button]
+    return state and state.claims[owner]
+end
+
+-- Runtime actions: activate/deactivate an EXISTING registration without allocating a frame or claim.
+function ActionBars:Glow(button, owner)
+    local claim = self:_RegisteredGlow(button, owner)
+    assert(claim, "ActionBars:Glow: owner has no registered glow for this button")
+    claim:Activate()
+    return claim
+end
+
+function ActionBars:Unglow(button, owner)
+    local claim = button and owner and self:_RegisteredGlow(button, owner)
+    if claim then claim:Deactivate() end
+    return claim
+end
+
+function ActionBars:_SetGlowActive(claim, active)
+    local cp = claim:_p()
+    if not cp.registered then return end
+    local states = self:_p().glows
+    local state = states and states[cp.button]
+    if not (state and state.claims[cp.owner] == claim) then return end
+    active = active and true or false
+    if cp.active == active then return end
+    cp.active = active
+    self:_ResolveGlow(state, claim)
+end
+
+-- Teardown removes the registration entirely. Removing an active winner immediately reveals the
+-- next active priority/order candidate; removing an inactive or losing registration is inert.
+function ActionBars:UnregisterGlow(button, owner)
+    local claim = button and owner and self:_RegisteredGlow(button, owner)
+    if claim then claim:Unregister() end
+    return claim
+end
+
+
+function ActionBars:_UnregisterGlowClaim(claim)
+    local cp = claim:_p()
+    if not cp.registered then return end
+    local states = self:_p().glows
+    local state = states and states[cp.button]
+    if state and state.claims[cp.owner] == claim then state.claims[cp.owner] = nil end
+    cp.active = false
+    cp.registered = false
+    if state then self:_ResolveGlow(state) end
+end
+
+-- Alpha is a separate operation so a current Unit*Percent curve result can travel from Blizzard
+-- directly to Frame:SetAlpha without Lua comparing or branching on the secret value.
+function ActionBars:_SetGlowAlpha(claim, alpha)
+    local secret = issecretvalue and issecretvalue(alpha)
+    if not secret then
+        assert(type(alpha) == "number" and alpha >= 0 and alpha <= 1,
+            "ActionButtonGlowClaim:SetAlpha: alpha must be between 0 and 1")
+    end
+    local cp = claim:_p()
+    cp.alpha = alpha
+    local states = self:_p().glows
+    local state = states and states[cp.button]
+    if state and state.winner == claim then state.view:SetAlpha(alpha) end
 end
 
 -- Grey/un-grey a button with a reusable dark overlay (doesn't fight Blizzard's own
