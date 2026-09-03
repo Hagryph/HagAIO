@@ -299,7 +299,6 @@ function ActionBars:UnregisterGlow(button, owner)
     return claim
 end
 
-
 function ActionBars:_UnregisterGlowClaim(claim)
     local cp = claim:_p()
     if not cp.registered then return end

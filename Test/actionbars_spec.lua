@@ -12,8 +12,8 @@ local S = dofile("Test/support.lua")
 --     and finds them.
 --   * DisplayCount nil-guards: returns a safe value rather than erroring when C_ActionBar / the
 --     looked-up slot is absent.
---   * Glow claims are pre-registered, independently activated, and arbitrated by descending priority
---     then ascending registration order; exactly one cached visual represents the winning claim.
+--   * Glow claims are pre-registered, independently activated, and arbitrated by descending priority,
+--     ascending explicit order, then registration sequence; one cached visual represents the winner.
 
 -- Install action-button frames as _G[prefix..index] = { action = slot }. Each entry maps a button
 -- name to the slot number it currently shows; returns the named frames keyed by name for assertions.
@@ -262,7 +262,7 @@ describe("ActionBars", function()
             assert.are.equal(1, #ns._glowViews)
         end)
 
-        it("shows only highest priority, breaking ties by first registration", function()
+        it("shows only highest priority, then the lowest order", function()
             local ab, ns = setup()
             local button = { icon = {} }
             local owner1, owner2, owner3 = {}, {}, {}
