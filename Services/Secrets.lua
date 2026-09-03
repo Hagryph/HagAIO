@@ -17,7 +17,12 @@ local Class = ns.Class
 --   ns.Secrets:Text(fontString, maybeSecret)   -- paint a value we may not read
 --   if ns.Secrets:Restricted() then ...        -- in M+/raid/PvP secret content?
 
-local Secrets = Class.new("Secrets", ns.Service)
+local Secrets = Class.new("Secrets", ns.Service, {
+    statics = {
+        restrictionNames = { "Combat", "Encounter", "ChallengeMode", "PvPMatch", "Map" },
+    },
+})
+local S = Class.statics(Secrets)
 
 -- True if v is a secret value. Safe when the API is absent (pre-12.0 / test paths).
 function Secrets:Is(v)
@@ -28,16 +33,24 @@ end
 -- tonumber on a secret string throws) and never errors. Accepts real numbers or
 -- non-secret numeric strings -- action-button counts come back as strings.
 function Secrets:Number(v)
-    if v == nil or self:Is(v) then return nil end
+    -- A nil comparison is itself forbidden for a secret, so classification must be
+    -- the first operation performed on the value.
+    if self:Is(v) then return nil end
+    if v == nil then return nil end
     if type(v) == "number" then return v end
     return tonumber(v)
 end
 
--- Are we under combat secret restrictions right now (instanced encounter / M+ / PvP)?
--- Lets a module choose a secret-safe UI path up front. False pre-12.0.
+-- Are any combat-data restriction scopes active right now? HasSecretRestrictions is
+-- only a build-wide capability switch; the live state belongs to C_RestrictedActions.
+-- False when the current client does not expose the restriction-state API.
 function Secrets:Restricted()
-    if C_Secrets and C_Secrets.HasSecretRestrictions then
-        return C_Secrets.HasSecretRestrictions()
+    local isActive = C_RestrictedActions and C_RestrictedActions.IsAddOnRestrictionActive
+    local restrictionTypes = Enum and Enum.AddOnRestrictionType
+    if not (isActive and restrictionTypes) then return false end
+    for _, name in ipairs(S.restrictionNames) do
+        local restrictionType = restrictionTypes[name]
+        if restrictionType ~= nil and isActive(restrictionType) then return true end
     end
     return false
 end
@@ -48,7 +61,10 @@ end
 -- Returns true if anything was shown.
 function Secrets:Text(fontString, v, prefix)
     if not fontString then return false end
-    if v == nil then fontString:SetText(""); return false end
+    -- Check secrecy before comparing the value with nil. Unlike Number, a secret
+    -- remains useful here because SetText and string/number concatenation accept it.
+    local secret = self:Is(v)
+    if not secret and v == nil then fontString:SetText(""); return false end
     if prefix and prefix ~= "" then
         fontString:SetText(prefix .. v)   -- concat is allowed on secrets
     else
