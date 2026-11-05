@@ -43,6 +43,7 @@ Open **[diagram/DB/index.html](diagram/DB/index.html)** in a browser for an inte
 | [`o_module_Dev`](#o_module_Dev) | `char` | 2 | id | `Modules/Dev.lua` |
 | [`o_module_Questing`](#o_module_Questing) | `char` | 10 | id | `Modules/Questing.lua` |
 | [`o_module_Skins`](#o_module_Skins) | `char` | 11 | id | `Modules/Skins.lua` |
+| [`o_submodule_CombatLogging`](#o_submodule_CombatLogging) | `char` | 3 | id | `Modules/Misc/CombatLogging.lua` |
 | [`o_submodule_FlightTimers`](#o_submodule_FlightTimers) | `char` | 3 | id | `Modules/Misc/FlightTimers.lua` |
 | [`o_submodule_SellJunk`](#o_submodule_SellJunk) | `char` | 2 | id | `Modules/Misc/SellJunk.lua` |
 | [`p_module_Class_MONK_1`](#p_module_Class_MONK_1) | `global` | 13 | profile | `Modules/Class.lua` |
@@ -51,6 +52,7 @@ Open **[diagram/DB/index.html](diagram/DB/index.html)** in a browser for an inte
 | [`p_module_Dev`](#p_module_Dev) | `global` | 2 | profile | `Modules/Dev.lua` |
 | [`p_module_Questing`](#p_module_Questing) | `global` | 10 | profile | `Modules/Questing.lua` |
 | [`p_module_Skins`](#p_module_Skins) | `global` | 11 | profile | `Modules/Skins.lua` |
+| [`p_submodule_CombatLogging`](#p_submodule_CombatLogging) | `global` | 3 | profile | `Modules/Misc/CombatLogging.lua` |
 | [`p_submodule_FlightTimers`](#p_submodule_FlightTimers) | `global` | 3 | profile | `Modules/Misc/FlightTimers.lua` |
 | [`p_submodule_SellJunk`](#p_submodule_SellJunk) | `global` | 2 | profile | `Modules/Misc/SellJunk.lua` |
 | [`profile`](#profile) | `global` | 2 | name | `Core/DB/CoreTables.lua` |
@@ -451,6 +453,18 @@ Open **[diagram/DB/index.html](diagram/DB/index.html)** in a browser for an inte
 
 ---
 
+### `o_submodule_CombatLogging`  ·  scope `char`
+
+*Defined in `Modules/Misc/CombatLogging.lua`.*
+
+| Column | Type | Null | Key | Default | References |
+|---|---|---|---|---|---|
+| `id` | integer | no | PK |  |  |
+| `instance` | boolean | yes |  |  |  |
+| `permanent` | boolean | yes |  |  |  |
+
+---
+
 ### `o_submodule_FlightTimers`  ·  scope `char`
 
 *Defined in `Modules/Misc/FlightTimers.lua`.*
@@ -574,6 +588,18 @@ Open **[diagram/DB/index.html](diagram/DB/index.html)** in a browser for an inte
 | `startColor_r` | number | yes |  |  |  |
 | `startColor_g` | number | yes |  |  |  |
 | `startColor_b` | number | yes |  |  |  |
+
+---
+
+### `p_submodule_CombatLogging`  ·  scope `global`
+
+*Defined in `Modules/Misc/CombatLogging.lua`.*
+
+| Column | Type | Null | Key | Default | References |
+|---|---|---|---|---|---|
+| `profile` | text | no | PK |  | → `profile.name` on delete cascade |
+| `instance` | boolean | yes |  |  |  |
+| `permanent` | boolean | yes |  |  |  |
 
 ---
 

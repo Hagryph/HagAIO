@@ -230,7 +230,6 @@ function SettingsWindow:_RefreshModules()
             end
 
             local name = W.Text:New(row, module:GetTitle(), depsMet and "text" or "textFaint", "GameFontNormal")
-            name:SetPoint("TOPLEFT", row, "TOPLEFT", 50, -12)
 
             local settings = W.Button:New(row, "Configure", { width = 92 })
             settings:SetPoint("RIGHT", row, "RIGHT", -14, 0)
@@ -242,9 +241,13 @@ function SettingsWindow:_RefreshModules()
                 descText = "Requires " .. table.concat(deps, ", ") .. " enabled."
             end
             local desc = W.Text:New(row, descText, "textFaint", "GameFontHighlightSmall")
+            local titleHeight, descriptionHeight = name:GetStringHeight(), desc:GetStringHeight()
+            local textTop = (titleHeight + descriptionHeight + 3) / 2
+            name:SetPoint("TOPLEFT", row, "LEFT", 50, textTop)
             desc:SetPoint("TOPLEFT", name, "BOTTOMLEFT", 0, -3)
-            desc:SetPoint("RIGHT", settings, "LEFT", -10, 0)
+            desc:SetPoint("TOPRIGHT", row, "RIGHT", -116, textTop - titleHeight - 3)
             desc:SetJustifyH("LEFT")
+            desc:SetWordWrap(false)
 
             p.moduleRows[#p.moduleRows + 1] = row
             y = y - 66

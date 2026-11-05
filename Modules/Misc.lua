@@ -51,7 +51,7 @@ local Misc = Class.new("Misc", ns.Module)
 
 ns.ModuleManager:Register(Misc:New("Misc", {
     title = "Miscellaneous",
-    description = "Flight-path timers and selling junk.",
+    description = "Flight-path timers, selling junk and combat logging.",
     defaultEnabled = false,
     color = ns.Theme.hex.grey,  -- distinct tag (accent=Core/Skins, purple=Class, gold=Questing, red=CVars)
     -- The parent is thin: no service deps of its own (DatabaseManager is auto-added by `tables`); the

@@ -20,12 +20,14 @@ function PageHeaderW:Initialize(parent, titleText, descriptionText, opts)
         accentKey = opts.accentKey or "accent", shadow = opts.shadow })
 
     local title = Widgets.Text:New(f, string.upper(titleText or ""), opts.titleKey or "text", "GameFontNormalLarge")
-    title:SetPoint("TOPLEFT", 20, -15)
 
     local description = Widgets.Text:New(f, descriptionText or "", "textDim", "GameFontHighlightSmall")
+    local titleHeight = title:GetStringHeight()
+    local textTop = (titleHeight + description:GetStringHeight() + 7) / 2
+    title:SetPoint("TOPLEFT", f, "LEFT", 20, textTop)
     description:SetPoint("TOPLEFT", title, "BOTTOMLEFT", 0, -7)
     local actionsWidth = opts.actionsWidth or 190
-    description:SetPoint("RIGHT", f, "RIGHT", -(actionsWidth + 28), 0)
+    description:SetPoint("TOPRIGHT", f, "RIGHT", -(actionsWidth + 28), textTop - titleHeight - 7)
     description:SetJustifyH("LEFT")
     description:SetWordWrap(false)
 

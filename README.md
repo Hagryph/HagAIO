@@ -211,6 +211,7 @@ Modules/
   Class\Monk\Brewmaster.lua The Brewmaster Monk spec (CurrentSpecKey 1): extends MonkBase (Base.lua) with a Tiger
   Dashboard\CharacterStore.lua The Dashboard's per-character DATA layer, extracted out of the 2.5k-line module so the module
   Dashboard\ExpansionCatalog.lua The Dashboard's instance + zone CATALOG layer, extracted out of the module so the module itself
+  Misc\CombatLogging.lua   (no description)
   Misc\FlightTimers.lua    The Flight Timers submodule of Misc (registered under the parent "Misc" module)
   Misc\SellJunk.lua        The Sell Junk submodule of Misc (registered under the parent "Misc" module)
 Dev/                       Scratch space (excluded from deploy)
