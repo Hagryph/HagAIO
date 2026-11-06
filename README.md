@@ -212,6 +212,7 @@ Modules/
   Class\Monk\Brewmaster.lua The Brewmaster Monk spec (CurrentSpecKey 1): extends MonkBase (Base.lua) with a Tiger
   Dashboard\CharacterStore.lua The Dashboard's per-character DATA layer, extracted out of the 2.5k-line module so the module
   Dashboard\ExpansionCatalog.lua The Dashboard's instance + zone CATALOG layer, extracted out of the module so the module itself
+  Misc\CombatControl.lua   Session-only combat permission
   Misc\CombatLogging.lua   (no description)
   Misc\CooldownControl.lua Major cooldowns default on; a manual off choice lasts until combat ends
   Misc\FlightTimers.lua    The Flight Timers submodule of Misc (registered under the parent "Misc" module)
@@ -358,3 +359,13 @@ Integration: `_G.HagAIOCooldownsEnabled` is an ordinary Boolean published for
 read-only consumers. The module keeps its authoritative state private and emits
 `HagAIO_CooldownsChanged` through EventBus when it changes. This control itself
 never casts a spell. It has no persisted armed state.
+
+
+### Combat permission
+
+With Miscellaneous enabled, Combat starts OFF (red). Click it or press F10 to turn
+it ON (green). It permits the helper's existing Auto combat behavior while already
+in combat; it never initiates a pull. It stays on between fights until toggled off
+and resets off on addon reload or module disable. Move the button in Edit Mode.
+`_G.HagAIOCombatEnabled` is a plain read-only integration Boolean. The addon does
+not cast spells, select targets, or move the character.
