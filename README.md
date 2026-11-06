@@ -217,6 +217,7 @@ Modules/
   Misc\CooldownControl.lua Major cooldowns default on; a manual off choice lasts until combat ends
   Misc\FlightTimers.lua    The Flight Timers submodule of Misc (registered under the parent "Misc" module)
   Misc\SellJunk.lua        The Sell Junk submodule of Misc (registered under the parent "Misc" module)
+  Misc\TargetingMacros.lua (no description)
 Dev/                       Scratch space (excluded from deploy)
 deploy.ps1                 Mirror the addon into the live WoW AddOns folder + generate the .toc
 ```
