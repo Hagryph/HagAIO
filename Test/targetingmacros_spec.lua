@@ -34,5 +34,11 @@ describe("Targeting macro creation", function()
         SlashCmdList.WHTARGETMACROS(); assert.are.equal("/say User macro", c.macros[1].body)
         c.module:Disable()
     end)
+    it("reports exhausted macro space without failing module startup", function()
+        local c = setup(false)
+        _G.CreateMacro = function() error("Too many macros") end
+        c.module:Enable(); assert.are.equal(0, #c.macros)
+        c.module:Disable()
+    end)
 end)
 

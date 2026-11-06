@@ -15,8 +15,9 @@ function TargetingMacros:_Create()
         local name, body = definition[1], definition[2]
         local index = GetMacroIndexByName(name)
         if index == 0 then
-            index = CreateMacro(name, 134400, body, true)
-            if not index or index == 0 then
+            local ok
+            ok, index = pcall(CreateMacro, name, 134400, body, true)
+            if not ok or not index or index == 0 then
                 print("HagAIO: no room to create " .. name .. ".")
                 return false
             end
