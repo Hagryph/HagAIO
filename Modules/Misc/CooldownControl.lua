@@ -3,7 +3,7 @@ local W = ns.UI.Widgets
 local CooldownControl = ns.Class.new("CooldownControl", ns.Submodule)
 
 -- Modules/Misc/CooldownControl.lua
--- Manual permission for major cooldowns, scoped to the next/current combat.
+-- Major cooldowns default on; a manual off choice lasts until combat ends.
 -- This plain public Boolean is the read-only integration ABI. Private module
 -- state remains authoritative; no spell casting or protected action is exposed.
 _G.HagAIOCooldownsEnabled = false
@@ -22,26 +22,29 @@ function CooldownControl:_Toggle()
     if self:IsEnabled() and not ns.EditMode:IsEditing() then self:_SetArmed(not self:_p().armed) end
 end
 
+function CooldownControl:_Reset()
+    self:_SetArmed(true)
+end
+
 function CooldownControl:_OnLoad()
     local p = self:_p()
     if not p.button then
-        p.button = W.KeyboundButton:New(UIParent, "CDs: OFF  [F9]", {
+        p.button = W.KeyboundButton:New(UIParent, "CDs: ON  [F9]", {
             name = "HagAIOCooldownButton", width = 140, height = 28, primary = true,
         })
         p.button:SetPoint("BOTTOM", UIParent, "BOTTOM", 0, 180)
         p.button:SetOnClick(function() self:_Toggle() end)
     end
-    self:_SetArmed(false)
+    self:_Reset()
     p.button:RegisterEditMode({
         key = "cooldownControl", label = "Cooldowns",
         default = { point = "BOTTOM", x = 0, y = 180 },
         active = function() return self:IsEnabled() end,
-        onEnter = function() self:_SetArmed(false) end,
     })
     p.button:Show():SetKeyBinding("F9")
-    self:On("PLAYER_REGEN_ENABLED", function() self:_SetArmed(false) end)
-    self:On("PLAYER_ENTERING_WORLD", function() self:_SetArmed(false) end)
-    self:On("PLAYER_DEAD", function() self:_SetArmed(false) end)
+    self:On("PLAYER_REGEN_ENABLED", function() self:_Reset() end)
+    self:On("PLAYER_ENTERING_WORLD", function() self:_Reset() end)
+    self:On("PLAYER_DEAD", function() self:_Reset() end)
 end
 
 function CooldownControl:_OnUnload()
@@ -58,6 +61,6 @@ ns.SubmoduleManager:Register(CooldownControl:New("CooldownControl", {
     onLoad = function(_, sub) sub:_OnLoad() end,
     onUnload = function(_, sub) sub:_OnUnload() end,
     settings = {
-        { type = "note", text = "Press F9 or click CDs to allow major cooldowns. Green is on; red is off. Move the button in Edit Mode. Turns off after combat, on death or after a reload. Your saved F9 binding returns when Miscellaneous is disabled." },
+        { type = "note", text = "Cooldowns start on. Press F9 or click CDs to turn them off temporarily. Green is on; red is off. Resets to on after combat, on death or after a reload. Move the button in Edit Mode. Your saved F9 binding is preserved." },
     },
 }))

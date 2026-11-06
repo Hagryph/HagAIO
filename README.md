@@ -213,7 +213,7 @@ Modules/
   Dashboard\CharacterStore.lua The Dashboard's per-character DATA layer, extracted out of the 2.5k-line module so the module
   Dashboard\ExpansionCatalog.lua The Dashboard's instance + zone CATALOG layer, extracted out of the module so the module itself
   Misc\CombatLogging.lua   (no description)
-  Misc\CooldownControl.lua Manual permission for major cooldowns, scoped to the next/current combat
+  Misc\CooldownControl.lua Major cooldowns default on; a manual off choice lasts until combat ends
   Misc\FlightTimers.lua    The Flight Timers submodule of Misc (registered under the parent "Misc" module)
   Misc\SellJunk.lua        The Sell Junk submodule of Misc (registered under the parent "Misc" module)
 Dev/                       Scratch space (excluded from deploy)
@@ -347,12 +347,12 @@ load-order manifest, and release packaging — lives in [CONTRIBUTING.md](CONTRI
 
 ### Cooldown permission
 
-With Miscellaneous enabled, move the CDs button with Edit Mode. Green means on;
-red means off. Click it or press F9 to allow major
-cooldowns for the next/current combat. Press again to turn it off early. It starts
-off after every reload and turns off when combat ends, on death, on world entry or
-when the module is disabled. F9 is a temporary addon override; saved key bindings
-are preserved. New/removed overrides wait for combat lockdown to end.
+With Miscellaneous enabled, CDs start ON (green). Move the button with Edit
+Mode. Click it or press F9 to turn cooldowns OFF (red) temporarily; press again
+to turn them back on. Combat exit, death, world entry and reload reset them to
+ON. Disabling Miscellaneous turns permission off. F9 is a temporary addon
+override; saved bindings are preserved. New/removed overrides wait for combat
+lockdown to end. Arranging the button in Edit Mode does not toggle its state.
 
 Integration: `_G.HagAIOCooldownsEnabled` is an ordinary Boolean published for
 read-only consumers. The module keeps its authoritative state private and emits
