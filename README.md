@@ -154,6 +154,7 @@ UI/
   Widgets\Grid.lua         Column-aligned GRID -- the one row/column layout engine
   Widgets\IconGrid.lua     Auto-sizing ICON GRID -- Encounter-Journal-style tiles laid out a FIXED number per row, each
   Widgets\Input.lua        Themed single-line EditBox
+  Widgets\KeyboundButton.lua Named push button with a temporary, owned key binding
   Widgets\MapArt.lua       ZONE MAP ART, composed by hand
   Widgets\MultilineEdit.lua A scrollable multi-line EditBox -- the copy-in/out surface
   Widgets\Nav.lua          A vertical NAVIGATION list: section labels + selectable items (optionally indented as
@@ -212,6 +213,7 @@ Modules/
   Dashboard\CharacterStore.lua The Dashboard's per-character DATA layer, extracted out of the 2.5k-line module so the module
   Dashboard\ExpansionCatalog.lua The Dashboard's instance + zone CATALOG layer, extracted out of the module so the module itself
   Misc\CombatLogging.lua   (no description)
+  Misc\CooldownControl.lua Manual permission for major cooldowns, scoped to the next/current combat
   Misc\FlightTimers.lua    The Flight Timers submodule of Misc (registered under the parent "Misc" module)
   Misc\SellJunk.lua        The Sell Junk submodule of Misc (registered under the parent "Misc" module)
 Dev/                       Scratch space (excluded from deploy)
@@ -341,3 +343,17 @@ branch to its configured upstream. If `-CommitMessage` is omitted, the message i
 
 The full contributor workflow — lint gates (`npm run check`), what's generated, the
 load-order manifest, and release packaging — lives in [CONTRIBUTING.md](CONTRIBUTING.md).
+
+
+### Cooldown permission
+
+With Miscellaneous enabled, click the CDs button or press F9 to allow major
+cooldowns for the next/current combat. Press again to turn it off early. It starts
+off after every reload and turns off when combat ends, on death, on world entry or
+when the module is disabled. F9 is a temporary addon override; saved key bindings
+are preserved. New/removed overrides wait for combat lockdown to end.
+
+Integration: `_G.HagAIOCooldownsEnabled` is an ordinary Boolean published for
+read-only consumers. The module keeps its authoritative state private and emits
+`HagAIO_CooldownsChanged` through EventBus when it changes. This control itself
+never casts a spell. It has no persisted armed state.

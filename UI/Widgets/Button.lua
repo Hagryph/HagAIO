@@ -14,7 +14,7 @@ local unwrap, style, adopt = _wb.unwrap, _wb.style, _wb.adopt
 local ButtonW = ns.Class.new("Button", FrameWidget)
 function ButtonW:Initialize(parent, text, opts)
     opts = opts or {}
-    local b = CreateFrame("Button", nil, unwrap(parent), "BackdropTemplate")
+    local b = CreateFrame("Button", opts.name, unwrap(parent), "BackdropTemplate")
     style(b, opts.primary and "accentSoft" or "surfaceRaised", opts.primary and "accentDim" or "border")
     b:SetHeight(opts.height or 30)
     local topLight = b:CreateTexture(nil, "BORDER")
