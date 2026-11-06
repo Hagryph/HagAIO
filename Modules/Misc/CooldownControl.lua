@@ -14,12 +14,12 @@ function CooldownControl:_SetArmed(on)
     local changed = p.armed ~= armed
     p.armed = armed
     _G.HagAIOCooldownsEnabled = p.armed
-    if p.button then p.button:SetText(p.armed and "CDs: ON  [F9]" or "CDs: OFF  [F9]") end
+    if p.button then p.button:SetText(p.armed and "CDs: ON  [F9]" or "CDs: OFF  [F9]"):SetTone(p.armed and "green" or "red") end
     if changed then ns.EventBus:Emit("HagAIO_CooldownsChanged", p.armed) end
 end
 
 function CooldownControl:_Toggle()
-    if self:IsEnabled() then self:_SetArmed(not self:_p().armed) end
+    if self:IsEnabled() and not ns.EditMode:IsEditing() then self:_SetArmed(not self:_p().armed) end
 end
 
 function CooldownControl:_OnLoad()
@@ -32,6 +32,12 @@ function CooldownControl:_OnLoad()
         p.button:SetOnClick(function() self:_Toggle() end)
     end
     self:_SetArmed(false)
+    p.button:RegisterEditMode({
+        key = "cooldownControl", label = "Cooldowns",
+        default = { point = "BOTTOM", x = 0, y = 180 },
+        active = function() return self:IsEnabled() end,
+        onEnter = function() self:_SetArmed(false) end,
+    })
     p.button:Show():SetKeyBinding("F9")
     self:On("PLAYER_REGEN_ENABLED", function() self:_SetArmed(false) end)
     self:On("PLAYER_ENTERING_WORLD", function() self:_SetArmed(false) end)
@@ -41,17 +47,17 @@ end
 function CooldownControl:_OnUnload()
     self:_SetArmed(false)
     local button = self:_p().button
-    if button then button:Hide():SetKeyBinding(nil) end
+    if button then button:UnregisterEditMode():Hide():SetKeyBinding(nil) end
 end
 
 ns.SubmoduleManager:Register(CooldownControl:New("CooldownControl", {
     parent = { module = "Misc" },
     host = ns.ModuleManager:GetModule("Misc"),
     title = "Cooldown button",
-    deps = { "EventBus" },
+    deps = { "EventBus", "EditMode" },
     onLoad = function(_, sub) sub:_OnLoad() end,
     onUnload = function(_, sub) sub:_OnUnload() end,
     settings = {
-        { type = "note", text = "Press F9 or click CDs to allow major cooldowns. Turns off after combat, on death or after a reload. Your saved F9 binding returns when Miscellaneous is disabled." },
+        { type = "note", text = "Press F9 or click CDs to allow major cooldowns. Green is on; red is off. Move the button in Edit Mode. Turns off after combat, on death or after a reload. Your saved F9 binding returns when Miscellaneous is disabled." },
     },
 }))

@@ -347,7 +347,8 @@ load-order manifest, and release packaging — lives in [CONTRIBUTING.md](CONTRI
 
 ### Cooldown permission
 
-With Miscellaneous enabled, click the CDs button or press F9 to allow major
+With Miscellaneous enabled, move the CDs button with Edit Mode. Green means on;
+red means off. Click it or press F9 to allow major
 cooldowns for the next/current combat. Press again to turn it off early. It starts
 off after every reload and turns off when combat ends, on death, on world entry or
 when the module is disabled. F9 is a temporary addon override; saved key bindings

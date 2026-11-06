@@ -6,7 +6,7 @@ local Widget, FrameWidget, TextWidget, TextureWidget = _wb.Widget, _wb.FrameWidg
 -- UI/Widgets/KeyboundButton.lua
 -- Named push button with a temporary, owned key binding. Binding changes wait
 -- for combat lockdown to end; they never replace the player's saved bindings.
-local KeyboundButtonW = ns.Class.new("KeyboundButton", Widgets.Button)
+local KeyboundButtonW = ns.Class.new("KeyboundButton", Widgets.Button, { mixins = { _wb.Registrable } })
 
 function KeyboundButtonW:Initialize(parent, text, opts)
     assert(opts and opts.name, "A keybound button needs a name")
@@ -39,6 +39,7 @@ end
 function KeyboundButtonW:Dispose()
     if self:_p().retired then return end
     self:_p().retired = true
+    self:UnregisterEditMode()
     self:SetOnClick(nil)
     self:SetKeyBinding(nil)
     KeyboundButtonW.super.Dispose(self)

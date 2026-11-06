@@ -34,9 +34,9 @@ function ButtonW:Initialize(parent, text, opts)
         local background = p.primary and (active and "controlHover" or "accentSoft")
             or (active and "controlHover" or "surfaceRaised")
         b:SetBackdropColor(Theme.Unpack(background))
-        b:SetBackdropBorderColor(Theme.Unpack(active and "accent" or (p.primary and "accentDim" or "border")))
-        fs:SetTextColor(Theme.Unpack(p.enabled and (p.primary or active) and "accent" or (p.enabled and "textDim" or "textFaint")))
-        p.underline:SetColorTexture(Theme.Unpack("accent", active and 1 or 0))
+        b:SetBackdropBorderColor(Theme.Unpack(p.tone or (active and "accent" or (p.primary and "accentDim" or "border"))))
+        fs:SetTextColor(Theme.Unpack(p.enabled and p.tone or (p.enabled and (p.primary or active) and "accent" or (p.enabled and "textDim" or "textFaint"))))
+        p.underline:SetColorTexture(Theme.Unpack(p.tone or "accent", active and 1 or 0))
     end
     p.render = render
     b:SetScript("OnEnter", function() render(true) end)
@@ -46,6 +46,7 @@ function ButtonW:Initialize(parent, text, opts)
 end
 function ButtonW:SetText(s)     local p = self:_p(); p.label:SetText(s); p.fit(); return self end
 function ButtonW:SetOnClick(fn) self:_p().onClick = fn; return self end
+function ButtonW:SetTone(key) local p = self:_p(); p.tone = key; p.render(false); return self end
 function ButtonW:SetEnabled(on)
     local p = self:_p(); p.enabled = on and true or false
     self:_Frame():SetAlpha(p.enabled and 1 or 0.6)
